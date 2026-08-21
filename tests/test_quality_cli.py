@@ -34,7 +34,7 @@ def stubbed_run(tmp_path, monkeypatch):
         llama_server_path=server_path,
         results_path=tmp_path / "runtime.jsonl",
         quality_results_path=quality_results_path,
-        mistral_api_key="fake-key",
+        mistral_api_key="fake-key",  # pragma: allowlist secret
     )
     fake_process = MagicMock(pid=1234)
 
@@ -178,4 +178,47 @@ def test_run_propagates_mistral_request_error(stubbed_run) -> None:
     started["complete_prompt"].side_effect = MistralRequestError("boom")
 
     with pytest.raises(MistralRequestError):
+        quality_cli._run()
+
+
+def test_run_raises_local_completion_error_when_response_is_not_an_object(
+    stubbed_run,
+) -> None:
+    _, started = stubbed_run
+    started["post"].return_value = MagicMock(
+        status_code=200,
+        json=lambda: ["billing"],
+        raise_for_status=lambda: None,
+    )
+
+    with pytest.raises(quality_cli.LocalCompletionError):
+        quality_cli._run()
+
+
+def test_main_exits_one_on_local_completion_error(stubbed_run, capsys) -> None:
+    _, started = stubbed_run
+    started["post"].return_value = MagicMock(
+        status_code=200,
+        json=lambda: {"no_content_here": True},
+        raise_for_status=lambda: None,
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        quality_cli.main()
+
+    assert exit_info.value.code == 1
+    assert "unexpected /completion response shape" in capsys.readouterr().err
+
+
+def test_run_raises_local_completion_error_when_content_is_not_text(
+    stubbed_run,
+) -> None:
+    _, started = stubbed_run
+    started["post"].return_value = MagicMock(
+        status_code=200,
+        json=lambda: {"content": None},
+        raise_for_status=lambda: None,
+    )
+
+    with pytest.raises(quality_cli.LocalCompletionError):
         quality_cli._run()

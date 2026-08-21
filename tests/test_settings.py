@@ -34,7 +34,7 @@ def test_load_settings_returns_populated_settings(monkeypatch, tmp_path: Path) -
     assert settings.llama_server_path == server_path
     assert settings.results_path == tmp_path / "runtime.jsonl"
     assert settings.quality_results_path == tmp_path / "quality.jsonl"
-    assert settings.mistral_api_key == "fake-key"
+    assert settings.mistral_api_key == "fake-key"  # pragma: allowlist secret
 
 
 def test_load_settings_defaults_quality_path_and_mistral_key_when_unset(
