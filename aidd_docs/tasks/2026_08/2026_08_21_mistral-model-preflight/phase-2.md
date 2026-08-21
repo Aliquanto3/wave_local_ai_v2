@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 <!-- Fill or omit these sections; never add, rename, or reorder one. -->
@@ -84,9 +84,9 @@ journey
 
 | Task | Acceptance criteria |
 | ---- | ------------------- |
-| 1 | When the catalog check raises `ModelUnavailableError`, `_run` propagates it with `server.running_server` never called and `requests.post` never called: zero local work for a run that cannot finish. Deleting the `check_model_available` call from `_run` makes this fail. |
-| 1 | With `mistral_api_key` empty, `_run` still raises `SettingsError("MISTRAL_API_KEY is not set")` and the catalog check is never called, so an unset key needs no network. Reordering the two checks makes this fail. |
+| 1 | When the catalog check raises `ModelUnavailableError`, `_run` propagates it with `server.running_server` never called and `requests.post` never called: zero local work for a run that cannot finish. Deleting the `check_model_available` call from `_run` makes this fail. Evidence: replacing the call with `deprecation_notice = None` failed 4 tests, this one among them. |
+| 1 | With `mistral_api_key` empty, `_run` still raises `SettingsError("MISTRAL_API_KEY is not set")` and the catalog check is never called, so an unset key needs no network. Reordering the two checks makes this fail. Evidence: moving the catalog call above the key check failed this test and `test_run_raises_before_any_local_or_cloud_call_when_mistral_key_missing`. |
 | 1 | With a current id, the check is called exactly once per run, before the first `running_server` call, and the run still writes `2 x 10` rows with the same content as before this phase. |
 | 2 | When the check returns a deprecation notice, that exact string reaches stderr, the run completes, and all `2 x 10` rows are written; stdout still carries only the two accuracy lines. |
 | 2 | `main()` turns a `ModelUnavailableError` into exit code 1 with the message on stderr and no traceback, the same way it already handles `MistralRequestError`. |
-| 3 | Every test in `tests/test_quality_cli.py` passes with no network reachable; removing the fixture's catalog patch makes them attempt a live GET to the models URL. |
+| 3 | Every test in `tests/test_quality_cli.py` passes with no network reachable; removing the fixture's catalog patch makes them attempt a live GET to the models URL. Evidence: with the patch removed, 18 of 20 tests failed in 6.67s, the fixture's `fake-key` drawing a real 401 from the API; with it in place the file runs in 1.45s. |

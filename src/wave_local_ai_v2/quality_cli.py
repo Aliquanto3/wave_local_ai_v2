@@ -80,11 +80,19 @@ def main() -> None:
 
 def _run() -> None:
     settings = load_settings()
+    # Both cloud pre-conditions are checked before the (expensive) local suite
+    # runs, not just before the cloud loop, so a run that cannot finish costs no
+    # llama-server lifecycle. Nothing is lost by failing here: _score_and_write
+    # runs only after both suites return, so a cloud-side failure already
+    # discarded the local completions and wrote zero rows.
     if not settings.mistral_api_key:
-        # Check before the (expensive) local suite runs, not only before the cloud
-        # loop, so a missing key fails immediately instead of after a full
-        # llama-server lifecycle.
+        # First, and offline: an unset key needs no network round trip to reject.
         raise SettingsError("MISTRAL_API_KEY is not set")
+    deprecation_notice = mistral_client.check_model_available(settings.mistral_api_key)
+    if deprecation_notice:
+        # A retirement date is news, not a failure: the model still answers until
+        # then. stderr keeps stdout to the accuracy lines the operator parses.
+        print(deprecation_notice, file=sys.stderr)
 
     local_completions = _run_local_suite(settings)
     cloud_completions = _run_cloud_suite(settings)

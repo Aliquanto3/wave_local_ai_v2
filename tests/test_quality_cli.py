@@ -1,10 +1,11 @@
-from unittest.mock import MagicMock, patch
+import dataclasses
+from unittest.mock import DEFAULT, MagicMock, patch
 
 import pytest
 
 from wave_local_ai_v2 import mistral_client, quality_cli
 from wave_local_ai_v2.classification_suite import CLASSIFICATION_TASK_SUITE
-from wave_local_ai_v2.mistral_client import MistralRequestError
+from wave_local_ai_v2.mistral_client import MistralRequestError, ModelUnavailableError
 from wave_local_ai_v2.results import read_rows
 from wave_local_ai_v2.settings import Settings, SettingsError
 
@@ -54,6 +55,12 @@ def stubbed_run(tmp_path, monkeypatch):
         "complete_prompt": patch(
             "wave_local_ai_v2.quality_cli.mistral_client.complete_prompt",
             return_value="billing",
+        ),
+        # Without this every test in this file would issue a live GET to the
+        # Mistral model catalog before the suite runs.
+        "check_model": patch(
+            "wave_local_ai_v2.quality_cli.mistral_client.check_model_available",
+            return_value=None,
         ),
     }
     started = {name: p.start() for name, p in patches.items()}
@@ -288,3 +295,71 @@ def test_cloud_rows_record_the_dated_model_id(stubbed_run) -> None:
     }
     assert cloud_ids == {mistral_client.MODEL}
     assert not mistral_client.MODEL.endswith("-latest")
+
+
+def test_run_pays_no_local_lifecycle_when_the_model_id_is_gone(stubbed_run) -> None:
+    _, started = stubbed_run
+    started["check_model"].side_effect = ModelUnavailableError("gone")
+
+    with pytest.raises(ModelUnavailableError):
+        quality_cli._run()
+
+    assert started["running_server"].call_count == 0
+    assert started["post"].call_count == 0
+
+
+def test_run_rejects_an_unset_key_before_touching_the_catalog(stubbed_run) -> None:
+    _, started = stubbed_run
+    started["load_settings"].return_value = dataclasses.replace(
+        started["load_settings"].return_value, mistral_api_key=""
+    )
+
+    with pytest.raises(SettingsError, match="MISTRAL_API_KEY is not set"):
+        quality_cli._run()
+
+    # Offline first: an unset key must not cost a network round trip.
+    assert started["check_model"].call_count == 0
+
+
+def test_run_checks_the_model_once_before_starting_the_local_server(
+    stubbed_run,
+) -> None:
+    _, started = stubbed_run
+    order: list[str] = []
+    started["check_model"].side_effect = lambda *a, **k: order.append("check")
+    # DEFAULT keeps running_server's configured context manager as the return.
+    started["running_server"].side_effect = lambda *a, **k: (
+        order.append("server") or DEFAULT
+    )
+
+    quality_cli._run()
+
+    assert order == ["check", "server"]
+
+
+def test_run_surfaces_a_deprecation_notice_and_still_writes_every_row(
+    stubbed_run, capsys
+) -> None:
+    quality_results_path, started = stubbed_run
+    notice = "warning: model 'x' is deprecated as of 2026-08-31T12:00:00Z"
+    started["check_model"].return_value = notice
+
+    quality_cli._run()
+
+    captured = capsys.readouterr()
+    assert notice in captured.err
+    assert notice not in captured.out
+    assert len(read_rows(quality_results_path)) == 2 * len(CLASSIFICATION_TASK_SUITE)
+
+
+def test_main_exits_1_when_the_model_id_is_gone(stubbed_run, capsys) -> None:
+    _, started = stubbed_run
+    started["check_model"].side_effect = ModelUnavailableError(
+        "Mistral model 'mistral-small-9999' is not on the live catalog"
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        quality_cli.main()
+
+    assert exit_info.value.code == 1
+    assert "mistral-small-9999" in capsys.readouterr().err
