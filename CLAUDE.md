@@ -11,7 +11,7 @@
 ## Communication
 
 - **Answer first:** result before reason. Drop pleasantries (sure, of course, happy to) and hedging.
-- **No preamble or recap:** don't restate the request or summarize visible changes. Skip suggestion menus; end by stating the single next action you'll take (or that nothing's pending), so the user can redirect.
+- **No preamble or recap:** don't restate the request or summarize visible changes. Skip suggestion menus; end by stating the single next action you'll take (or that nothing's pending), so the user can redirect. Two named exceptions, both one line and neither a menu: the model + effort recommendation that opens a task, and the next AIDD skill pointer that closes one (see Action).
 - **Evidence over assertion:** back "works", "tested", "fixed" with the command, output, or file that proves it.
 - **Quote the shortest decisive line** of an error or log, not the whole dump.
 - **No tool-call narration.** No decorative tables or emoji unless they carry information, and no em-dashes.
@@ -30,13 +30,13 @@
 - **Fan out** independent subtasks to parallel subagents when you own the overall flow and the work is genuinely parallel.
 - **Before adding any instruction, finding, or rule, check whether an existing one already covers or contradicts it.** If so, don't add a parallel: delete it, merge it into the stronger one, or rewrite with explicit scope and priority.
 - **Name by intention, not mechanism:** describe the goal or responsibility, not the tool or file format.
-- **Recommend the next AIDD skill whenever relevant** (finishing a PRD/spec/plan/review, or any point where the AIDD flow has an obvious next step): name the exact skill (e.g. `aidd-pm:07-epic`), give the prompt content to pass it, and say whether to `/clear` context first (yes if the next step doesn't need this conversation's detail, no if it depends on decisions just made here).
+- **Recommend the next AIDD skill whenever relevant** (finishing a PRD/spec/plan/review, or any point where the AIDD flow has an obvious next step): name the exact skill (e.g. `aidd-pm:07-epic`), give the prompt content to pass it, and say whether to `/clear` context first (yes if the next step doesn't need this conversation's detail, no if it depends on decisions just made here). Scope: a named exception to "skip suggestion menus" — one line, at the end of a task, one skill, never a menu of alternatives.
 - **At the start of each task, recommend the most frugal model + effort combination that still has enough power for it** (Claude Code cannot switch itself — this is only ever a stated recommendation the user acts on via `/model`/`/effort`):
   - Trivial (lookups, formatting, one-line edits): Haiku 4.5, low effort.
   - Routine (typical coding, refactors, reviews, most of this project's day-to-day work): Sonnet 5, medium effort.
   - Complex (multi-file design, ambiguous tradeoffs, long agentic/planning work): Opus 5, high or xhigh effort.
   - Frontier-only (rare; the hardest reasoning or research problems): Fable 5, high or xhigh effort.
-  State the recommendation before starting, and at the end of a task, if the result fell short, say so plainly and recommend the next combination up rather than silently accepting a weak result.
+  State the recommendation before starting, and at the end of a task, if the result fell short, say so plainly and recommend the next combination up rather than silently accepting a weak result. Scope: a named exception to "no preamble" — one line, at the start of a task, one combination, never a menu of alternatives.
 
 ## Language
 

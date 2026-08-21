@@ -16,7 +16,10 @@ models/
 *.gguf
 *.safetensors
 results/raw/
-aidd_docs/results/
+# Only the live append targets: the curated *-reference.jsonl snapshots next
+# to them are the committed acceptance evidence.
+aidd_docs/results/runtime.jsonl
+aidd_docs/results/quality.jsonl
 __pycache__/
 .pytest_cache/
 .ruff_cache/

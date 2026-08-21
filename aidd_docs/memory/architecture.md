@@ -6,7 +6,9 @@ The macro technical shape: the stack, how the pieces fit, and the decisions behi
 
 - Python, managed by uv (lockfile, fast installs, editable dev install)
 - pytest for tests, mypy for type checking, ruff for linting and formatting
-- pre-commit wires the fast gate (ruff + mypy) before every commit
+- The fast gate (ruff, mypy, detect-secrets) is run manually; see
+  `coding-assertions.md` for the commands. No pre-commit hook is installed yet —
+  wiring it belongs to the CI/CD step still on the backlog.
 
 ## How it fits together
 

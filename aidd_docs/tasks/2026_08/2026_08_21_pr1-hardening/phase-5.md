@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Instruction: Committed evidence and project memory
@@ -96,3 +96,33 @@ journey
 | 2 | `cli.md` names both commands with no "in progress"; `codebase-map.md` lists the tests, results and backlog areas and both entry points; no memory file claims a gate that is not wired. |
 | 3 | `CLAUDE.md` no longer states a rule and its opposite: the Communication bullet names the two exceptions and the Action rules point back to it with their scope stated. |
 | 4 | A real runtime run appends a row with both provenance fields and a `gen_tok_per_s` within +/-1.5 of 26; a real quality run's rows share one `run_id` and reproduce the reference accuracies, or the skip is stated. |
+
+## Notes
+
+### Task 4 — one real run, end to end
+
+Both CLIs were run for real on 2026-08-21 with the model, the llama-server
+binary and the Mistral key all available. Neither was skipped.
+
+**Runtime** (`uv run wave-local-ai-v2`), printed summary:
+
+```
+gen_tok_per_s=26.5 prompt_tok_per_s=259.2 ttft_ms=5748.5 energy_method=measured_nvml -> aidd_docs\results\runtime.jsonl
+```
+
+The appended row carries `run_id=4826bf9f4534494c9f7e4c367deacaad` and
+`captured_at=2026-08-21T21:08:28.620566+00:00` (UTC offset zero). Its
+`gen_tok_per_s` of 26.480 is inside the plan's band of 26 +/- 1.5. This is the
+first real execution of the port guard, the long-lived stderr sink and the
+nullable RSS read; `process_rss_bytes` came back populated (15,225,921,536).
+
+**Quality** (`uv run wave-local-ai-v2-quality`), printed summary:
+
+```
+model=Qwen3.6-35B-A3B provider=local accuracy=0.60
+model=mistral-small-2603 provider=mistral accuracy=1.00
+```
+
+All 20 rows of the invocation share one `run_id`, every `captured_at` is UTC,
+and every `predicted_label` matches the committed reference item for item, for
+both providers. The accuracies reproduce the reference exactly.
