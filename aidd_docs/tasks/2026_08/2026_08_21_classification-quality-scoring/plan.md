@@ -1,6 +1,6 @@
 ---
 objective: "Running the classification task suite against one local SLM (llama-server) and one cloud model (Mistral) produces a deterministic quality score for each, using the same prompts, written into a quality table that is structurally separate from the runtime table -- readable without any hardware fiche or runtime metric, and vice versa."
-status: in-progress
+status: implemented
 ---
 
 <!-- Fill or omit these sections; never add, rename, or reorder one. -->
