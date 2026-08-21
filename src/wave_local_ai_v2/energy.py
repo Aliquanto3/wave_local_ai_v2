@@ -23,9 +23,7 @@ def measure_energy[T](fn: Callable[[], T]) -> tuple[T, EnergyResult]:
     try:
         from codecarbon import EmissionsTracker
 
-        tracker = EmissionsTracker(
-            save_to_file=False, save_to_api=False, log_level="error"
-        )
+        tracker = EmissionsTracker(output_methods=[], log_level="error")
         tracker.start()
     except Exception:  # noqa: BLE001 - tracker init must never block the measured call
         return fn(), EnergyResult(energy_kwh=None, energy_method="unavailable")

@@ -16,6 +16,7 @@ models/
 *.gguf
 *.safetensors
 results/raw/
+aidd_docs/results/
 __pycache__/
 .pytest_cache/
 .ruff_cache/
