@@ -1,0 +1,168 @@
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from wave_local_ai_v2 import quality_cli
+from wave_local_ai_v2.classification_suite import CLASSIFICATION_TASK_SUITE
+from wave_local_ai_v2.mistral_client import MistralRequestError
+from wave_local_ai_v2.results import read_rows
+from wave_local_ai_v2.settings import Settings, SettingsError
+
+RUNTIME_ONLY_FIELDS = {
+    "cpu",
+    "ram_gb",
+    "gpu_name",
+    "ttft_ms",
+    "prompt_tok_per_s",
+    "gen_tok_per_s",
+    "energy_method",
+}
+
+
+@pytest.fixture
+def stubbed_run(tmp_path, monkeypatch):
+    """Stub every I/O boundary quality_cli.main() touches: process, both HTTP clients."""
+    quality_results_path = tmp_path / "quality.jsonl"
+    model_dir = tmp_path / "models"
+    (model_dir / quality_cli.LOCAL_MODEL_ID).mkdir(parents=True)
+    (model_dir / quality_cli.MODEL_RELATIVE_PATH).write_text("")
+    server_path = tmp_path / "llama-server.exe"
+    server_path.write_text("")
+
+    fake_settings = Settings(
+        slm_models_dir=model_dir,
+        llama_server_path=server_path,
+        results_path=tmp_path / "runtime.jsonl",
+        quality_results_path=quality_results_path,
+        mistral_api_key="fake-key",
+    )
+    fake_process = MagicMock(pid=1234)
+
+    patches = {
+        "load_settings": patch(
+            "wave_local_ai_v2.quality_cli.load_settings", return_value=fake_settings
+        ),
+        "running_server": patch("wave_local_ai_v2.quality_cli.server.running_server"),
+        "post": patch(
+            "wave_local_ai_v2.quality_cli.requests.post",
+            return_value=MagicMock(
+                status_code=200,
+                json=lambda: {"content": "billing"},
+                raise_for_status=lambda: None,
+            ),
+        ),
+        "complete_prompt": patch(
+            "wave_local_ai_v2.quality_cli.mistral_client.complete_prompt",
+            return_value="billing",
+        ),
+    }
+    started = {name: p.start() for name, p in patches.items()}
+    started["running_server"].return_value.__enter__.return_value = fake_process
+    started["running_server"].return_value.__exit__.return_value = False
+
+    yield quality_results_path, started
+
+    for p in patches.values():
+        p.stop()
+
+
+def test_run_writes_one_row_per_item_per_model(stubbed_run) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    assert len(rows) == 2 * len(CLASSIFICATION_TASK_SUITE)
+
+
+def test_local_server_started_exactly_once_for_the_whole_suite(stubbed_run) -> None:
+    _, started = stubbed_run
+
+    quality_cli._run()
+
+    assert started["running_server"].call_count == 1
+    assert started["post"].call_count == len(CLASSIFICATION_TASK_SUITE)
+
+
+def test_rows_carry_no_runtime_fields(stubbed_run) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    for row in read_rows(quality_results_path):
+        assert RUNTIME_ONLY_FIELDS.isdisjoint(row.keys())
+
+
+def test_rows_carry_the_shared_prompt_for_both_models(stubbed_run) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    prompts_by_item = {
+        item["item_id"]: item["prompt"] for item in CLASSIFICATION_TASK_SUITE
+    }
+    for row in rows:
+        assert row["prompt"] == prompts_by_item[row["item_id"]]
+
+
+def test_cloud_call_made_once_per_item_with_the_shared_prompt(stubbed_run) -> None:
+    _, started = stubbed_run
+
+    quality_cli._run()
+
+    assert started["complete_prompt"].call_count == len(CLASSIFICATION_TASK_SUITE)
+    called_prompts = [
+        call.args[0] for call in started["complete_prompt"].call_args_list
+    ]
+    expected_prompts = [item["prompt"] for item in CLASSIFICATION_TASK_SUITE]
+    assert called_prompts == expected_prompts
+
+
+def test_run_raises_before_any_cloud_call_when_mistral_key_missing(
+    tmp_path,
+) -> None:
+    model_dir = tmp_path / "models"
+    (model_dir / quality_cli.LOCAL_MODEL_ID).mkdir(parents=True)
+    (model_dir / quality_cli.MODEL_RELATIVE_PATH).write_text("")
+    server_path = tmp_path / "llama-server.exe"
+    server_path.write_text("")
+
+    fake_settings = Settings(
+        slm_models_dir=model_dir,
+        llama_server_path=server_path,
+        results_path=tmp_path / "runtime.jsonl",
+        quality_results_path=tmp_path / "quality.jsonl",
+        mistral_api_key="",
+    )
+    fake_process = MagicMock(pid=1234)
+
+    with (
+        patch("wave_local_ai_v2.quality_cli.load_settings", return_value=fake_settings),
+        patch("wave_local_ai_v2.quality_cli.server.running_server") as running_server,
+        patch(
+            "wave_local_ai_v2.quality_cli.requests.post",
+            return_value=MagicMock(
+                status_code=200,
+                json=lambda: {"content": "billing"},
+                raise_for_status=lambda: None,
+            ),
+        ),
+        patch(
+            "wave_local_ai_v2.quality_cli.mistral_client.complete_prompt"
+        ) as complete,
+        pytest.raises(SettingsError),
+    ):
+        running_server.return_value.__enter__.return_value = fake_process
+        running_server.return_value.__exit__.return_value = False
+        quality_cli._run()
+
+    complete.assert_not_called()
+
+
+def test_run_propagates_mistral_request_error(stubbed_run) -> None:
+    _, started = stubbed_run
+    started["complete_prompt"].side_effect = MistralRequestError("boom")
+
+    with pytest.raises(MistralRequestError):
+        quality_cli._run()
