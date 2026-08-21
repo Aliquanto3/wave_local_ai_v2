@@ -409,3 +409,31 @@ def test_main_exits_one_when_the_results_path_cannot_be_written(
 
     assert exit_info.value.code == 1
     assert "error: [Errno 30] Read-only file system" in capsys.readouterr().err
+
+
+def test_a_cloud_failure_leaves_the_local_rows_on_disk(stubbed_run) -> None:
+    quality_results_path, started = stubbed_run
+    started["complete_prompt"].side_effect = MistralRequestError("429 rate limited")
+
+    with pytest.raises(MistralRequestError):
+        quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    assert len(rows) == len(CLASSIFICATION_TASK_SUITE)
+    assert {row["provider"] for row in rows} == {"local"}
+    assert len({row["run_id"] for row in rows}) == 1
+
+
+def test_local_rows_are_written_before_the_first_cloud_call(stubbed_run) -> None:
+    quality_results_path, started = stubbed_run
+    rows_at_first_cloud_call: list[int] = []
+
+    def record_then_answer(*args: object, **kwargs: object) -> str:
+        rows_at_first_cloud_call.append(len(read_rows(quality_results_path)))
+        return "billing"
+
+    started["complete_prompt"].side_effect = record_then_answer
+
+    quality_cli._run()
+
+    assert rows_at_first_cloud_call[0] == len(CLASSIFICATION_TASK_SUITE)

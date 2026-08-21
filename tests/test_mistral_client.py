@@ -172,3 +172,20 @@ def test_check_model_available_raises_on_a_catalog_without_a_data_list() -> None
             pytest.raises(MistralRequestError),
         ):
             check_model_available("fake-key")
+
+
+def test_complete_prompt_rejects_a_null_content() -> None:
+    # Mistral returns content null on tool-call and refusal finish reasons.
+    # Reaching normalize_label with it would raise AttributeError, outside the
+    # CLI's except tuple, as a raw traceback.
+    with (
+        patch(
+            "wave_local_ai_v2.mistral_client.requests.post",
+            return_value=MagicMock(
+                status_code=200,
+                json=lambda: {"choices": [{"message": {"content": None}}]},
+            ),
+        ),
+        pytest.raises(MistralRequestError, match="unexpected Mistral content"),
+    ):
+        complete_prompt("x", "key", temperature=0, random_seed=1)

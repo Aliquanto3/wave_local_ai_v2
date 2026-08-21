@@ -79,11 +79,17 @@ def complete_prompt(
 
     response_json: dict[str, Any] = response.json()
     try:
-        content: str = response_json["choices"][0]["message"]["content"]
+        content: Any = response_json["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:
         raise MistralRequestError(
             f"unexpected Mistral response shape: {response_json!r}"
         ) from exc
+    if not isinstance(content, str):
+        # Mistral returns content null on tool-call and refusal finish reasons.
+        # A present-but-non-text content (null, object) would only fail further
+        # down in normalize_label, as an uncaught AttributeError. Same rule and
+        # same wording as the local path's guard in quality_cli.
+        raise MistralRequestError(f"unexpected Mistral content type: {content!r}")
     return content
 
 

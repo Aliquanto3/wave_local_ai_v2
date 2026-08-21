@@ -88,10 +88,9 @@ def _run() -> None:
     run_id = new_run_id()
     # Every pre-condition is checked before the (expensive) local suite runs,
     # cheapest first: the two offline ones cost nothing, and the catalog call is
-    # the only one that needs the network. A run that cannot finish therefore
-    # costs no llama-server lifecycle, and nothing is lost by failing here --
-    # _score_and_write runs only after both suites return, so a failure further
-    # down already discarded the local completions and wrote zero rows.
+    # the only one that needs the network. The order still matters even though a
+    # cloud failure no longer discards the local rows: it avoids paying for a
+    # multi-minute local run that could never have been completed anyway.
     if not settings.mistral_api_key:
         raise SettingsError("MISTRAL_API_KEY is not set")
     model_path = _local_model_path(settings)
@@ -102,8 +101,10 @@ def _run() -> None:
         print(deprecation_notice, file=sys.stderr)
 
     local_completions = _run_local_suite(settings, model_path)
-    cloud_completions = _run_cloud_suite(settings)
-
+    # Persisted before the cloud suite starts: a 429, a dropped connection or a
+    # malformed body would otherwise throw away the multi-minute local run and
+    # write zero rows. Both batches share one run_id, so a partial run is still
+    # recognizable as one session.
     _score_and_write(
         settings,
         run_id=run_id,
@@ -112,6 +113,8 @@ def _run() -> None:
         completions=local_completions,
         sampling=LOCAL_SAMPLING,
     )
+
+    cloud_completions = _run_cloud_suite(settings)
     _score_and_write(
         settings,
         run_id=run_id,
