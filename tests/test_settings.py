@@ -5,6 +5,7 @@ import pytest
 import wave_local_ai_v2.settings as settings_module
 from wave_local_ai_v2.settings import (
     DEFAULT_QUALITY_RESULTS_PATH,
+    Settings,
     SettingsError,
     load_settings,
 )
@@ -77,3 +78,18 @@ def test_load_settings_raises_when_path_does_not_exist(
 
     with pytest.raises(SettingsError):
         load_settings()
+
+
+def test_repr_omits_the_mistral_api_key_but_attribute_access_keeps_it(
+    tmp_path: Path,
+) -> None:
+    secret = "secret-value"  # pragma: allowlist secret
+    settings = Settings(
+        slm_models_dir=tmp_path,
+        llama_server_path=tmp_path / "llama-server.exe",
+        results_path=tmp_path / "runtime.jsonl",
+        mistral_api_key=secret,
+    )
+
+    assert secret not in repr(settings)
+    assert settings.mistral_api_key == secret

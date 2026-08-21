@@ -18,7 +18,7 @@ import requests
 from wave_local_ai_v2 import mistral_client, server
 from wave_local_ai_v2.classification_suite import CLASSIFICATION_TASK_SUITE
 from wave_local_ai_v2.mistral_client import MistralRequestError
-from wave_local_ai_v2.results import append_row
+from wave_local_ai_v2.results import append_row, captured_at, new_run_id
 from wave_local_ai_v2.scoring import score_item, score_suite
 from wave_local_ai_v2.settings import Settings, SettingsError, load_settings
 
@@ -70,7 +70,9 @@ def main() -> None:
     except (
         SettingsError,
         server.ServerStartupError,
-        requests.RequestException,
+        # requests.RequestException subclasses OSError, so every HTTP failure is
+        # still caught here and the disk failures append_row can raise now are too.
+        OSError,
         MistralRequestError,
         LocalCompletionError,
     ) as exc:
@@ -80,6 +82,10 @@ def main() -> None:
 
 def _run() -> None:
     settings = load_settings()
+    # One id for the whole invocation: the local and cloud batches are two
+    # halves of one comparison, and a reader must be able to tell which local
+    # rows a given cloud row was scored against.
+    run_id = new_run_id()
     # Every pre-condition is checked before the (expensive) local suite runs,
     # cheapest first: the two offline ones cost nothing, and the catalog call is
     # the only one that needs the network. A run that cannot finish therefore
@@ -100,6 +106,7 @@ def _run() -> None:
 
     _score_and_write(
         settings,
+        run_id=run_id,
         model_id=LOCAL_MODEL_ID,
         provider="local",
         completions=local_completions,
@@ -107,6 +114,7 @@ def _run() -> None:
     )
     _score_and_write(
         settings,
+        run_id=run_id,
         model_id=mistral_client.MODEL,
         provider="mistral",
         completions=cloud_completions,
@@ -171,6 +179,7 @@ def _run_cloud_suite(settings: Settings) -> list[str]:
 def _score_and_write(
     settings: Settings,
     *,
+    run_id: str,
     model_id: str,
     provider: str,
     completions: list[str],
@@ -184,6 +193,8 @@ def _score_and_write(
 
     for item, scored in zip(CLASSIFICATION_TASK_SUITE, scored_items, strict=True):
         row = {
+            "run_id": run_id,
+            "captured_at": captured_at(),
             "model_id": model_id,
             "provider": provider,
             "task_suite": "classification",

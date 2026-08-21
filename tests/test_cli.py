@@ -1,9 +1,10 @@
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
 
-from wave_local_ai_v2 import FIXED_MAX_TOKENS, FIXED_PROMPT, _run
+from wave_local_ai_v2 import FIXED_MAX_TOKENS, FIXED_PROMPT, _run, main
 from wave_local_ai_v2.results import read_rows
 from wave_local_ai_v2.settings import Settings
 
@@ -190,3 +191,43 @@ def test_run_sends_the_fixed_prompt_and_max_tokens_exactly_once(stubbed_run) -> 
     body = started["post"].call_args.kwargs["json"]
     assert body["prompt"] == FIXED_PROMPT
     assert body["n_predict"] == FIXED_MAX_TOKENS
+
+
+def test_run_stamps_the_row_with_run_provenance(stubbed_run) -> None:
+    results_path, _ = stubbed_run
+
+    _run()
+
+    row = read_rows(results_path)[0]
+    assert row["run_id"]
+    parsed = datetime.fromisoformat(row["captured_at"])
+    assert parsed.utcoffset() == timedelta(0)
+
+
+def test_two_runs_carry_two_distinct_run_ids(stubbed_run) -> None:
+    results_path, _ = stubbed_run
+
+    _run()
+    _run()
+
+    run_ids = {row["run_id"] for row in read_rows(results_path)}
+    assert len(run_ids) == 2
+
+
+def test_main_exits_one_when_the_results_path_cannot_be_written(
+    stubbed_run, capsys
+) -> None:
+    # An unwritable or absent results drive surfaces from append_row as OSError,
+    # after the measurement already succeeded; the operator gets a line, not a
+    # traceback.
+    with (
+        patch(
+            "wave_local_ai_v2.append_row",
+            side_effect=OSError("[Errno 30] Read-only file system"),
+        ),
+        pytest.raises(SystemExit) as exit_info,
+    ):
+        main()
+
+    assert exit_info.value.code == 1
+    assert "error: [Errno 30] Read-only file system" in capsys.readouterr().err

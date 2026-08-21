@@ -1,4 +1,5 @@
 import dataclasses
+from datetime import datetime, timedelta
 from unittest.mock import DEFAULT, MagicMock, patch
 
 import pytest
@@ -367,3 +368,44 @@ def test_main_exits_1_when_the_model_id_is_gone(stubbed_run, capsys) -> None:
 
     assert exit_info.value.code == 1
     assert "mistral-small-9999" in capsys.readouterr().err
+
+
+def test_all_rows_of_one_run_share_one_run_id(stubbed_run) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    assert len(rows) == 2 * len(CLASSIFICATION_TASK_SUITE)
+    assert len({row["run_id"] for row in rows}) == 1
+    for row in rows:
+        parsed = datetime.fromisoformat(row["captured_at"])
+        assert parsed.utcoffset() == timedelta(0)
+    assert RUNTIME_ONLY_FIELDS.isdisjoint(rows[0].keys())
+
+
+def test_two_runs_carry_two_distinct_run_ids(stubbed_run) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+    quality_cli._run()
+
+    assert len({row["run_id"] for row in read_rows(quality_results_path)}) == 2
+
+
+def test_main_exits_one_when_the_results_path_cannot_be_written(
+    stubbed_run, capsys
+) -> None:
+    # An unwritable or absent results drive surfaces from append_row as OSError,
+    # after both suites already ran; the operator gets a line, not a traceback.
+    with (
+        patch(
+            "wave_local_ai_v2.quality_cli.append_row",
+            side_effect=OSError("[Errno 30] Read-only file system"),
+        ),
+        pytest.raises(SystemExit) as exit_info,
+    ):
+        quality_cli.main()
+
+    assert exit_info.value.code == 1
+    assert "error: [Errno 30] Read-only file system" in capsys.readouterr().err

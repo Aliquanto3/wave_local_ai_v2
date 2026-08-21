@@ -3,8 +3,29 @@
 from __future__ import annotations
 
 import json
+import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+
+def new_run_id() -> str:
+    """Return a fresh identifier for one CLI invocation.
+
+    Every row a run writes carries this id, so the rows of one session can be
+    selected back out of an append-only store. Without it two runs of the same
+    model against the same store are indistinguishable.
+    """
+    return uuid.uuid4().hex
+
+
+def captured_at() -> str:
+    """Return the current UTC instant as an ISO-8601 string.
+
+    Paired with `new_run_id`: the id says which run wrote a row, this says when.
+    UTC, not local time, so rows written on two machines stay orderable.
+    """
+    return datetime.now(UTC).isoformat()
 
 
 def append_row(path: Path, row: dict[str, Any]) -> None:

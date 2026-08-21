@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -24,7 +24,9 @@ class Settings:
     llama_server_path: Path
     results_path: Path
     quality_results_path: Path = Path(DEFAULT_QUALITY_RESULTS_PATH)
-    mistral_api_key: str = ""
+    # repr=False: a traceback frame, a pytest assertion diff or a logged
+    # Settings must not carry the credential. Attribute access is unaffected.
+    mistral_api_key: str = field(default="", repr=False)
 
 
 def load_settings() -> Settings:

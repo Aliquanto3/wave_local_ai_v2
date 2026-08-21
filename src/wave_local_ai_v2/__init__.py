@@ -13,7 +13,7 @@ from wave_local_ai_v2 import server
 from wave_local_ai_v2.energy import measure_energy
 from wave_local_ai_v2.gpu import read_gpu_stats
 from wave_local_ai_v2.hardware import capture_fiche
-from wave_local_ai_v2.results import append_row
+from wave_local_ai_v2.results import append_row, captured_at, new_run_id
 from wave_local_ai_v2.settings import SettingsError, load_settings
 from wave_local_ai_v2.timings import (
     MissingTimingsError,
@@ -157,7 +157,9 @@ def main() -> None:
     except (
         SettingsError,
         server.ServerStartupError,
-        requests.RequestException,
+        # requests.RequestException subclasses OSError, so every HTTP failure is
+        # still caught here and the disk failures append_row can raise now are too.
+        OSError,
         MissingTimingsError,
     ) as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -166,6 +168,7 @@ def main() -> None:
 
 def _run() -> None:
     settings = load_settings()
+    run_id = new_run_id()
     fiche = capture_fiche()
 
     model_path = settings.slm_models_dir / MODEL_RELATIVE_PATH
@@ -213,6 +216,8 @@ def _run() -> None:
         rss_bytes = read_process_rss(process.pid)
 
     row: dict[str, Any] = {
+        "run_id": run_id,
+        "captured_at": captured_at(),
         **fiche,
         "llama_cpp_build": LLAMA_CPP_BUILD,
         "model_file": MODEL_RELATIVE_PATH.name,
