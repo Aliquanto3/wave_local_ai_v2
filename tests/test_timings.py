@@ -1,3 +1,6 @@
+from unittest.mock import patch
+
+import psutil
 import pytest
 
 from wave_local_ai_v2.timings import (
@@ -44,3 +47,19 @@ def test_read_process_rss_returns_positive_integer() -> None:
 
     assert isinstance(rss, int)
     assert rss > 0
+
+
+def test_read_process_rss_returns_none_when_the_process_is_gone() -> None:
+    with patch(
+        "wave_local_ai_v2.timings.psutil.Process",
+        side_effect=psutil.NoSuchProcess(pid=1234),
+    ):
+        assert read_process_rss(1234) is None
+
+
+def test_read_process_rss_returns_none_when_access_is_denied() -> None:
+    with patch(
+        "wave_local_ai_v2.timings.psutil.Process",
+        side_effect=psutil.AccessDenied(pid=1234),
+    ):
+        assert read_process_rss(1234) is None

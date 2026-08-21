@@ -1,5 +1,7 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from wave_local_ai_v2.energy import measure_energy
 
 
@@ -42,3 +44,32 @@ def test_measure_energy_falls_back_to_unavailable_on_tracker_init_failure() -> N
     assert result == "done"
     assert energy["energy_kwh"] is None
     assert energy["energy_method"] == "unavailable"
+
+
+def test_measure_energy_keeps_the_result_when_the_tracker_fails_to_stop() -> None:
+    fake_tracker = MagicMock()
+    fake_tracker.stop.side_effect = RuntimeError("teardown boom")
+    fake_tracker.final_emissions_data = _fake_emissions_data(gpu_energy=0.0005)
+
+    with patch("codecarbon.EmissionsTracker", return_value=fake_tracker):
+        result, energy = measure_energy(lambda: "done")
+
+    assert result == "done"
+    assert energy["energy_kwh"] is None
+    # Not the partial figure sitting in final_emissions_data: a tracker that
+    # failed to stop has no trustworthy total.
+    assert energy["energy_method"] == "unavailable"
+
+
+def test_measure_energy_propagates_the_measured_functions_exception() -> None:
+    fake_tracker = MagicMock()
+    fake_tracker.stop.side_effect = RuntimeError("teardown boom")
+
+    def failing() -> str:
+        raise ValueError("the request failed")
+
+    with (
+        patch("codecarbon.EmissionsTracker", return_value=fake_tracker),
+        pytest.raises(ValueError, match="the request failed"),
+    ):
+        measure_energy(failing)

@@ -213,7 +213,9 @@ def _run() -> None:
 
         timings = parse_timings(response_json)
         gpu_stats = read_gpu_stats()
-        rss_bytes = read_process_rss(process.pid)
+        # None when the server exited or the OS denied the read: the row is
+        # still written, with the column null rather than the run aborted.
+        rss_bytes: int | None = read_process_rss(process.pid)
 
     row: dict[str, Any] = {
         "run_id": run_id,

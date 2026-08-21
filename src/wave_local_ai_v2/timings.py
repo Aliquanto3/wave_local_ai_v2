@@ -42,6 +42,17 @@ def parse_timings(response_json: dict[str, Any]) -> Timings:
         raise MissingTimingsError(f"timings object is missing field {exc}") from exc
 
 
-def read_process_rss(pid: int) -> int:
-    """Return the process's resident set size in bytes."""
-    return psutil.Process(pid).memory_info().rss
+def read_process_rss(pid: int) -> int | None:
+    """Return the process's resident set size in bytes, or None if unreadable.
+
+    None means the process could not be read -- it exited between the completion
+    response and this call, or the OS denied access -- never that RSS was zero.
+    Degrading here is deliberate: by this point the measurement has already
+    succeeded, and aborting the run would throw away a good row over one column.
+    `psutil.Error` is the base of both `NoSuchProcess` and `AccessDenied`.
+    """
+    try:
+        rss: int = psutil.Process(pid).memory_info().rss
+    except psutil.Error:
+        return None
+    return rss

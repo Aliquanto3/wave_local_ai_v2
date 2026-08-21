@@ -231,3 +231,17 @@ def test_main_exits_one_when_the_results_path_cannot_be_written(
 
     assert exit_info.value.code == 1
     assert "error: [Errno 30] Read-only file system" in capsys.readouterr().err
+
+
+def test_run_still_appends_its_row_when_the_rss_read_fails(stubbed_run) -> None:
+    results_path, started = stubbed_run
+    # The server exited between the completion response and the RSS read: the
+    # measurement already succeeded, so the row must survive with a null column.
+    started["rss"].return_value = None
+
+    _run()
+
+    rows = read_rows(results_path)
+    assert len(rows) == 1
+    assert rows[0]["process_rss_bytes"] is None
+    assert rows[0]["gen_tok_per_s"] == 26.0
