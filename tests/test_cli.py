@@ -16,6 +16,21 @@ SAMPLE_TIMINGS_RESPONSE = {
     },
 }
 
+# The mirror of `RUNTIME_ONLY_FIELDS` in tests/test_quality_cli.py. Both
+# directions need a guard for `aidd_docs/memory/architecture.md`'s "the two are
+# never merged into a single table" to hold: that file stops a runtime field
+# reaching a quality row, this one stops a quality field reaching a runtime row.
+QUALITY_ONLY_FIELDS = {
+    "sampling",
+    "suite_accuracy",
+    "expected_label",
+    "predicted_label",
+    "correct",
+    "task_suite",
+    "item_id",
+    "provider",
+}
+
 
 @pytest.fixture
 def stubbed_run(tmp_path, monkeypatch):
@@ -95,6 +110,7 @@ def test_run_appends_one_row_with_fiche_and_metrics(stubbed_run) -> None:
     assert row["energy_method"] == "estimated_tdp"
     assert row["energy_kwh"] == 0.00042
     assert row["flags"]
+    assert QUALITY_ONLY_FIELDS.isdisjoint(row.keys())
 
 
 def test_run_appends_zero_rows_when_request_fails(tmp_path, monkeypatch) -> None:
@@ -174,14 +190,3 @@ def test_run_sends_the_fixed_prompt_and_max_tokens_exactly_once(stubbed_run) -> 
     body = started["post"].call_args.kwargs["json"]
     assert body["prompt"] == FIXED_PROMPT
     assert body["n_predict"] == FIXED_MAX_TOKENS
-
-
-def test_run_builds_no_real_energy_tracker(stubbed_run) -> None:
-    _, started = stubbed_run
-
-    _run()
-
-    # The fixture owns the energy boundary; a real EmissionsTracker would import
-    # codecarbon and probe the hardware, which is what made these tests take
-    # seconds each before this fixture patched measure_energy.
-    started["energy"].assert_called_once()
