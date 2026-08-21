@@ -97,6 +97,12 @@ def _run_local_suite(settings: Settings) -> list[str]:
                 raise LocalCompletionError(
                     f"unexpected /completion response shape: {response_json!r}"
                 ) from exc
+            if not isinstance(content, str):
+                # A present-but-non-text content (null, object) would only fail
+                # further down in normalize_label, as an uncaught AttributeError.
+                raise LocalCompletionError(
+                    f"unexpected /completion content type: {content!r}"
+                )
             completions.append(content)
 
     return completions
