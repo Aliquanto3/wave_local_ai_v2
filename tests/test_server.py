@@ -1,3 +1,5 @@
+import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -86,7 +88,14 @@ def test_stop_server_terminates_running_process() -> None:
 
     server.stop_server(fake_process)
 
-    assert fake_process.send_signal.called or fake_process.terminate.called
+    # Name the expected call for this platform: an `or` across both branches
+    # passes either way and would not catch the two being swapped.
+    if sys.platform == "win32":
+        fake_process.send_signal.assert_called_once()
+        fake_process.terminate.assert_not_called()
+    else:
+        fake_process.terminate.assert_called_once()
+        fake_process.send_signal.assert_not_called()
     fake_process.wait.assert_called()
 
 
@@ -112,3 +121,36 @@ def test_running_server_stops_on_exception() -> None:
         raise ValueError("boom")
 
     mock_stop.assert_called_once_with(fake_process)
+
+
+def test_stop_server_kills_process_that_ignores_the_grace_period() -> None:
+    fake_process = MagicMock()
+    fake_process.poll.return_value = None
+    fake_process.wait.side_effect = [
+        subprocess.TimeoutExpired(cmd="llama-server", timeout=server.SHUTDOWN_GRACE_S),
+        0,
+    ]
+
+    server.stop_server(fake_process)
+
+    fake_process.kill.assert_called_once()
+    assert fake_process.wait.call_count == 2
+
+
+def test_running_server_stops_the_process_on_normal_exit() -> None:
+    fake_process = MagicMock()
+    fake_process.poll.return_value = None
+
+    # stop_server is deliberately NOT mocked: the criterion is that leaving the
+    # block terminates the process, which a mocked stop_server cannot show.
+    with (
+        patch("wave_local_ai_v2.server.start_server", return_value=fake_process),
+        server.running_server(Path("llama-server.exe"), []) as process,
+    ):
+        assert process is fake_process
+
+    if sys.platform == "win32":
+        fake_process.send_signal.assert_called_once()
+    else:
+        fake_process.terminate.assert_called_once()
+    fake_process.wait.assert_called()
