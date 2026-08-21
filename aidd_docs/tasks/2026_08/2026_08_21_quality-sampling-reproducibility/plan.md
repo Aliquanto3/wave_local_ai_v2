@@ -1,6 +1,6 @@
 ---
 objective: "Two consecutive quality runs of the same models and prompts produce identical predicted labels and identical suite_accuracy, and every quality row records the exact sampling parameters that produced it."
-status: in-progress
+status: implemented
 ---
 
 <!-- Fill or omit these sections; never add, rename, or reorder one. -->

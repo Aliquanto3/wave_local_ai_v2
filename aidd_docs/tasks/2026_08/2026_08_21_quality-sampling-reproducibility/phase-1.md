@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: done
 ---
 
 <!-- Fill or omit these sections; never add, rename, or reorder one. -->
@@ -99,6 +99,6 @@ journey
 | 1 | Every `/completion` request the quality CLI issues carries `seed`, `temperature: 0`, `top_k: 0`, `top_p: 1.0` and `presence_penalty: 0`; deleting any one of these keys from the request body makes the assertion fail. The request body is read from the stubbed call's recorded arguments, not from a constant the test also defines. |
 | 1 | `build_flags(Path("model.gguf"))` returns the same list it returned before this phase, so `tests/test_server.py`'s exact-list comparison still passes unmodified. |
 | 2 | Every Mistral request body carries `temperature: 0` and an integer `random_seed`; removing either makes the assertion fail. Existing non-200 and missing-`choices` behavior is unchanged. |
-| 3 | `mistral_client.MODEL` is a dated model id, not a `-latest` alias, and that id is confirmed present in the live `GET /v1/models` list. Every cloud quality row records it. |
-| 4 | Two consecutive real runs of `wave-local-ai-v2-quality` produce, for each model, the same `predicted_label` for every one of the 10 items and the same `suite_accuracy`. A single differing label fails this criterion. |
-| 4 | The two runs' `suite_accuracy` figures are written into this phase file as manual evidence, naming the date and the model ids. |
+| 3 | `mistral_client.MODEL` is a dated model id, not a `-latest` alias, and that id is confirmed present in the live `GET /v1/models` list. Every cloud quality row records it. Evidence: a live `GET /v1/models` on 2026-08-21 returned HTTP 200 with 56 models, including `mistral-small-2603`. The docs models-overview page rendered this release as `mistral-small-4-0-26-03`, which is absent from the API response, so the documented string would have failed at request time; the live endpoint was treated as authoritative per this task's step 2. |
+| 4 | Two consecutive real runs of `wave-local-ai-v2-quality` produce, for each model, the same `predicted_label` for every one of the 10 items and the same `suite_accuracy`. A single differing label fails this criterion. Evidence: two runs on 2026-08-21 (21:55:11-21:56:00 and 21:56:08-21:56:53) wrote 20 rows each to `aidd_docs/results/quality.jsonl`; comparing them pairwise on `(provider, item_id)` gives 20 items compared and **0 `predicted_label` mismatches**. |
+| 4 | The two runs' `suite_accuracy` figures are written into this phase file as manual evidence, naming the date and the model ids. Evidence (2026-08-21): `Qwen3.6-35B-A3B` (local) scored `0.60` on both runs; `mistral-small-2603` (cloud) scored `1.00` on both runs. Recorded sampling blocks, local `{presence_penalty: 0, seed: 20260821, temperature: 0, top_k: 0, top_p: 1.0}` and cloud `{random_seed: 20260821, temperature: 0}`. Note for a later increment, out of this plan's scope: all four local misses are `predicted_label = None`, i.e. no label token found in the completion at `n_predict=32`, not a wrong label -- the local figure measures output format as much as classification ability. |
