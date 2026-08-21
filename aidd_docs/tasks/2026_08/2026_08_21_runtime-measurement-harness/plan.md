@@ -1,6 +1,6 @@
 ---
 objective: "One CLI command launches llama-server for Qwen3.6-35B-A3B, runs one fixed prompt, and writes one runtime row carrying every hardware-fiche field, with tok/s matching the validated baseline within +/-1.5 tok/s."
-status: in-progress
+status: implemented
 ---
 
 <!-- Fill or omit these sections; never add, rename, or reorder one. -->
