@@ -1,5 +1,6 @@
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -55,6 +56,7 @@ def test_start_server_returns_once_health_reports_ready() -> None:
     ready = MagicMock(status_code=200)
 
     with (
+        patch("wave_local_ai_v2.server._port_is_open", return_value=False),
         patch("wave_local_ai_v2.server.subprocess.Popen", return_value=fake_process),
         patch(
             "wave_local_ai_v2.server.requests.get",
@@ -73,6 +75,7 @@ def test_start_server_raises_immediately_when_process_dies() -> None:
     fake_process.returncode = 1
 
     with (
+        patch("wave_local_ai_v2.server._port_is_open", return_value=False),
         patch("wave_local_ai_v2.server.subprocess.Popen", return_value=fake_process),
         patch("wave_local_ai_v2.server.time.sleep") as mock_sleep,
         pytest.raises(server.ServerStartupError),
@@ -154,3 +157,69 @@ def test_running_server_stops_the_process_on_normal_exit() -> None:
     else:
         fake_process.terminate.assert_called_once()
     fake_process.wait.assert_called()
+
+
+def test_start_server_refuses_to_run_against_an_occupied_port() -> None:
+    with (
+        patch("wave_local_ai_v2.server._port_is_open", return_value=True),
+        patch("wave_local_ai_v2.server.subprocess.Popen") as mock_popen,
+        pytest.raises(server.ServerStartupError, match=str(server.PORT)),
+    ):
+        server.start_server(Path("llama-server.exe"), [])
+
+    # Nothing was spawned: a doomed second process would otherwise pass the
+    # readiness poll against the stale server and be measured in its place.
+    mock_popen.assert_not_called()
+
+
+def test_port_is_open_reports_false_when_nothing_listens() -> None:
+    with patch(
+        "wave_local_ai_v2.server.socket.create_connection",
+        side_effect=OSError("refused"),
+    ):
+        assert server._port_is_open("127.0.0.1", 8080) is False
+
+
+def test_running_server_prints_the_stderr_tail_before_reraising(capsys) -> None:
+    fake_process = MagicMock()
+    fake_process.poll.return_value = None
+
+    def fake_start(server_path, flags, *, stderr_sink):
+        stderr_sink.write(b"ggml_cuda: out of memory")
+        return fake_process
+
+    with (
+        patch("wave_local_ai_v2.server.start_server", side_effect=fake_start),
+        patch("wave_local_ai_v2.server.stop_server") as mock_stop,
+        pytest.raises(ValueError, match="mid-run failure"),
+        server.running_server(Path("llama-server.exe"), []),
+    ):
+        raise ValueError("mid-run failure")
+
+    captured = capsys.readouterr()
+    assert "llama-server stderr tail:" in captured.err
+    assert "ggml_cuda: out of memory" in captured.err
+    mock_stop.assert_called_once_with(fake_process)
+
+
+def test_start_server_leaves_a_supplied_stderr_sink_open() -> None:
+    # The whole point of the sink: the caller keeps reading it after the
+    # readiness wait returns, so a mid-run crash still has diagnostics.
+    fake_process = MagicMock()
+    fake_process.poll.return_value = None
+
+    with tempfile.TemporaryFile() as sink:
+        with (
+            patch("wave_local_ai_v2.server._port_is_open", return_value=False),
+            patch(
+                "wave_local_ai_v2.server.subprocess.Popen", return_value=fake_process
+            ),
+            patch(
+                "wave_local_ai_v2.server.requests.get",
+                return_value=MagicMock(status_code=200),
+            ),
+        ):
+            server.start_server(Path("llama-server.exe"), [], stderr_sink=sink)
+
+        sink.write(b"still writable")
+        assert sink.closed is False
