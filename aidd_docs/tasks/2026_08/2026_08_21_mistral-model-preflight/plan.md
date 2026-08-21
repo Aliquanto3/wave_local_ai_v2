@@ -1,6 +1,6 @@
 ---
 objective: "A rotated, removed or deprecated Mistral model id is reported before the local suite runs, so a quality run that cannot finish costs no llama-server lifecycle."
-status: in-progress
+status: implemented
 ---
 
 <!-- Fill or omit these sections; never add, rename, or reorder one. -->
