@@ -4,7 +4,7 @@ The checks that must pass for code to count as done.
 
 ## Before commit
 
-The fast gate (wired via pre-commit).
+The fast gate. Run manually — no pre-commit hook is installed (`architecture.md`).
 
 | Order | Command | Checks |
 | ----- | ------- | ------ |
