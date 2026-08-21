@@ -348,7 +348,11 @@ def test_run_surfaces_a_deprecation_notice_and_still_writes_every_row(
 
     captured = capsys.readouterr()
     assert notice in captured.err
-    assert notice not in captured.out
+    # Positively, not just "the notice is absent": stdout is what the operator
+    # parses, so any line added to it beyond the two accuracy lines must fail here.
+    accuracy_lines = captured.out.splitlines()
+    assert len(accuracy_lines) == 2
+    assert all(line.startswith("model=") for line in accuracy_lines)
     assert len(read_rows(quality_results_path)) == 2 * len(CLASSIFICATION_TASK_SUITE)
 
 

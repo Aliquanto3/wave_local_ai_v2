@@ -96,6 +96,10 @@ def check_model_available(api_key: str, model: str = MODEL) -> str | None:
     run that is currently fine, up to ten days early on the dates Mistral is
     publishing today; the caller gets a notice to surface and decides for
     itself. The returned string is a warning, never an error.
+
+    Matching is by `id` alone, never by an entry's `aliases`: a rotating alias
+    is what the dated `MODEL` exists to avoid, so an alias handed to this check
+    is reported absent rather than quietly accepted.
     """
     response = requests.get(
         MODELS_URL,
@@ -109,8 +113,11 @@ def check_model_available(api_key: str, model: str = MODEL) -> str | None:
             f"{response.status_code}: {response.text[:500]}"
         )
 
-    response_json: dict[str, Any] = response.json()
-    entries = response_json.get("data")
+    # The body is guarded as a whole, not just its `data` key: a 200 carrying a
+    # JSON array or null would make `.get` raise AttributeError, which is not in
+    # the caller's `except` tuple and would surface as a traceback.
+    response_json: Any = response.json()
+    entries = response_json.get("data") if isinstance(response_json, dict) else None
     if not isinstance(entries, list):
         raise MistralRequestError(
             f"unexpected Mistral catalog response shape: {response_json!r}"

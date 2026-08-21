@@ -4,15 +4,19 @@ import pytest
 
 from wave_local_ai_v2.mistral_client import (
     CATALOG_TIMEOUT_S,
-    CHAT_COMPLETIONS_URL,
     MODEL,
-    MODELS_URL,
     REQUEST_TIMEOUT_S,
     MistralRequestError,
     ModelUnavailableError,
     check_model_available,
     complete_prompt,
 )
+
+# The endpoints as recorded live on 2026-08-21, spelled out rather than imported:
+# comparing a recorded call argument to the module constant that produced it
+# passes for any value that constant holds, including the other endpoint's.
+EXPECTED_CHAT_COMPLETIONS_URL = "https://api.mistral.ai/v1/chat/completions"
+EXPECTED_MODELS_URL = "https://api.mistral.ai/v1/models"
 
 SAMPLING = {"temperature": 0, "random_seed": 20260821}
 
@@ -28,7 +32,7 @@ def test_complete_prompt_returns_content_and_sends_expected_request() -> None:
 
     assert result == "billing"
     args, kwargs = post.call_args
-    assert args[0] == CHAT_COMPLETIONS_URL
+    assert args[0] == EXPECTED_CHAT_COMPLETIONS_URL
     assert kwargs["headers"]["Authorization"] == "Bearer fake-key"
     assert kwargs["json"]["model"] == MODEL
     assert kwargs["json"]["messages"] == [{"role": "user", "content": "classify this"}]
@@ -111,7 +115,7 @@ def test_check_model_available_returns_no_notice_for_a_current_model() -> None:
 
     assert get.call_count == 1
     args, kwargs = get.call_args
-    assert args[0] == MODELS_URL
+    assert args[0] == EXPECTED_MODELS_URL
     assert kwargs["headers"]["Authorization"] == "Bearer fake-key"
     assert kwargs["timeout"] == CATALOG_TIMEOUT_S
     assert CATALOG_TIMEOUT_S < REQUEST_TIMEOUT_S
@@ -139,12 +143,10 @@ def test_check_model_available_raises_when_the_id_is_absent() -> None:
 
 def test_model_unavailable_is_caught_by_the_existing_handler() -> None:
     # quality_cli.main already excepts MistralRequestError; the subclass keeps
-    # that handler correct without widening it.
-    with (
-        _patch_catalog(_catalog(CURRENT_ENTRY)),
-        pytest.raises(MistralRequestError),
-    ):
-        check_model_available("fake-key", model="mistral-tiny-9999")
+    # that handler correct without widening it. Stated directly rather than
+    # re-run through a mocked catalog: the absent-id test above already covers
+    # that path, and the class statement is the whole of this contract.
+    assert issubclass(ModelUnavailableError, MistralRequestError)
 
 
 def test_check_model_available_raises_on_non_200_status() -> None:
@@ -162,7 +164,9 @@ def test_check_model_available_raises_on_non_200_status() -> None:
 
 
 def test_check_model_available_raises_on_a_catalog_without_a_data_list() -> None:
-    for body in ({"object": "list"}, {"object": "list", "data": "not-a-list"}):
+    # The bare list stands for a body that is not a mapping at all, where the
+    # `data` lookup itself would raise AttributeError instead of MistralRequestError.
+    for body in ({"object": "list"}, {"object": "list", "data": "not-a-list"}, []):
         with (
             _patch_catalog(body),
             pytest.raises(MistralRequestError),

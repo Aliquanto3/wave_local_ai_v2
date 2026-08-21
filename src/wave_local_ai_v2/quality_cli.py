@@ -80,21 +80,22 @@ def main() -> None:
 
 def _run() -> None:
     settings = load_settings()
-    # Both cloud pre-conditions are checked before the (expensive) local suite
-    # runs, not just before the cloud loop, so a run that cannot finish costs no
-    # llama-server lifecycle. Nothing is lost by failing here: _score_and_write
-    # runs only after both suites return, so a cloud-side failure already
-    # discarded the local completions and wrote zero rows.
+    # Every pre-condition is checked before the (expensive) local suite runs,
+    # cheapest first: the two offline ones cost nothing, and the catalog call is
+    # the only one that needs the network. A run that cannot finish therefore
+    # costs no llama-server lifecycle, and nothing is lost by failing here --
+    # _score_and_write runs only after both suites return, so a failure further
+    # down already discarded the local completions and wrote zero rows.
     if not settings.mistral_api_key:
-        # First, and offline: an unset key needs no network round trip to reject.
         raise SettingsError("MISTRAL_API_KEY is not set")
+    model_path = _local_model_path(settings)
     deprecation_notice = mistral_client.check_model_available(settings.mistral_api_key)
     if deprecation_notice:
         # A retirement date is news, not a failure: the model still answers until
         # then. stderr keeps stdout to the accuracy lines the operator parses.
         print(deprecation_notice, file=sys.stderr)
 
-    local_completions = _run_local_suite(settings)
+    local_completions = _run_local_suite(settings, model_path)
     cloud_completions = _run_cloud_suite(settings)
 
     _score_and_write(
@@ -113,11 +114,15 @@ def _run() -> None:
     )
 
 
-def _run_local_suite(settings: Settings) -> list[str]:
+def _local_model_path(settings: Settings) -> Path:
+    """Resolve the local GGUF, or raise: a missing file must cost no network call."""
     model_path = settings.slm_models_dir / MODEL_RELATIVE_PATH
     if not model_path.exists():
         raise SettingsError(f"model file not found: {model_path}")
+    return model_path
 
+
+def _run_local_suite(settings: Settings, model_path: Path) -> list[str]:
     flags = server.build_flags(model_path)
     completions: list[str] = []
 
