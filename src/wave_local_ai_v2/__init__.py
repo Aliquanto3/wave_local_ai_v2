@@ -158,7 +158,10 @@ def main() -> None:
         SettingsError,
         server.ServerStartupError,
         # requests.RequestException subclasses OSError, so every HTTP failure is
-        # still caught here and the disk failures append_row can raise now are too.
+        # still caught here and the disk failures append_row can raise now are
+        # too. The widening is deliberate and covers the whole run: any OS-level
+        # failure (an absent llama-server binary, a denied read) is an operator
+        # problem and belongs on stderr as one line, not as a traceback.
         OSError,
         MissingTimingsError,
     ) as exc:

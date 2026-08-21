@@ -10,7 +10,12 @@ per `aidd_docs/memory/architecture.md`.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TypedDict
+from typing import TYPE_CHECKING, TypedDict
+
+if TYPE_CHECKING:
+    # Type-only: the runtime import stays inside `measure_energy`, where it is
+    # allowed to fail without taking the module down.
+    from codecarbon import EmissionsTracker
 
 
 class EnergyResult(TypedDict):
@@ -50,7 +55,7 @@ def measure_energy[T](fn: Callable[[], T]) -> tuple[T, EnergyResult]:
     return result, EnergyResult(energy_kwh=data.energy_consumed, energy_method=method)
 
 
-def _stop_tracker(tracker: object) -> bool:
+def _stop_tracker(tracker: EmissionsTracker) -> bool:
     """Stop the tracker, reporting success. Never raises.
 
     Called from a `finally`: anything escaping here would mask the measured
@@ -58,7 +63,7 @@ def _stop_tracker(tracker: object) -> bool:
     succeeded.
     """
     try:
-        tracker.stop()  # type: ignore[attr-defined]
+        tracker.stop()
     except Exception:  # noqa: BLE001 - teardown must never break a finished run
         return False
     return True

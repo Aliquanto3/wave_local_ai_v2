@@ -182,7 +182,9 @@ def running_server(
         process = start_server(server_path, flags, stderr_sink=stderr_file)
         try:
             yield process
-        except BaseException:
+        except Exception:
+            # Exception, not BaseException: a Ctrl+C is the operator ending the
+            # run, not the server failing, and does not warrant a stderr dump.
             # Diagnostics only: the body's exception is re-raised untouched.
             print("llama-server stderr tail:", file=sys.stderr)
             print(_read_stderr_tail(stderr_file), file=sys.stderr)

@@ -396,8 +396,9 @@ def test_two_runs_carry_two_distinct_run_ids(stubbed_run) -> None:
 def test_main_exits_one_when_the_results_path_cannot_be_written(
     stubbed_run, capsys
 ) -> None:
-    # An unwritable or absent results drive surfaces from append_row as OSError,
-    # after both suites already ran; the operator gets a line, not a traceback.
+    # An unwritable or absent results drive surfaces from append_row as OSError.
+    # Since the local batch is persisted first, it raises on the first local row,
+    # before the cloud suite runs; the operator gets a line, not a traceback.
     with (
         patch(
             "wave_local_ai_v2.quality_cli.append_row",
