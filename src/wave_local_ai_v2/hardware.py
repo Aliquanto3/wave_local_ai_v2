@@ -9,6 +9,8 @@ from __future__ import annotations
 import platform
 from typing import TypedDict
 
+from wave_local_ai_v2.nvml import decode_nvml_str, nvml_device
+
 
 class HardwareFiche(TypedDict):
     cpu: str
@@ -46,19 +48,11 @@ def _capture_gpu_fields() -> tuple[str | None, str | None, str | None]:
     try:
         import pynvml
 
-        pynvml.nvmlInit()
-        try:
-            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-            name = pynvml.nvmlDeviceGetName(handle)
-            if isinstance(name, bytes):
-                name = name.decode()
-            driver_version = pynvml.nvmlSystemGetDriverVersion()
-            if isinstance(driver_version, bytes):
-                driver_version = driver_version.decode()
+        with nvml_device(0) as handle:
+            name = decode_nvml_str(pynvml.nvmlDeviceGetName(handle))
+            driver_version = decode_nvml_str(pynvml.nvmlSystemGetDriverVersion())
             cuda_version = pynvml.nvmlSystemGetCudaDriverVersion()
             cuda_ceiling = f"{cuda_version // 1000}.{(cuda_version % 1000) // 10}"
             return name, driver_version, cuda_ceiling
-        finally:
-            pynvml.nvmlShutdown()
     except Exception:  # noqa: BLE001 - best-effort capture, must never crash the run
         return None, None, None

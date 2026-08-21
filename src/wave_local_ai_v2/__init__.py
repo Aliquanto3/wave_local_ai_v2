@@ -176,6 +176,22 @@ def _run() -> None:
 
     with server.running_server(settings.llama_server_path, flags) as process:
 
+        # A streamed request was tried here to get an independent wall-clock TTFT
+        # (phase-4 task 1.2) from the time of the first received SSE chunk, then
+        # reverted: gen_tok_per_s dropped from ~26 to ~17-18 tok/s right after
+        # switching to streaming, consistent with llama-server counting each SSE
+        # chunk's HTTP flush inside its own reported generation timings -- but this
+        # machine's GPU independently hit sw_thermal_slowdown (confirmed via
+        # `nvidia-smi --query-gpu=clocks_event_reasons...`) around the same point in
+        # the session, after ~50 minutes of repeated real runs, so streaming-caused-it
+        # is plausible but NOT cleanly proven; re-testing needs the GPU to cool down
+        # first. Separately, a discarded warm-up request tried before this one was
+        # rejected on unconfounded evidence: it leaked context into the measured
+        # request's single -np 1 slot and collapsed gen_tok_per_s from 26 to 11.8.
+        # Given that risk is real regardless of the streaming confound, this harness
+        # keeps `ttft_ms` server-reported only, uncorroborated by an independent
+        # measurement, rather than retry a fix with a demonstrated way to contaminate
+        # the metric it must not break.
         def send_request() -> dict[str, Any]:
             response = requests.post(
                 f"http://{server.HOST}:{server.PORT}/completion",
