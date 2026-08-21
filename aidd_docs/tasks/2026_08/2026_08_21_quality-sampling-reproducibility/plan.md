@@ -1,6 +1,6 @@
 ---
 objective: "Two consecutive quality runs of the same models and prompts produce identical predicted labels and identical suite_accuracy, and every quality row records the exact sampling parameters that produced it."
-status: blocked
+status: in-progress
 ---
 
 <!-- Fill or omit these sections; never add, rename, or reorder one. -->
@@ -29,7 +29,7 @@ status: blocked
 | `https://raw.githubusercontent.com/ggml-org/llama.cpp/master/tools/server/README.md` | `POST /completion` accepts per-request `seed` (default `-1`, random), `temperature` (default `0.80`), `top_k` (default `40`), `top_p` (default `0.95`), `presence_penalty` (default `0.00`). Per-request values override the server's command-line defaults. This is what makes the fix possible without touching `build_flags`. |
 | `https://docs.mistral.ai/api/` | `POST /v1/chat/completions` accepts `temperature` (`number\|null`) and `random_seed` (`integer\|null`) — "The seed to use for random sampling. If set, different calls will generate deterministic results." The field is `random_seed`, not `seed`. |
 | `llama-server.exe --help` (build b10537, the binary at `LLAMA_SERVER_PATH`) | Confirms `-s, --seed SEED` and `--temp, --temperature N` exist as server flags on this exact build. Recorded because it rules out a build-specific gap, not because the plan uses the flags. |
-| `https://docs.mistral.ai/getting-started/models/models_overview/` | Dated Mistral Small ids and their deprecation dates. As of 2026-08-21 the active release is `mistral-small-4-0-26-03` (v26.03); `mistral-small-2409`, `-2501`, `-2503` and `-2506` are all past their deprecation dates. The page does not state which id `mistral-small-latest` currently resolves to, which is itself the reason the alias cannot back a reproducibility claim. |
+| `https://docs.mistral.ai/getting-started/models/models_overview/` | Dated Mistral Small ids and their deprecation dates. This page rendered the current id as `mistral-small-4-0-26-03`, which **does not exist on the API**. A live `GET /v1/models` on 2026-08-21 returned `mistral-small-2603` instead. The live endpoint is authoritative; this row is kept as the record of why docs alone were not enough. |
 
 ## Decisions
 

@@ -63,3 +63,10 @@ def test_complete_prompt_pins_temperature_and_random_seed_in_the_request() -> No
     body = post.call_args.kwargs["json"]
     assert body["temperature"] == 0
     assert body["random_seed"] == 99
+
+
+def test_model_id_is_dated_not_a_rotating_alias() -> None:
+    # An alias silently re-points at a new model, which no seed can compensate
+    # for: two runs either side of a rotation would disagree and the quality
+    # score would stop being reproducible on model + prompt + seed.
+    assert not MODEL.endswith("-latest")

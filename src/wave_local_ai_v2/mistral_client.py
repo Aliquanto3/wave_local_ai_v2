@@ -4,9 +4,16 @@ No SDK, no streaming, no retries -- `requests` only, matching this project's
 existing HTTP pattern (`server.py`). Endpoint, headers, and request/response
 shape confirmed against https://docs.mistral.ai/api/ (2026-08-21): POST
 {model, messages} with a Bearer token, response has
-choices[0].message.content. `mistral-small-latest` is Mistral's maintained
-alias for its current small-tier model, chosen over a dated model id so this
-client does not need updating every time Mistral rotates its small-tier model.
+choices[0].message.content.
+
+The model id is deliberately dated, not the `mistral-small-latest` alias.
+`architecture.md` defines a quality score as reproducible on model + prompt +
+seed: behind an alias the model silently rotates, and no seed can make two runs
+either side of a rotation agree. A dated id turns that into an explicit,
+reviewable edit. `mistral-small-2603` was read from a live `GET /v1/models`
+on 2026-08-21 -- note the docs' models-overview page rendered this id as
+`mistral-small-4-0-26-03`, which does not exist on the API, so confirm any
+replacement against the live endpoint rather than the documentation.
 """
 
 from __future__ import annotations
@@ -16,7 +23,7 @@ from typing import Any
 import requests
 
 API_URL = "https://api.mistral.ai/v1/chat/completions"
-MODEL = "mistral-small-latest"
+MODEL = "mistral-small-2603"
 REQUEST_TIMEOUT_S = 60
 
 

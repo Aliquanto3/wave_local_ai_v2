@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from wave_local_ai_v2 import quality_cli
+from wave_local_ai_v2 import mistral_client, quality_cli
 from wave_local_ai_v2.classification_suite import CLASSIFICATION_TASK_SUITE
 from wave_local_ai_v2.mistral_client import MistralRequestError
 from wave_local_ai_v2.results import read_rows
@@ -274,3 +274,17 @@ def test_every_row_records_the_sampling_that_produced_it(stubbed_run) -> None:
             assert isinstance(sampling["random_seed"], int)
             # A local block swapped in here would carry the llama-server penalties.
             assert "presence_penalty" not in sampling
+
+
+def test_cloud_rows_record_the_dated_model_id(stubbed_run) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    cloud_ids = {
+        row["model_id"]
+        for row in read_rows(quality_results_path)
+        if row["provider"] == "mistral"
+    }
+    assert cloud_ids == {mistral_client.MODEL}
+    assert not mistral_client.MODEL.endswith("-latest")
