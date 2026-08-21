@@ -1,6 +1,6 @@
 ---
 objective: "Every open warning-level finding from the PR #1 full-branch review is closed, every results row is attributable to a run, and the acceptance evidence is committed to the repository."
-status: in-progress
+status: implemented
 ---
 
 # Plan: PR #1 hardening increment
