@@ -30,6 +30,13 @@
 - **Fan out** independent subtasks to parallel subagents when you own the overall flow and the work is genuinely parallel.
 - **Before adding any instruction, finding, or rule, check whether an existing one already covers or contradicts it.** If so, don't add a parallel: delete it, merge it into the stronger one, or rewrite with explicit scope and priority.
 - **Name by intention, not mechanism:** describe the goal or responsibility, not the tool or file format.
+- **Recommend the next AIDD skill whenever relevant** (finishing a PRD/spec/plan/review, or any point where the AIDD flow has an obvious next step): name the exact skill (e.g. `aidd-pm:07-epic`), give the prompt content to pass it, and say whether to `/clear` context first (yes if the next step doesn't need this conversation's detail, no if it depends on decisions just made here).
+- **At the start of each task, recommend the most frugal model + effort combination that still has enough power for it** (Claude Code cannot switch itself — this is only ever a stated recommendation the user acts on via `/model`/`/effort`):
+  - Trivial (lookups, formatting, one-line edits): Haiku 4.5, low effort.
+  - Routine (typical coding, refactors, reviews, most of this project's day-to-day work): Sonnet 5, medium effort.
+  - Complex (multi-file design, ambiguous tradeoffs, long agentic/planning work): Opus 5, high or xhigh effort.
+  - Frontier-only (rare; the hardest reasoning or research problems): Fable 5, high or xhigh effort.
+  State the recommendation before starting, and at the end of a task, if the result fell short, say so plainly and recommend the next combination up rather than silently accepting a weak result.
 
 ## Language
 
