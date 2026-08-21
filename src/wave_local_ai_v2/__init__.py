@@ -175,7 +175,6 @@ def _run() -> None:
     flags = server.build_flags(model_path)
 
     with server.running_server(settings.llama_server_path, flags) as process:
-
         # A streamed request was tried here to get an independent wall-clock TTFT
         # (phase-4 task 1.2) from the time of the first received SSE chunk, then
         # reverted: gen_tok_per_s dropped from ~26 to ~17-18 tok/s right after

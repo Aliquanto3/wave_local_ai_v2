@@ -17,7 +17,6 @@ SAMPLE_TIMINGS_RESPONSE = {
 }
 
 
-
 @pytest.fixture
 def stubbed_run(tmp_path, monkeypatch):
     """Stub every I/O boundary main() touches: process, HTTP, GPU, energy."""
