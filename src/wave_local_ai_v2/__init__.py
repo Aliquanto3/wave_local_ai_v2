@@ -26,10 +26,18 @@ LLAMA_CPP_BUILD = "b10537"
 MODEL_RELATIVE_PATH = Path("Qwen3.6-35B-A3B") / "Qwen3.6-35B-A3B-UD-IQ4_XS.gguf"
 QUANT = "UD-IQ4_XS"
 
-# Fixed prompt sized to make prefill tok/s (baseline: ~280 tok/s, measured by llama-bench's
-# pp512 test) measurable rather than dominated by fixed per-request overhead. A short prompt
-# under-reports prefill throughput because tokenization/batch-setup overhead is a larger
-# fraction of the total; this prompt is sized to approach llama-bench's ~512-token window.
+# Fixed prompt length chosen from live measurement, not just toward llama-bench's pp512
+# window. A debug session (aidd_docs/tasks/2026_08/2026_08_21_runtime-measurement-harness/
+# debug-prefill-gap.md) found prompt_tok_per_s from a fresh, single-request llama-server
+# launch is NOT directly comparable to llama-bench's pp512 figure (measured live at
+# 314.81 +/- 5.60 tok/s with these same flags): part of the gap is per-request overhead a
+# short prompt doesn't amortize (closes with length), and part is an inherent, unavoidable
+# cold-start tax on the first request served after a fresh model load -- a warm-up request
+# tried to remove it, but bled its context into the measured request via the shared -np 1
+# slot and wrecked gen_tok_per_s (26 -> 11.8), so this harness accepts the cold-start cost
+# rather than adding slot-management complexity to hide it. At this length (~1500 tok), two
+# real runs land at 255.9/259.3 tok/s -- the harness's honest ceiling for "one fixed prompt,
+# one fresh server, one real request" (see plan.md's Decisions table for the re-scoped bar).
 FIXED_PROMPT = (
     "You are a technical writer producing internal documentation for a consulting "
     "team that advises clients on local versus cloud LLM deployment. Summarize, in "
@@ -64,7 +72,80 @@ FIXED_PROMPT = (
     "draw read directly from its driver is a real measurement. Explain why every "
     "energy figure in a client-facing report should be labeled with which of these "
     "two categories it belongs to, so a technical reviewer can weigh it correctly "
-    "rather than treating every number in the report as equally trustworthy."
+    "rather than treating every number in the report as equally trustworthy.\n\n"
+    "Now repeat the same analysis in different words, as if writing the executive "
+    "summary for a client who only wants the practical takeaways: restate the "
+    "mixture-of-experts routing tradeoff, the quantization-format tradeoff, the "
+    "hardware-fiche requirement, and the energy-measurement caveat, this time framed "
+    "as concrete recommendations a consulting team could hand to a client evaluating "
+    "whether to deploy a local model on consumer GPU hardware versus a cloud API. "
+    "Be explicit about which of the four topics matters most when VRAM is the binding "
+    "constraint, which matters most when energy reporting will be audited by a third "
+    "party, and which matters most when the client's workload is dominated by long "
+    "prompts rather than long generations, since the prefill-versus-decode balance "
+    "changes which throughput figure the client should actually care about.\n\n"
+    "Next, draft a short deployment checklist a consulting team could actually hand "
+    "to a client's infrastructure engineer before a local model goes live. Cover, in "
+    "plain English, how to size the context window against the client's real prompt "
+    "lengths rather than the model's maximum, why the number of parallel request "
+    "slots the server exposes should match the client's expected concurrent traffic "
+    "rather than a default value, why a load-mode setting that avoids paging the "
+    "model file from disk should be set explicitly rather than left to a default that "
+    "may silently fall back to memory-mapping under low-RAM conditions, and why the "
+    "sampling parameters (temperature, top-p, top-k, presence penalty) should be "
+    "pinned and version-controlled alongside the runtime flags, since a silent "
+    "sampler default change between engine versions can shift output quality without "
+    "any corresponding change in the reported throughput numbers.\n\n"
+    "Then write a short risk register for the same deployment, again in plain "
+    "English and without bullet points: the risk that a throughput number reported "
+    "without its full hardware fiche gets compared against an unrelated machine and "
+    "produces a false conclusion about model efficiency; the risk that an energy "
+    "figure labeled as measured is actually a software estimate and misleads a "
+    "sustainability report; the risk that a quantization format chosen purely for "
+    "its smaller file size degrades output quality in ways that are not visible in a "
+    "tokens-per-second benchmark at all; and the risk that a runtime validated on one "
+    "prompt length and one request pattern is silently assumed to generalize to a "
+    "very different production workload without being re-validated. For each of "
+    "these four risks, note briefly what evidence a technical reviewer should ask "
+    "for before accepting the corresponding claim in a client-facing report, so the "
+    "checklist and the risk register together give the consulting team a concrete, "
+    "auditable basis for every number they eventually hand to the client, rather "
+    "than a single headline figure presented without the context needed to judge "
+    "whether it actually applies to that client's hardware, workload, and budget.\n\n"
+    "Finally, address a question a skeptical client is likely to ask directly: why "
+    "should they trust a single consulting team's benchmark over the numbers already "
+    "published by the model's own creators or by a public leaderboard? Explain, in "
+    "plain English, that a published leaderboard number is almost always produced on "
+    "datacenter-class hardware with abundant VRAM and no CPU-offload constraints, "
+    "conditions that do not resemble a client's actual consumer-grade deployment "
+    "target, and that reproducing the benchmark on the client's own candidate "
+    "hardware, with the client's own expected prompt lengths and concurrency, is the "
+    "only way to get a number that predicts the client's real operating cost rather "
+    "than an upper bound the client's hardware will never reach. Explain further why "
+    "a benchmark run once should be treated skeptically even when it was run on the "
+    "right hardware: engine warm-up effects, thermal throttling over a sustained "
+    "session, background processes competing for the same GPU, and ordinary run-to-"
+    "run variance can each shift a single measurement by a double-digit percentage, "
+    "which is why a credible runtime report repeats the measurement, states the "
+    "spread across repetitions, and discloses the exact prompt length and request "
+    "pattern used, so a reviewer can judge whether the reported number was measured "
+    "under conditions close enough to the client's real workload to be trusted, or "
+    "whether it merely demonstrates the hardware's best case under an artificially "
+    "favorable, short-prompt, single-request test that does not resemble how the "
+    "client will actually use the system once it is deployed in production.\n\n"
+    "As a closing exercise, write out a worked example the consulting team could "
+    "reuse almost verbatim in a client deliverable: pick a hypothetical client whose "
+    "workload is dominated by long-document summarization rather than short chat "
+    "turns, walk through why that workload's prefill-to-decode token ratio makes "
+    "prompt throughput the dominant cost driver rather than generation throughput, "
+    "estimate in plain terms how the choice between two quantization formats with a "
+    "roughly ten percent memory-footprint difference would change how many "
+    "concurrent documents the client's GPU could hold in VRAM at once, and describe "
+    "how the consulting team would phrase the recommendation to the client so that "
+    "the tradeoff between fewer concurrent documents at higher fidelity and more "
+    "concurrent documents at slightly lower fidelity is presented as a business "
+    "decision the client makes deliberately, rather than a technical detail buried "
+    "in a footnote the client never reads before signing off on the deployment."
 )
 FIXED_MAX_TOKENS = 128
 REQUEST_TIMEOUT_S = 300
