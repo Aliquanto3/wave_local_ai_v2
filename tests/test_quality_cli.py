@@ -222,3 +222,55 @@ def test_run_raises_local_completion_error_when_content_is_not_text(
 
     with pytest.raises(quality_cli.LocalCompletionError):
         quality_cli._run()
+
+
+def test_every_local_completion_request_pins_the_sampler(stubbed_run) -> None:
+    _, started = stubbed_run
+
+    quality_cli._run()
+
+    assert started["post"].call_count == len(CLASSIFICATION_TASK_SUITE)
+    for call in started["post"].call_args_list:
+        body = call.kwargs["json"]
+        # Literal expectations, not a comparison against LOCAL_SAMPLING: comparing
+        # the request to the constant that built it would still pass if a key were
+        # deleted from both.
+        assert body["temperature"] == 0
+        assert body["top_k"] == 0
+        assert body["top_p"] == 1.0
+        assert body["presence_penalty"] == 0
+        assert isinstance(body["seed"], int)
+        assert body["seed"] >= 0, "-1 asks llama-server for a fresh random seed"
+
+
+def test_cloud_calls_pin_temperature_and_seed(stubbed_run) -> None:
+    _, started = stubbed_run
+
+    quality_cli._run()
+
+    for call in started["complete_prompt"].call_args_list:
+        assert call.kwargs["temperature"] == 0
+        assert isinstance(call.kwargs["random_seed"], int)
+
+
+def test_every_row_records_the_sampling_that_produced_it(stubbed_run) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    providers = {row["provider"] for row in rows}
+    assert providers == {"local", "mistral"}
+
+    for row in rows:
+        sampling = row["sampling"]
+        assert sampling["temperature"] == 0
+        if row["provider"] == "local":
+            assert sampling["seed"] >= 0
+            assert sampling["presence_penalty"] == 0
+            # A cloud block swapped in here would carry random_seed instead.
+            assert "random_seed" not in sampling
+        else:
+            assert isinstance(sampling["random_seed"], int)
+            # A local block swapped in here would carry the llama-server penalties.
+            assert "presence_penalty" not in sampling

@@ -24,15 +24,30 @@ class MistralRequestError(RuntimeError):
     """Raised on a non-200 response or an unparseable response body."""
 
 
-def complete_prompt(prompt: str, api_key: str) -> str:
-    """Send one prompt to Mistral and return the raw completion text."""
+def complete_prompt(
+    prompt: str, api_key: str, *, temperature: float, random_seed: int
+) -> str:
+    """Send one prompt to Mistral and return the raw completion text.
+
+    `temperature` and `random_seed` are required keyword arguments rather than
+    defaulted ones: a quality score is only reproducible when the sampler is
+    pinned (`architecture.md`: "quality scores are reproducible (model + prompt
+    + seed)"), so every caller has to state what it asked for instead of
+    inheriting whatever Mistral's per-model default happens to be that week.
+    Mistral names the field `random_seed`, not `seed`.
+    """
     response = requests.post(
         API_URL,
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         },
-        json={"model": MODEL, "messages": [{"role": "user", "content": prompt}]},
+        json={
+            "model": MODEL,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": temperature,
+            "random_seed": random_seed,
+        },
         timeout=REQUEST_TIMEOUT_S,
     )
 
