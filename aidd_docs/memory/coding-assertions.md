@@ -11,6 +11,7 @@ The fast gate (wired via pre-commit).
 | 1 | `uv run ruff check .` | lint |
 | 2 | `uv run ruff format --check .` | formatting |
 | 3 | `uv run mypy src/` | type checking |
+| 4 | `uv run detect-secrets-hook --baseline .secrets.baseline` | secret scanning |
 
 ## Before push
 

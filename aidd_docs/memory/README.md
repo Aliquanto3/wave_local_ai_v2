@@ -17,6 +17,14 @@ The root files load every session through the `<aidd_project_memory>` block in e
 Refreshed automatically by the memory hook. Do not edit by hand.
 
 <!-- files:start -->
+- [aidd_docs/memory/architecture.md](aidd_docs/memory/architecture.md)
+- [aidd_docs/memory/cli.md](aidd_docs/memory/cli.md)
+- [aidd_docs/memory/codebase-map.md](aidd_docs/memory/codebase-map.md)
+- [aidd_docs/memory/coding-assertions.md](aidd_docs/memory/coding-assertions.md)
+- [aidd_docs/memory/ecosystem.md](aidd_docs/memory/ecosystem.md)
+- [aidd_docs/memory/project-brief.md](aidd_docs/memory/project-brief.md)
+- [aidd_docs/memory/testing.md](aidd_docs/memory/testing.md)
+- [aidd_docs/memory/vcs.md](aidd_docs/memory/vcs.md)
 <!-- files:end -->
 
 ## Maintaining it
