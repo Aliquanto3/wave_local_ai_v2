@@ -31,6 +31,10 @@ FIXED_MAX_TOKENS = 32
 REQUEST_TIMEOUT_S = 300
 
 
+class LocalCompletionError(RuntimeError):
+    """Raised when a local llama-server /completion response has no usable content."""
+
+
 def main() -> None:
     try:
         _run()
@@ -39,6 +43,7 @@ def main() -> None:
         server.ServerStartupError,
         requests.RequestException,
         MistralRequestError,
+        LocalCompletionError,
     ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -46,6 +51,11 @@ def main() -> None:
 
 def _run() -> None:
     settings = load_settings()
+    if not settings.mistral_api_key:
+        # Check before the (expensive) local suite runs, not only before the cloud
+        # loop, so a missing key fails immediately instead of after a full
+        # llama-server lifecycle.
+        raise SettingsError("MISTRAL_API_KEY is not set")
 
     local_completions = _run_local_suite(settings)
     cloud_completions = _run_cloud_suite(settings)
@@ -81,15 +91,18 @@ def _run_local_suite(settings: Settings) -> list[str]:
             )
             response.raise_for_status()
             response_json: dict[str, Any] = response.json()
-            completions.append(response_json["content"])
+            try:
+                content = response_json["content"]
+            except (KeyError, TypeError) as exc:
+                raise LocalCompletionError(
+                    f"unexpected /completion response shape: {response_json!r}"
+                ) from exc
+            completions.append(content)
 
     return completions
 
 
 def _run_cloud_suite(settings: Settings) -> list[str]:
-    if not settings.mistral_api_key:
-        raise SettingsError("MISTRAL_API_KEY is not set")
-
     return [
         mistral_client.complete_prompt(item["prompt"], settings.mistral_api_key)
         for item in CLASSIFICATION_TASK_SUITE

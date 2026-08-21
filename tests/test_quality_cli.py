@@ -119,7 +119,7 @@ def test_cloud_call_made_once_per_item_with_the_shared_prompt(stubbed_run) -> No
     assert called_prompts == expected_prompts
 
 
-def test_run_raises_before_any_cloud_call_when_mistral_key_missing(
+def test_run_raises_before_any_local_or_cloud_call_when_mistral_key_missing(
     tmp_path,
 ) -> None:
     model_dir = tmp_path / "models"
@@ -157,7 +157,20 @@ def test_run_raises_before_any_cloud_call_when_mistral_key_missing(
         running_server.return_value.__exit__.return_value = False
         quality_cli._run()
 
+    running_server.assert_not_called()
     complete.assert_not_called()
+
+
+def test_run_raises_local_completion_error_on_malformed_response(stubbed_run) -> None:
+    _, started = stubbed_run
+    started["post"].return_value = MagicMock(
+        status_code=200,
+        json=lambda: {"no_content_here": True},
+        raise_for_status=lambda: None,
+    )
+
+    with pytest.raises(quality_cli.LocalCompletionError):
+        quality_cli._run()
 
 
 def test_run_propagates_mistral_request_error(stubbed_run) -> None:
