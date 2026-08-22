@@ -1,6 +1,6 @@
 ---
 objective: "A CI workflow runs the fast gate, coverage-gated tests, and a waiver-checked dependency audit on every push and pull request, on Ubuntu and Windows, behind one stable required check."
-status: in-progress
+status: done
 ---
 
 # Plan: Every push and pull request runs a check suite that can refuse it

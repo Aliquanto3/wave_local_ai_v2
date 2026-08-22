@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: done
 ---
 
 # Instruction: Docs and enforcement evidence
@@ -76,6 +76,15 @@ journey
 2. Fix it on the same branch, confirm the check turns green.
 3. Keep the run URLs or screenshots as the evidence this story publishes (per its "How it is verified without a GPU" section) — attach to the PR description, not committed to the repo.
 
+**Evidence (observed 2026-08-22):**
+
+| State | Run | Result |
+| ----- | --- | ------ |
+| Green | PR #10 (`ci/check-suite`), <https://github.com/Aliquanto3/wave_local_ai_v2/actions/runs/32574496872> | `test (ubuntu-latest)` success, `test (windows-latest)` success, `required` success |
+| Red | PR #11 (`ci/scratch-red`, planted unused import; PR closed and branch deleted), <https://github.com/Aliquanto3/wave_local_ai_v2/actions/runs/32574709902> | both legs failed at the `Fast gate` step on `F401 [*] \`os\` imported but unused`; `required` failed at `Check matrix result` |
+
+The red run refused the change on both operating systems for the planted defect, not incidentally, and the summary job went red with it — so branch protection on `required` alone is sufficient.
+
 ## Test acceptance criteria
 
 | Task | Acceptance criteria                                                                                                   |
@@ -83,4 +92,4 @@ journey
 | 1... | README shows a live CI badge and a working link to `docs/dependency-waivers.yml`, with a plain-language line on what blocks a merge. |
 | 2... | CONTRIBUTING.md names the required check and the matrix, without duplicating the command list.                                |
 | 3... | `grep -r "local, client-side enforcement only" aidd_docs/memory/` returns nothing; both files state CI enforcement.           |
-| 4... | A deliberately failing PR on a scratch branch is red; the same branch turns green once fixed; both states are observed, not assumed. |
+| 4... | A deliberately failing PR on a scratch branch is red; the same branch turns green once fixed; both states are observed, not assumed. **Met**: red <https://github.com/Aliquanto3/wave_local_ai_v2/actions/runs/32574709902>, green <https://github.com/Aliquanto3/wave_local_ai_v2/actions/runs/32574496872>. |
