@@ -21,3 +21,6 @@ What lands here: 🟢 review findings, never merge-blocking.
 | 2026-08-21 | full-branch-review | `.gitignore:19` | Results directory was gitignored while the acceptance evidence cited a file inside it, breaking independent reproduction. | open |
 | 2026-08-21 | full-branch-review | `aidd_docs/tasks/2026_08/2026_08_21-wave-local-ai-v2-benchmark-suite-prd.md` | Filename uses a dash instead of the sibling underscore convention and sits loose in `tasks/` instead of beside the product brief. | open |
 | 2026-08-21 | pr1-hardening | `src/wave_local_ai_v2/server.py:191` | `_read_stderr_tail` seeks the shared stderr handle while the child is still alive, risking a garbled tail on the discarded temp log. | open |
+| 2026-08-22 | fresh-machine-onboarding | `docs/setup.md:110-113` | `cp` and `copy` share one ```sh block, so a POSIX reader pasting the block gets `copy: command not found` after the copy already succeeded. | open |
+| 2026-08-22 | fresh-machine-onboarding | `docs/setup.md:23` | `git clone <this-repo-url>` leaves a placeholder in a copy-pasteable block though the remote is known (`https://github.com/Aliquanto3/wave_local_ai_v2.git`). | open |
+| 2026-08-22 | fresh-machine-onboarding | `.gitignore:12-24` | `.coverage` is a generated artifact sitting untracked in the working tree while every other generated path is ignored in the Project section. | open |
