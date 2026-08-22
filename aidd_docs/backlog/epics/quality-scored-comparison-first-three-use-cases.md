@@ -34,7 +34,7 @@ A client's engineer can rerun the classification/translation/rewriting suites ag
 | Free-tier access to ≥2 independent cloud LLM judges (Mistral, Google AI Studio) | dependency | Already assumed available per project-brief; no new risk introduced by this epic. |
 | Exact dense/MoE model roster per use case | decision | Deferred to implementation planning, not fixed at epic level — this epic's job is to produce that comparison, not pre-select the winner. |
 | Whether deterministic scoring is sufficient for classification/translation, or judge-scoring is also needed there | assumption | Assumed deterministic-first per task-suite definition in project-brief.md:20; revisit if deterministic metrics prove too coarse during build. |
-| Remaining 7 use cases' sequencing across future epics | decision | Not decided here — this epic only commits to the three named above; a separate epic-sequencing pass is needed before assuming an order for the rest. |
+| Remaining 7 use cases' sequencing across future epics | decision | Decided in `aidd_docs/backlog/epics/no-use-case-is-silently-absent.md`, which takes all seven and orders them by dependency and value; this epic still commits only to the three named above. |
 
 ## Cancellation
 
