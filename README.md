@@ -88,7 +88,9 @@ every CLI run writes to them. `runtime-reference.jsonl` /
 `quality-reference.jsonl` are the curated, committed evidence: no CLI ever
 writes to them. See
 [`aidd_docs/results/README.md`](aidd_docs/results/README.md) for what each
-file supports and how it was produced.
+file supports and how it was produced. This committed `*-reference.jsonl`
+evidence predates the first release tag — it carries no version binding and
+must not be read as evidence "for v0.1.0" or any other tag.
 
 ### Energy caveat
 
