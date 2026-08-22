@@ -17,8 +17,8 @@ repos:
         pass_filenames: false
         always_run: true
       - id: mypy
-        name: mypy src/
-        entry: uv run mypy src/
+        name: mypy src/ scripts/
+        entry: uv run mypy src/ scripts/
         language: system
         pass_filenames: false
         always_run: true

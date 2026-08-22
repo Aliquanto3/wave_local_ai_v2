@@ -19,7 +19,7 @@ the commit if any fails:
 ```sh
 uv run ruff check .
 uv run ruff format --check .
-uv run mypy src/
+uv run mypy src/ scripts/
 uv run detect-secrets-hook --baseline .secrets.baseline
 ```
 
@@ -40,6 +40,16 @@ uv run pytest
 
 Tests stub HTTP and never start `llama-server` or call a live API — `pytest`
 needs no GPU and no API key either.
+
+## Continuous Integration
+
+Triggers on every push to `main` and on every pull request. Runs on a
+`ubuntu-latest` + `windows-latest` matrix, Python 3.12, the same commands as
+the fast gate and pre-push hook above, plus the dependency audit — see
+[`aidd_docs/memory/coding-assertions.md`](aidd_docs/memory/coding-assertions.md)
+for the exact command list. Branch protection references one check name,
+`required`, that stays stable as the matrix grows; it is green only when
+every matrix leg is green.
 
 ## Severity gate
 

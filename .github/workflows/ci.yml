@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - run: uv sync --locked
+
+      - name: Fast gate (lint, format, types, secrets)
+        run: uv run pre-commit run --all-files
+
+      - name: Tests (coverage-gated)
+        run: uv run pytest
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.os }}
+          path: coverage.xml
+
+      - name: Coverage summary
+        if: always()
+        run: uv run coverage report >> "$GITHUB_STEP_SUMMARY"
+        shell: bash
+
+      - name: Dependency audit
+        run: uv run python scripts/audit_dependencies.py
+
+  required:
+    name: required
+    needs: [test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check matrix result
+        run: |
+          if [ "${{ needs.test.result }}" != "success" ]; then
+            echo "test matrix did not succeed: ${{ needs.test.result }}"
+            exit 1
+          fi
+        shell: bash

@@ -1,0 +1,17 @@
+# Dependency audit waivers.
+#
+# scripts/audit_dependencies.py blocks on any HIGH, CRITICAL, or UNKNOWN
+# severity finding from `pip-audit` unless a matching entry below waives it.
+# An entry's `expiry` must be at most 90 days after its `opened` date, and
+# must not be in the past — an expired or over-long waiver is rejected and
+# its finding blocks again.
+#
+# Fields per entry:
+#   id:      the advisory id (e.g. GHSA-xxxx or PYSEC-xxxx) the finding carries
+#   package: the package name the advisory applies to
+#   reason:  why this finding is waived
+#   opened:  YYYY-MM-DD the waiver was granted
+#   expiry:  YYYY-MM-DD the waiver lapses (opened + at most 90 days)
+#   owner:   who owns following up before expiry
+
+waivers: []

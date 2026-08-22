@@ -11,9 +11,9 @@ The macro technical shape: the stack, how the pieces fit, and the decisions behi
   `language: system`); every entry resolves through `uv run`, so `uv.lock` is
   the single version source. `uv run pre-commit install` wires both the
   `pre-commit` and `pre-push` stages in one command; see `coding-assertions.md`
-  for the commands. This is local, client-side enforcement only — nothing
-  server-side runs yet, see
-  `aidd_docs/backlog/stories/every-push-and-pull-request-runs-a-check-suite-that-can-refuse-it.md`.
+  for the commands. CI now runs the same gate server-side on every push and
+  pull request, on a two-OS matrix, behind one required check — see
+  `.github/workflows/ci.yml`.
 
 ## How it fits together
 

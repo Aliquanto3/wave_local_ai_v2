@@ -12,7 +12,7 @@ How this team drives AI coding assistants on this project. Keep it short and spe
 
 ## Validation depth
 
-- Before commit: the fast gate — `ruff check`, `ruff format --check`, `mypy src`, `detect-secrets-hook` — runs as a `pre-commit` stage hook, installed once per clone with `uv run pre-commit install`.
+- Before commit: the fast gate — `ruff check`, `ruff format --check`, `mypy src/ scripts/`, `detect-secrets-hook` — runs as a `pre-commit` stage hook, installed once per clone with `uv run pre-commit install`.
 - Before push: `pytest` runs at the `pre-push` stage, installed by the same command.
 - To run the gate by hand, use `uv run pre-commit run --all-files`. `detect-secrets-hook` scans only the filenames it is given, so that command on its own exits 0 without checking anything.
 - Every implementation gets exactly one `aidd-dev:05-review` after its last phase, then merges.
