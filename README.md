@@ -105,6 +105,83 @@ whether the number means anything:
 Treat energy and carbon figures as **estimates**, not measurements, unless the
 row says `measured_nvml`.
 
+## Pull and run (no clone)
+
+The image carries no clone, no model weights, and no `.env` — it installs the
+project from the locked deps and ships the pinned CPU `llama-server` build.
+This path reaches the same first-run weight download and the same two CLIs as
+the clone-and-`uv sync` path above, at the same level of detail.
+
+```sh
+docker pull ghcr.io/aliquanto3/wave_local_ai_v2:<version>
+```
+
+You still need `compose.yaml` — the one file a pull-only reader has no clone
+to read from disk. Fetch it directly for the tag you pulled, and make the
+directory the result rows land in:
+
+```sh
+curl -fsSLO https://raw.githubusercontent.com/Aliquanto3/wave_local_ai_v2/<version>/compose.yaml
+mkdir -p results
+```
+
+`compose.yaml` runs `ghcr.io/aliquanto3/wave_local_ai_v2:${WAVE_IMAGE_TAG:-latest}`
+and has no build section, so it uses the image you just pulled and never tries
+to build one. Set `WAVE_IMAGE_TAG=<version>` to run the exact tag rather than
+`latest`. Rows land in `./results` on the host (override with `RESULTS_DIR`);
+the container runs as your own uid so those files come back owned by you.
+
+**First run — download the model weights.** The image ships no GGUF; populate
+`SLM_MODELS_DIR` on the **host** exactly as
+[`docs/setup.md` §3](docs/setup.md#3-get-the-model-weights-and-verify-the-checksum)
+describes, at this exact relative path:
+
+```
+<SLM_MODELS_DIR>/Qwen3.6-35B-A3B/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+```
+
+sha256: `649d7508507b84638732c4f52c24c8b15843c6dca2f3ff793ae07c14a67ebbb3`
+(same file, same checksum as the clone path — a clone-path reader who already
+did this step can reuse the same directory).
+
+Then, with `SLM_MODELS_DIR` set on the host and a `.env` populated per the
+[`.env` keys](#env-keys) table (`MISTRAL_API_KEY` at minimum for the quality
+CLI):
+
+```sh
+docker compose run --rm runtime   # one runtime row
+docker compose run --rm quality   # one row per (item, model)
+```
+
+`N_CPU_MOE`, `THREADS`, the pinned model file, and the pinned `llama.cpp`
+build are fitted to this project's own development laptop, exactly as they
+are on the clone path — this image is not a machine-portable container. That
+arrives, if it does, with
+[`every-published-row-explains-and-reproduces-itself`](aidd_docs/backlog/epics/every-published-row-explains-and-reproduces-itself.md),
+not here.
+
+**NVIDIA GPU:** the shipped image is CPU-only. See
+[`docs/setup.md`'s NVIDIA section](docs/setup.md#nvidia-gpu-documented-untested-in-ci)
+for the base image and flags a GPU deployment would need — documented, not
+built or tested by this project's CI.
+
+**What CI proves about this image, and what it doesn't:**
+
+- CI proves, on every pull request and again on the tag before it publishes
+  (`.github/workflows/ci.yml`, job `build`): the image builds on a GPU-less
+  Ubuntu runner; `docker run --entrypoint llama-server <image> --version`
+  exits 0, so the pinned binary is present and executable with no model and
+  no GPU; `docker run <image>` with `SLM_MODELS_DIR` empty exits 1 and prints
+  exactly `error: SLM_MODELS_DIR is not set`; `docker inspect` reports
+  `org.opencontainers.image.source` and `.revision` equal to this repository's
+  URL and the commit the build ran on.
+- CI does **not** prove: that a real CPU or GPU inference run completes
+  inside the container, that the compose volumes behave correctly against
+  real weights, that the published package is anonymously pullable (that is
+  a one-time manual visibility switch, verified at the first tag), or that
+  the NVIDIA path works at all. Those belong to the epic's fresh-machine
+  walk, done by a human on real hardware — not to this repository's CI.
+
 ## Project status
 
 This is an active benchmark harness, not a finished product. See

@@ -1,0 +1,42 @@
+# Runs the published image. No build section on purpose: a reader who pulled
+# the image and fetched this one file has no clone to build from. Developers
+# who want to build from source layer compose.build.yaml on top:
+#   docker compose -f compose.yaml -f compose.build.yaml build
+services:
+  runtime:
+    image: ghcr.io/aliquanto3/wave_local_ai_v2:${WAVE_IMAGE_TAG:-latest}
+    # The image's own user is the non-root `app`; this maps the run onto the
+    # caller's uid/gid instead, so the rows written into the bind-mounted
+    # results directory are owned by whoever created it on the host. Still
+    # non-root. UID/GID are not exported by every shell, hence the defaults.
+    user: "${UID:-1000}:${GID:-1000}"
+    env_file: .env
+    environment:
+      # These three always win over whatever .env holds for them: .env carries
+      # host-native paths (a Windows drive letter, a host-only binary path)
+      # that mean nothing inside the container's filesystem.
+      SLM_MODELS_DIR: /data/models
+      LLAMA_SERVER_PATH: /opt/llama-cpp/llama-server
+      RUNTIME_RESULTS_PATH: /results/runtime.jsonl
+    volumes:
+      # ${SLM_MODELS_DIR} here is the *host* shell variable (or a
+      # compose-adjacent .env override) pointing at the host's models
+      # directory - a different resolution point than the container-internal
+      # path set above, even though it can be the same underlying .env file.
+      - ${SLM_MODELS_DIR}:/data/models:ro
+      # Must exist on the host and be writable by the uid above; the pull path
+      # creates it with `mkdir results`, a clone already has ./results.
+      - ${RESULTS_DIR:-./results}:/results
+
+  quality:
+    image: ghcr.io/aliquanto3/wave_local_ai_v2:${WAVE_IMAGE_TAG:-latest}
+    user: "${UID:-1000}:${GID:-1000}"
+    entrypoint: ["wave-local-ai-v2-quality"]
+    env_file: .env
+    environment:
+      SLM_MODELS_DIR: /data/models
+      LLAMA_SERVER_PATH: /opt/llama-cpp/llama-server
+      QUALITY_RESULTS_PATH: /results/quality.jsonl
+    volumes:
+      - ${SLM_MODELS_DIR}:/data/models:ro
+      - ${RESULTS_DIR:-./results}:/results

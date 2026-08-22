@@ -1,6 +1,6 @@
 ---
 type: story
-status: ready
+status: done
 source: aidd_docs/backlog/epics/clean-machine-runs-it-and-nothing-reaches-main-unchecked.md
 parent: aidd_docs/backlog/epics/clean-machine-runs-it-and-nothing-reaches-main-unchecked.md
 depends_on: aidd_docs/backlog/stories/every-push-and-pull-request-runs-a-check-suite-that-can-refuse-it.md
@@ -40,6 +40,7 @@ order: 5
 - Binary smoke test: `llama-server --version` inside the image succeeds on CPU, proving the pinned runtime is present and executable with no model and no GPU.
 - Label check: `docker inspect` on the built image reports the source repository and the commit it was built from.
 - The full CPU inference run through the image belongs to the epic's fresh-machine walk, not to CI, and is recorded there.
+- The anonymous public pull cannot be verified before an image exists: a package first pushed by `GITHUB_TOKEN` lands private, and no API pre-creates a public user package. This story documents the one-time visibility switch (`docs/setup.md`); the pull itself is verified at the first tag, on `a-release-tag-names-the-code-a-row-can-cite.md`'s release checklist. Until then the README's `docker pull` is documented, not exercised.
 
 ## Cancellation
 

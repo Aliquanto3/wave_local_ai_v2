@@ -1,0 +1,17 @@
+# Developer overlay: builds the image from this clone instead of pulling it,
+# tagging the result under the same name compose.yaml runs.
+#
+#   docker compose -f compose.yaml -f compose.build.yaml build
+#   docker compose -f compose.yaml -f compose.build.yaml run --rm runtime
+#
+# Not needed by anyone running the published image.
+services:
+  runtime:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+  quality:
+    build:
+      context: .
+      dockerfile: Dockerfile

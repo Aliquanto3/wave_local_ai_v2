@@ -1,0 +1,36 @@
+# Mirrors .gitignore's intent for the build context: keep weights, secrets,
+# caches, and the dev virtualenv out of what gets sent to the Docker daemon.
+
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv/
+
+# --- Project ---
+.env
+models/
+*.gguf
+*.safetensors
+results/
+
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# --- Docker / VCS ---
+.git/
+.github/
+docs/
+aidd_docs/
+Dockerfile
+compose.yaml
+compose.build.yaml
