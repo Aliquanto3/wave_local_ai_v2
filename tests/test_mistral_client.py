@@ -113,6 +113,40 @@ def test_complete_prompt_raises_on_missing_usage() -> None:
         complete_prompt("classify this", "fake-key", **SAMPLING, max_tokens=MAX_TOKENS)
 
 
+@pytest.mark.parametrize(
+    "finish_reason, completion_tokens",
+    [
+        # A null finish reason would otherwise read as "not truncated", and a
+        # non-numeric token count would only fail further down, inside
+        # score_item's comparison against the suite cap.
+        (None, 3),
+        ("stop", "3"),
+    ],
+)
+def test_complete_prompt_raises_on_wrong_typed_stop_fields(
+    finish_reason, completion_tokens
+) -> None:
+    with (
+        patch(
+            "wave_local_ai_v2.mistral_client.requests.post",
+            return_value=MagicMock(
+                status_code=200,
+                json=lambda: {
+                    "choices": [
+                        {
+                            "message": {"content": "billing"},
+                            "finish_reason": finish_reason,
+                        }
+                    ],
+                    "usage": {"completion_tokens": completion_tokens},
+                },
+            ),
+        ),
+        pytest.raises(MistralRequestError),
+    ):
+        complete_prompt("classify this", "fake-key", **SAMPLING, max_tokens=MAX_TOKENS)
+
+
 def test_model_id_is_dated_not_a_rotating_alias() -> None:
     # An alias silently re-points at a new model, which no seed can compensate
     # for: two runs either side of a rotation would disagree and the quality

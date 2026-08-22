@@ -551,11 +551,15 @@ def test_local_cap_truncated_response_scores_truncated_max_tokens(stubbed_run) -
 def test_cloud_context_truncated_response_scores_truncated_context(
     stubbed_run,
 ) -> None:
+    # `model_length`, not `length`: Mistral's enum separates the caller's
+    # max_tokens cap (`length`) from the model's own context limit
+    # (`model_length`), and only the latter is the truncation a reader cannot
+    # dispute. Reading only `length` would publish this row as unparseable.
     quality_results_path, started = stubbed_run
     started["complete_prompt"].return_value = {
         "content": "bi",
         "endpoint": mistral_client.CHAT_COMPLETIONS_URL,
-        "finish_reason": "length",
+        "finish_reason": "model_length",
         "generated_tokens": classification_suite.MAX_OUTPUT_TOKENS - 1,
     }
 
@@ -567,6 +571,29 @@ def test_cloud_context_truncated_response_scores_truncated_context(
     assert cloud_rows
     for row in cloud_rows:
         assert row["failure_reason"] == "truncated_context"
+        assert row["predicted_label"] is None
+        assert row["correct"] is False
+
+
+def test_cloud_cap_truncated_response_scores_truncated_max_tokens(
+    stubbed_run,
+) -> None:
+    quality_results_path, started = stubbed_run
+    started["complete_prompt"].return_value = {
+        "content": "bi",
+        "endpoint": mistral_client.CHAT_COMPLETIONS_URL,
+        "finish_reason": "length",
+        "generated_tokens": classification_suite.MAX_OUTPUT_TOKENS,
+    }
+
+    quality_cli._run()
+
+    cloud_rows = [
+        row for row in read_rows(quality_results_path) if row["provider"] == "mistral"
+    ]
+    assert cloud_rows
+    for row in cloud_rows:
+        assert row["failure_reason"] == "truncated_max_tokens"
         assert row["predicted_label"] is None
         assert row["correct"] is False
 

@@ -42,6 +42,8 @@ QUALITY_ONLY_FIELDS = {
     "contamination_risk",
     "indicative",
     "indicative_reasons",
+    "failure_reason",
+    "failure_counts",
 }
 
 

@@ -32,6 +32,14 @@ REQUEST_TIMEOUT_S = 60
 # fail fast, before the quality CLI pays for a full llama-server lifecycle. A
 # listing allowed to hang for a completion's 60s would defeat the point.
 CATALOG_TIMEOUT_S = 15
+# The two `finish_reason` values that mean the generation was cut short rather
+# than finished. Mistral's enum is `stop | length | model_length | error |
+# tool_calls` (mistralai/client-python, ChatCompletionChoiceFinishReason):
+# `length` is the caller's `max_tokens` cap, `model_length` the model's own
+# context limit. Reading only `length` would publish a context-truncated
+# generation as unparseable output, which is exactly the distinction the
+# failure taxonomy exists to make.
+TRUNCATING_FINISH_REASONS = frozenset({"length", "model_length"})
 
 
 class MistralRequestError(RuntimeError):
@@ -117,6 +125,19 @@ def complete_prompt(
         raise MistralRequestError(
             f"unexpected Mistral response shape: {response_json!r}"
         ) from exc
+    # Same rule as the content guard above: a present-but-wrong-typed value has
+    # to fail here, at the provider boundary the CLI catches, rather than
+    # further down. A null finish_reason would silently read as "not
+    # truncated", and a non-numeric token count would only surface as an
+    # uncaught TypeError inside score_item's comparison.
+    if not isinstance(finish_reason, str):
+        raise MistralRequestError(
+            f"unexpected Mistral finish_reason type: {finish_reason!r}"
+        )
+    if not isinstance(generated_tokens, int) or isinstance(generated_tokens, bool):
+        raise MistralRequestError(
+            f"unexpected Mistral completion_tokens type: {generated_tokens!r}"
+        )
 
     return MistralCompletion(
         content=content,

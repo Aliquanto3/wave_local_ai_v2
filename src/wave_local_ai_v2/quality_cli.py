@@ -138,7 +138,7 @@ def _run() -> None:
         sampling=LOCAL_SAMPLING,
         gate_result=gate_result,
         provenance_fields=provenance_fields,
-        endpoint=prompt_provenance.LOCAL_COMPLETION_ENDPOINT,
+        call_path_fields=_local_call_path(),
     )
 
     cloud_endpoint, cloud_completions = _run_cloud_suite(settings)
@@ -151,8 +151,34 @@ def _run() -> None:
         sampling=CLOUD_SAMPLING,
         gate_result=gate_result,
         provenance_fields=provenance_fields,
-        endpoint=cloud_endpoint,
+        call_path_fields=_mistral_call_path(cloud_endpoint),
     )
+
+
+def _local_call_path() -> dict[str, Any]:
+    """The four call-path fields of the raw local `/completion` path."""
+    return {
+        "endpoint": prompt_provenance.LOCAL_COMPLETION_ENDPOINT,
+        "prompt_template_id": prompt_provenance.TEMPLATE_ID_NONE,
+        "prompt_template_hash": None,
+        "prompt_capture": prompt_provenance.PROMPT_CAPTURE_CAPTURED,
+    }
+
+
+def _mistral_call_path(endpoint: str) -> dict[str, Any]:
+    """The four call-path fields of the Mistral chat path, endpoint as called.
+
+    Built here, beside the call that produced `endpoint`, rather than derived
+    from the `provider` string inside `_score_and_write`: the endpoint and the
+    template that endpoint applies are one fact, and a future third provider
+    must state its own rather than inherit Mistral's by falling off an `else`.
+    """
+    return {
+        "endpoint": endpoint,
+        "prompt_template_id": prompt_provenance.TEMPLATE_ID_MISTRAL_CHAT_MESSAGE,
+        "prompt_template_hash": prompt_provenance.MISTRAL_CHAT_MESSAGE_HASH,
+        "prompt_capture": prompt_provenance.PROMPT_CAPTURE_CAPTURED,
+    }
 
 
 def _local_model_path(settings: Settings) -> Path:
@@ -226,7 +252,11 @@ def _run_cloud_suite(settings: Settings) -> tuple[str, list[_Completion]]:
     completions = [
         _Completion(
             content=response["content"],
-            truncated=response["finish_reason"] == "length",
+            # Both of Mistral's cut-short reasons, not just the cap one: which
+            # of the two it was is `generated_tokens` versus the suite's cap,
+            # decided in `score_item`.
+            truncated=response["finish_reason"]
+            in mistral_client.TRUNCATING_FINISH_REASONS,
             generated_tokens=response["generated_tokens"],
         )
         for response in responses
@@ -244,16 +274,8 @@ def _score_and_write(
     sampling: dict[str, Any],
     gate_result: SuiteGateResult,
     provenance_fields: dict[str, Any],
-    endpoint: str,
+    call_path_fields: dict[str, Any],
 ) -> None:
-    prompt_template_id = (
-        prompt_provenance.TEMPLATE_ID_NONE
-        if provider == "local"
-        else prompt_provenance.TEMPLATE_ID_MISTRAL_CHAT_MESSAGE
-    )
-    prompt_template_hash = (
-        None if provider == "local" else prompt_provenance.MISTRAL_CHAT_MESSAGE_HASH
-    )
     scored_items = [
         score_item(
             item,
@@ -274,10 +296,7 @@ def _score_and_write(
             "run_id": run_id,
             "captured_at": captured_at(),
             **provenance_fields,
-            "endpoint": endpoint,
-            "prompt_template_id": prompt_template_id,
-            "prompt_template_hash": prompt_template_hash,
-            "prompt_capture": prompt_provenance.PROMPT_CAPTURE_CAPTURED,
+            **call_path_fields,
             "model_id": model_id,
             "provider": provider,
             "task_suite": "classification",
