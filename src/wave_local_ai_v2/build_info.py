@@ -32,19 +32,22 @@ def version() -> str:
     return _installed_version(_DISTRIBUTION_NAME)
 
 
-def commit_sha() -> str | None:
-    """Return the commit sha the running code was built from, or None."""
-    injected = os.environ.get("WAVE_BUILD_SHA")
-    if injected:
-        return injected
+def _run_git(args: list[str]) -> str | None:
+    """Run `git <args>` and return its stripped stdout, or None if it could not run.
 
+    The one git resolver this module (and `provenance.py`) uses: an absent
+    binary or a non-zero exit degrades to `None`. Empty-but-successful output
+    (e.g. a clean `git status --porcelain`) is returned as `""`, not
+    collapsed to `None` -- a caller like `provenance.tree_dirty()` needs to
+    tell "git ran and found nothing" apart from "git could not run" itself.
+    """
     git_binary = shutil.which("git")
     if git_binary is None:
         return None
 
     try:
         result = subprocess.run(
-            [git_binary, "-C", str(_PACKAGE_DIR), "rev-parse", "HEAD"],
+            [git_binary, *args],
             capture_output=True,
             text=True,
             check=True,
@@ -52,5 +55,14 @@ def commit_sha() -> str | None:
     except (subprocess.CalledProcessError, OSError):
         return None
 
-    sha = result.stdout.strip()
+    return result.stdout.strip()
+
+
+def commit_sha() -> str | None:
+    """Return the commit sha the running code was built from, or None."""
+    injected = os.environ.get("WAVE_BUILD_SHA")
+    if injected:
+        return injected
+
+    sha = _run_git(["-C", str(_PACKAGE_DIR), "rev-parse", "HEAD"])
     return sha or None

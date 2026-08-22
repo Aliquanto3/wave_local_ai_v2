@@ -10,6 +10,13 @@ COMPLETE_QUALITY_ROW = {
     "schema_version": "1",
     "run_id": "run-1",
     "captured_at": "2026-08-22T00:00:00+00:00",
+    "release_version": "v0.1.0",
+    "commit_sha": "deadbeef",
+    "tree_dirty": False,
+    "endpoint": "/completion",
+    "prompt_template_id": "none",
+    "prompt_template_hash": None,
+    "prompt_capture": "captured",
     "model_id": "Qwen3.6-35B-A3B",
     "provider": "local",
     "task_suite": "classification",
@@ -31,6 +38,13 @@ COMPLETE_QUALITY_ROW = {
     "contamination_risk": False,
     "indicative": True,
     "indicative_reasons": ["item_count 10 is below the minimum of 20"],
+    "failure_reason": None,
+    "failure_counts": {
+        "empty": 0,
+        "unparseable": 0,
+        "truncated_max_tokens": 0,
+        "truncated_context": 0,
+    },
 }
 
 

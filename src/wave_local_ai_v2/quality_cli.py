@@ -11,13 +11,15 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 import requests
 
 from wave_local_ai_v2 import (
     classification_suite,
     mistral_client,
+    prompt_provenance,
+    provenance,
     row_contract,
     server,
     suite_gate,
@@ -70,6 +72,14 @@ class LocalCompletionError(RuntimeError):
     """Raised when a local llama-server /completion response has no usable content."""
 
 
+class _Completion(TypedDict):
+    """One provider's per-item generation, unified across local and cloud shapes."""
+
+    content: str
+    truncated: bool
+    generated_tokens: int
+
+
 def main() -> None:
     try:
         _run()
@@ -96,6 +106,7 @@ def _run() -> None:
     # halves of one comparison, and a reader must be able to tell which local
     # rows a given cloud row was scored against.
     run_id = new_run_id()
+    provenance_fields = provenance.capture_provenance()
     # Every pre-condition is checked before the (expensive) local suite runs,
     # cheapest first: the two offline ones cost nothing, and the catalog call is
     # the only one that needs the network. The order still matters even though a
@@ -126,9 +137,11 @@ def _run() -> None:
         completions=local_completions,
         sampling=LOCAL_SAMPLING,
         gate_result=gate_result,
+        provenance_fields=provenance_fields,
+        call_path_fields=_local_call_path(),
     )
 
-    cloud_completions = _run_cloud_suite(settings)
+    cloud_endpoint, cloud_completions = _run_cloud_suite(settings)
     _score_and_write(
         settings,
         run_id=run_id,
@@ -137,7 +150,35 @@ def _run() -> None:
         completions=cloud_completions,
         sampling=CLOUD_SAMPLING,
         gate_result=gate_result,
+        provenance_fields=provenance_fields,
+        call_path_fields=_mistral_call_path(cloud_endpoint),
     )
+
+
+def _local_call_path() -> dict[str, Any]:
+    """The four call-path fields of the raw local `/completion` path."""
+    return {
+        "endpoint": prompt_provenance.LOCAL_COMPLETION_ENDPOINT,
+        "prompt_template_id": prompt_provenance.TEMPLATE_ID_NONE,
+        "prompt_template_hash": None,
+        "prompt_capture": prompt_provenance.PROMPT_CAPTURE_CAPTURED,
+    }
+
+
+def _mistral_call_path(endpoint: str) -> dict[str, Any]:
+    """The four call-path fields of the Mistral chat path, endpoint as called.
+
+    Built here, beside the call that produced `endpoint`, rather than derived
+    from the `provider` string inside `_score_and_write`: the endpoint and the
+    template that endpoint applies are one fact, and a future third provider
+    must state its own rather than inherit Mistral's by falling off an `else`.
+    """
+    return {
+        "endpoint": endpoint,
+        "prompt_template_id": prompt_provenance.TEMPLATE_ID_MISTRAL_CHAT_MESSAGE,
+        "prompt_template_hash": prompt_provenance.MISTRAL_CHAT_MESSAGE_HASH,
+        "prompt_capture": prompt_provenance.PROMPT_CAPTURE_CAPTURED,
+    }
 
 
 def _local_model_path(settings: Settings) -> Path:
@@ -148,9 +189,9 @@ def _local_model_path(settings: Settings) -> Path:
     return model_path
 
 
-def _run_local_suite(settings: Settings, model_path: Path) -> list[str]:
+def _run_local_suite(settings: Settings, model_path: Path) -> list[_Completion]:
     flags = server.build_flags(model_path)
-    completions: list[str] = []
+    completions: list[_Completion] = []
 
     with server.running_server(settings.llama_server_path, flags):
         for item in CLASSIFICATION_TASK_SUITE:
@@ -177,18 +218,24 @@ def _run_local_suite(settings: Settings, model_path: Path) -> list[str]:
                 raise LocalCompletionError(
                     f"unexpected /completion content type: {content!r}"
                 )
-            completions.append(content)
+            completions.append(
+                _Completion(
+                    content=content,
+                    truncated=bool(response_json.get("stopped_limit", False)),
+                    generated_tokens=response_json.get("tokens_predicted", 0),
+                )
+            )
 
     return completions
 
 
-def _run_cloud_suite(settings: Settings) -> list[str]:
+def _run_cloud_suite(settings: Settings) -> tuple[str, list[_Completion]]:
     # The same cap the local half runs under (`n_predict` above): the suite
     # declares one generation cap for every model it compares, and every row
     # publishes it as what that row ran under. Sending it to only one provider
     # would make the cloud rows' `max_output_tokens` a claim about a limit that
     # was never applied.
-    return [
+    responses = [
         mistral_client.complete_prompt(
             item["prompt"],
             settings.mistral_api_key,
@@ -198,6 +245,23 @@ def _run_cloud_suite(settings: Settings) -> list[str]:
         )
         for item in CLASSIFICATION_TASK_SUITE
     ]
+    # Every call hits the same endpoint within one run; the first response
+    # names it, sourced from the module that actually made the call rather
+    # than read off mistral_client's own constants at this call site.
+    endpoint = responses[0]["endpoint"]
+    completions = [
+        _Completion(
+            content=response["content"],
+            # Both of Mistral's cut-short reasons, not just the cap one: which
+            # of the two it was is `generated_tokens` versus the suite's cap,
+            # decided in `score_item`.
+            truncated=response["finish_reason"]
+            in mistral_client.TRUNCATING_FINISH_REASONS,
+            generated_tokens=response["generated_tokens"],
+        )
+        for response in responses
+    ]
+    return endpoint, completions
 
 
 def _score_and_write(
@@ -206,21 +270,33 @@ def _score_and_write(
     run_id: str,
     model_id: str,
     provider: str,
-    completions: list[str],
+    completions: list[_Completion],
     sampling: dict[str, Any],
     gate_result: SuiteGateResult,
+    provenance_fields: dict[str, Any],
+    call_path_fields: dict[str, Any],
 ) -> None:
     scored_items = [
-        score_item(item, completion)
+        score_item(
+            item,
+            completion["content"],
+            truncated=completion["truncated"],
+            generated_tokens=completion["generated_tokens"],
+            max_output_tokens=classification_suite.MAX_OUTPUT_TOKENS,
+        )
         for item, completion in zip(CLASSIFICATION_TASK_SUITE, completions, strict=True)
     ]
-    suite_accuracy = score_suite(scored_items)
+    suite_score = score_suite(scored_items)
+    suite_accuracy = suite_score["accuracy"]
+    failure_counts = suite_score["failure_counts"]
 
     for item, scored in zip(CLASSIFICATION_TASK_SUITE, scored_items, strict=True):
         row = {
             "schema_version": row_contract.SCHEMA_VERSION,
             "run_id": run_id,
             "captured_at": captured_at(),
+            **provenance_fields,
+            **call_path_fields,
             "model_id": model_id,
             "provider": provider,
             "task_suite": "classification",
@@ -247,6 +323,8 @@ def _score_and_write(
             "contamination_risk": item["contamination_risk"],
             "indicative": gate_result["indicative"],
             "indicative_reasons": list(gate_result["indicative_reasons"]),
+            "failure_reason": scored["failure_reason"],
+            "failure_counts": dict(failure_counts),
         }
         append_row(settings.quality_results_path, "quality", row)
 
