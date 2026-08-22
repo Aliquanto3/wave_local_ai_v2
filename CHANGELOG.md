@@ -45,6 +45,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A repetition that returns blank content, an unparseable timings block, or
   a `exceed_context_size_error` refusal now fails the whole row by index
   and reason — no retry, no substituted value, nothing written.
+- Every counted and warm-up repetition now records its machine state: GPU
+  temperature and decoded NVML clock event reasons (`gpu_idle`,
+  `sw_thermal_slowdown`, `hw_power_brake_slowdown`, etc.), plus CPU package
+  temperature or its declared `"unavailable"` on platforms with no
+  admin-free reader (confirmed live: this Windows build has none).
+- A runtime row now carries the `gen_tok_per_s`/`ttft_ms`/`prompt_tok_per_s`
+  spread (sample sd over median) for its counted repetition set, and flags
+  itself `unreliable` when `gen_tok_per_s`'s spread exceeds
+  `RUNTIME_SPREAD_THRESHOLD` (default `0.10`) — the other two metrics'
+  spread is published but never sets the flag. Every row also declares its
+  `thermal_posture` (today: `"fixed_cooldown"`, the fixed inter-repetition
+  cooldown this harness already runs).
+- Every runtime row now states `ttft_source` (`"server_reported"` today),
+  naming that its `ttft_ms` comes from llama-server's own reported timing,
+  not an independent client-side measurement — refused by the row contract
+  if it names anything else.
 
 ### Changed
 

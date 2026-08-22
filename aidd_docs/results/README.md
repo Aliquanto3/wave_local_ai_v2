@@ -11,10 +11,13 @@ to any acceptance criterion.
 
 ## `runtime-reference.jsonl`
 
-Two rows, copied from lines 4 and 5 of this machine's `runtime.jsonl`.
+Three rows. Rows 1 and 2 are the throughput evidence, copied from lines 4 and
+5 of this machine's `runtime.jsonl`. Row 3 is field-shape evidence for the
+machine-state/TTFT-provenance increment and is **not** a throughput claim —
+see its own block below.
 
-| Claim they support | Value |
-| ------------------ | ----- |
+| Claim rows 1-2 support | Value |
+| ---------------------- | ----- |
 | Generation throughput | `gen_tok_per_s` 26.046 and 25.484 |
 | Prompt throughput | `prompt_tok_per_s` 255.93 and 259.25 |
 
@@ -31,6 +34,36 @@ acceptance rows with nothing to distinguish them would misrepresent the spread.
 Rows 1 to 3 predate the fixed prompt's final length and are excluded for the
 same reason: their `prompt_tok_per_s` (76 to 233) was measured at a different
 prompt length and is not comparable.
+
+**Row 3 of this file** (added by the machine-state/TTFT-provenance
+increment): one full row from `uv run wave-local-ai-v2` at default settings
+(`RUNTIME_REPETITIONS=5`, `RUNTIME_COOLDOWN_S=10.0`,
+`RUNTIME_SPREAD_THRESHOLD=0.10`), produced on 2026-08-22 (`captured_at`
+21:21:58 UTC) on branch `feat/machine-state-and-ttft-provenance` at tip
+`ab9280d` (`tree_dirty: true` -- the branch's own uncommitted work). Carries
+every field this increment added: per-repetition `machine_state`, the three
+`*_spread` fields, `unreliable`, `thermal_posture`, `ttft_source`.
+
+Its `gen_tok_per_s` is **15.256**, far below rows 1-2 (26.0 / 25.5), and it is
+kept here as field-shape evidence only. Every one of its repetitions reports
+`sw_thermal_slowdown` and `sw_power_cap` in `gpu_throttle_reasons`: this row
+was measured on a thermally suppressed GPU, the same condition that excludes
+the streaming rows above. Unlike those rows, it says so on its own face --
+which is the point of the fields this increment adds -- so it is kept and
+labelled rather than dropped. Read the throughput claim from rows 1-2.
+
+| Field | Observed value |
+| ----- | --------------- |
+| `gen_tok_per_s` | 15.256 -- thermally suppressed, not a throughput claim |
+| `gen_tok_per_s_spread` | 0.0518 (5.2%), against the 0.10 threshold -- did not flag |
+| `ttft_ms_spread` | 0.0125 |
+| `prompt_tok_per_s_spread` | 0.0127 |
+| `unreliable` | `false` |
+| `thermal_posture` | `"fixed_cooldown"` |
+| `ttft_source` | `"server_reported"` |
+| `gpu_temp_c` (repetition range) | 66.0-68.0 |
+| `gpu_throttle_reasons` (union across repetitions) | `sw_power_cap`, `sw_thermal_slowdown` -- this machine's GPU was throttling during the run; the spread stayed under threshold anyway |
+| `cpu_temp_c` / `cpu_temp_source` | `null` / `"unavailable"` -- confirms phase 1's spike conclusion on this Windows build |
 
 ## `quality-reference.jsonl`
 

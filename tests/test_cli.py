@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
@@ -109,6 +110,15 @@ def stubbed_run(tmp_path, monkeypatch):
             "wave_local_ai_v2.read_gpu_stats",
             return_value={"vram_used_mib": 3161.0, "gpu_draw_w": 45.0},
         ),
+        "machine_state": patch(
+            "wave_local_ai_v2.read_machine_state",
+            return_value={
+                "gpu_temp_c": 68.0,
+                "gpu_throttle_reasons": [],
+                "cpu_temp_c": None,
+                "cpu_temp_source": "unavailable",
+            },
+        ),
         "rss": patch("wave_local_ai_v2.read_process_rss", return_value=500_000_000),
         "energy": patch(
             "wave_local_ai_v2.measure_energy",
@@ -170,6 +180,14 @@ def test_run_appends_one_row_with_fiche_and_metrics(stubbed_run) -> None:
     assert row["gen_tok_per_s_sd"] == 0.0
     assert row["vram_used_mib"] == 3161.0
     assert row["wall_clock_s"] >= 0.0
+    assert all("machine_state" in r for r in row["repetitions"])
+    assert all("machine_state" in w for w in row["warmup_repetitions"])
+    assert row["thermal_posture"] == "fixed_cooldown"
+    assert row["ttft_source"] == "server_reported"
+    assert row["unreliable"] is False
+    assert row["gen_tok_per_s_spread"] == 0.0
+    assert "ttft_ms_spread" in row
+    assert "prompt_tok_per_s_spread" in row
 
 
 def _timings_response(ttft_ms: float, prompt_tps: float, gen_tps: float) -> dict:
@@ -230,6 +248,34 @@ def test_run_aggregates_five_differing_repetitions_into_medians_and_peaks(
     assert row["process_rss_bytes"] == 500_000_005
 
 
+def test_run_respects_a_raised_spread_threshold_override(stubbed_run) -> None:
+    results_path, started = stubbed_run
+    # gen_tok_per_s spread ~17.2% -- flags at the default 10% threshold.
+    started["post"].side_effect = [
+        _mock_completion(90.0, 260.0, 22.0),
+        *[
+            _mock_completion(ttft, prompt_tps, gen_tps)
+            for ttft, prompt_tps, gen_tps in [
+                (100.0, 270.0, 20.0),
+                (110.0, 280.0, 24.0),
+                (120.0, 290.0, 26.0),
+                (130.0, 300.0, 28.0),
+                (140.0, 310.0, 32.0),
+            ]
+        ],
+    ]
+    base_settings = started["load_settings"].return_value
+    started["load_settings"].return_value = replace(
+        base_settings, runtime_spread_threshold=0.20
+    )
+
+    _run()
+
+    row = read_rows(results_path)[0]
+    assert row["gen_tok_per_s_spread"] > 0.10
+    assert row["unreliable"] is False
+
+
 def test_run_takes_the_mean_of_the_two_middle_values_when_n_is_even(
     tmp_path,
 ) -> None:
@@ -288,6 +334,15 @@ def test_run_takes_the_mean_of_the_two_middle_values_when_n_is_even(
         patch(
             "wave_local_ai_v2.read_gpu_stats",
             return_value={"vram_used_mib": 3161.0, "gpu_draw_w": 45.0},
+        ),
+        patch(
+            "wave_local_ai_v2.read_machine_state",
+            return_value={
+                "gpu_temp_c": 68.0,
+                "gpu_throttle_reasons": [],
+                "cpu_temp_c": None,
+                "cpu_temp_source": "unavailable",
+            },
         ),
         patch("wave_local_ai_v2.read_process_rss", return_value=500_000_000),
         patch(

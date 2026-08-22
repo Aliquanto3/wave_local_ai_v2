@@ -21,9 +21,11 @@ from wave_local_ai_v2 import (
 from wave_local_ai_v2.energy import measure_energy
 from wave_local_ai_v2.gpu import read_gpu_stats
 from wave_local_ai_v2.hardware import capture_fiche
+from wave_local_ai_v2.machine_state import read_machine_state
 from wave_local_ai_v2.repetitions import (
     EXCEED_CONTEXT_ERROR_TYPE,
     SLOT_RESET_METHOD,
+    THERMAL_POSTURE_FIXED_COOLDOWN,
     RepetitionFailure,
     RepetitionResult,
     run_repetition_set,
@@ -243,8 +245,9 @@ def _run() -> None:
         # `nvidia-smi --query-gpu=clocks_event_reasons...`) around the same point in
         # the session, after ~50 minutes of repeated real runs, so streaming-caused-it
         # is plausible but NOT cleanly proven; re-testing needs the GPU to cool down
-        # first. This harness keeps `ttft_ms` server-reported only, uncorroborated by
-        # an independent measurement.
+        # first. The row's `ttft_source` field (`timings.TTFT_SOURCE_SERVER_REPORTED`)
+        # now carries the caveat this comment used to state alone: every published
+        # `ttft_ms` is server-reported, uncorroborated by an independent measurement.
         #
         # A single warm-up request was also tried and reverted here at first: it
         # shared the measured request's single `-np 1` slot and, because the
@@ -292,6 +295,7 @@ def _run() -> None:
             send=send_request,
             read_gpu=read_gpu_stats,
             read_rss=read_rss,
+            read_machine_state=read_machine_state,
             sleep=time.sleep,
             warmup_count=settings.runtime_warmup_count,
             count=0,
@@ -303,6 +307,7 @@ def _run() -> None:
                 send=send_request,
                 read_gpu=read_gpu_stats,
                 read_rss=read_rss,
+                read_machine_state=read_machine_state,
                 sleep=time.sleep,
                 warmup_count=0,
                 count=settings.runtime_repetitions,
@@ -315,7 +320,9 @@ def _run() -> None:
 
     # The raw counted repetitions are kept on the row unmodified: a reader
     # recomputes these aggregates rather than trusting them.
-    aggregated_timings = aggregation.aggregate_timings(counted)
+    aggregated_timings = aggregation.aggregate_timings(
+        counted, threshold=settings.runtime_spread_threshold
+    )
     peaks = {
         metric: aggregation.peak([rep[metric] for rep in counted])  # type: ignore[literal-required]
         for metric in aggregation.PEAK_METRICS
@@ -348,9 +355,14 @@ def _run() -> None:
         "restart_between_repetitions": False,
         "cooldown_s": settings.runtime_cooldown_s,
         "slot_reset_method": SLOT_RESET_METHOD,
+        "thermal_posture": THERMAL_POSTURE_FIXED_COOLDOWN,
         "repetitions": counted,
         "wall_clock_s": wall_clock_s,
         **aggregated_timings,
+        # Every counted repetition carries the same value today (one call
+        # path reads it, `timings.parse_timings`), so citing the first is
+        # not a loss of information.
+        "ttft_source": counted[0]["ttft_source"],
         **peaks,
         "aggregation": dict(aggregation.AGGREGATION_LABELS),
         **energy,
@@ -362,6 +374,7 @@ def _run() -> None:
         f"prompt_tok_per_s={row['prompt_tok_per_s']:.1f} "
         f"ttft_ms={row['ttft_ms']:.1f} "
         f"repetitions_n={row['repetitions_n']} "
+        f"unreliable={row['unreliable']} "
         f"energy_method={row['energy_method']} "
         f"-> {settings.results_path}"
     )

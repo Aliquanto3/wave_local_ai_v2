@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from wave_local_ai_v2 import aggregation, prompt_provenance
+from wave_local_ai_v2 import aggregation, prompt_provenance, timings
 
 # "2": the runtime row's shape changed incompatibly (a scalar `gen_tok_per_s`
 # became a median over a repetition set). Quality rows move to "2" with it
@@ -54,6 +54,7 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "ttft_ms",
             "prompt_tok_per_s",
             "gen_tok_per_s",
+            "ttft_source",
             # gpu.GpuStats
             "vram_used_mib",
             "gpu_draw_w",
@@ -75,10 +76,15 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "aggregation",
             "ttft_ms_mean",
             "ttft_ms_sd",
+            "ttft_ms_spread",
             "prompt_tok_per_s_mean",
             "prompt_tok_per_s_sd",
+            "prompt_tok_per_s_spread",
             "gen_tok_per_s_mean",
             "gen_tok_per_s_sd",
+            "gen_tok_per_s_spread",
+            "unreliable",
+            "thermal_posture",
         }
     ),
     "quality": frozenset(
@@ -151,6 +157,15 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
         )
 
     if kind == "runtime":
+        ttft_source = row["ttft_source"]
+        valid_ttft_sources = {
+            timings.TTFT_SOURCE_SERVER_REPORTED,
+            timings.TTFT_SOURCE_CLIENT_MEASURED,
+        }
+        if ttft_source not in valid_ttft_sources:
+            raise RowContractError(
+                f"row of kind 'runtime' has an unrecognised ttft_source: {ttft_source!r}"
+            )
         _validate_runtime_repetition_structure(row)
 
 

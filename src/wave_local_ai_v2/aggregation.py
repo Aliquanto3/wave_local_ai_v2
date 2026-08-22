@@ -30,6 +30,13 @@ AGGREGATED_TIMING_METRICS = ("ttft_ms", "prompt_tok_per_s", "gen_tok_per_s")
 # maximum is over N post-completion instants, not a continuous trace.
 PEAK_METRICS = ("vram_used_mib", "process_rss_bytes", "gpu_draw_w")
 
+# The one metric among AGGREGATED_TIMING_METRICS whose spread can set
+# `unreliable`: excess variance in generation throughput is what the story
+# asks the flag to name. `ttft_ms` and `prompt_tok_per_s` still carry their
+# own spread on the row (criterion 7 states the statistic identically for all
+# three) but never influence the flag.
+UNRELIABLE_SPREAD_METRIC = "gen_tok_per_s"
+
 # One entry per measurement a runtime row publishes, naming the statistic
 # behind it. `MEASUREMENT_FIELDS` is what `row_contract.validate_row` checks
 # a row's `aggregation` block against.
@@ -42,6 +49,10 @@ PEAK_METRICS = ("vram_used_mib", "process_rss_bytes", "gpu_draw_w")
 # be -- its label names what was actually sampled.
 AGGREGATION_LABELS: dict[str, str] = {
     **{metric: "median" for metric in AGGREGATED_TIMING_METRICS},
+    **{
+        f"{metric}_spread": "sample_sd_over_median"
+        for metric in AGGREGATED_TIMING_METRICS
+    },
     "vram_used_mib": "peak_over_counted_repetitions",
     "process_rss_bytes": "peak_over_counted_repetitions",
     "gpu_draw_w": "max_post_completion_sample_over_counted_repetitions",
@@ -77,6 +88,27 @@ def sample_sd(values: list[float]) -> float:
     return statistics.stdev(values)
 
 
+def spread(sd: float, median_value: float) -> float:
+    """Return the sample sd over the median, a scale-free variance measure.
+
+    Raises `AggregationError` on a zero median rather than fabricating `0.0`
+    or `inf`: a zero-median timing metric is a different failure than "no
+    spread", and it is named the same way `sample_sd` names its own
+    undefined case.
+    """
+    if median_value == 0:
+        raise AggregationError(
+            "spread is undefined against a median of 0: a timing metric that "
+            "medians to zero is a broken measurement, not an absence of spread"
+        )
+    return sd / median_value
+
+
+def unreliable(spread_value: float, threshold: float) -> bool:
+    """True when `spread_value` exceeds `threshold`."""
+    return spread_value > threshold
+
+
 def peak(values: list[float | None]) -> float | None:
     """Return the maximum of `values`, ignoring `None` samples.
 
@@ -89,18 +121,27 @@ def peak(values: list[float | None]) -> float | None:
     return max(real_values)
 
 
-def aggregate_timings(counted: list[RepetitionResult]) -> dict[str, Any]:
+def aggregate_timings(
+    counted: list[RepetitionResult], *, threshold: float
+) -> dict[str, Any]:
     """Aggregate the counted repetitions' timing metrics into medians +- spread.
 
     Returns, per metric in `AGGREGATED_TIMING_METRICS`, the metric itself
-    (the median), `f"{metric}_mean"` and `f"{metric}_sd"`, plus
-    `repetitions_n`.
+    (the median), `f"{metric}_mean"`, `f"{metric}_sd"` and `f"{metric}_spread"`,
+    plus `repetitions_n` and `unreliable` (set only from
+    `UNRELIABLE_SPREAD_METRIC`'s spread against `threshold`).
     """
     result: dict[str, Any] = {}
     for metric in AGGREGATED_TIMING_METRICS:
         values = [rep[metric] for rep in counted]  # type: ignore[literal-required]
-        result[metric] = median(values)
+        metric_median = median(values)
+        metric_sd = sample_sd(values)
+        result[metric] = metric_median
         result[f"{metric}_mean"] = mean(values)
-        result[f"{metric}_sd"] = sample_sd(values)
+        result[f"{metric}_sd"] = metric_sd
+        result[f"{metric}_spread"] = spread(metric_sd, metric_median)
     result["repetitions_n"] = len(counted)
+    result["unreliable"] = unreliable(
+        result[f"{UNRELIABLE_SPREAD_METRIC}_spread"], threshold
+    )
     return result
