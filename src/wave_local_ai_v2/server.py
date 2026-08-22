@@ -28,11 +28,23 @@ CONTEXT_SIZE = 32768
 FLASH_ATTENTION = "on"
 THREADS = 8
 PARALLEL_SLOTS = 1
-TEMPERATURE = "1.0"
-TOP_P = "0.95"
-TOP_K = "20"
-MIN_P = "0"
-PRESENCE_PENALTY = "1.5"
+TEMPERATURE = 1.0
+TOP_P = 0.95
+TOP_K = 20
+MIN_P = 0
+PRESENCE_PENALTY = 1.5
+
+# One source for the launch flags below and for what a runtime row reports
+# under `sampling` (`__init__.py`): the five values a `/completion` request
+# does not need to re-send because the server already applies them from these
+# flags. Only `seed` is sent per request (see RUNTIME_SAMPLING in `__init__.py`).
+SAMPLER_SETTINGS: dict[str, float | int] = {
+    "temperature": TEMPERATURE,
+    "top_p": TOP_P,
+    "top_k": TOP_K,
+    "min_p": MIN_P,
+    "presence_penalty": PRESENCE_PENALTY,
+}
 
 PORT_PROBE_TIMEOUT_S = 0.5
 READY_POLL_INTERVAL_S = 1.0
@@ -65,15 +77,15 @@ def build_flags(model_path: Path) -> list[str]:
         "--load-mode",
         "none",
         "--temp",
-        TEMPERATURE,
+        str(TEMPERATURE),
         "--top-p",
-        TOP_P,
+        str(TOP_P),
         "--top-k",
-        TOP_K,
+        str(TOP_K),
         "--min-p",
-        MIN_P,
+        str(MIN_P),
         "--presence-penalty",
-        PRESENCE_PENALTY,
+        str(PRESENCE_PENALTY),
         "--host",
         HOST,
         "--port",
@@ -169,7 +181,10 @@ def stop_server(process: subprocess.Popen[bytes]) -> None:
 
 @contextmanager
 def running_server(
-    server_path: Path, flags: list[str]
+    server_path: Path,
+    flags: list[str],
+    *,
+    quiet_exceptions: tuple[type[BaseException], ...] = (),
 ) -> Iterator[subprocess.Popen[bytes]]:
     """Context manager: start the server, guarantee shutdown on exit or exception.
 
@@ -177,17 +192,24 @@ def running_server(
     a failure inside the body (a request that dies mid-run) can still be
     explained by what the child printed rather than surfacing as a bare
     ConnectionError.
+
+    `quiet_exceptions` names the failures that are *not* the server's: a
+    generation the caller judged unusable came back over a healthy connection
+    from a healthy process, so dumping the child's stderr would bury the
+    caller's own one-line diagnosis under 2000 bytes of unrelated log. Those
+    still propagate untouched, they just do not trigger the dump.
     """
     with tempfile.TemporaryFile() as stderr_file:
         process = start_server(server_path, flags, stderr_sink=stderr_file)
         try:
             yield process
-        except Exception:
+        except Exception as exc:
             # Exception, not BaseException: a Ctrl+C is the operator ending the
             # run, not the server failing, and does not warrant a stderr dump.
             # Diagnostics only: the body's exception is re-raised untouched.
-            print("llama-server stderr tail:", file=sys.stderr)
-            print(_read_stderr_tail(stderr_file), file=sys.stderr)
+            if not isinstance(exc, quiet_exceptions):
+                print("llama-server stderr tail:", file=sys.stderr)
+                print(_read_stderr_tail(stderr_file), file=sys.stderr)
             raise
         finally:
             stop_server(process)

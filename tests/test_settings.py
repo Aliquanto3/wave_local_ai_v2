@@ -36,6 +36,9 @@ def test_load_settings_returns_populated_settings(monkeypatch, tmp_path: Path) -
     assert settings.results_path == tmp_path / "runtime.jsonl"
     assert settings.quality_results_path == tmp_path / "quality.jsonl"
     assert settings.mistral_api_key == "fake-key"  # pragma: allowlist secret
+    assert settings.runtime_repetitions == 5
+    assert settings.runtime_cooldown_s == 10.0
+    assert settings.runtime_warmup_count == 1
 
 
 def test_load_settings_defaults_quality_path_and_mistral_key_when_unset(
@@ -55,6 +58,55 @@ def test_load_settings_defaults_quality_path_and_mistral_key_when_unset(
 
     assert settings.quality_results_path == Path(DEFAULT_QUALITY_RESULTS_PATH)
     assert settings.mistral_api_key == ""
+
+
+def test_load_settings_reads_the_repetition_protocol_overrides(
+    monkeypatch, tmp_path: Path
+) -> None:
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    server_path = tmp_path / "llama-server.exe"
+    server_path.write_text("")
+
+    monkeypatch.setenv("SLM_MODELS_DIR", str(models_dir))
+    monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
+    monkeypatch.setenv("RUNTIME_REPETITIONS", "2")
+    monkeypatch.setenv("RUNTIME_COOLDOWN_S", "0.5")
+    monkeypatch.setenv("RUNTIME_WARMUP_COUNT", "0")
+
+    settings = load_settings()
+
+    assert settings.runtime_repetitions == 2
+    assert settings.runtime_cooldown_s == 0.5
+    assert settings.runtime_warmup_count == 0
+
+
+@pytest.mark.parametrize(
+    ("env_var", "value"),
+    [
+        ("RUNTIME_REPETITIONS", "1"),
+        ("RUNTIME_REPETITIONS", "0"),
+        ("RUNTIME_REPETITIONS", "not-a-number"),
+        ("RUNTIME_COOLDOWN_S", "-1"),
+        ("RUNTIME_COOLDOWN_S", "not-a-number"),
+        ("RUNTIME_WARMUP_COUNT", "-1"),
+        ("RUNTIME_WARMUP_COUNT", "not-a-number"),
+    ],
+)
+def test_load_settings_refuses_invalid_repetition_protocol_values(
+    monkeypatch, tmp_path: Path, env_var: str, value: str
+) -> None:
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    server_path = tmp_path / "llama-server.exe"
+    server_path.write_text("")
+
+    monkeypatch.setenv("SLM_MODELS_DIR", str(models_dir))
+    monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
+    monkeypatch.setenv(env_var, value)
+
+    with pytest.raises(SettingsError, match=env_var):
+        load_settings()
 
 
 def test_load_settings_raises_when_llama_server_path_unset(

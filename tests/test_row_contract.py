@@ -1,6 +1,28 @@
 import pytest
 
-from wave_local_ai_v2.row_contract import SCHEMA_VERSION, RowContractError, validate_row
+from wave_local_ai_v2 import aggregation
+from wave_local_ai_v2.row_contract import (
+    REQUIRED_FIELDS,
+    SCHEMA_VERSION,
+    RowContractError,
+    validate_row,
+)
+
+
+def _repetition(index: int) -> dict:
+    return {
+        "index": index,
+        "ttft_ms": 100.0 + index,
+        "prompt_tok_per_s": 280.0,
+        "gen_tok_per_s": 26.0,
+        "vram_used_mib": 3161.0,
+        "gpu_draw_w": 45.0,
+        "process_rss_bytes": 500_000_000,
+        "wall_clock_s": 5.0,
+        "stop_type": "limit",
+        "tokens_predicted": 128,
+    }
+
 
 COMPLETE_RUNTIME_ROW = {
     "schema_version": SCHEMA_VERSION,
@@ -25,15 +47,31 @@ COMPLETE_RUNTIME_ROW = {
     "flags": ["-m", "model.gguf"],
     "prompt": "hello",
     "max_tokens": 128,
-    "wall_clock_s": 1.2,
-    "ttft_ms": 100.0,
+    "wall_clock_s": 25.0,
+    "ttft_ms": 103.0,
+    "ttft_ms_mean": 103.0,
+    "ttft_ms_sd": 1.5811388300841898,
     "prompt_tok_per_s": 280.0,
+    "prompt_tok_per_s_mean": 280.0,
+    "prompt_tok_per_s_sd": 0.0,
     "gen_tok_per_s": 26.0,
+    "gen_tok_per_s_mean": 26.0,
+    "gen_tok_per_s_sd": 0.0,
     "vram_used_mib": 3161.0,
     "gpu_draw_w": 45.0,
     "process_rss_bytes": 500_000_000,
     "energy_kwh": 0.00042,
     "energy_method": "estimated_tdp",
+    "sampling": {"seed": 20260822, "temperature": 1.0},
+    "seed_pinned": True,
+    "warmup_count": 1,
+    "warmup_repetitions": [_repetition(0)],
+    "restart_between_repetitions": False,
+    "cooldown_s": 10.0,
+    "repetitions_n": 5,
+    "slot_reset_method": "cache_prompt_false",
+    "repetitions": [_repetition(i) for i in range(1, 6)],
+    "aggregation": dict(aggregation.AGGREGATION_LABELS),
 }
 
 COMPLETE_QUALITY_ROW = {
@@ -97,3 +135,62 @@ def test_explicit_none_value_is_accepted() -> None:
     row = {**COMPLETE_RUNTIME_ROW, "gpu_name": None}
 
     validate_row("runtime", row)
+
+
+def test_repetitions_n_below_two_is_refused() -> None:
+    row = {
+        **COMPLETE_RUNTIME_ROW,
+        "repetitions_n": 1,
+        "repetitions": [_repetition(1)],
+    }
+
+    with pytest.raises(RowContractError, match="repetitions_n"):
+        validate_row("runtime", row)
+
+
+def test_repetitions_length_disagreeing_with_repetitions_n_is_refused() -> None:
+    row = {**COMPLETE_RUNTIME_ROW, "repetitions": [_repetition(i) for i in range(1, 5)]}
+
+    with pytest.raises(RowContractError, match="repetitions"):
+        validate_row("runtime", row)
+
+
+def test_non_contiguous_repetition_indices_are_refused() -> None:
+    bad_repetitions = [
+        _repetition(1),
+        _repetition(2),
+        _repetition(2),
+        _repetition(4),
+        _repetition(5),
+    ]
+    row = {**COMPLETE_RUNTIME_ROW, "repetitions": bad_repetitions}
+
+    with pytest.raises(RowContractError, match="non-contiguous"):
+        validate_row("runtime", row)
+
+
+def test_aggregation_map_missing_a_declared_measurement_is_refused() -> None:
+    incomplete_aggregation = dict(aggregation.AGGREGATION_LABELS)
+    del incomplete_aggregation["gen_tok_per_s"]
+    row = {**COMPLETE_RUNTIME_ROW, "aggregation": incomplete_aggregation}
+
+    with pytest.raises(RowContractError, match="aggregation"):
+        validate_row("runtime", row)
+
+
+def test_every_declared_measurement_is_a_required_runtime_field() -> None:
+    # The two sets are maintained by hand in different modules. A measurement
+    # labelled in AGGREGATION_LABELS but absent from REQUIRED_FIELDS would let
+    # a row declare a statistic for a field it never has to carry, which is
+    # exactly the silent omission the aggregation block exists to prevent.
+    unbacked = aggregation.MEASUREMENT_FIELDS - REQUIRED_FIELDS["runtime"]
+
+    assert unbacked == frozenset()
+
+
+def test_aggregation_map_naming_a_field_the_row_does_not_carry_is_refused() -> None:
+    extra_aggregation = {**aggregation.AGGREGATION_LABELS, "made_up_metric": "median"}
+    row = {**COMPLETE_RUNTIME_ROW, "aggregation": extra_aggregation}
+
+    with pytest.raises(RowContractError, match="made_up_metric"):
+        validate_row("runtime", row)

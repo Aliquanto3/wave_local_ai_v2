@@ -1,4 +1,6 @@
-"""CLI entry point: run one fixed prompt against llama-server, write one runtime row."""
+"""CLI entry point: run a warmed and cooled repetition set against llama-server,
+write one aggregated runtime row.
+"""
 
 from __future__ import annotations
 
@@ -9,35 +11,59 @@ from typing import Any
 
 import requests
 
-from wave_local_ai_v2 import prompt_provenance, provenance, row_contract, server
+from wave_local_ai_v2 import (
+    aggregation,
+    prompt_provenance,
+    provenance,
+    row_contract,
+    server,
+)
 from wave_local_ai_v2.energy import measure_energy
 from wave_local_ai_v2.gpu import read_gpu_stats
 from wave_local_ai_v2.hardware import capture_fiche
+from wave_local_ai_v2.repetitions import (
+    EXCEED_CONTEXT_ERROR_TYPE,
+    SLOT_RESET_METHOD,
+    RepetitionFailure,
+    RepetitionResult,
+    run_repetition_set,
+)
 from wave_local_ai_v2.results import append_row, captured_at, new_run_id
 from wave_local_ai_v2.settings import SettingsError, load_settings
-from wave_local_ai_v2.timings import (
-    MissingTimingsError,
-    parse_timings,
-    read_process_rss,
-)
+from wave_local_ai_v2.timings import MissingTimingsError, read_process_rss
 
 # Run-specific fields, validated on this machine per context_input/baseline_qwen36.md.
 LLAMA_CPP_BUILD = "b10537"
 MODEL_RELATIVE_PATH = Path("Qwen3.6-35B-A3B") / "Qwen3.6-35B-A3B-UD-IQ4_XS.gguf"
 QUANT = "UD-IQ4_XS"
 
+# The seed is pinned in the request body, not by a server flag, so
+# `server.build_flags` stays byte-for-byte the validated baseline command --
+# the same pattern `quality_cli.QUALITY_SEED` / `LOCAL_SAMPLING` uses for
+# exactly this reason. Probed live on this build: two `/completion` calls with
+# the same `seed` returned byte-identical `content`; the same call with no
+# seed did not (see plan.md's Resources table).
+RUNTIME_SEED = 20260822
+# The five sampler values already reach the model through `server.build_flags`;
+# only `seed` is sent per request, so a request never diverges from what the
+# server was actually launched with.
+RUNTIME_SAMPLING: dict[str, Any] = {"seed": RUNTIME_SEED, **server.SAMPLER_SETTINGS}
+
 # Fixed prompt length chosen from live measurement, not just toward llama-bench's pp512
 # window. A debug session (aidd_docs/tasks/2026_08/2026_08_21_runtime-measurement-harness/
 # debug-prefill-gap.md) found prompt_tok_per_s from a fresh, single-request llama-server
 # launch is NOT directly comparable to llama-bench's pp512 figure (measured live at
 # 314.81 +/- 5.60 tok/s with these same flags): part of the gap is per-request overhead a
-# short prompt doesn't amortize (closes with length), and part is an inherent, unavoidable
-# cold-start tax on the first request served after a fresh model load -- a warm-up request
-# tried to remove it, but bled its context into the measured request via the shared -np 1
-# slot and wrecked gen_tok_per_s (26 -> 11.8), so this harness accepts the cold-start cost
-# rather than adding slot-management complexity to hide it. At this length (~1500 tok), two
-# real runs land at 255.9/259.3 tok/s -- the harness's honest ceiling for "one fixed prompt,
-# one fresh server, one real request" (see plan.md's Decisions table for the re-scoped bar).
+# short prompt doesn't amortize (closes with length), and part was, at the time, an
+# unavoidable cold-start tax on the first request served after a fresh model load: at this
+# length (~1500 tok) two single-request runs landed at 255.9/259.3 tok/s, which was that
+# harness's ceiling. That ceiling no longer describes this code. The repetition protocol
+# pays the cold start once in an uncounted warm-up and forces a full prefill on every
+# request with `cache_prompt: False` (see the block in `_run` below), and the counted
+# repetitions now land at a median 272.08 tok/s over the five of the phase-4 live run
+# (aidd_docs/tasks/2026_08/2026_08_22_runtime-repetition-protocol/phase-4.md). The prompt's
+# length is kept for the reason above -- amortizing per-request overhead -- not because a
+# single request is all the harness sends.
 FIXED_PROMPT = (
     "You are a technical writer producing internal documentation for a consulting "
     "team that advises clients on local versus cloud LLM deployment. Summarize, in "
@@ -151,6 +177,26 @@ FIXED_MAX_TOKENS = 128
 REQUEST_TIMEOUT_S = 300
 
 
+def _is_exceed_context_refusal(response: requests.Response) -> bool:
+    """True only for llama-server's documented refusal of an over-long prompt.
+
+    Probed live on this build: HTTP 400 carrying `error.type ==
+    "exceed_context_size_error"` (plan.md's Resources table). Every other 400
+    -- a malformed body, a rejected parameter -- must stay an HTTP error: its
+    payload has no `content` either, so passing it through to `repetitions.py`
+    would have it classified as an `empty` generation and the server's own
+    message thrown away.
+    """
+    if response.status_code != 400:
+        return False
+    try:
+        body = response.json()
+    except ValueError:
+        return False
+    error = body.get("error") if isinstance(body, dict) else None
+    return isinstance(error, dict) and error.get("type") == EXCEED_CONTEXT_ERROR_TYPE
+
+
 def main() -> None:
     try:
         _run()
@@ -164,6 +210,7 @@ def main() -> None:
         # problem and belongs on stderr as one line, not as a traceback.
         OSError,
         MissingTimingsError,
+        RepetitionFailure,
     ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -181,45 +228,102 @@ def _run() -> None:
 
     flags = server.build_flags(model_path)
 
-    with server.running_server(settings.llama_server_path, flags) as process:
+    # A RepetitionFailure is a verdict on a generation, not on the server: the
+    # process answered normally, so its stderr tail would bury the one-line
+    # diagnosis the operator actually needs under unrelated log.
+    with server.running_server(
+        settings.llama_server_path, flags, quiet_exceptions=(RepetitionFailure,)
+    ) as process:
         # A streamed request was tried here to get an independent wall-clock TTFT
-        # (phase-4 task 1.2) from the time of the first received SSE chunk, then
-        # reverted: gen_tok_per_s dropped from ~26 to ~17-18 tok/s right after
-        # switching to streaming, consistent with llama-server counting each SSE
-        # chunk's HTTP flush inside its own reported generation timings -- but this
-        # machine's GPU independently hit sw_thermal_slowdown (confirmed via
+        # from the time of the first received SSE chunk, then reverted:
+        # gen_tok_per_s dropped from ~26 to ~17-18 tok/s right after switching to
+        # streaming, consistent with llama-server counting each SSE chunk's HTTP
+        # flush inside its own reported generation timings -- but this machine's
+        # GPU independently hit sw_thermal_slowdown (confirmed via
         # `nvidia-smi --query-gpu=clocks_event_reasons...`) around the same point in
         # the session, after ~50 minutes of repeated real runs, so streaming-caused-it
         # is plausible but NOT cleanly proven; re-testing needs the GPU to cool down
-        # first. Separately, a discarded warm-up request tried before this one was
-        # rejected on unconfounded evidence: it leaked context into the measured
-        # request's single -np 1 slot and collapsed gen_tok_per_s from 26 to 11.8.
-        # Given that risk is real regardless of the streaming confound, this harness
-        # keeps `ttft_ms` server-reported only, uncorroborated by an independent
-        # measurement, rather than retry a fix with a demonstrated way to contaminate
-        # the metric it must not break.
+        # first. This harness keeps `ttft_ms` server-reported only, uncorroborated by
+        # an independent measurement.
+        #
+        # A single warm-up request was also tried and reverted here at first: it
+        # shared the measured request's single `-np 1` slot and, because the
+        # server's context cache was still warm, collapsed gen_tok_per_s from 26 to
+        # 11.8. The mechanism that replaced it (phase-1 of the repetition-protocol
+        # increment, `aidd_docs/tasks/2026_08/2026_08_22_runtime-repetition-protocol/`)
+        # sends `cache_prompt: False` on every request, warm-up included
+        # (`repetitions.SLOT_RESET_METHOD`), rather than trying to avoid the shared
+        # slot: this forces a full prefill every time, so a warm-up can no longer
+        # leave a cache behind for the next repetition to benefit from unevenly.
+        # Slot erase (`POST /slots/0?action=erase`) was probed as an alternative and
+        # rejected: it returns HTTP 501 unless the server is launched with
+        # `--slot-save-path`, which would change the validated baseline flag set.
+        # Phase 4 re-validated this mechanism live (see its Evidence table):
+        # repetition 1 (post-warm-up) landed mid-pack among repetitions 2..5
+        # (25.43 tok/s vs 25.49/24.87/25.71/25.44), not systematically below
+        # them -- the isolation held on this run.
         def send_request() -> dict[str, Any]:
             response = requests.post(
                 f"http://{server.HOST}:{server.PORT}/completion",
                 json={
                     "prompt": FIXED_PROMPT,
                     "n_predict": FIXED_MAX_TOKENS,
+                    "cache_prompt": False,
+                    "seed": RUNTIME_SEED,
                 },
                 timeout=REQUEST_TIMEOUT_S,
             )
-            response.raise_for_status()
+            # The context-exceeded refusal is not raised here: `repetitions.py`
+            # classifies its `error.type` into `truncated_context` rather than
+            # crashing on an uncaught HTTPError. Every other status -- a 400
+            # that means something else included -- still raises.
+            if not _is_exceed_context_refusal(response):
+                response.raise_for_status()
             result: dict[str, Any] = response.json()
             return result
 
-        wall_clock_start = time.monotonic()
-        response_json, energy = measure_energy(send_request)
-        wall_clock_s = time.monotonic() - wall_clock_start
+        def read_rss() -> int | None:
+            # None when the server exited or the OS denied the read: the
+            # repetition is still recorded, with the column null rather than
+            # the run aborted.
+            return read_process_rss(process.pid)
 
-        timings = parse_timings(response_json)
-        gpu_stats = read_gpu_stats()
-        # None when the server exited or the OS denied the read: the row is
-        # still written, with the column null rather than the run aborted.
-        rss_bytes: int | None = read_process_rss(process.pid)
+        warmups, _ = run_repetition_set(
+            send=send_request,
+            read_gpu=read_gpu_stats,
+            read_rss=read_rss,
+            sleep=time.sleep,
+            warmup_count=settings.runtime_warmup_count,
+            count=0,
+            cooldown_s=settings.runtime_cooldown_s,
+        )
+
+        def _run_counted() -> tuple[list[RepetitionResult], list[RepetitionResult]]:
+            return run_repetition_set(
+                send=send_request,
+                read_gpu=read_gpu_stats,
+                read_rss=read_rss,
+                sleep=time.sleep,
+                warmup_count=0,
+                count=settings.runtime_repetitions,
+                cooldown_s=settings.runtime_cooldown_s,
+            )
+
+        # The warm-up runs outside this tracker: energy spans only the counted
+        # repetitions and the cooldowns between them (plan.md's Decisions table).
+        (_, counted), energy = measure_energy(_run_counted)
+
+    # The raw counted repetitions are kept on the row unmodified: a reader
+    # recomputes these aggregates rather than trusting them.
+    aggregated_timings = aggregation.aggregate_timings(counted)
+    peaks = {
+        metric: aggregation.peak([rep[metric] for rep in counted])  # type: ignore[literal-required]
+        for metric in aggregation.PEAK_METRICS
+    }
+    # wall_clock_s is a sum, not a peak: AGGREGATION_LABELS declares it
+    # "total_over_counted_repetitions" -- each repetition's own request time,
+    # summed, excluding the cooldowns between them.
+    wall_clock_s = sum(rep["wall_clock_s"] for rep in counted)
 
     row: dict[str, Any] = {
         "schema_version": row_contract.SCHEMA_VERSION,
@@ -237,10 +341,18 @@ def _run() -> None:
         "flags": flags,
         "prompt": FIXED_PROMPT,
         "max_tokens": FIXED_MAX_TOKENS,
+        "sampling": dict(RUNTIME_SAMPLING),
+        "seed_pinned": True,
+        "warmup_count": settings.runtime_warmup_count,
+        "warmup_repetitions": warmups,
+        "restart_between_repetitions": False,
+        "cooldown_s": settings.runtime_cooldown_s,
+        "slot_reset_method": SLOT_RESET_METHOD,
+        "repetitions": counted,
         "wall_clock_s": wall_clock_s,
-        **timings,
-        **gpu_stats,
-        "process_rss_bytes": rss_bytes,
+        **aggregated_timings,
+        **peaks,
+        "aggregation": dict(aggregation.AGGREGATION_LABELS),
         **energy,
     }
     append_row(settings.results_path, "runtime", row)
@@ -249,6 +361,7 @@ def _run() -> None:
         f"gen_tok_per_s={row['gen_tok_per_s']:.1f} "
         f"prompt_tok_per_s={row['prompt_tok_per_s']:.1f} "
         f"ttft_ms={row['ttft_ms']:.1f} "
+        f"repetitions_n={row['repetitions_n']} "
         f"energy_method={row['energy_method']} "
         f"-> {settings.results_path}"
     )

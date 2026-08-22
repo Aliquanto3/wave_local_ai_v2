@@ -32,6 +32,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `mistral_client.complete_prompt` now returns a structured result
   (`content`, `endpoint`, `finish_reason`, `generated_tokens`) instead of a
   bare string.
+- The runtime harness now runs a declared repetition protocol: one warm-up
+  (excluded from N, per-request `cache_prompt: false` forces a full
+  prefill) plus N≥2 counted repetitions with a cooldown between them, a
+  seed pinned per request while the validated baseline flag set stays
+  untouched, and median/mean/sample-sd/peak aggregates over the counted
+  set. A row now carries the ordered raw repetitions alongside the
+  aggregate, plus `sampling`, `seed_pinned`, `warmup_count`,
+  `warmup_repetitions`, `cooldown_s`, `repetitions_n`,
+  `slot_reset_method`, and an `aggregation` map declaring the statistic
+  behind every published measurement.
+- A repetition that returns blank content, an unparseable timings block, or
+  a `exceed_context_size_error` refusal now fails the whole row by index
+  and reason — no retry, no substituted value, nothing written.
 
 ### Changed
 
@@ -39,6 +52,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`max_tokens`), the same one the local `/completion` call applies as
   `n_predict`. Both halves of a comparison now run under the cap their rows
   publish; previously only the local half did.
+- A runtime row is now a repetition set, not one request: `gen_tok_per_s`,
+  `prompt_tok_per_s`, `ttft_ms`, `vram_used_mib`, `gpu_draw_w` and
+  `process_rss_bytes` are now aggregates (median or peak) over the counted
+  repetitions rather than a single sample. `SCHEMA_VERSION` moves `"1"` →
+  `"2"`; quality rows move with it since the constant is shared.
 
 ## [0.1.0] - 2026-08-22
 

@@ -24,6 +24,30 @@ class Timings(TypedDict):
     gen_tok_per_s: float
 
 
+class GenerationFacts(TypedDict):
+    """What a repetition is judged on, beyond the timing numbers.
+
+    Every field tolerates an absent key as `None` rather than raising: this is
+    read from a response that already parsed as JSON, and a shape drift here
+    should surface as a visible `None` on the row, not a crashed run.
+    """
+
+    stop_type: str | None
+    tokens_predicted: int | None
+    truncated: bool | None
+    content: str
+
+
+def parse_generation_facts(response_json: dict[str, Any]) -> GenerationFacts:
+    """Extract the generation facts a repetition's outcome is classified on."""
+    return GenerationFacts(
+        stop_type=response_json.get("stop_type"),
+        tokens_predicted=response_json.get("tokens_predicted"),
+        truncated=response_json.get("truncated"),
+        content=response_json.get("content", ""),
+    )
+
+
 def parse_timings(response_json: dict[str, Any]) -> Timings:
     """Extract TTFT, prompt tok/s, and generation tok/s from a completion response."""
     timings = response_json.get("timings")

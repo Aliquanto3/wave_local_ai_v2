@@ -4,9 +4,15 @@ The command-line interface for running benchmarks.
 
 ## Commands
 
-- `wave-local-ai-v2` — runtime benchmark: launches llama-server, sends one fixed
-  prompt, appends one row (hardware fiche, timings, GPU stats, energy) to
-  `aidd_docs/results/runtime.jsonl`
+- `wave-local-ai-v2` — runtime benchmark: launches llama-server once, runs one
+  warm-up plus N counted repetitions of the fixed prompt (a cooldown between
+  them, a pinned seed, `cache_prompt: false` forcing a full prefill every
+  time), and appends one row (hardware fiche, median/mean/sd + peak
+  aggregates, the raw ordered repetitions, energy) to
+  `aidd_docs/results/runtime.jsonl`. `RUNTIME_REPETITIONS` (default 5),
+  `RUNTIME_COOLDOWN_S` (default 10.0) and `RUNTIME_WARMUP_COUNT` (default 1)
+  override the protocol. A failing repetition fails the whole row: nothing
+  is written.
 - `wave-local-ai-v2-quality` — quality benchmark: scores the classification suite
   against the local SLM and the Mistral cloud model, appending one row per
   (item, model) to `aidd_docs/results/quality.jsonl`
