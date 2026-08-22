@@ -1,6 +1,6 @@
 ---
 objective: "Every runtime and quality row names the code and tree it was captured from, the endpoint and prompt template that produced its prompt, and — for quality rows — the reason a failed generation scored zero, so a row is falsifiable and reproducible rather than merely plausible."
-status: in-progress
+status: implemented
 ---
 
 # Plan: Rows name their code, call path and failure reason

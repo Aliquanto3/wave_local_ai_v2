@@ -58,6 +58,17 @@ increment. They were **not** back-filled. A hand-edited row is no longer the row
 the harness wrote; the absence of those keys is the honest signal that these rows
 were produced before the change.
 
+The same applies to the four local-model rows in `quality-reference.jsonl` that
+carry `"predicted_label": null, "correct": false` with no reason —
+`technical-01`, `technical-02`, `billing-03` and `technical-03`, plus their
+run-2 duplicates (8 rows total). The harness as it stands today always writes a
+`failure_reason` naming why a generation failed (`empty`, `unparseable`,
+`truncated_max_tokens` or `truncated_context`); a row with a bare null and no
+reason could not be produced by this code path. These rows are **not
+back-filled** either: same discipline as above, a hand-edited row is no longer
+the row the harness wrote, so the honest signal is left in place rather than
+reconstructed.
+
 The only edit applied to the copied bytes is the line terminator: the live stores
 are written in Windows text mode and use CRLF, and these snapshots use LF like
 the rest of the repository. Every JSON payload is verbatim, byte for byte.

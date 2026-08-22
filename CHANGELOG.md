@@ -17,6 +17,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A suite gate marks an under-sized or language-imbalanced suite indicative
   rather than passing or failing it outright — today's 10-item, EN-only suite
   included, and refuses one whose items carry no language or provenance tag.
+- Every runtime and quality row now carries `release_version`, `commit_sha`
+  and `tree_dirty`, captured once per run and degrading to explicit nulls
+  when git is unavailable, so a row names the exact code and tree state that
+  produced it.
+- Every row now carries the endpoint, prompt-template id, prompt-template
+  content hash, and capture-or-reconstruction label that produced its
+  prompt. The writer gate refuses a row whose endpoint applies a template
+  but whose `prompt_template_id` is `none`.
+- A failed quality generation (empty, truncated at the suite's cap, truncated
+  at the model's own context limit, or unparseable) now scores 0, stays in
+  the suite's denominator, and names its `failure_reason`; every quality row
+  also carries the suite's aggregated `failure_counts`.
+- `mistral_client.complete_prompt` now returns a structured result
+  (`content`, `endpoint`, `finish_reason`, `generated_tokens`) instead of a
+  bare string.
 
 ### Changed
 
