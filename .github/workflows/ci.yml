@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
 
 permissions:
@@ -46,9 +47,106 @@ jobs:
       - name: Dependency audit
         run: uv run python scripts/audit_dependencies.py
 
+  build:
+    name: build
+    # Also runs on a v* tag, not only on pull requests: `publish` needs this
+    # job, and a needed job that never ran cannot gate anything. The tag's
+    # image is therefore smoke-tested here before `publish` pushes it.
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      IMAGE: wave-local-ai-v2:ci
+      EXPECTED_SOURCE: ${{ github.server_url }}/${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          push: false
+          load: true
+          tags: ${{ env.IMAGE }}
+          build-args: |
+            SOURCE=${{ env.EXPECTED_SOURCE }}
+            REVISION=${{ github.sha }}
+
+      - name: "Smoke test: the pinned llama-server runs on CPU"
+        run: docker run --rm --entrypoint llama-server "$IMAGE" --version
+        shell: bash
+
+      - name: "Smoke test: an unconfigured run is refused"
+        run: |
+          set +e
+          output=$(docker run --rm -e SLM_MODELS_DIR= "$IMAGE" 2>&1)
+          status=$?
+          set -e
+          echo "$output"
+          if [ "$status" -ne 1 ]; then
+            echo "expected exit 1, got $status"
+            exit 1
+          fi
+          if [ "$output" != "error: SLM_MODELS_DIR is not set" ]; then
+            echo "unexpected message"
+            exit 1
+          fi
+        shell: bash
+
+      - name: "Smoke test: the OCI labels name the source and the commit"
+        run: |
+          source_label=$(docker inspect --format \
+            '{{index .Config.Labels "org.opencontainers.image.source"}}' "$IMAGE")
+          revision_label=$(docker inspect --format \
+            '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$IMAGE")
+          if [ "$source_label" != "$EXPECTED_SOURCE" ]; then
+            echo "source label is '$source_label', expected '$EXPECTED_SOURCE'"
+            exit 1
+          fi
+          if [ "$revision_label" != "$GITHUB_SHA" ]; then
+            echo "revision label is '$revision_label', expected '$GITHUB_SHA'"
+            exit 1
+          fi
+        shell: bash
+
+  publish:
+    name: publish
+    needs: [test, build]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/aliquanto3/wave_local_ai_v2:${{ github.ref_name }}
+            ghcr.io/aliquanto3/wave_local_ai_v2:latest
+          build-args: |
+            SOURCE=${{ github.server_url }}/${{ github.repository }}
+            REVISION=${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
   required:
     name: required
-    needs: [test]
+    needs: [test, build]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -56,6 +154,10 @@ jobs:
         run: |
           if [ "${{ needs.test.result }}" != "success" ]; then
             echo "test matrix did not succeed: ${{ needs.test.result }}"
+            exit 1
+          fi
+          if [ "${{ needs.build.result }}" != "success" ] && [ "${{ needs.build.result }}" != "skipped" ]; then
+            echo "build did not succeed: ${{ needs.build.result }}"
             exit 1
           fi
         shell: bash

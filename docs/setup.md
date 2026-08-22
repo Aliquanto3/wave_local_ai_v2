@@ -75,6 +75,80 @@ out the matching build tag first. This is not conditioned on today's release
 actually missing an asset for your platform — it's the fallback for whenever
 one eventually does.
 
+### NVIDIA GPU (documented, untested in CI)
+
+The published container image (see the
+[README's pull-and-run section](../README.md#pull-and-run-no-clone)) is
+**CPU-only** — it does not ship the CUDA build above. A GPU deployment would
+need, instead:
+
+- **Base image:** `nvidia/cuda:12.4.1-runtime-ubuntu22.04` (matching the
+  CUDA 12.x this project's hardware section already requires), not
+  `python:3.12-slim` — the shipped `Dockerfile` builds the CPU image only.
+- **Docker runtime flag:** `--gpus all` (or `--runtime=nvidia`, depending on
+  your Docker Engine / NVIDIA Container Toolkit setup).
+- **`llama-server` flags that change:** the CPU build's `-ngl 99` and
+  `--n-cpu-moe 37` (both in `src/wave_local_ai_v2/server.py`) exist to force
+  every layer onto GPU and then push MoE experts back to CPU RAM under a
+  6 GB-VRAM ceiling; a GPU deployment with more VRAM would lower or drop
+  `--n-cpu-moe` to keep more experts resident on the GPU. There is no second
+  set of magic numbers documented here — `server.py`'s constants are the
+  bare-metal precedent to start from and re-tune per your own VRAM budget.
+
+**Untested in CI** — no GitHub-hosted runner carries a GPU, so this path is
+documented, not built or exercised by this repository's CI.
+
+### Building the image from a clone
+
+`compose.yaml` runs the published image and carries no build section, so that
+a reader who pulled the image and fetched that one file never triggers a build
+they have no context for. From a clone, layer the developer overlay on top:
+
+```sh
+docker compose -f compose.yaml -f compose.build.yaml build
+docker compose -f compose.yaml -f compose.build.yaml run --rm runtime
+```
+
+The overlay tags the build under the same name `compose.yaml` runs
+(`ghcr.io/aliquanto3/wave_local_ai_v2:${WAVE_IMAGE_TAG:-latest}`), so plain
+`docker compose run --rm runtime` afterwards reuses the local build instead of
+pulling.
+
+### Publishing: the one-time GHCR visibility switch
+
+A package first pushed to GHCR by a workflow's `GITHUB_TOKEN` is **private**,
+whatever the repository's own visibility, and there is no API to pre-create a
+public user package. After the first `v*` tag publishes, the owner sets it
+public once, by hand:
+
+**github.com/Aliquanto3?tab=packages** → `wave_local_ai_v2` → *Package
+settings* → *Danger zone* → *Change visibility* → *Public*.
+
+Until that is done, the README's `docker pull` fails with an authentication
+error for anyone signed out. It is a one-time step per package, not per
+release.
+
+### Docker Desktop memory (WSL2)
+
+Running the full 35B roster model inside a container needs the Docker
+Desktop WSL2 VM to actually have enough RAM to load it — the container does
+not automatically see the host's full memory. On Windows, Docker Desktop's
+default WSL2 memory cap can sit well under the ~18 GB the model file alone
+needs; `llama-server` fails at load time (`failed to fit params to free
+device memory`) rather than falling back to something smaller. If you hit
+this, raise the limit in `%UserProfile%\.wslconfig`:
+
+```ini
+[wsl2]
+memory=24GB
+```
+
+then restart Docker Desktop (or `wsl --shutdown` from PowerShell) for it to
+take effect. Even with enough memory, CPU-only inference of a 35B MoE model
+inside a container is slow — expect the same order of magnitude as the
+bare-metal CPU path in the previous section, not the CUDA-build numbers in
+the committed reference evidence.
+
 ## 3. Get the model weights and verify the checksum
 
 - Repo: `unsloth/Qwen3.6-35B-A3B-GGUF` on Hugging Face

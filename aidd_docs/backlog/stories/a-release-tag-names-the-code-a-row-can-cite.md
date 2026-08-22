@@ -25,6 +25,7 @@ order: 6
 - The image label of order 5 and the sha the code reports name the same commit; a mismatch is a defect, not a rounding.
 - This story exposes the two values and writes nothing into a result row. The row fields, the dirty-tree flag and the row-level fallback belong to `rows-name-the-code-and-the-tree-that-produced-them.md`, which consumes this surface — the seam the epic names as Criterion 19's single boundary. No row schema changes here.
 - `README.md` states which release the committed `*-reference.jsonl` evidence was produced under, or states plainly that it predates the first tag rather than implying a version it never carried.
+- The first tag's release checklist includes the one-time GHCR visibility switch: a package first pushed by `GITHUB_TOKEN` is private whatever the repository's visibility, and no API pre-creates a public user package, so the owner sets it to public once under the package settings and the checklist records that an anonymous `docker pull` was tried afterwards and succeeded. Order 5 documents the step; this story is where it is actually performed.
 
 ## Files it creates or changes
 
