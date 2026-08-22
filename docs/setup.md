@@ -24,10 +24,14 @@ not to reach this point.
 git clone <this-repo-url>
 cd wave_local_ai_v2
 uv sync
+uv run pre-commit install
 ```
 
-`uv sync` is the only command needed before the platform-specific steps below,
-and it needs no GPU or API key.
+`uv sync` is the only command needed to reach the platform-specific steps
+below, and it needs no GPU or API key. `uv run pre-commit install` is the
+contributor step: it installs both the commit-stage and push-stage hooks in one
+command — see `aidd_docs/memory/coding-assertions.md` for what each stage runs.
+Running the benchmarks does not require it.
 
 ## 2. Get `llama-server`, build `b10537`
 
