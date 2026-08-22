@@ -52,6 +52,7 @@ RUN chown -R app:app /app /home/app
 
 ARG SOURCE
 ARG REVISION
+ENV WAVE_BUILD_SHA="${REVISION}"
 LABEL org.opencontainers.image.source="${SOURCE}" \
       org.opencontainers.image.revision="${REVISION}"
 

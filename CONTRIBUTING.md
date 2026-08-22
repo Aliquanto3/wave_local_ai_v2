@@ -53,6 +53,31 @@ for the exact command list. Branch protection references one check name,
 `required`, that stays stable as the matrix grows; it is green only when
 every matrix leg is green.
 
+## Cutting a release
+
+1. Confirm `pyproject.toml`'s `[project].version` is the one being released.
+2. Move the `## [Unreleased]` entries in `CHANGELOG.md` into a new dated
+   `## [X.Y.Z] - YYYY-MM-DD` section, in prose describing what shipped, not a
+   list of commit subjects.
+3. Land that change on `main` through the normal pull request path.
+4. Cut the annotated tag with the `aidd-vcs:03-release-tag` skill.
+
+The `verify-tag` CI job (`.github/workflows/ci.yml`) fails the tag push if
+the tag name and the packaged version (`build_info.version()`) disagree, and
+`publish` needs it — a tag that doesn't match what shipped never reaches
+GHCR.
+
+**First tag only.** The package `publish` pushes to GHCR under
+`GITHUB_TOKEN` lands **private** regardless of the repository's visibility,
+and no API pre-creates a public user package. After `publish` succeeds on
+the first tag:
+
+1. Open the package's settings on GHCR and switch its visibility to public.
+2. Verify with an anonymous pull from a machine with no `docker login`:
+   `docker pull ghcr.io/aliquanto3/wave_local_ai_v2:<tag>`.
+3. Update this checklist item with the tag it was verified against once
+   done. _(Not yet performed — pending the first tag.)_
+
 ## Branch protection on `main`
 
 The protection is a GitHub repository ruleset, exported to
