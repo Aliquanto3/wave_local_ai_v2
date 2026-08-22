@@ -207,8 +207,16 @@ Fill `SLM_MODELS_DIR` (the parent directory from step 3) and
 uv run wave-local-ai-v2
 ```
 
-One row lands in `RUNTIME_RESULTS_PATH` (default
-`aidd_docs/results/runtime.jsonl`).
+This runs one warm-up plus `RUNTIME_REPETITIONS` counted repetitions (default
+5, ~N× the cost of a single request) with a `RUNTIME_COOLDOWN_S` cooldown
+(default 10.0s) between them, so a default run takes roughly 5x a single
+request's time plus 50s of cooldown. Lower `RUNTIME_REPETITIONS` and
+`RUNTIME_COOLDOWN_S` for a faster development loop; the published defaults
+are what the aggregates in `runtime.jsonl` are computed under. One row lands
+in `RUNTIME_RESULTS_PATH` (default `aidd_docs/results/runtime.jsonl`) if
+every repetition succeeds; a single failing repetition (empty output, an
+unusable timings block, or the model's context exceeded) fails the whole
+run and writes nothing.
 
 **4.3 — second run, set `MISTRAL_API_KEY` first:**
 

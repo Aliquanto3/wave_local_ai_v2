@@ -13,6 +13,9 @@ from wave_local_ai_v2 import server
 def test_build_flags_matches_baseline() -> None:
     flags = server.build_flags(Path("model.gguf"))
 
+    # The sampler constants moved from strings to numbers so `SAMPLER_SETTINGS`
+    # can be reused as the row's `sampling` block; the produced flag list must
+    # not move by one byte.
     assert flags == [
         "-m",
         "model.gguf",
@@ -46,6 +49,16 @@ def test_build_flags_matches_baseline() -> None:
         "--port",
         "8080",
     ]
+
+
+def test_sampler_settings_matches_the_flag_constants() -> None:
+    assert server.SAMPLER_SETTINGS == {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0,
+        "presence_penalty": 1.5,
+    }
 
 
 def test_start_server_returns_once_health_reports_ready() -> None:
@@ -123,6 +136,42 @@ def test_running_server_stops_on_exception() -> None:
     ):
         raise ValueError("boom")
 
+    mock_stop.assert_called_once_with(fake_process)
+
+
+def test_running_server_dumps_the_stderr_tail_for_a_server_failure(capsys) -> None:
+    fake_process = MagicMock()
+    fake_process.poll.return_value = None
+
+    with (
+        patch("wave_local_ai_v2.server.start_server", return_value=fake_process),
+        patch("wave_local_ai_v2.server.stop_server"),
+        pytest.raises(ValueError),
+        server.running_server(Path("llama-server.exe"), []),
+    ):
+        raise ValueError("boom")
+
+    assert "llama-server stderr tail:" in capsys.readouterr().err
+
+
+def test_running_server_stays_silent_for_a_quiet_exception(capsys) -> None:
+    # A generation the caller judged unusable came back over a healthy
+    # connection: the child's log explains nothing and would bury the caller's
+    # own one-line diagnosis. The exception still propagates untouched.
+    fake_process = MagicMock()
+    fake_process.poll.return_value = None
+
+    with (
+        patch("wave_local_ai_v2.server.start_server", return_value=fake_process),
+        patch("wave_local_ai_v2.server.stop_server") as mock_stop,
+        pytest.raises(ValueError),
+        server.running_server(
+            Path("llama-server.exe"), [], quiet_exceptions=(ValueError,)
+        ),
+    ):
+        raise ValueError("boom")
+
+    assert capsys.readouterr().err == ""
     mock_stop.assert_called_once_with(fake_process)
 
 
