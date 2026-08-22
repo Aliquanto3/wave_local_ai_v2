@@ -9,7 +9,7 @@ from typing import Any
 
 import requests
 
-from wave_local_ai_v2 import provenance, row_contract, server
+from wave_local_ai_v2 import prompt_provenance, provenance, row_contract, server
 from wave_local_ai_v2.energy import measure_energy
 from wave_local_ai_v2.gpu import read_gpu_stats
 from wave_local_ai_v2.hardware import capture_fiche
@@ -226,6 +226,10 @@ def _run() -> None:
         "run_id": run_id,
         "captured_at": captured_at(),
         **provenance_fields,
+        "endpoint": prompt_provenance.LOCAL_COMPLETION_ENDPOINT,
+        "prompt_template_id": prompt_provenance.TEMPLATE_ID_NONE,
+        "prompt_template_hash": None,
+        "prompt_capture": prompt_provenance.PROMPT_CAPTURE_CAPTURED,
         **fiche,
         "llama_cpp_build": LLAMA_CPP_BUILD,
         "model_file": MODEL_RELATIVE_PATH.name,

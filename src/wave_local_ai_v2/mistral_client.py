@@ -4,7 +4,8 @@ No SDK, no streaming, no retries -- `requests` only, matching this project's
 existing HTTP pattern (`server.py`). Endpoint, headers, and request/response
 shape confirmed against https://docs.mistral.ai/api/ (2026-08-21): POST
 {model, messages} with a Bearer token, response has
-choices[0].message.content.
+choices[0].message.content. `complete_prompt` returns that content alongside
+the endpoint it called, as a `MistralCompletion`.
 
 The model id is deliberately dated, not the `mistral-small-latest` alias.
 `architecture.md` defines a quality score as reproducible on model + prompt +
@@ -18,7 +19,7 @@ replacement against the live endpoint rather than the documentation.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, TypedDict
 
 import requests
 
@@ -36,6 +37,13 @@ class MistralRequestError(RuntimeError):
     """Raised on a non-200 response or an unparseable response body."""
 
 
+class MistralCompletion(TypedDict):
+    """One completion returned by `complete_prompt`."""
+
+    content: str
+    endpoint: str
+
+
 class ModelUnavailableError(MistralRequestError):
     """Raised when a model id is absent from the live catalog.
 
@@ -46,8 +54,8 @@ class ModelUnavailableError(MistralRequestError):
 
 def complete_prompt(
     prompt: str, api_key: str, *, temperature: float, random_seed: int, max_tokens: int
-) -> str:
-    """Send one prompt to Mistral and return the raw completion text.
+) -> MistralCompletion:
+    """Send one prompt to Mistral and return the completion and the endpoint called.
 
     `temperature`, `random_seed` and `max_tokens` are required keyword arguments
     rather than defaulted ones: a quality score is only reproducible when the
@@ -98,7 +106,7 @@ def complete_prompt(
         # down in normalize_label, as an uncaught AttributeError. Same rule and
         # same wording as the local path's guard in quality_cli.
         raise MistralRequestError(f"unexpected Mistral content type: {content!r}")
-    return content
+    return MistralCompletion(content=content, endpoint=CHAT_COMPLETIONS_URL)
 
 
 def check_model_available(api_key: str, model: str = MODEL) -> str | None:

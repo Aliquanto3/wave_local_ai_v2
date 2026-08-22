@@ -143,6 +143,10 @@ def test_run_appends_one_row_with_fiche_and_metrics(stubbed_run) -> None:
     assert row["release_version"] == "v0.1.0"
     assert row["commit_sha"] == "deadbeef"
     assert row["tree_dirty"] is False
+    assert row["endpoint"] == "/completion"
+    assert row["prompt_template_id"] == "none"
+    assert row["prompt_template_hash"] is None
+    assert row["prompt_capture"] == "captured"
 
 
 def test_run_appends_zero_rows_when_request_fails(tmp_path, monkeypatch) -> None:

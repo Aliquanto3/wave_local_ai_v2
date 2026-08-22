@@ -57,7 +57,10 @@ def stubbed_run(tmp_path, monkeypatch):
         ),
         "complete_prompt": patch(
             "wave_local_ai_v2.quality_cli.mistral_client.complete_prompt",
-            return_value="billing",
+            return_value={
+                "content": "billing",
+                "endpoint": mistral_client.CHAT_COMPLETIONS_URL,
+            },
         ),
         # Without this every test in this file would issue a live GET to the
         # Mistral model catalog before the suite runs.
@@ -473,6 +476,31 @@ def test_all_rows_of_one_run_share_the_identical_provenance_triple(
     assert triples == {("v0.1.0", "deadbeef", False)}
 
 
+def test_local_and_cloud_rows_record_distinct_call_paths(stubbed_run) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    local_rows = [row for row in rows if row["provider"] == "local"]
+    cloud_rows = [row for row in rows if row["provider"] == "mistral"]
+    assert local_rows and cloud_rows
+
+    for row in local_rows:
+        assert row["endpoint"] == "/completion"
+        assert row["prompt_template_id"] == "none"
+        assert row["prompt_template_hash"] is None
+        assert row["prompt_capture"] == "captured"
+
+    cloud_hashes = {row["prompt_template_hash"] for row in cloud_rows}
+    assert len(cloud_hashes) == 1
+    for row in cloud_rows:
+        assert row["endpoint"] == mistral_client.CHAT_COMPLETIONS_URL
+        assert row["prompt_template_id"] == "mistral-chat-user-message"
+        assert row["prompt_template_hash"] is not None
+        assert row["prompt_capture"] == "captured"
+
+
 def test_two_runs_carry_two_distinct_run_ids(stubbed_run) -> None:
     quality_results_path, _ = stubbed_run
 
@@ -518,9 +546,9 @@ def test_local_rows_are_written_before_the_first_cloud_call(stubbed_run) -> None
     quality_results_path, started = stubbed_run
     rows_at_first_cloud_call: list[int] = []
 
-    def record_then_answer(*args: object, **kwargs: object) -> str:
+    def record_then_answer(*args: object, **kwargs: object) -> dict[str, str]:
         rows_at_first_cloud_call.append(len(read_rows(quality_results_path)))
-        return "billing"
+        return {"content": "billing", "endpoint": mistral_client.CHAT_COMPLETIONS_URL}
 
     started["complete_prompt"].side_effect = record_then_answer
 

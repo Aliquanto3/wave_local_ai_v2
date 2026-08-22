@@ -35,7 +35,8 @@ def test_complete_prompt_returns_content_and_sends_expected_request() -> None:
             "classify this", "fake-key", **SAMPLING, max_tokens=MAX_TOKENS
         )
 
-    assert result == "billing"
+    assert result["content"] == "billing"
+    assert result["endpoint"] == EXPECTED_CHAT_COMPLETIONS_URL
     args, kwargs = post.call_args
     assert args[0] == EXPECTED_CHAT_COMPLETIONS_URL
     assert kwargs["headers"]["Authorization"] == "Bearer fake-key"

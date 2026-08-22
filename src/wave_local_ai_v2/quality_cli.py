@@ -18,6 +18,7 @@ import requests
 from wave_local_ai_v2 import (
     classification_suite,
     mistral_client,
+    prompt_provenance,
     provenance,
     row_contract,
     server,
@@ -129,9 +130,10 @@ def _run() -> None:
         sampling=LOCAL_SAMPLING,
         gate_result=gate_result,
         provenance_fields=provenance_fields,
+        endpoint=prompt_provenance.LOCAL_COMPLETION_ENDPOINT,
     )
 
-    cloud_completions = _run_cloud_suite(settings)
+    cloud_endpoint, cloud_completions = _run_cloud_suite(settings)
     _score_and_write(
         settings,
         run_id=run_id,
@@ -141,6 +143,7 @@ def _run() -> None:
         sampling=CLOUD_SAMPLING,
         gate_result=gate_result,
         provenance_fields=provenance_fields,
+        endpoint=cloud_endpoint,
     )
 
 
@@ -186,13 +189,13 @@ def _run_local_suite(settings: Settings, model_path: Path) -> list[str]:
     return completions
 
 
-def _run_cloud_suite(settings: Settings) -> list[str]:
+def _run_cloud_suite(settings: Settings) -> tuple[str, list[str]]:
     # The same cap the local half runs under (`n_predict` above): the suite
     # declares one generation cap for every model it compares, and every row
     # publishes it as what that row ran under. Sending it to only one provider
     # would make the cloud rows' `max_output_tokens` a claim about a limit that
     # was never applied.
-    return [
+    completions = [
         mistral_client.complete_prompt(
             item["prompt"],
             settings.mistral_api_key,
@@ -202,6 +205,11 @@ def _run_cloud_suite(settings: Settings) -> list[str]:
         )
         for item in CLASSIFICATION_TASK_SUITE
     ]
+    # Every call hits the same endpoint within one run; the first response
+    # names it, sourced from the module that actually made the call rather
+    # than read off mistral_client's own constants at this call site.
+    endpoint = completions[0]["endpoint"]
+    return endpoint, [completion["content"] for completion in completions]
 
 
 def _score_and_write(
@@ -214,7 +222,16 @@ def _score_and_write(
     sampling: dict[str, Any],
     gate_result: SuiteGateResult,
     provenance_fields: dict[str, Any],
+    endpoint: str,
 ) -> None:
+    prompt_template_id = (
+        prompt_provenance.TEMPLATE_ID_NONE
+        if provider == "local"
+        else prompt_provenance.TEMPLATE_ID_MISTRAL_CHAT_MESSAGE
+    )
+    prompt_template_hash = (
+        None if provider == "local" else prompt_provenance.MISTRAL_CHAT_MESSAGE_HASH
+    )
     scored_items = [
         score_item(item, completion)
         for item, completion in zip(CLASSIFICATION_TASK_SUITE, completions, strict=True)
@@ -227,6 +244,10 @@ def _score_and_write(
             "run_id": run_id,
             "captured_at": captured_at(),
             **provenance_fields,
+            "endpoint": endpoint,
+            "prompt_template_id": prompt_template_id,
+            "prompt_template_hash": prompt_template_hash,
+            "prompt_capture": prompt_provenance.PROMPT_CAPTURE_CAPTURED,
             "model_id": model_id,
             "provider": provider,
             "task_suite": "classification",

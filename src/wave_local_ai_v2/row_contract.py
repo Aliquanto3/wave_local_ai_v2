@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from wave_local_ai_v2 import prompt_provenance
+
 SCHEMA_VERSION = "1"
 
 RowKind = Literal["runtime", "quality"]
@@ -25,6 +27,11 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "release_version",
             "commit_sha",
             "tree_dirty",
+            # prompt_provenance: call-path identity
+            "endpoint",
+            "prompt_template_id",
+            "prompt_template_hash",
+            "prompt_capture",
             # hardware.HardwareFiche
             "cpu",
             "ram_gb",
@@ -61,6 +68,11 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "release_version",
             "commit_sha",
             "tree_dirty",
+            # prompt_provenance: call-path identity
+            "endpoint",
+            "prompt_template_id",
+            "prompt_template_hash",
+            "prompt_capture",
             "model_id",
             "provider",
             "task_suite",
@@ -102,4 +114,13 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
         raise RowContractError(
             f"row of kind {kind!r} is missing required field(s): "
             f"{', '.join(sorted(missing))}"
+        )
+
+    endpoint = row["endpoint"]
+    prompt_template_id = row["prompt_template_id"]
+    if not prompt_provenance.is_consistent(endpoint, prompt_template_id):
+        raise RowContractError(
+            f"row of kind {kind!r} pairs endpoint {endpoint!r} with "
+            f"prompt_template_id {prompt_template_id!r}: an endpoint that "
+            f"applies a template cannot declare 'none'"
         )
