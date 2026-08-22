@@ -23,6 +23,10 @@ fiche. See the "Quality / runtime split" decision in
 [`aidd_docs/memory/architecture.md`](aidd_docs/memory/architecture.md) and the
 evidence layout in [`aidd_docs/results/README.md`](aidd_docs/results/README.md).
 
+`main` takes changes only through a checked pull request — the ruleset that
+enforces it is tracked in
+[`.github/rulesets/main.json`](.github/rulesets/main.json).
+
 A merge is blocked by a lint, format, or type-check failure, a test failure,
 coverage dropping below 80%, a secret detected in the diff, or an unwaived
 high/critical-severity dependency finding — see open exceptions in
