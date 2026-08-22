@@ -21,6 +21,10 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "schema_version",
             "run_id",
             "captured_at",
+            # provenance.capture_provenance
+            "release_version",
+            "commit_sha",
+            "tree_dirty",
             # hardware.HardwareFiche
             "cpu",
             "ram_gb",
@@ -53,6 +57,10 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "schema_version",
             "run_id",
             "captured_at",
+            # provenance.capture_provenance
+            "release_version",
+            "commit_sha",
+            "tree_dirty",
             "model_id",
             "provider",
             "task_suite",

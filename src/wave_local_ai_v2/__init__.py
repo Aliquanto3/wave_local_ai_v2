@@ -9,7 +9,7 @@ from typing import Any
 
 import requests
 
-from wave_local_ai_v2 import row_contract, server
+from wave_local_ai_v2 import provenance, row_contract, server
 from wave_local_ai_v2.energy import measure_energy
 from wave_local_ai_v2.gpu import read_gpu_stats
 from wave_local_ai_v2.hardware import capture_fiche
@@ -173,6 +173,7 @@ def _run() -> None:
     settings = load_settings()
     run_id = new_run_id()
     fiche = capture_fiche()
+    provenance_fields = provenance.capture_provenance()
 
     model_path = settings.slm_models_dir / MODEL_RELATIVE_PATH
     if not model_path.exists():
@@ -224,6 +225,7 @@ def _run() -> None:
         "schema_version": row_contract.SCHEMA_VERSION,
         "run_id": run_id,
         "captured_at": captured_at(),
+        **provenance_fields,
         **fiche,
         "llama_cpp_build": LLAMA_CPP_BUILD,
         "model_file": MODEL_RELATIVE_PATH.name,

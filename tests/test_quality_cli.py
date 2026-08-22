@@ -65,6 +65,14 @@ def stubbed_run(tmp_path, monkeypatch):
             "wave_local_ai_v2.quality_cli.mistral_client.check_model_available",
             return_value=None,
         ),
+        "capture_provenance": patch(
+            "wave_local_ai_v2.quality_cli.provenance.capture_provenance",
+            return_value={
+                "release_version": "v0.1.0",
+                "commit_sha": "deadbeef",
+                "tree_dirty": False,
+            },
+        ),
     }
     started = {name: p.start() for name, p in patches.items()}
     started["running_server"].return_value.__enter__.return_value = fake_process
@@ -448,6 +456,21 @@ def test_all_rows_of_one_run_share_one_run_id(stubbed_run) -> None:
         parsed = datetime.fromisoformat(row["captured_at"])
         assert parsed.utcoffset() == timedelta(0)
     assert RUNTIME_ONLY_FIELDS.isdisjoint(rows[0].keys())
+
+
+def test_all_rows_of_one_run_share_the_identical_provenance_triple(
+    stubbed_run,
+) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    assert len(rows) == 2 * len(CLASSIFICATION_TASK_SUITE)
+    triples = {
+        (row["release_version"], row["commit_sha"], row["tree_dirty"]) for row in rows
+    }
+    assert triples == {("v0.1.0", "deadbeef", False)}
 
 
 def test_two_runs_carry_two_distinct_run_ids(stubbed_run) -> None:

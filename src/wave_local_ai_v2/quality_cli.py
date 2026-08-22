@@ -18,6 +18,7 @@ import requests
 from wave_local_ai_v2 import (
     classification_suite,
     mistral_client,
+    provenance,
     row_contract,
     server,
     suite_gate,
@@ -96,6 +97,7 @@ def _run() -> None:
     # halves of one comparison, and a reader must be able to tell which local
     # rows a given cloud row was scored against.
     run_id = new_run_id()
+    provenance_fields = provenance.capture_provenance()
     # Every pre-condition is checked before the (expensive) local suite runs,
     # cheapest first: the two offline ones cost nothing, and the catalog call is
     # the only one that needs the network. The order still matters even though a
@@ -126,6 +128,7 @@ def _run() -> None:
         completions=local_completions,
         sampling=LOCAL_SAMPLING,
         gate_result=gate_result,
+        provenance_fields=provenance_fields,
     )
 
     cloud_completions = _run_cloud_suite(settings)
@@ -137,6 +140,7 @@ def _run() -> None:
         completions=cloud_completions,
         sampling=CLOUD_SAMPLING,
         gate_result=gate_result,
+        provenance_fields=provenance_fields,
     )
 
 
@@ -209,6 +213,7 @@ def _score_and_write(
     completions: list[str],
     sampling: dict[str, Any],
     gate_result: SuiteGateResult,
+    provenance_fields: dict[str, Any],
 ) -> None:
     scored_items = [
         score_item(item, completion)
@@ -221,6 +226,7 @@ def _score_and_write(
             "schema_version": row_contract.SCHEMA_VERSION,
             "run_id": run_id,
             "captured_at": captured_at(),
+            **provenance_fields,
             "model_id": model_id,
             "provider": provider,
             "task_suite": "classification",
