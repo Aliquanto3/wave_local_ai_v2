@@ -41,3 +41,4 @@ def read_rows(path: Path) -> list[dict[str, Any]]:
         return []
     with path.open("r", encoding="utf-8") as f:
         return [json.loads(line) for line in f if line.strip()]
+import os
