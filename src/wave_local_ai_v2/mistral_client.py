@@ -4,8 +4,9 @@ No SDK, no streaming, no retries -- `requests` only, matching this project's
 existing HTTP pattern (`server.py`). Endpoint, headers, and request/response
 shape confirmed against https://docs.mistral.ai/api/ (2026-08-21): POST
 {model, messages} with a Bearer token, response has
-choices[0].message.content. `complete_prompt` returns that content alongside
-the endpoint it called, as a `MistralCompletion`.
+choices[0].message.content, choices[0].finish_reason and
+usage.completion_tokens. `complete_prompt` returns all four as a
+`MistralCompletion`.
 
 The model id is deliberately dated, not the `mistral-small-latest` alias.
 `architecture.md` defines a quality score as reproducible on model + prompt +
@@ -42,6 +43,8 @@ class MistralCompletion(TypedDict):
 
     content: str
     endpoint: str
+    finish_reason: str
+    generated_tokens: int
 
 
 class ModelUnavailableError(MistralRequestError):
@@ -106,7 +109,21 @@ def complete_prompt(
         # down in normalize_label, as an uncaught AttributeError. Same rule and
         # same wording as the local path's guard in quality_cli.
         raise MistralRequestError(f"unexpected Mistral content type: {content!r}")
-    return MistralCompletion(content=content, endpoint=CHAT_COMPLETIONS_URL)
+
+    try:
+        finish_reason: Any = response_json["choices"][0]["finish_reason"]
+        generated_tokens: Any = response_json["usage"]["completion_tokens"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise MistralRequestError(
+            f"unexpected Mistral response shape: {response_json!r}"
+        ) from exc
+
+    return MistralCompletion(
+        content=content,
+        endpoint=CHAT_COMPLETIONS_URL,
+        finish_reason=finish_reason,
+        generated_tokens=generated_tokens,
+    )
 
 
 def check_model_available(api_key: str, model: str = MODEL) -> str | None:

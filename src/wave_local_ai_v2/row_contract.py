@@ -94,6 +94,9 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "contamination_risk",
             "indicative",
             "indicative_reasons",
+            # scoring.score_item / score_suite
+            "failure_reason",
+            "failure_counts",
         }
     ),
 }

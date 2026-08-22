@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 import requests
 
@@ -70,6 +70,14 @@ CLOUD_SAMPLING: dict[str, Any] = {
 
 class LocalCompletionError(RuntimeError):
     """Raised when a local llama-server /completion response has no usable content."""
+
+
+class _Completion(TypedDict):
+    """One provider's per-item generation, unified across local and cloud shapes."""
+
+    content: str
+    truncated: bool
+    generated_tokens: int
 
 
 def main() -> None:
@@ -155,9 +163,9 @@ def _local_model_path(settings: Settings) -> Path:
     return model_path
 
 
-def _run_local_suite(settings: Settings, model_path: Path) -> list[str]:
+def _run_local_suite(settings: Settings, model_path: Path) -> list[_Completion]:
     flags = server.build_flags(model_path)
-    completions: list[str] = []
+    completions: list[_Completion] = []
 
     with server.running_server(settings.llama_server_path, flags):
         for item in CLASSIFICATION_TASK_SUITE:
@@ -184,18 +192,24 @@ def _run_local_suite(settings: Settings, model_path: Path) -> list[str]:
                 raise LocalCompletionError(
                     f"unexpected /completion content type: {content!r}"
                 )
-            completions.append(content)
+            completions.append(
+                _Completion(
+                    content=content,
+                    truncated=bool(response_json.get("stopped_limit", False)),
+                    generated_tokens=response_json.get("tokens_predicted", 0),
+                )
+            )
 
     return completions
 
 
-def _run_cloud_suite(settings: Settings) -> tuple[str, list[str]]:
+def _run_cloud_suite(settings: Settings) -> tuple[str, list[_Completion]]:
     # The same cap the local half runs under (`n_predict` above): the suite
     # declares one generation cap for every model it compares, and every row
     # publishes it as what that row ran under. Sending it to only one provider
     # would make the cloud rows' `max_output_tokens` a claim about a limit that
     # was never applied.
-    completions = [
+    responses = [
         mistral_client.complete_prompt(
             item["prompt"],
             settings.mistral_api_key,
@@ -208,8 +222,16 @@ def _run_cloud_suite(settings: Settings) -> tuple[str, list[str]]:
     # Every call hits the same endpoint within one run; the first response
     # names it, sourced from the module that actually made the call rather
     # than read off mistral_client's own constants at this call site.
-    endpoint = completions[0]["endpoint"]
-    return endpoint, [completion["content"] for completion in completions]
+    endpoint = responses[0]["endpoint"]
+    completions = [
+        _Completion(
+            content=response["content"],
+            truncated=response["finish_reason"] == "length",
+            generated_tokens=response["generated_tokens"],
+        )
+        for response in responses
+    ]
+    return endpoint, completions
 
 
 def _score_and_write(
@@ -218,7 +240,7 @@ def _score_and_write(
     run_id: str,
     model_id: str,
     provider: str,
-    completions: list[str],
+    completions: list[_Completion],
     sampling: dict[str, Any],
     gate_result: SuiteGateResult,
     provenance_fields: dict[str, Any],
@@ -233,10 +255,18 @@ def _score_and_write(
         None if provider == "local" else prompt_provenance.MISTRAL_CHAT_MESSAGE_HASH
     )
     scored_items = [
-        score_item(item, completion)
+        score_item(
+            item,
+            completion["content"],
+            truncated=completion["truncated"],
+            generated_tokens=completion["generated_tokens"],
+            max_output_tokens=classification_suite.MAX_OUTPUT_TOKENS,
+        )
         for item, completion in zip(CLASSIFICATION_TASK_SUITE, completions, strict=True)
     ]
-    suite_accuracy = score_suite(scored_items)
+    suite_score = score_suite(scored_items)
+    suite_accuracy = suite_score["accuracy"]
+    failure_counts = suite_score["failure_counts"]
 
     for item, scored in zip(CLASSIFICATION_TASK_SUITE, scored_items, strict=True):
         row = {
@@ -274,6 +304,8 @@ def _score_and_write(
             "contamination_risk": item["contamination_risk"],
             "indicative": gate_result["indicative"],
             "indicative_reasons": list(gate_result["indicative_reasons"]),
+            "failure_reason": scored["failure_reason"],
+            "failure_counts": dict(failure_counts),
         }
         append_row(settings.quality_results_path, "quality", row)
 

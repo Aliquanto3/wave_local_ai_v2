@@ -23,7 +23,10 @@ SAMPLING = {"temperature": 0, "random_seed": 20260821}
 # hardcoded proves the caller's cap is what reaches the request body.
 MAX_TOKENS = 17
 
-SAMPLE_RESPONSE = {"choices": [{"message": {"content": "billing"}}]}
+SAMPLE_RESPONSE = {
+    "choices": [{"message": {"content": "billing"}, "finish_reason": "stop"}],
+    "usage": {"completion_tokens": 3},
+}
 
 
 def test_complete_prompt_returns_content_and_sends_expected_request() -> None:
@@ -37,6 +40,8 @@ def test_complete_prompt_returns_content_and_sends_expected_request() -> None:
 
     assert result["content"] == "billing"
     assert result["endpoint"] == EXPECTED_CHAT_COMPLETIONS_URL
+    assert result["finish_reason"] == "stop"
+    assert result["generated_tokens"] == 3
     args, kwargs = post.call_args
     assert args[0] == EXPECTED_CHAT_COMPLETIONS_URL
     assert kwargs["headers"]["Authorization"] == "Bearer fake-key"
@@ -88,6 +93,24 @@ def test_complete_prompt_pins_temperature_seed_and_max_tokens_in_the_request() -
     # Without this the cloud model generates to Mistral's own default while its
     # rows still publish the suite's declared cap.
     assert body["max_tokens"] == MAX_TOKENS
+
+
+def test_complete_prompt_raises_on_missing_usage() -> None:
+    with (
+        patch(
+            "wave_local_ai_v2.mistral_client.requests.post",
+            return_value=MagicMock(
+                status_code=200,
+                json=lambda: {
+                    "choices": [
+                        {"message": {"content": "billing"}, "finish_reason": "stop"}
+                    ]
+                },
+            ),
+        ),
+        pytest.raises(MistralRequestError),
+    ):
+        complete_prompt("classify this", "fake-key", **SAMPLING, max_tokens=MAX_TOKENS)
 
 
 def test_model_id_is_dated_not_a_rotating_alias() -> None:

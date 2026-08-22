@@ -42,6 +42,13 @@ _MINIMAL_QUALITY_ROW = {
     "contamination_risk": False,
     "indicative": True,
     "indicative_reasons": [],
+    "failure_reason": None,
+    "failure_counts": {
+        "empty": 0,
+        "unparseable": 0,
+        "truncated_max_tokens": 0,
+        "truncated_context": 0,
+    },
 }
 
 

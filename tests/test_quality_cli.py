@@ -51,7 +51,11 @@ def stubbed_run(tmp_path, monkeypatch):
             "wave_local_ai_v2.quality_cli.requests.post",
             return_value=MagicMock(
                 status_code=200,
-                json=lambda: {"content": "billing"},
+                json=lambda: {
+                    "content": "billing",
+                    "stopped_limit": False,
+                    "tokens_predicted": 3,
+                },
                 raise_for_status=lambda: None,
             ),
         ),
@@ -60,6 +64,8 @@ def stubbed_run(tmp_path, monkeypatch):
             return_value={
                 "content": "billing",
                 "endpoint": mistral_client.CHAT_COMPLETIONS_URL,
+                "finish_reason": "stop",
+                "generated_tokens": 3,
             },
         ),
         # Without this every test in this file would issue a live GET to the
@@ -501,6 +507,70 @@ def test_local_and_cloud_rows_record_distinct_call_paths(stubbed_run) -> None:
         assert row["prompt_capture"] == "captured"
 
 
+def test_successful_rows_carry_no_failure_reason_and_all_zero_counts(
+    stubbed_run,
+) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    for row in read_rows(quality_results_path):
+        assert row["failure_reason"] is None
+        assert row["failure_counts"] == {
+            "empty": 0,
+            "unparseable": 0,
+            "truncated_max_tokens": 0,
+            "truncated_context": 0,
+        }
+
+
+def test_local_cap_truncated_response_scores_truncated_max_tokens(stubbed_run) -> None:
+    quality_results_path, started = stubbed_run
+    started["post"].return_value = MagicMock(
+        status_code=200,
+        json=lambda: {
+            "content": "bi",
+            "stopped_limit": True,
+            "tokens_predicted": classification_suite.MAX_OUTPUT_TOKENS,
+        },
+        raise_for_status=lambda: None,
+    )
+
+    quality_cli._run()
+
+    local_rows = [
+        row for row in read_rows(quality_results_path) if row["provider"] == "local"
+    ]
+    assert local_rows
+    for row in local_rows:
+        assert row["failure_reason"] == "truncated_max_tokens"
+        assert row["predicted_label"] is None
+        assert row["correct"] is False
+
+
+def test_cloud_context_truncated_response_scores_truncated_context(
+    stubbed_run,
+) -> None:
+    quality_results_path, started = stubbed_run
+    started["complete_prompt"].return_value = {
+        "content": "bi",
+        "endpoint": mistral_client.CHAT_COMPLETIONS_URL,
+        "finish_reason": "length",
+        "generated_tokens": classification_suite.MAX_OUTPUT_TOKENS - 1,
+    }
+
+    quality_cli._run()
+
+    cloud_rows = [
+        row for row in read_rows(quality_results_path) if row["provider"] == "mistral"
+    ]
+    assert cloud_rows
+    for row in cloud_rows:
+        assert row["failure_reason"] == "truncated_context"
+        assert row["predicted_label"] is None
+        assert row["correct"] is False
+
+
 def test_two_runs_carry_two_distinct_run_ids(stubbed_run) -> None:
     quality_results_path, _ = stubbed_run
 
@@ -546,9 +616,14 @@ def test_local_rows_are_written_before_the_first_cloud_call(stubbed_run) -> None
     quality_results_path, started = stubbed_run
     rows_at_first_cloud_call: list[int] = []
 
-    def record_then_answer(*args: object, **kwargs: object) -> dict[str, str]:
+    def record_then_answer(*args: object, **kwargs: object) -> dict[str, object]:
         rows_at_first_cloud_call.append(len(read_rows(quality_results_path)))
-        return {"content": "billing", "endpoint": mistral_client.CHAT_COMPLETIONS_URL}
+        return {
+            "content": "billing",
+            "endpoint": mistral_client.CHAT_COMPLETIONS_URL,
+            "finish_reason": "stop",
+            "generated_tokens": 3,
+        }
 
     started["complete_prompt"].side_effect = record_then_answer
 
