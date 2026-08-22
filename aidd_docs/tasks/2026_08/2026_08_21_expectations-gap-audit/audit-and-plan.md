@@ -239,3 +239,86 @@ Everything structural in section 1 is untouched by this revision: CI/CD (E12), s
 the API-key demo (E13), the API and front end (E8), the dense roster (E6), Google AI and the
 judge machinery (E14), web search, and seven of ten use cases (E5). That remains the bulk of
 the work.
+
+## 5. Revision 2 - after the PR #1 hardening increment
+
+Written 2026-08-21, at branch tip `da6c431`, working tree clean, branch pushed (origin matches
+HEAD). Where this section disagrees with sections 1-4, this section wins.
+
+Gates re-run at `da6c431`: `uv run pytest -q` -> 99 passed; `uv run ruff check .` -> all passed;
+`uv run ruff format --check .` -> 81 files formatted; `uv run mypy src/` -> no issues (13 files).
+
+### 5.1 What closed since section 4
+
+| Section 4 item | Outcome at `da6c431` |
+| --- | --- |
+| 0.4 consolidated hardening plan | Done: `2026_08_21_pr1-hardening/plan.md`, 5 phases, marked implemented. |
+| 0.5 implement + assert | Done: 9 commits `a0b7b1a..da6c431`; the nine 🟡 of section 4.2 are all closed (`run_id`/`captured_at` in both row builders, port-occupancy refusal, readable child stderr, guarded tracker teardown, `NoSuchProcess`/`AccessDenied` -> `None`, cloud `content: null` surfaced as `MistralRequestError`, local rows persisted before the cloud suite, `OSError` in both except tuples, `repr(Settings)` hides the key). |
+| 0.6 review once | Done: `2026_08_21_pr1-hardening/review.md` -> **approve**, 15/15 verified, 1 🟢 (`server.py:191` stderr tail seek while child alive, deferred). |
+| Results evidence (E11) | Done: `aidd_docs/results/{runtime,quality}-reference.jsonl` + README tracked; live stores ignored by `*.jsonl` / `!*-reference.jsonl`. |
+| Memory drift (2.3) | Done for `cli.md`, `codebase-map.md`, `architecture.md`, `coding-assertions.md`. |
+| `CLAUDE.md` contradiction | Done: Communication bullet names the two scoped exceptions. |
+| **0.6 merge PR #1** | **Not done.** PR #1 `OPEN`, `mergeStateStatus: CLEAN`, `mergeable: MERGEABLE`, not draft, 43 commits, 75 files. `origin/main` still at `e4c06b6` (docs only). |
+| **0.7 severity gate in `GUIDELINES.md`** | **Not done.** `aidd_docs/GUIDELINES.md` still holds the template placeholders verbatim. |
+| `aidd_docs/backlog/tech-debt.md` | **Not created.** The 16 🟢 of the full-branch review and the 1 🟢 of the hardening review have no home. |
+| Classification story status | Still `status: ready` while its code, evidence and review have shipped. |
+
+### 5.2 Expectation matrix, current status
+
+Only the status column is restated; the spec/impl columns of section 1 still describe the
+artifacts accurately unless a note says otherwise.
+
+| # | Expectation | Status at `da6c431` | Delta vs section 1 |
+| --- | --- | --- | --- |
+| E1 | TTFT | partial (server-reported, uncorroborated) | none |
+| E2 | Tokens/s | done | none |
+| E3 | Energy AND carbon | partial: `energy_kwh` + `energy_method` only; `emissions` still discarded (`energy.py:48-55`); no cloud Scope-3; no headline/detail split | none |
+| E4 | RAM/VRAM | done | none |
+| E5 | 10 use cases | partial: 1/10 implemented, 2/10 storied, 7/10 PRD-only | none |
+| E6 | Dense where relevant | spec-only: both CLIs still hardcode `Qwen3.6-35B-A3B` | none |
+| E7 | GitHub-hosted, pitchable | partial: branch pushed, PR #1 mergeable, `main` still docs-only, `README.md` 0 bytes, no front end | branch now on origin |
+| E8 | Python back + React front, scripts first | scripts done; API/front absent from PRD Goals/AC and from code | none |
+| E9 | SOTA on-prem tooling (uv...) | done | none |
+| E10 | Benchmark rigor | quality side done (pinned sampler, reproduced twice, evidence committed); runtime side single-shot, no spread; no PRD rigor criterion | evidence now tracked |
+| E11 | Reproducible on another machine | partial: lockfile, `.env.example`, reference rows tracked; README empty, no container, `N_CPU_MOE`/`THREADS`/model file/`LLAMA_CPP_BUILD` hardcoded | evidence now tracked |
+| E12 | CI/CD: tests, versioning, hooks, containers | spec-only: 0 workflows, no `.pre-commit-config.yaml`, no tag, no `CHANGELOG.md`, no `Dockerfile`, `main` unprotected | none |
+| E13 | On-prem security + API-key demo | spec-only; hygiene fine (loopback bind, `.env` ignored, key hidden from repr, port-occupancy refusal) | hygiene improved |
+| E14 | Internet: web search, Mistral + Google as subjects and judges | partial: Mistral subject only | none |
+| E15 | Architecture, modularity, docs, showcase quality | partial: 13 typed modules, 99 stubbed tests, 4 reviews on file; README 0 bytes, `pyproject` description placeholder, `GUIDELINES.md` placeholders, no coverage tooling | tests 55 -> 99, memory current |
+| E16 | Built with AIDD | partial: full artifact chain except no `aidd-pm:04-spec`, `GUIDELINES.md` unfilled, classification story not transitioned | backlog/PRD now committed |
+
+Counts: done 3 / partial 9 / spec-only 3 / missing-from-spec 2 (E8 API+front, E10 rigor). The
+shape of the gap is unchanged: the branch is hardened; the product is 1 use case, 1 cloud
+provider, 1 model, no front end, no CI.
+
+### 5.3 Revised plan
+
+Sections 3 and 4.4 stand, with these replacements. Conventions as in section 3.
+
+**Step 0 (finish today, no new code review):**
+
+| Sub-step | Skill | Prompt | Model / effort | /clear |
+| --- | --- | --- | --- | --- |
+| 0.8 Merge PR #1 | none (`gh pr merge 1 --merge`) | Merge commit, not squash: the 43 commits are the audit trail the reviews cite by hash. No CI to wait on. Then `git switch main && git pull`. | manual | - |
+| 0.9 Severity gate + tech-debt log + story transition | `aidd-context:10-learn` then `aidd-vcs:01-commit` | "Fill `aidd_docs/GUIDELINES.md` with this repo's rules: English only; tests stub HTTP and never start llama-server; quality/runtime tables never merged; fast gate before commit, pytest before push; **severity gate: 🔴 and 🟡 block a merge, 🟢 goes to `aidd_docs/backlog/tech-debt.md` and never blocks, and a branch gets at most one post-implementation review**. Create `aidd_docs/backlog/tech-debt.md` seeded with the 16 🟢 of `2026_08_21_full-branch-review/review.md` and the 1 🟢 of `2026_08_21_pr1-hardening/review.md`, one line each with location. Set `status: done` on `deterministic-classification-scoring-proves-quality-table-split.md`. Set `pyproject.toml` description." Commit as `docs(guidelines): add severity gate and tech-debt log`. | Sonnet 5 medium | yes |
+
+**Step 1 (PRD repair)**: unchanged from section 3, steps 1.1-1.4. Drop the memory-drift half
+of 1.3 (done); keep the `GUIDELINES.md` half only if 0.9 was skipped.
+
+**Step 2 (epics E-A..E-E)**: unchanged from section 3.
+
+**Step 3 (implementation order)**: section 3 order with two changes:
+
+- **3.3 README moves first**, before 3.1 and 3.2. A public repo with a 0-byte README is the
+  single most visible failure of E7/E15 and needs no infrastructure to fix. Prompt stays as
+  written; add "link the two reference JSONL files and the results README as the evidence".
+- 3.4 stays struck; 3.5 stays shrunk as in section 4.4.
+
+Resulting order: 3.3 README -> 3.1 pre-commit -> 3.2 CI + branch protection -> 3.5 repetitions
++ carbon + configurable flags -> 3.6 Docker + v0.1.0 tag -> 3.7 Google client -> 3.8 rewriting +
+judges -> 3.9 translation -> 3.10 dense roster -> 3.11 FastAPI + API key -> 3.12 React ->
+3.13 remaining use cases. Milestone audits after 3.6 and 3.12 as in section 3.
+
+Context hygiene rules of section 3 stand. One addition from section 4.3: after any
+`aidd-dev:05-review` that returns `approve`, merge; do not open another review on the same
+branch.
