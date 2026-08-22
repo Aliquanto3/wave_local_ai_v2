@@ -1,7 +1,7 @@
 [project]
 name = "wave-local-ai-v2"
 version = "0.1.0"
-description = "Add your description here"
+description = "Reproducible benchmark of local SLMs (llama.cpp) against cloud LLM APIs: runtime metrics bound to a hardware fiche, quality scores kept separate."
 readme = "README.md"
 authors = [
     { name = "Aliquanto3", email = "anael.yahi@gmail.com" }

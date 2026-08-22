@@ -1,6 +1,6 @@
 ---
 type: story
-status: ready
+status: done
 source: aidd_docs/backlog/epics/quality-scored-comparison-first-three-use-cases.md
 parent: aidd_docs/backlog/epics/quality-scored-comparison-first-three-use-cases.md
 order: 1
