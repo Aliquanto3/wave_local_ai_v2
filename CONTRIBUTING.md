@@ -20,7 +20,7 @@ the commit if any fails:
 uv run ruff check .
 uv run ruff format --check .
 uv run mypy src/ scripts/
-uv run detect-secrets-hook --baseline .secrets.baseline
+uv run python -X utf8 -m detect_secrets.pre_commit_hook --baseline .secrets.baseline
 ```
 
 If the hook refuses, fix the tree, not the hook — the entry above is the

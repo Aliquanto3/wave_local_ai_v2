@@ -24,7 +24,7 @@ repos:
         always_run: true
       - id: detect-secrets
         name: detect-secrets
-        entry: uv run detect-secrets-hook --baseline .secrets.baseline
+        entry: uv run python -X utf8 -m detect_secrets.pre_commit_hook --baseline .secrets.baseline
         language: system
         pass_filenames: true
       - id: pytest

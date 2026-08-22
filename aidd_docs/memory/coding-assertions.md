@@ -13,7 +13,7 @@ table and the hook entries must change together — the table is the contract.
 | 1 | `uv run ruff check .` | lint |
 | 2 | `uv run ruff format --check .` | formatting |
 | 3 | `uv run mypy src/ scripts/` | type checking |
-| 4 | `uv run detect-secrets-hook --baseline .secrets.baseline` | secret scanning |
+| 4 | `uv run python -X utf8 -m detect_secrets.pre_commit_hook --baseline .secrets.baseline` | secret scanning |
 
 Row 4 is handed the staged filenames by the hook; run by hand with no filenames
 it scans nothing and exits 0. The manual equivalent of the whole gate is
