@@ -90,7 +90,7 @@ journey
 > A traceback frame or an assertion diff that renders a `Settings` must not carry the credential.
 
 1. In `settings.py`, declare `mistral_api_key: str = field(default="", repr=False)`, importing `field` from `dataclasses`.
-2. Add a test: `repr(Settings(..., mistral_api_key="secret-value"))` does not contain `secret-value`, while `settings.mistral_api_key` still returns it.
+2. Add a test: `repr(Settings(..., mistral_api_key="secret-value"))` does not contain `secret-value`, while `settings.mistral_api_key` still returns it. <!-- pragma: allowlist secret -->
 
 ## Test acceptance criteria
 

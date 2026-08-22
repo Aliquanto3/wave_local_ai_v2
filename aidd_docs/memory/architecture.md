@@ -11,9 +11,9 @@ The macro technical shape: the stack, how the pieces fit, and the decisions behi
   `language: system`); every entry resolves through `uv run`, so `uv.lock` is
   the single version source. `uv run pre-commit install` wires both the
   `pre-commit` and `pre-push` stages in one command; see `coding-assertions.md`
-  for the commands. This is local, client-side enforcement only — nothing
-  server-side runs yet, see
-  `aidd_docs/backlog/stories/every-push-and-pull-request-runs-a-check-suite-that-can-refuse-it.md`.
+  for the commands. CI now runs the same gate server-side on every push and
+  pull request, on a two-OS matrix, behind one required check — see
+  `.github/workflows/ci.yml`.
 
 ## How it fits together
 
@@ -43,6 +43,7 @@ flowchart LR
 
 ## Gotchas
 
+- `detect-secrets` opens files with the locale default encoding and silently skips any it cannot decode ("we flat out ignore binary files"), so on Windows (cp1252) a doc containing `✏️`, `‌` or `←` is never scanned at all — always invoke it in UTF-8 mode (`python -X utf8 -m detect_secrets...`), on every OS.
 - Runtime metrics are NOT reproducible across machines. Every result row must carry its hardware fiche (CPU, RAM, GPU, driver, llama.cpp build, quant, flags). A number without a fiche is meaningless.
 - llama.cpp has architecture-specific flags that are not optional: `--load-mode none` is required when `--n-cpu-moe` is set (otherwise mmap pages from disk), `--jinja` is required for `<think>` tag parsing, `-np 1` avoids the 4-slot default allocation.
 - MoE models (e.g. Qwen3) have a fixed number of experts; `--n-cpu-moe` has a hard ceiling and sweep gains are typically within measurement noise.

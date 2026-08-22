@@ -1,5 +1,7 @@
 # wave-local-ai-v2
 
+[![CI](https://github.com/Aliquanto3/wave_local_ai_v2/actions/workflows/ci.yml/badge.svg)](https://github.com/Aliquanto3/wave_local_ai_v2/actions/workflows/ci.yml)
+
 A reproducible benchmark suite that compares small language models (SLMs) running
 locally via [llama.cpp](https://github.com/ggml-org/llama.cpp) against cloud LLM
 APIs, measuring runtime cost and per-task quality separately, on shared task
@@ -20,6 +22,11 @@ bound to the hardware that produced them and must carry a signed hardware
 fiche. See the "Quality / runtime split" decision in
 [`aidd_docs/memory/architecture.md`](aidd_docs/memory/architecture.md) and the
 evidence layout in [`aidd_docs/results/README.md`](aidd_docs/results/README.md).
+
+A merge is blocked by a lint, format, or type-check failure, a test failure,
+coverage dropping below 80%, a secret detected in the diff, or an unwaived
+high/critical-severity dependency finding — see open exceptions in
+[`docs/dependency-waivers.yml`](docs/dependency-waivers.yml).
 
 ## Hardware you need before downloading anything
 

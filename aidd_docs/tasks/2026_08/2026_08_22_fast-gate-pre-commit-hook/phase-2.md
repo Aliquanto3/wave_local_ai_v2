@@ -69,7 +69,7 @@ journey
 
 > One file per check, so each refusal is attributable to its own reason.
 
-1. Planted credential: a scratch Python file assigning the canonical fake key `AKIAIOSFODNN7EXAMPLE`. Stage, commit, capture the refusal — verified to trip `AWSKeyDetector`. Remove the assignment, commit again, capture the pass.
+1. Planted credential: a scratch Python file assigning the canonical fake key `AKIAIOSFODNN7EXAMPLE`. Stage, commit, capture the refusal — verified to trip `AWSKeyDetector`. Remove the assignment, commit again, capture the pass. <!-- pragma: allowlist secret -->
 2. Lint violation: a scratch Python file with an unused import. It is correctly formatted, so only `ruff check` can refuse it. Stage, commit, capture the refusal naming `F401`. Delete the import, commit again, capture the pass.
 3. Formatting only: a scratch Python file whose sole defect is layout ruff would rewrite (for example `x = [1,2,3]`). It must pass `ruff check` — confirm that before committing, otherwise the refusal is attributed to the wrong hook. Stage, commit, capture the refusal from `ruff format --check`. Run `uv run ruff format` on it, commit again, capture the pass.
 4. Stage each scratch file on its own. Two defects in one commit means the first failing hook masks the second.
