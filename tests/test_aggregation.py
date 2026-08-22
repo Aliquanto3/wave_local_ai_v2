@@ -5,12 +5,15 @@ from wave_local_ai_v2.aggregation import (
     AGGREGATION_LABELS,
     MEASUREMENT_FIELDS,
     PEAK_METRICS,
+    UNRELIABLE_SPREAD_METRIC,
     AggregationError,
     aggregate_timings,
     mean,
     median,
     peak,
     sample_sd,
+    spread,
+    unreliable,
 )
 
 
@@ -78,7 +81,7 @@ def test_aggregate_timings_matches_hand_computed_medians_means_and_sds() -> None
         _rep(5, 140.0, 310.0, 28.0),
     ]
 
-    aggregated = aggregate_timings(counted)
+    aggregated = aggregate_timings(counted, threshold=0.10)
 
     assert aggregated["ttft_ms"] == 120.0
     assert aggregated["ttft_ms_mean"] == 120.0
@@ -96,15 +99,85 @@ def test_aggregate_timings_takes_the_mean_of_the_two_middle_values_on_even_n() -
         _rep(4, 130.0, 300.0, 27.0),
     ]
 
-    aggregated = aggregate_timings(counted)
+    aggregated = aggregate_timings(counted, threshold=0.10)
 
     assert aggregated["ttft_ms"] == 115.0
     assert aggregated["repetitions_n"] == 4
 
 
+def test_spread_is_sd_over_median() -> None:
+    assert spread(sd=2.6, median_value=26.0) == pytest.approx(0.1)
+
+
+def test_spread_against_a_zero_median_raises_a_named_error() -> None:
+    with pytest.raises(AggregationError, match="median of 0"):
+        spread(sd=0.0, median_value=0.0)
+
+
+def test_unreliable_is_true_only_strictly_above_threshold() -> None:
+    assert unreliable(0.10, threshold=0.10) is False
+    assert unreliable(0.101, threshold=0.10) is True
+
+
+def test_aggregate_timings_at_5_4_percent_gen_tok_per_s_spread_is_not_unreliable() -> (
+    None
+):
+    # gen_tok_per_s values chosen so sd/median ~= 0.053 (well under 10%).
+    counted = [
+        _rep(1, 100.0, 270.0, 24.5),
+        _rep(2, 110.0, 280.0, 25.0),
+        _rep(3, 120.0, 290.0, 26.0),
+        _rep(4, 130.0, 300.0, 26.5),
+        _rep(5, 140.0, 310.0, 28.0),
+    ]
+
+    aggregated = aggregate_timings(counted, threshold=0.10)
+
+    assert aggregated[f"{UNRELIABLE_SPREAD_METRIC}_spread"] == pytest.approx(
+        0.054, abs=0.01
+    )
+    assert aggregated["unreliable"] is False
+    assert "ttft_ms_spread" in aggregated
+    assert "prompt_tok_per_s_spread" in aggregated
+
+
+def test_aggregate_timings_at_12_percent_gen_tok_per_s_spread_is_unreliable() -> None:
+    counted = [
+        _rep(1, 100.0, 270.0, 20.0),
+        _rep(2, 110.0, 280.0, 24.0),
+        _rep(3, 120.0, 290.0, 26.0),
+        _rep(4, 130.0, 300.0, 28.0),
+        _rep(5, 140.0, 310.0, 32.0),
+    ]
+
+    aggregated = aggregate_timings(counted, threshold=0.10)
+
+    assert aggregated[f"{UNRELIABLE_SPREAD_METRIC}_spread"] > 0.10
+    assert aggregated["unreliable"] is True
+
+
+def test_ttft_ms_spread_and_prompt_tok_per_s_spread_never_influence_unreliable() -> (
+    None
+):
+    # ttft_ms varies wildly, gen_tok_per_s does not: unreliable must stay False.
+    counted = [
+        _rep(1, 50.0, 270.0, 26.0),
+        _rep(2, 200.0, 280.0, 26.0),
+        _rep(3, 90.0, 290.0, 26.0),
+        _rep(4, 300.0, 300.0, 26.0),
+        _rep(5, 120.0, 310.0, 26.0),
+    ]
+
+    aggregated = aggregate_timings(counted, threshold=0.10)
+
+    assert aggregated["ttft_ms_spread"] > 0.10
+    assert aggregated["unreliable"] is False
+
+
 def test_aggregation_labels_cover_every_declared_measurement() -> None:
     for metric in AGGREGATED_TIMING_METRICS:
         assert AGGREGATION_LABELS[metric] == "median"
+        assert AGGREGATION_LABELS[f"{metric}_spread"] == "sample_sd_over_median"
     for metric in PEAK_METRICS:
         assert metric in AGGREGATION_LABELS
     assert AGGREGATION_LABELS["vram_used_mib"] == "peak_over_counted_repetitions"

@@ -39,6 +39,7 @@ def test_load_settings_returns_populated_settings(monkeypatch, tmp_path: Path) -
     assert settings.runtime_repetitions == 5
     assert settings.runtime_cooldown_s == 10.0
     assert settings.runtime_warmup_count == 1
+    assert settings.runtime_spread_threshold == 0.10
 
 
 def test_load_settings_defaults_quality_path_and_mistral_key_when_unset(
@@ -73,12 +74,14 @@ def test_load_settings_reads_the_repetition_protocol_overrides(
     monkeypatch.setenv("RUNTIME_REPETITIONS", "2")
     monkeypatch.setenv("RUNTIME_COOLDOWN_S", "0.5")
     monkeypatch.setenv("RUNTIME_WARMUP_COUNT", "0")
+    monkeypatch.setenv("RUNTIME_SPREAD_THRESHOLD", "0.20")
 
     settings = load_settings()
 
     assert settings.runtime_repetitions == 2
     assert settings.runtime_cooldown_s == 0.5
     assert settings.runtime_warmup_count == 0
+    assert settings.runtime_spread_threshold == 0.20
 
 
 @pytest.mark.parametrize(
@@ -91,6 +94,8 @@ def test_load_settings_reads_the_repetition_protocol_overrides(
         ("RUNTIME_COOLDOWN_S", "not-a-number"),
         ("RUNTIME_WARMUP_COUNT", "-1"),
         ("RUNTIME_WARMUP_COUNT", "not-a-number"),
+        ("RUNTIME_SPREAD_THRESHOLD", "-0.1"),
+        ("RUNTIME_SPREAD_THRESHOLD", "not-a-number"),
     ],
 )
 def test_load_settings_refuses_invalid_repetition_protocol_values(

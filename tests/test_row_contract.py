@@ -13,6 +13,7 @@ def _repetition(index: int) -> dict:
     return {
         "index": index,
         "ttft_ms": 100.0 + index,
+        "ttft_source": "server_reported",
         "prompt_tok_per_s": 280.0,
         "gen_tok_per_s": 26.0,
         "vram_used_mib": 3161.0,
@@ -49,14 +50,20 @@ COMPLETE_RUNTIME_ROW = {
     "max_tokens": 128,
     "wall_clock_s": 25.0,
     "ttft_ms": 103.0,
+    "ttft_source": "server_reported",
     "ttft_ms_mean": 103.0,
     "ttft_ms_sd": 1.5811388300841898,
+    "ttft_ms_spread": 0.01535,
     "prompt_tok_per_s": 280.0,
     "prompt_tok_per_s_mean": 280.0,
     "prompt_tok_per_s_sd": 0.0,
+    "prompt_tok_per_s_spread": 0.0,
     "gen_tok_per_s": 26.0,
     "gen_tok_per_s_mean": 26.0,
     "gen_tok_per_s_sd": 0.0,
+    "gen_tok_per_s_spread": 0.0,
+    "unreliable": False,
+    "thermal_posture": "fixed_cooldown",
     "vram_used_mib": 3161.0,
     "gpu_draw_w": 45.0,
     "process_rss_bytes": 500_000_000,
@@ -129,6 +136,36 @@ def test_missing_field_raises_and_names_it() -> None:
 
     with pytest.raises(RowContractError, match="gpu_name"):
         validate_row("runtime", incomplete)
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "gen_tok_per_s_spread",
+        "ttft_ms_spread",
+        "prompt_tok_per_s_spread",
+        "unreliable",
+        "thermal_posture",
+        "ttft_source",
+    ],
+)
+def test_missing_spread_or_posture_field_is_refused_by_name(field: str) -> None:
+    incomplete = {k: v for k, v in COMPLETE_RUNTIME_ROW.items() if k != field}
+
+    with pytest.raises(RowContractError, match=field):
+        validate_row("runtime", incomplete)
+
+
+def test_ttft_source_accepts_both_declared_values() -> None:
+    validate_row("runtime", {**COMPLETE_RUNTIME_ROW, "ttft_source": "server_reported"})
+    validate_row("runtime", {**COMPLETE_RUNTIME_ROW, "ttft_source": "client_measured"})
+
+
+def test_ttft_source_with_an_unrecognised_value_is_refused_and_named() -> None:
+    row = {**COMPLETE_RUNTIME_ROW, "ttft_source": "guessed"}
+
+    with pytest.raises(RowContractError, match="guessed"):
+        validate_row("runtime", row)
 
 
 def test_explicit_none_value_is_accepted() -> None:

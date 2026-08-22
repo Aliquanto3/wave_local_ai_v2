@@ -27,6 +27,7 @@ from collections.abc import Callable
 from typing import Any, TypedDict
 
 from wave_local_ai_v2.gpu import GpuStats
+from wave_local_ai_v2.machine_state import MachineState
 from wave_local_ai_v2.scoring import (
     FAILURE_REASON_EMPTY,
     FAILURE_REASON_TRUNCATED_CONTEXT,
@@ -44,6 +45,16 @@ from wave_local_ai_v2.timings import (
 # was probed to force a full prefill instead, with no flag change: this
 # constant names that choice on every written row.
 SLOT_RESET_METHOD = "cache_prompt_false"
+
+# The inter-repetition thermal protocol this increment runs: a fixed cooldown
+# (`cooldown_s`, already shipped) between every counted repetition,
+# unconditionally -- not conditioned on temperature and not skipped. A row
+# declares this rather than leaving a reader to infer it from `cooldown_s`
+# alone. `Literal["fixed_cooldown", "back_to_back", "cooldown_to_temp_ceiling"]`
+# names the two postures a future increment could add: no cooldown at all
+# (`back_to_back`), or a cooldown that runs until a temperature ceiling is
+# reached rather than for a fixed duration (`cooldown_to_temp_ceiling`).
+THERMAL_POSTURE_FIXED_COOLDOWN = "fixed_cooldown"
 
 # The llama-server error shape probed live for a prompt exceeding the
 # context: HTTP 400 with this `error.type`, not a `truncated: true`
@@ -71,11 +82,13 @@ class RepetitionResult(TypedDict):
 
     index: int
     ttft_ms: float
+    ttft_source: str
     prompt_tok_per_s: float
     gen_tok_per_s: float
     vram_used_mib: float | None
     gpu_draw_w: float | None
     process_rss_bytes: int | None
+    machine_state: MachineState
     wall_clock_s: float
     stop_type: str | None
     tokens_predicted: int | None
@@ -86,6 +99,7 @@ def run_repetition_set(
     send: Callable[[], dict[str, Any]],
     read_gpu: Callable[[], GpuStats],
     read_rss: Callable[[], int | None],
+    read_machine_state: Callable[[], MachineState],
     sleep: Callable[[float], None],
     warmup_count: int,
     count: int,
@@ -98,13 +112,16 @@ def run_repetition_set(
     repetition starts from the same posture as the rest -- and `count - 1`
     times between counted repetitions, never after the final one.
     """
-    warmups = [_run_one(0, send, read_gpu, read_rss) for _ in range(warmup_count)]
+    warmups = [
+        _run_one(0, send, read_gpu, read_rss, read_machine_state)
+        for _ in range(warmup_count)
+    ]
     if warmup_count > 0:
         sleep(cooldown_s)
 
     counted: list[RepetitionResult] = []
     for index in range(1, count + 1):
-        counted.append(_run_one(index, send, read_gpu, read_rss))
+        counted.append(_run_one(index, send, read_gpu, read_rss, read_machine_state))
         if index < count:
             sleep(cooldown_s)
 
@@ -116,6 +133,7 @@ def _run_one(
     send: Callable[[], dict[str, Any]],
     read_gpu: Callable[[], GpuStats],
     read_rss: Callable[[], int | None],
+    read_machine_state: Callable[[], MachineState],
 ) -> RepetitionResult:
     start = time.monotonic()
     response_json = send()
@@ -141,18 +159,23 @@ def _run_one(
     # returned, so decode has stopped. VRAM and RSS are allocation-level and
     # hold steady across the repetition, so this instant represents it; the
     # power reading does not, which is why `aggregation.AGGREGATION_LABELS`
-    # labels `gpu_draw_w` a post-completion sample rather than a peak.
+    # labels `gpu_draw_w` a post-completion sample rather than a peak. Machine
+    # state (temperatures, throttle reasons) is sampled the same way, for the
+    # same reason.
     gpu_stats = read_gpu()
     rss_bytes = read_rss()
+    machine_state = read_machine_state()
 
     return RepetitionResult(
         index=index,
         ttft_ms=timings["ttft_ms"],
+        ttft_source=timings["ttft_source"],
         prompt_tok_per_s=timings["prompt_tok_per_s"],
         gen_tok_per_s=timings["gen_tok_per_s"],
         vram_used_mib=gpu_stats["vram_used_mib"],
         gpu_draw_w=gpu_stats["gpu_draw_w"],
         process_rss_bytes=rss_bytes,
+        machine_state=machine_state,
         wall_clock_s=wall_clock_s,
         stop_type=facts["stop_type"],
         tokens_predicted=facts["tokens_predicted"],

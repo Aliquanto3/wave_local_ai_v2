@@ -4,6 +4,7 @@ import psutil
 import pytest
 
 from wave_local_ai_v2.timings import (
+    TTFT_SOURCE_SERVER_REPORTED,
     MissingTimingsError,
     parse_timings,
     read_process_rss,
@@ -28,6 +29,8 @@ def test_parse_timings_extracts_expected_fields() -> None:
     assert timings["ttft_ms"] == 457.1
     assert timings["prompt_tok_per_s"] == 280.0
     assert timings["gen_tok_per_s"] == 26.0
+    assert timings["ttft_source"] == TTFT_SOURCE_SERVER_REPORTED
+    assert timings["ttft_source"] == "server_reported"
 
 
 def test_parse_timings_raises_named_error_when_timings_missing() -> None:

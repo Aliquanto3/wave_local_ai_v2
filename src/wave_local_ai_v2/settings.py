@@ -32,6 +32,7 @@ class Settings:
     runtime_repetitions: int = 5
     runtime_cooldown_s: float = 10.0
     runtime_warmup_count: int = 1
+    runtime_spread_threshold: float = 0.10
 
 
 def load_settings() -> Settings:
@@ -72,6 +73,13 @@ def load_settings() -> Settings:
         minimum=0,
         minimum_reason="a warm-up count cannot be negative",
     )
+    runtime_spread_threshold = _require_numeric(
+        "RUNTIME_SPREAD_THRESHOLD",
+        0.10,
+        float,
+        minimum=0.0,
+        minimum_reason="a spread threshold cannot be negative",
+    )
 
     return Settings(
         slm_models_dir=slm_models_dir,
@@ -82,6 +90,7 @@ def load_settings() -> Settings:
         runtime_repetitions=runtime_repetitions,
         runtime_cooldown_s=runtime_cooldown_s,
         runtime_warmup_count=runtime_warmup_count,
+        runtime_spread_threshold=runtime_spread_threshold,
     )
 
 

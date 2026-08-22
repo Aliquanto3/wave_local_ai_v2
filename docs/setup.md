@@ -218,6 +218,18 @@ every repetition succeeds; a single failing repetition (empty output, an
 unusable timings block, or the model's context exceeded) fails the whole
 run and writes nothing.
 
+Every repetition in that row (warm-up and counted) carries a `machine_state`
+block: `gpu_temp_c` and `gpu_throttle_reasons` (decoded NVML clock event
+reasons, read via NVML), plus `cpu_temp_c` / `cpu_temp_source` (`"psutil"`
+when a package sensor was read, `"unavailable"` when the platform has none
+at ordinary privilege). The row itself also carries, per counted-repetition
+set: `gen_tok_per_s_spread`, `ttft_ms_spread`, `prompt_tok_per_s_spread`
+(each the sample sd over the median) and `unreliable`, set only when
+`gen_tok_per_s_spread` exceeds `RUNTIME_SPREAD_THRESHOLD` (default `0.10`,
+overridable in `.env`); `thermal_posture` (today: `"fixed_cooldown"`); and
+`ttft_source` (today: `"server_reported"`, naming that `ttft_ms` is
+llama-server's own reported timing rather than an independent measurement).
+
 **4.3 — second run, set `MISTRAL_API_KEY` first:**
 
 ```sh

@@ -18,10 +18,21 @@ class MissingTimingsError(RuntimeError):
     """Raised when a llama-server response has no usable `timings` block."""
 
 
+# Both named now even though only the first is reachable today: this
+# harness's only call path reads `timings["prompt_ms"]` straight from
+# llama-server's response (`server_reported`). `client_measured` names the
+# independent, wall-clock TTFT that was tried and reverted (see
+# `__init__.py`'s streaming-TTFT comment) -- naming it here means the row
+# contract's future acceptance of it needs no new constant later.
+TTFT_SOURCE_SERVER_REPORTED = "server_reported"
+TTFT_SOURCE_CLIENT_MEASURED = "client_measured"
+
+
 class Timings(TypedDict):
     ttft_ms: float
     prompt_tok_per_s: float
     gen_tok_per_s: float
+    ttft_source: str
 
 
 class GenerationFacts(TypedDict):
@@ -61,6 +72,7 @@ def parse_timings(response_json: dict[str, Any]) -> Timings:
             ttft_ms=float(timings["prompt_ms"]),
             prompt_tok_per_s=float(timings["prompt_per_second"]),
             gen_tok_per_s=float(timings["predicted_per_second"]),
+            ttft_source=TTFT_SOURCE_SERVER_REPORTED,
         )
     except KeyError as exc:
         raise MissingTimingsError(f"timings object is missing field {exc}") from exc
