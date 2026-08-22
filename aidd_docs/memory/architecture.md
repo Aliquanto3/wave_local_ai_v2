@@ -6,9 +6,14 @@ The macro technical shape: the stack, how the pieces fit, and the decisions behi
 
 - Python, managed by uv (lockfile, fast installs, editable dev install)
 - pytest for tests, mypy for type checking, ruff for linting and formatting
-- The fast gate (ruff, mypy, detect-secrets) is run manually; see
-  `coding-assertions.md` for the commands. No pre-commit hook is installed yet —
-  wiring it belongs to the CI/CD step still on the backlog.
+- The fast gate (ruff, mypy, detect-secrets) is enforced by a local
+  `pre-commit` hook (`.pre-commit-config.yaml`, `repo: local`,
+  `language: system`); every entry resolves through `uv run`, so `uv.lock` is
+  the single version source. `uv run pre-commit install` wires both the
+  `pre-commit` and `pre-push` stages in one command; see `coding-assertions.md`
+  for the commands. This is local, client-side enforcement only — nothing
+  server-side runs yet, see
+  `aidd_docs/backlog/stories/every-push-and-pull-request-runs-a-check-suite-that-can-refuse-it.md`.
 
 ## How it fits together
 

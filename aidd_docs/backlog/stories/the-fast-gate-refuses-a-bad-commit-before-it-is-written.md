@@ -1,6 +1,6 @@
 ---
 type: story
-status: ready
+status: done
 source: aidd_docs/backlog/epics/clean-machine-runs-it-and-nothing-reaches-main-unchecked.md
 parent: aidd_docs/backlog/epics/clean-machine-runs-it-and-nothing-reaches-main-unchecked.md
 depends_on: aidd_docs/backlog/stories/a-fresh-machine-reaches-both-benchmarks-from-the-readme-alone.md

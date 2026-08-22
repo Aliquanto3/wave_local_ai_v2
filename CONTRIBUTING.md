@@ -10,9 +10,11 @@
 [Conventional Commits](https://www.conventionalcommits.org/):
 `type(scope): description`, imperative mood, lowercase, English only.
 
-## Fast gate — run before every commit
+## Fast gate — enforced on every commit
 
-In order:
+Installed with `uv run pre-commit install` (run once per clone; see
+`docs/setup.md`). A `pre-commit` stage hook runs these, in order, and refuses
+the commit if any fails:
 
 ```sh
 uv run ruff check .
@@ -21,7 +23,16 @@ uv run mypy src/
 uv run detect-secrets-hook --baseline .secrets.baseline
 ```
 
+If the hook refuses, fix the tree, not the hook — the entry above is the
+contract with `aidd_docs/memory/coding-assertions.md`.
+
+To run the gate by hand, use `uv run pre-commit run --all-files`. The last
+command scans only the filenames the hook hands it, so running it on its own
+exits 0 without checking anything.
+
 ## Before push
+
+Runs at the `pre-push` stage, installed by the same command above:
 
 ```sh
 uv run pytest
