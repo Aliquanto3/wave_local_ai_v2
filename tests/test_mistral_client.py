@@ -19,6 +19,9 @@ EXPECTED_CHAT_COMPLETIONS_URL = "https://api.mistral.ai/v1/chat/completions"
 EXPECTED_MODELS_URL = "https://api.mistral.ai/v1/models"
 
 SAMPLING = {"temperature": 0, "random_seed": 20260821}
+# Deliberately not the suite's own 32: a value the module could never have
+# hardcoded proves the caller's cap is what reaches the request body.
+MAX_TOKENS = 17
 
 SAMPLE_RESPONSE = {"choices": [{"message": {"content": "billing"}}]}
 
@@ -28,7 +31,9 @@ def test_complete_prompt_returns_content_and_sends_expected_request() -> None:
         "wave_local_ai_v2.mistral_client.requests.post",
         return_value=MagicMock(status_code=200, json=lambda: SAMPLE_RESPONSE),
     ) as post:
-        result = complete_prompt("classify this", "fake-key", **SAMPLING)
+        result = complete_prompt(
+            "classify this", "fake-key", **SAMPLING, max_tokens=MAX_TOKENS
+        )
 
     assert result == "billing"
     args, kwargs = post.call_args
@@ -36,6 +41,7 @@ def test_complete_prompt_returns_content_and_sends_expected_request() -> None:
     assert kwargs["headers"]["Authorization"] == "Bearer fake-key"
     assert kwargs["json"]["model"] == MODEL
     assert kwargs["json"]["messages"] == [{"role": "user", "content": "classify this"}]
+    assert kwargs["json"]["max_tokens"] == MAX_TOKENS
 
 
 def test_complete_prompt_raises_on_non_200_status() -> None:
@@ -46,7 +52,7 @@ def test_complete_prompt_raises_on_non_200_status() -> None:
         ),
         pytest.raises(MistralRequestError, match="401"),
     ):
-        complete_prompt("classify this", "bad-key", **SAMPLING)
+        complete_prompt("classify this", "bad-key", **SAMPLING, max_tokens=MAX_TOKENS)
 
 
 def test_complete_prompt_raises_on_malformed_response_body() -> None:
@@ -59,19 +65,28 @@ def test_complete_prompt_raises_on_malformed_response_body() -> None:
         ),
         pytest.raises(MistralRequestError),
     ):
-        complete_prompt("classify this", "fake-key", **SAMPLING)
+        complete_prompt("classify this", "fake-key", **SAMPLING, max_tokens=MAX_TOKENS)
 
 
-def test_complete_prompt_pins_temperature_and_random_seed_in_the_request() -> None:
+def test_complete_prompt_pins_temperature_seed_and_max_tokens_in_the_request() -> None:
     with patch(
         "wave_local_ai_v2.mistral_client.requests.post",
         return_value=MagicMock(status_code=200, json=lambda: SAMPLE_RESPONSE),
     ) as post:
-        complete_prompt("classify this", "fake-key", temperature=0, random_seed=99)
+        complete_prompt(
+            "classify this",
+            "fake-key",
+            temperature=0,
+            random_seed=99,
+            max_tokens=MAX_TOKENS,
+        )
 
     body = post.call_args.kwargs["json"]
     assert body["temperature"] == 0
     assert body["random_seed"] == 99
+    # Without this the cloud model generates to Mistral's own default while its
+    # rows still publish the suite's declared cap.
+    assert body["max_tokens"] == MAX_TOKENS
 
 
 def test_model_id_is_dated_not_a_rotating_alias() -> None:
@@ -188,4 +203,4 @@ def test_complete_prompt_rejects_a_null_content() -> None:
         ),
         pytest.raises(MistralRequestError, match="unexpected Mistral content"),
     ):
-        complete_prompt("x", "key", temperature=0, random_seed=1)
+        complete_prompt("x", "key", temperature=0, random_seed=1, max_tokens=MAX_TOKENS)

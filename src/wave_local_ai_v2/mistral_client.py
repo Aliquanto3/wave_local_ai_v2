@@ -45,16 +45,23 @@ class ModelUnavailableError(MistralRequestError):
 
 
 def complete_prompt(
-    prompt: str, api_key: str, *, temperature: float, random_seed: int
+    prompt: str, api_key: str, *, temperature: float, random_seed: int, max_tokens: int
 ) -> str:
     """Send one prompt to Mistral and return the raw completion text.
 
-    `temperature` and `random_seed` are required keyword arguments rather than
-    defaulted ones: a quality score is only reproducible when the sampler is
-    pinned (`architecture.md`: "quality scores are reproducible (model + prompt
-    + seed)"), so every caller has to state what it asked for instead of
-    inheriting whatever Mistral's per-model default happens to be that week.
-    Mistral names the field `random_seed`, not `seed`.
+    `temperature`, `random_seed` and `max_tokens` are required keyword arguments
+    rather than defaulted ones: a quality score is only reproducible when the
+    sampler is pinned (`architecture.md`: "quality scores are reproducible
+    (model + prompt + seed)"), so every caller has to state what it asked for
+    instead of inheriting whatever Mistral's per-model default happens to be
+    that week. Mistral names the seed field `random_seed`, not `seed`.
+
+    `max_tokens` is required for the same reason and one more: the suite
+    declares one generation cap for every model it compares
+    (`classification_suite.MAX_OUTPUT_TOKENS`), and each row publishes that cap
+    as what the row ran under. Defaulting it here, or omitting it from the body,
+    would let the cloud model generate uncapped while its rows still claimed the
+    local model's `n_predict` limit.
     """
     response = requests.post(
         CHAT_COMPLETIONS_URL,
@@ -67,6 +74,7 @@ def complete_prompt(
             "messages": [{"role": "user", "content": prompt}],
             "temperature": temperature,
             "random_seed": random_seed,
+            "max_tokens": max_tokens,
         },
         timeout=REQUEST_TIMEOUT_S,
     )

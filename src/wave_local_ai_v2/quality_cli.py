@@ -15,19 +15,25 @@ from typing import Any
 
 import requests
 
-from wave_local_ai_v2 import mistral_client, server
+from wave_local_ai_v2 import (
+    classification_suite,
+    mistral_client,
+    row_contract,
+    server,
+    suite_gate,
+)
 from wave_local_ai_v2.classification_suite import CLASSIFICATION_TASK_SUITE
 from wave_local_ai_v2.mistral_client import MistralRequestError
 from wave_local_ai_v2.results import append_row, captured_at, new_run_id
 from wave_local_ai_v2.scoring import score_item, score_suite
 from wave_local_ai_v2.settings import Settings, SettingsError, load_settings
+from wave_local_ai_v2.suite_gate import SuiteGateError, SuiteGateResult
 
 # Same model this harness's runtime CLI already validates end-to-end
 # (`__init__.py`); reusing it removes model-selection as a variable this
 # proof-of-concept slice doesn't need to resolve.
 LOCAL_MODEL_ID = "Qwen3.6-35B-A3B"
 MODEL_RELATIVE_PATH = Path(LOCAL_MODEL_ID) / "Qwen3.6-35B-A3B-UD-IQ4_XS.gguf"
-FIXED_MAX_TOKENS = 32
 REQUEST_TIMEOUT_S = 300
 
 # A quality score is only meaningful if a second run reproduces it
@@ -78,6 +84,7 @@ def main() -> None:
         OSError,
         MistralRequestError,
         LocalCompletionError,
+        SuiteGateError,
     ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -97,6 +104,9 @@ def _run() -> None:
     if not settings.mistral_api_key:
         raise SettingsError("MISTRAL_API_KEY is not set")
     model_path = _local_model_path(settings)
+    # Also offline, also cheap: a refused suite (missing/inconsistent tags) must
+    # abort before the network catalog call, let alone the multi-minute local run.
+    gate_result = suite_gate.gate_suite(CLASSIFICATION_TASK_SUITE)
     deprecation_notice = mistral_client.check_model_available(settings.mistral_api_key)
     if deprecation_notice:
         # A retirement date is news, not a failure: the model still answers until
@@ -115,6 +125,7 @@ def _run() -> None:
         provider="local",
         completions=local_completions,
         sampling=LOCAL_SAMPLING,
+        gate_result=gate_result,
     )
 
     cloud_completions = _run_cloud_suite(settings)
@@ -125,6 +136,7 @@ def _run() -> None:
         provider="mistral",
         completions=cloud_completions,
         sampling=CLOUD_SAMPLING,
+        gate_result=gate_result,
     )
 
 
@@ -146,7 +158,7 @@ def _run_local_suite(settings: Settings, model_path: Path) -> list[str]:
                 f"http://{server.HOST}:{server.PORT}/completion",
                 json={
                     "prompt": item["prompt"],
-                    "n_predict": FIXED_MAX_TOKENS,
+                    "n_predict": classification_suite.MAX_OUTPUT_TOKENS,
                     **LOCAL_SAMPLING,
                 },
                 timeout=REQUEST_TIMEOUT_S,
@@ -171,12 +183,18 @@ def _run_local_suite(settings: Settings, model_path: Path) -> list[str]:
 
 
 def _run_cloud_suite(settings: Settings) -> list[str]:
+    # The same cap the local half runs under (`n_predict` above): the suite
+    # declares one generation cap for every model it compares, and every row
+    # publishes it as what that row ran under. Sending it to only one provider
+    # would make the cloud rows' `max_output_tokens` a claim about a limit that
+    # was never applied.
     return [
         mistral_client.complete_prompt(
             item["prompt"],
             settings.mistral_api_key,
             temperature=CLOUD_SAMPLING["temperature"],
             random_seed=CLOUD_SAMPLING["random_seed"],
+            max_tokens=classification_suite.MAX_OUTPUT_TOKENS,
         )
         for item in CLASSIFICATION_TASK_SUITE
     ]
@@ -190,6 +208,7 @@ def _score_and_write(
     provider: str,
     completions: list[str],
     sampling: dict[str, Any],
+    gate_result: SuiteGateResult,
 ) -> None:
     scored_items = [
         score_item(item, completion)
@@ -199,6 +218,7 @@ def _score_and_write(
 
     for item, scored in zip(CLASSIFICATION_TASK_SUITE, scored_items, strict=True):
         row = {
+            "schema_version": row_contract.SCHEMA_VERSION,
             "run_id": run_id,
             "captured_at": captured_at(),
             "model_id": model_id,
@@ -216,7 +236,18 @@ def _score_and_write(
             # collide with a scoring field. Each row records the parameters sent
             # to its own provider, never a merged union of both.
             "sampling": dict(sampling),
+            "max_output_tokens": classification_suite.MAX_OUTPUT_TOKENS,
+            "stop_sequences": list(classification_suite.STOP_SEQUENCES),
+            "context_length": classification_suite.CONTEXT_LENGTH,
+            "suite_id": classification_suite.SUITE_ID,
+            "suite_version": classification_suite.SUITE_VERSION,
+            "prompt_set_hash": classification_suite.PROMPT_SET_HASH,
+            "language": item["language"],
+            "provenance": item["provenance"],
+            "contamination_risk": item["contamination_risk"],
+            "indicative": gate_result["indicative"],
+            "indicative_reasons": list(gate_result["indicative_reasons"]),
         }
-        append_row(settings.quality_results_path, row)
+        append_row(settings.quality_results_path, "quality", row)
 
     print(f"model={model_id} provider={provider} accuracy={suite_accuracy:.2f}")

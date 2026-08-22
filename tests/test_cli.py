@@ -6,6 +6,7 @@ import requests
 
 from wave_local_ai_v2 import FIXED_MAX_TOKENS, FIXED_PROMPT, _run, main
 from wave_local_ai_v2.results import read_rows
+from wave_local_ai_v2.row_contract import SCHEMA_VERSION
 from wave_local_ai_v2.settings import Settings
 
 SAMPLE_TIMINGS_RESPONSE = {
@@ -30,6 +31,17 @@ QUALITY_ONLY_FIELDS = {
     "task_suite",
     "item_id",
     "provider",
+    "max_output_tokens",
+    "stop_sequences",
+    "context_length",
+    "suite_id",
+    "suite_version",
+    "prompt_set_hash",
+    "language",
+    "provenance",
+    "contamination_risk",
+    "indicative",
+    "indicative_reasons",
 }
 
 
@@ -62,7 +74,14 @@ def stubbed_run(tmp_path, monkeypatch):
         ),
         "capture_fiche": patch(
             "wave_local_ai_v2.capture_fiche",
-            return_value={"cpu": "x", "ram_gb": 32.0, "gpu_name": "y", "os": "z"},
+            return_value={
+                "cpu": "x",
+                "ram_gb": 32.0,
+                "gpu_name": "y",
+                "gpu_driver_version": "1.2.3",
+                "os": "z",
+                "cuda_ceiling": "12.4",
+            },
         ),
         "running_server": patch("wave_local_ai_v2.server.running_server"),
         "post": patch(
@@ -111,6 +130,7 @@ def test_run_appends_one_row_with_fiche_and_metrics(stubbed_run) -> None:
     assert row["energy_method"] == "estimated_tdp"
     assert row["energy_kwh"] == 0.00042
     assert row["flags"]
+    assert row["schema_version"] == SCHEMA_VERSION
     assert QUALITY_ONLY_FIELDS.isdisjoint(row.keys())
 
 

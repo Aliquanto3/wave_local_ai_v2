@@ -19,7 +19,7 @@ flowchart TD
 
 ## Areas
 
-- `src/wave_local_ai_v2/`: the main Python package; two entry points, `__init__.py:main` and `quality_cli.py:main`
+- `src/wave_local_ai_v2/`: the main Python package; two entry points, `__init__.py:main` and `quality_cli.py:main`; `row_contract.py` (the row schema contract and writer gate) and `suite_gate.py` (the suite size/language-mix/provenance gate) are shared by both
 - `tests/`: pytest unit tests, one `test_<module>.py` per source module
 - `context_input/`: French-language research notes (hardware fiches, benchmark baselines) — source material to inform implementation, not a language precedent for the repo
 - `aidd_docs/`: AIDD memory bank and team docs, not application code
