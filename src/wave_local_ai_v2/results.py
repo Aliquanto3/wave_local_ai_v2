@@ -8,6 +8,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from wave_local_ai_v2 import row_contract
+from wave_local_ai_v2.row_contract import RowKind
+
 
 def new_run_id() -> str:
     """Return a fresh identifier for one CLI invocation.
@@ -28,16 +31,29 @@ def captured_at() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def append_row(path: Path, row: dict[str, Any]) -> None:
-    """Append one row as a JSON line, creating parent directories if needed."""
+def append_row(path: Path, kind: RowKind, row: dict[str, Any]) -> None:
+    """Append one row as a JSON line, creating parent directories if needed.
+
+    Gated on `row_contract.validate_row`: an incomplete row raises
+    `RowContractError` and nothing is written -- no partial line, no empty
+    file created if `path` didn't already exist.
+    """
+    row_contract.validate_row(kind, row)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(row) + "\n")
 
 
-def read_rows(path: Path) -> list[dict[str, Any]]:
-    """Read all rows back from the results store. Returns an empty list if absent."""
+def read_rows(path: Path, schema_version: str | None = None) -> list[dict[str, Any]]:
+    """Read all rows back from the results store. Returns an empty list if absent.
+
+    With `schema_version` given, only rows whose `schema_version` field equals
+    it are returned -- rows of several versions can coexist in one store.
+    """
     if not path.exists():
         return []
     with path.open("r", encoding="utf-8") as f:
-        return [json.loads(line) for line in f if line.strip()]
+        rows = [json.loads(line) for line in f if line.strip()]
+    if schema_version is None:
+        return rows
+    return [row for row in rows if row.get("schema_version") == schema_version]

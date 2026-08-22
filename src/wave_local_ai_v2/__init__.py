@@ -9,7 +9,7 @@ from typing import Any
 
 import requests
 
-from wave_local_ai_v2 import server
+from wave_local_ai_v2 import row_contract, server
 from wave_local_ai_v2.energy import measure_energy
 from wave_local_ai_v2.gpu import read_gpu_stats
 from wave_local_ai_v2.hardware import capture_fiche
@@ -221,6 +221,7 @@ def _run() -> None:
         rss_bytes: int | None = read_process_rss(process.pid)
 
     row: dict[str, Any] = {
+        "schema_version": row_contract.SCHEMA_VERSION,
         "run_id": run_id,
         "captured_at": captured_at(),
         **fiche,
@@ -236,7 +237,7 @@ def _run() -> None:
         "process_rss_bytes": rss_bytes,
         **energy,
     }
-    append_row(settings.results_path, row)
+    append_row(settings.results_path, "runtime", row)
 
     print(
         f"gen_tok_per_s={row['gen_tok_per_s']:.1f} "

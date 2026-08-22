@@ -14,7 +14,11 @@ see the identical instruction and the identical closed set to choose from.
 
 from __future__ import annotations
 
-from typing import TypedDict
+import hashlib
+from collections.abc import Sequence
+from typing import Literal, TypedDict
+
+from wave_local_ai_v2 import server
 
 LABELS: frozenset[str] = frozenset({"billing", "technical", "account", "other"})
 
@@ -25,20 +29,50 @@ _INSTRUCTION = (
     f"nothing else.\n\nMessage: "
 )
 
+# This suite's stable identity, versioned independently from the row schema
+# (Methodology 19): the id names the suite, the version tracks its item set.
+SUITE_ID = "classification-support-routing"
+SUITE_VERSION = "1"
+
+# The generation cap `quality_cli.py` sends for every local completion. Declared
+# here, on the suite, rather than in the CLI: the cap is a property of what the
+# suite asks a model to produce, not of the harness driving the request.
+MAX_OUTPUT_TOKENS = 32
+# No stop sequence is sent to either provider today.
+STOP_SEQUENCES: list[str] = []
+# The context every compared model is assumed to run at. Same value the
+# runtime harness's server launches with (`server.CONTEXT_SIZE`); imported
+# directly rather than duplicated, since `server.py` does not import this
+# module and no cycle results.
+CONTEXT_LENGTH = server.CONTEXT_SIZE
+
 
 class ClassificationItem(TypedDict):
-    """One task-suite item: a prompt and its known-correct label."""
+    """One task-suite item: a prompt, its known-correct label, and its tags."""
 
     item_id: str
     prompt: str
     expected_label: str
+    language: Literal["en", "fr", "de"]
+    provenance: Literal["hand_written", "licensed", "public"]
+    contamination_risk: bool
 
 
-def _item(item_id: str, message: str, expected_label: str) -> ClassificationItem:
+def _item(
+    item_id: str,
+    message: str,
+    expected_label: str,
+    *,
+    language: Literal["en", "fr", "de"] = "en",
+    provenance: Literal["hand_written", "licensed", "public"] = "hand_written",
+) -> ClassificationItem:
     return ClassificationItem(
         item_id=item_id,
         prompt=_INSTRUCTION + message,
         expected_label=expected_label,
+        language=language,
+        provenance=provenance,
+        contamination_risk=provenance == "public",
     )
 
 
@@ -94,3 +128,20 @@ CLASSIFICATION_TASK_SUITE: list[ClassificationItem] = [
         "technical",
     ),
 ]
+
+
+def prompt_set_hash(items: Sequence[ClassificationItem]) -> str:
+    """SHA-256 hex digest over the items' prompts only, deterministically ordered.
+
+    Deliberately not over the whole item dict: adding a non-prompt field later
+    (a tag, a provenance note) must never move the hash. Only an edited prompt
+    should.
+    """
+    sorted_items = sorted(items, key=lambda item: item["item_id"])
+    serialized = "\n".join(
+        f"{item['item_id']}:{item['prompt']}" for item in sorted_items
+    )
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+PROMPT_SET_HASH = prompt_set_hash(CLASSIFICATION_TASK_SUITE)

@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Every published row now carries a `schema_version` and is refused by the
+  writer (`append_row`) unless it is contract-complete for its kind.
+- The classification suite declares its generation caps (max output tokens,
+  stop sequences, context length), a stable suite id/version, a prompt-set
+  hash, and per-item language/provenance/contamination-risk tags.
+- A suite gate marks an under-sized or language-imbalanced suite indicative
+  rather than passing or failing it outright — today's 10-item, EN-only suite
+  included, and refuses one whose items carry no language or provenance tag.
+
+### Changed
+
+- Mistral completions are sent the suite's declared output cap
+  (`max_tokens`), the same one the local `/completion` call applies as
+  `n_predict`. Both halves of a comparison now run under the cap their rows
+  publish; previously only the local half did.
+
 ## [0.1.0] - 2026-08-22
 
 ### Added

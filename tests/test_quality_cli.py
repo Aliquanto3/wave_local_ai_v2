@@ -4,11 +4,13 @@ from unittest.mock import DEFAULT, MagicMock, patch
 
 import pytest
 
-from wave_local_ai_v2 import mistral_client, quality_cli
+from wave_local_ai_v2 import classification_suite, mistral_client, quality_cli
 from wave_local_ai_v2.classification_suite import CLASSIFICATION_TASK_SUITE
 from wave_local_ai_v2.mistral_client import MistralRequestError, ModelUnavailableError
 from wave_local_ai_v2.results import read_rows
+from wave_local_ai_v2.row_contract import SCHEMA_VERSION
 from wave_local_ai_v2.settings import Settings, SettingsError
+from wave_local_ai_v2.suite_gate import SuiteGateError
 
 RUNTIME_ONLY_FIELDS = {
     "cpu",
@@ -81,6 +83,67 @@ def test_run_writes_one_row_per_item_per_model(stubbed_run) -> None:
 
     rows = read_rows(quality_results_path)
     assert len(rows) == 2 * len(CLASSIFICATION_TASK_SUITE)
+    for row in rows:
+        assert row["schema_version"] == SCHEMA_VERSION
+
+
+def test_every_row_carries_the_suite_caps_tags_and_gate_verdict(stubbed_run) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    # Keyed by (provider, item_id), not item_id alone: the two providers write
+    # one row each per item, so an item_id-only key silently drops the local
+    # half and leaves ten of the twenty rows unasserted.
+    rows_by_key = {
+        (row["provider"], row["item_id"]): row
+        for row in read_rows(quality_results_path)
+    }
+    items_by_id = {item["item_id"]: item for item in CLASSIFICATION_TASK_SUITE}
+    assert len(rows_by_key) == 2 * len(CLASSIFICATION_TASK_SUITE)
+
+    for (provider, item_id), row in rows_by_key.items():
+        item = items_by_id[item_id]
+        assert provider in {"local", "mistral"}
+        assert row["max_output_tokens"] == classification_suite.MAX_OUTPUT_TOKENS
+        assert row["stop_sequences"] == classification_suite.STOP_SEQUENCES
+        assert row["context_length"] == classification_suite.CONTEXT_LENGTH
+        assert row["suite_id"] == classification_suite.SUITE_ID
+        assert row["suite_version"] == classification_suite.SUITE_VERSION
+        assert row["prompt_set_hash"] == classification_suite.PROMPT_SET_HASH
+        assert row["language"] == item["language"]
+        assert row["provenance"] == item["provenance"]
+        assert row["contamination_risk"] == item["contamination_risk"]
+        # The real suite is under-sized and EN-only: every row this fixture
+        # writes must land marked indicative, never a silent pass.
+        assert row["indicative"] is True
+        assert row["indicative_reasons"]
+
+    # Methodology 3's "two models compared on one item record identical values"
+    # stated as its own assertion: the caps are what makes the two halves
+    # comparable, so a future per-provider cap must fail here.
+    capped_fields = ("max_output_tokens", "stop_sequences", "context_length")
+    for item_id in items_by_id:
+        local_row = rows_by_key[("local", item_id)]
+        cloud_row = rows_by_key[("mistral", item_id)]
+        for field in capped_fields:
+            assert local_row[field] == cloud_row[field]
+
+
+def test_gate_refusal_aborts_before_any_row_is_written(stubbed_run) -> None:
+    quality_results_path, _ = stubbed_run
+
+    with (
+        patch(
+            "wave_local_ai_v2.quality_cli.suite_gate.gate_suite",
+            side_effect=SuiteGateError("boom"),
+        ),
+        pytest.raises(SystemExit) as exit_info,
+    ):
+        quality_cli.main()
+
+    assert exit_info.value.code == 1
+    assert read_rows(quality_results_path) == []
 
 
 def test_local_server_started_exactly_once_for_the_whole_suite(stubbed_run) -> None:
@@ -251,7 +314,7 @@ def test_every_local_completion_request_pins_the_sampler(stubbed_run) -> None:
         assert body["seed"] >= 0, "-1 asks llama-server for a fresh random seed"
 
 
-def test_cloud_calls_pin_temperature_and_seed(stubbed_run) -> None:
+def test_cloud_calls_pin_temperature_seed_and_the_suites_cap(stubbed_run) -> None:
     _, started = stubbed_run
 
     quality_cli._run()
@@ -259,6 +322,9 @@ def test_cloud_calls_pin_temperature_and_seed(stubbed_run) -> None:
     for call in started["complete_prompt"].call_args_list:
         assert call.kwargs["temperature"] == 0
         assert isinstance(call.kwargs["random_seed"], int)
+        # The cloud half must be sent the cap its rows publish, and the same one
+        # the local half's `n_predict` applies.
+        assert call.kwargs["max_tokens"] == classification_suite.MAX_OUTPUT_TOKENS
 
 
 def test_every_row_records_the_sampling_that_produced_it(stubbed_run) -> None:

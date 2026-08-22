@@ -115,7 +115,7 @@ This path reaches the same first-run weight download and the same two CLIs as
 the clone-and-`uv sync` path above, at the same level of detail.
 
 ```sh
-docker pull ghcr.io/aliquanto3/wave_local_ai_v2:<version>
+docker pull ghcr.io/aliquanto3/wave_local_ai_v2:v0.1.0
 ```
 
 You still need `compose.yaml` — the one file a pull-only reader has no clone
@@ -123,13 +123,13 @@ to read from disk. Fetch it directly for the tag you pulled, and make the
 directory the result rows land in:
 
 ```sh
-curl -fsSLO https://raw.githubusercontent.com/Aliquanto3/wave_local_ai_v2/<version>/compose.yaml
+curl -fsSLO https://raw.githubusercontent.com/Aliquanto3/wave_local_ai_v2/v0.1.0/compose.yaml
 mkdir -p results
 ```
 
 `compose.yaml` runs `ghcr.io/aliquanto3/wave_local_ai_v2:${WAVE_IMAGE_TAG:-latest}`
 and has no build section, so it uses the image you just pulled and never tries
-to build one. Set `WAVE_IMAGE_TAG=<version>` to run the exact tag rather than
+to build one. Set `WAVE_IMAGE_TAG=v0.1.0` to run the exact tag rather than
 `latest`. Rows land in `./results` on the host (override with `RESULTS_DIR`);
 the container runs as your own uid so those files come back owned by you.
 

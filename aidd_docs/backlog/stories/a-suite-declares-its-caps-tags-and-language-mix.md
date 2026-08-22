@@ -1,6 +1,6 @@
 ---
 type: story
-status: ready
+status: done
 source: aidd_docs/backlog/epics/every-published-row-explains-and-reproduces-itself.md
 parent: aidd_docs/backlog/epics/every-published-row-explains-and-reproduces-itself.md
 order: 1
