@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A tracked, versioned roster file (`aidd_docs/roster/models.json`) now pins
+  each model's identity (repo, revision, file, display name, checksum,
+  architecture) and its full flag set. `server.build_flags`, the resolved
+  model file, the published `model_id` and
+  `quant` all resolve through the roster and the two host-fitted settings
+  (`SERVER_N_CPU_MOE`, `SERVER_THREADS`) rather than from source constants.
+  `llama_cpp_build` is now a live probe of the running binary
+  (`build_probe.probe_build`), not a hardcoded string.
 - Every published row now carries a `schema_version` and is refused by the
   writer (`append_row`) unless it is contract-complete for its kind.
 - The classification suite declares its generation caps (max output tokens,

@@ -1,5 +1,7 @@
+import json
 from dataclasses import replace
 from datetime import datetime, timedelta
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -9,7 +11,57 @@ from wave_local_ai_v2 import FIXED_MAX_TOKENS, FIXED_PROMPT, _run, main
 from wave_local_ai_v2.aggregation import AGGREGATION_LABELS
 from wave_local_ai_v2.results import read_rows
 from wave_local_ai_v2.row_contract import SCHEMA_VERSION
-from wave_local_ai_v2.settings import Settings
+from wave_local_ai_v2.settings import DEFAULT_ROSTER_ENTRY_ID, Settings
+
+FAKE_ROSTER_VERSION = 1
+
+# A minimal but structurally valid roster, independent of the tracked
+# aidd_docs/roster/models.json: these tests must not couple to its content.
+FAKE_ROSTER = {
+    "roster_version": FAKE_ROSTER_VERSION,
+    "entries": {
+        DEFAULT_ROSTER_ENTRY_ID: {
+            "repo": "fake/repo",
+            "revision": "main",
+            "display_id": "Fake Model",
+            "file": "fake.gguf",
+            "quant": "UD-IQ4_XS",
+            "sha256": "0" * 64,
+            "architecture": {
+                "kind": "moe",
+                "expert_count": 40,
+                "active_params_b": 3.1,
+            },
+            "server_flags": {
+                "n_gpu_layers": 99,
+                "context_size": 32768,
+                "flash_attention": "on",
+                "jinja": True,
+                "parallel_slots": 1,
+                "load_mode": "none",
+                "sampler": {
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "top_k": 20,
+                    "min_p": 0,
+                    "presence_penalty": 1.5,
+                },
+            },
+            "validated_host": {
+                "n_cpu_moe": 37,
+                "threads": 8,
+                "fiche_summary": "fake fiche",
+            },
+        }
+    },
+}
+
+
+def _write_fake_roster(tmp_path: Path) -> Path:
+    roster_path = tmp_path / "roster.json"
+    roster_path.write_text(json.dumps(FAKE_ROSTER))
+    return roster_path
+
 
 SAMPLE_TIMINGS_RESPONSE = {
     "content": "a mixture-of-experts model routes tokens...",
@@ -62,8 +114,8 @@ def stubbed_run(tmp_path, monkeypatch):
     """
     results_path = tmp_path / "runtime.jsonl"
     model_dir = tmp_path / "models"
-    (model_dir / "Qwen3.6-35B-A3B").mkdir(parents=True)
-    (model_dir / "Qwen3.6-35B-A3B" / "Qwen3.6-35B-A3B-UD-IQ4_XS.gguf").write_text("")
+    model_dir.mkdir(parents=True)
+    (model_dir / FAKE_ROSTER["entries"][DEFAULT_ROSTER_ENTRY_ID]["file"]).write_text("")
     server_path = tmp_path / "llama-server.exe"
     server_path.write_text("")
 
@@ -71,12 +123,16 @@ def stubbed_run(tmp_path, monkeypatch):
         slm_models_dir=model_dir,
         llama_server_path=server_path,
         results_path=results_path,
+        roster_path=_write_fake_roster(tmp_path),
     )
     fake_process = MagicMock(pid=1234)
 
     patches = {
         "load_settings": patch(
             "wave_local_ai_v2.load_settings", return_value=fake_settings
+        ),
+        "probe_build": patch(
+            "wave_local_ai_v2.build_probe.probe_build", return_value="b10537"
         ),
         "capture_fiche": patch(
             "wave_local_ai_v2.capture_fiche",
@@ -161,6 +217,11 @@ def test_run_appends_one_row_with_fiche_and_metrics(stubbed_run) -> None:
     assert row["release_version"] == "v0.1.0"
     assert row["commit_sha"] == "deadbeef"
     assert row["tree_dirty"] is False
+    assert row["roster_entry_id"] == DEFAULT_ROSTER_ENTRY_ID
+    assert row["roster_version"] == FAKE_ROSTER_VERSION
+    assert row["llama_cpp_build"] == "b10537"
+    assert row["model_file"] == FAKE_ROSTER["entries"][DEFAULT_ROSTER_ENTRY_ID]["file"]
+    assert row["quant"] == FAKE_ROSTER["entries"][DEFAULT_ROSTER_ENTRY_ID]["quant"]
     assert row["endpoint"] == "/completion"
     assert row["prompt_template_id"] == "none"
     assert row["prompt_template_hash"] is None
@@ -188,6 +249,18 @@ def test_run_appends_one_row_with_fiche_and_metrics(stubbed_run) -> None:
     assert row["gen_tok_per_s_spread"] == 0.0
     assert "ttft_ms_spread" in row
     assert "prompt_tok_per_s_spread" in row
+
+
+def test_run_publishes_an_explicit_none_when_the_build_cannot_be_read(
+    stubbed_run,
+) -> None:
+    results_path, started = stubbed_run
+    started["probe_build"].return_value = None
+
+    _run()
+
+    row = read_rows(results_path)[0]
+    assert row["llama_cpp_build"] is None
 
 
 def _timings_response(ttft_ms: float, prompt_tps: float, gen_tps: float) -> dict:
@@ -281,8 +354,8 @@ def test_run_takes_the_mean_of_the_two_middle_values_when_n_is_even(
 ) -> None:
     results_path = tmp_path / "runtime.jsonl"
     model_dir = tmp_path / "models"
-    (model_dir / "Qwen3.6-35B-A3B").mkdir(parents=True)
-    (model_dir / "Qwen3.6-35B-A3B" / "Qwen3.6-35B-A3B-UD-IQ4_XS.gguf").write_text("")
+    model_dir.mkdir(parents=True)
+    (model_dir / FAKE_ROSTER["entries"][DEFAULT_ROSTER_ENTRY_ID]["file"]).write_text("")
     server_path = tmp_path / "llama-server.exe"
     server_path.write_text("")
 
@@ -290,6 +363,7 @@ def test_run_takes_the_mean_of_the_two_middle_values_when_n_is_even(
         slm_models_dir=model_dir,
         llama_server_path=server_path,
         results_path=results_path,
+        roster_path=_write_fake_roster(tmp_path),
         runtime_repetitions=4,
     )
     fake_process = MagicMock(pid=1234)
@@ -368,8 +442,8 @@ def test_run_takes_the_mean_of_the_two_middle_values_when_n_is_even(
 def test_run_appends_zero_rows_when_request_fails(tmp_path, monkeypatch) -> None:
     results_path = tmp_path / "runtime.jsonl"
     model_dir = tmp_path / "models"
-    (model_dir / "Qwen3.6-35B-A3B").mkdir(parents=True)
-    (model_dir / "Qwen3.6-35B-A3B" / "Qwen3.6-35B-A3B-UD-IQ4_XS.gguf").write_text("")
+    model_dir.mkdir(parents=True)
+    (model_dir / FAKE_ROSTER["entries"][DEFAULT_ROSTER_ENTRY_ID]["file"]).write_text("")
     server_path = tmp_path / "llama-server.exe"
     server_path.write_text("")
 
@@ -377,6 +451,7 @@ def test_run_appends_zero_rows_when_request_fails(tmp_path, monkeypatch) -> None
         slm_models_dir=model_dir,
         llama_server_path=server_path,
         results_path=results_path,
+        roster_path=_write_fake_roster(tmp_path),
     )
     fake_process = MagicMock(pid=1234)
 
@@ -408,8 +483,8 @@ def test_run_appends_zero_rows_when_server_never_becomes_ready(tmp_path) -> None
 
     results_path = tmp_path / "runtime.jsonl"
     model_dir = tmp_path / "models"
-    (model_dir / "Qwen3.6-35B-A3B").mkdir(parents=True)
-    (model_dir / "Qwen3.6-35B-A3B" / "Qwen3.6-35B-A3B-UD-IQ4_XS.gguf").write_text("")
+    model_dir.mkdir(parents=True)
+    (model_dir / FAKE_ROSTER["entries"][DEFAULT_ROSTER_ENTRY_ID]["file"]).write_text("")
     server_path = tmp_path / "llama-server.exe"
     server_path.write_text("")
 
@@ -417,6 +492,7 @@ def test_run_appends_zero_rows_when_server_never_becomes_ready(tmp_path) -> None
         slm_models_dir=model_dir,
         llama_server_path=server_path,
         results_path=results_path,
+        roster_path=_write_fake_roster(tmp_path),
     )
 
     with (

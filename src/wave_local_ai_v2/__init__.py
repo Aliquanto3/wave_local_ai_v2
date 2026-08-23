@@ -13,8 +13,10 @@ import requests
 
 from wave_local_ai_v2 import (
     aggregation,
+    build_probe,
     prompt_provenance,
     provenance,
+    roster,
     row_contract,
     server,
 )
@@ -34,11 +36,6 @@ from wave_local_ai_v2.results import append_row, captured_at, new_run_id
 from wave_local_ai_v2.settings import SettingsError, load_settings
 from wave_local_ai_v2.timings import MissingTimingsError, read_process_rss
 
-# Run-specific fields, validated on this machine per context_input/baseline_qwen36.md.
-LLAMA_CPP_BUILD = "b10537"
-MODEL_RELATIVE_PATH = Path("Qwen3.6-35B-A3B") / "Qwen3.6-35B-A3B-UD-IQ4_XS.gguf"
-QUANT = "UD-IQ4_XS"
-
 # The seed is pinned in the request body, not by a server flag, so
 # `server.build_flags` stays byte-for-byte the validated baseline command --
 # the same pattern `quality_cli.QUALITY_SEED` / `LOCAL_SAMPLING` uses for
@@ -46,10 +43,6 @@ QUANT = "UD-IQ4_XS"
 # the same `seed` returned byte-identical `content`; the same call with no
 # seed did not (see plan.md's Resources table).
 RUNTIME_SEED = 20260822
-# The five sampler values already reach the model through `server.build_flags`;
-# only `seed` is sent per request, so a request never diverges from what the
-# server was actually launched with.
-RUNTIME_SAMPLING: dict[str, Any] = {"seed": RUNTIME_SEED, **server.SAMPLER_SETTINGS}
 
 # Fixed prompt length chosen from live measurement, not just toward llama-bench's pp512
 # window. A debug session (aidd_docs/tasks/2026_08/2026_08_21_runtime-measurement-harness/
@@ -204,6 +197,7 @@ def main() -> None:
         _run()
     except (
         SettingsError,
+        roster.RosterError,
         server.ServerStartupError,
         # requests.RequestException subclasses OSError, so every HTTP failure is
         # still caught here and the disk failures append_row can raise now are
@@ -223,12 +217,32 @@ def _run() -> None:
     run_id = new_run_id()
     fiche = capture_fiche()
     provenance_fields = provenance.capture_provenance()
+    # Loaded once per run, not once per row: `roster.load_roster` raises on
+    # any structurally invalid entry before any HTTP call is made.
+    loaded_roster = roster.load_roster(settings.roster_path)
+    roster_entry = roster.resolve_entry(loaded_roster, settings.roster_entry_id)
 
-    model_path = settings.slm_models_dir / MODEL_RELATIVE_PATH
+    model_path = settings.slm_models_dir / roster_entry.file
     if not model_path.exists():
         raise SettingsError(f"model file not found: {model_path}")
 
-    flags = server.build_flags(model_path)
+    # Refuses (roster.RosterError) before any process spawns when
+    # settings.host_n_cpu_moe cannot be applied to roster_entry -- the check
+    # lives inside build_flags itself (server.py's one call site).
+    flags = server.build_flags(
+        roster_entry, settings.host_n_cpu_moe, settings.host_threads, model_path
+    )
+    # The five sampler values already reach the model through `flags`; only
+    # `seed` is sent per request, so a request never diverges from what the
+    # server was actually launched with.
+    runtime_sampling: dict[str, Any] = {
+        "seed": RUNTIME_SEED,
+        **server.sampler_settings(roster_entry),
+    }
+    # Probing the binary itself doesn't need the server running, so this is
+    # done before launch rather than costing readiness-wait time. An
+    # unreadable build is an explicit None, never a fallback string.
+    llama_cpp_build = build_probe.probe_build(settings.llama_server_path)
 
     # A RepetitionFailure is a verdict on a generation, not on the server: the
     # process answered normally, so its stderr tail would bury the one-line
@@ -337,18 +351,20 @@ def _run() -> None:
         "run_id": run_id,
         "captured_at": captured_at(),
         **provenance_fields,
+        "roster_entry_id": roster_entry.entry_id,
+        "roster_version": loaded_roster.roster_version,
         "endpoint": prompt_provenance.LOCAL_COMPLETION_ENDPOINT,
         "prompt_template_id": prompt_provenance.TEMPLATE_ID_NONE,
         "prompt_template_hash": None,
         "prompt_capture": prompt_provenance.PROMPT_CAPTURE_CAPTURED,
         **fiche,
-        "llama_cpp_build": LLAMA_CPP_BUILD,
-        "model_file": MODEL_RELATIVE_PATH.name,
-        "quant": QUANT,
+        "llama_cpp_build": llama_cpp_build,
+        "model_file": Path(roster_entry.file).name,
+        "quant": roster_entry.quant,
         "flags": flags,
         "prompt": FIXED_PROMPT,
         "max_tokens": FIXED_MAX_TOKENS,
-        "sampling": dict(RUNTIME_SAMPLING),
+        "sampling": dict(runtime_sampling),
         "seed_pinned": True,
         "warmup_count": settings.runtime_warmup_count,
         "warmup_repetitions": warmups,

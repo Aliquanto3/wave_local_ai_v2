@@ -20,6 +20,7 @@ from wave_local_ai_v2 import (
     mistral_client,
     prompt_provenance,
     provenance,
+    roster,
     row_contract,
     server,
     suite_gate,
@@ -31,11 +32,6 @@ from wave_local_ai_v2.scoring import score_item, score_suite
 from wave_local_ai_v2.settings import Settings, SettingsError, load_settings
 from wave_local_ai_v2.suite_gate import SuiteGateError, SuiteGateResult
 
-# Same model this harness's runtime CLI already validates end-to-end
-# (`__init__.py`); reusing it removes model-selection as a variable this
-# proof-of-concept slice doesn't need to resolve.
-LOCAL_MODEL_ID = "Qwen3.6-35B-A3B"
-MODEL_RELATIVE_PATH = Path(LOCAL_MODEL_ID) / "Qwen3.6-35B-A3B-UD-IQ4_XS.gguf"
 REQUEST_TIMEOUT_S = 300
 
 # A quality score is only meaningful if a second run reproduces it
@@ -92,6 +88,7 @@ def main() -> None:
         # failure (an absent llama-server binary, a denied read) is an operator
         # problem and belongs on stderr as one line, not as a traceback.
         OSError,
+        roster.RosterError,
         MistralRequestError,
         LocalCompletionError,
         SuiteGateError,
@@ -108,13 +105,16 @@ def _run() -> None:
     run_id = new_run_id()
     provenance_fields = provenance.capture_provenance()
     # Every pre-condition is checked before the (expensive) local suite runs,
-    # cheapest first: the two offline ones cost nothing, and the catalog call is
+    # cheapest first: the three offline ones cost nothing, and the catalog call is
     # the only one that needs the network. The order still matters even though a
     # cloud failure no longer discards the local rows: it avoids paying for a
     # multi-minute local run that could never have been completed anyway.
     if not settings.mistral_api_key:
         raise SettingsError("MISTRAL_API_KEY is not set")
-    model_path = _local_model_path(settings)
+    # Loaded once per run, not once per row: raises before any HTTP call is made.
+    loaded_roster = roster.load_roster(settings.roster_path)
+    roster_entry = roster.resolve_entry(loaded_roster, settings.roster_entry_id)
+    model_path = _local_model_path(settings, roster_entry)
     # Also offline, also cheap: a refused suite (missing/inconsistent tags) must
     # abort before the network catalog call, let alone the multi-minute local run.
     gate_result = suite_gate.gate_suite(CLASSIFICATION_TASK_SUITE)
@@ -124,7 +124,7 @@ def _run() -> None:
         # then. stderr keeps stdout to the accuracy lines the operator parses.
         print(deprecation_notice, file=sys.stderr)
 
-    local_completions = _run_local_suite(settings, model_path)
+    local_completions = _run_local_suite(settings, roster_entry, model_path)
     # Persisted before the cloud suite starts: a 429, a dropped connection or a
     # malformed body would otherwise throw away the multi-minute local run and
     # write zero rows. Both batches share one run_id, so a partial run is still
@@ -132,12 +132,16 @@ def _run() -> None:
     _score_and_write(
         settings,
         run_id=run_id,
-        model_id=LOCAL_MODEL_ID,
+        # The entry the local half actually launched names itself: a row can
+        # never report one model while its `roster_entry_id` cites another.
+        model_id=roster_entry.display_id,
         provider="local",
         completions=local_completions,
         sampling=LOCAL_SAMPLING,
         gate_result=gate_result,
         provenance_fields=provenance_fields,
+        roster_entry=roster_entry,
+        roster_version=loaded_roster.roster_version,
         call_path_fields=_local_call_path(),
     )
 
@@ -151,6 +155,8 @@ def _run() -> None:
         sampling=CLOUD_SAMPLING,
         gate_result=gate_result,
         provenance_fields=provenance_fields,
+        roster_entry=roster_entry,
+        roster_version=loaded_roster.roster_version,
         call_path_fields=_mistral_call_path(cloud_endpoint),
     )
 
@@ -181,16 +187,23 @@ def _mistral_call_path(endpoint: str) -> dict[str, Any]:
     }
 
 
-def _local_model_path(settings: Settings) -> Path:
+def _local_model_path(settings: Settings, roster_entry: roster.RosterEntry) -> Path:
     """Resolve the local GGUF, or raise: a missing file must cost no network call."""
-    model_path = settings.slm_models_dir / MODEL_RELATIVE_PATH
+    model_path = settings.slm_models_dir / roster_entry.file
     if not model_path.exists():
         raise SettingsError(f"model file not found: {model_path}")
     return model_path
 
 
-def _run_local_suite(settings: Settings, model_path: Path) -> list[_Completion]:
-    flags = server.build_flags(model_path)
+def _run_local_suite(
+    settings: Settings, roster_entry: roster.RosterEntry, model_path: Path
+) -> list[_Completion]:
+    # Refuses (roster.RosterError) before any process spawns when
+    # settings.host_n_cpu_moe cannot be applied to roster_entry -- the check
+    # lives inside build_flags itself (server.py's one call site).
+    flags = server.build_flags(
+        roster_entry, settings.host_n_cpu_moe, settings.host_threads, model_path
+    )
     completions: list[_Completion] = []
 
     with server.running_server(settings.llama_server_path, flags):
@@ -274,6 +287,8 @@ def _score_and_write(
     sampling: dict[str, Any],
     gate_result: SuiteGateResult,
     provenance_fields: dict[str, Any],
+    roster_entry: roster.RosterEntry,
+    roster_version: int,
     call_path_fields: dict[str, Any],
 ) -> None:
     scored_items = [
@@ -296,6 +311,8 @@ def _score_and_write(
             "run_id": run_id,
             "captured_at": captured_at(),
             **provenance_fields,
+            "roster_entry_id": roster_entry.entry_id,
+            "roster_version": roster_version,
             **call_path_fields,
             "model_id": model_id,
             "provider": provider,

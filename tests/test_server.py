@@ -7,15 +7,44 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from wave_local_ai_v2 import server
+from wave_local_ai_v2 import roster, server
+from wave_local_ai_v2.settings import Settings
+
+REAL_ROSTER_PATH = Path("aidd_docs/roster/models.json")
+REAL_ROSTER_ENTRY_ID = "qwen3.6-35b-a3b-ud-iq4xs"
+
+
+def _shipped_entry() -> roster.RosterEntry:
+    loaded = roster.load_roster(REAL_ROSTER_PATH)
+    return roster.resolve_entry(loaded, REAL_ROSTER_ENTRY_ID)
+
+
+def _default_settings() -> Settings:
+    """`Settings` with only its required paths given: the host flags stay default."""
+    placeholder = Path("unused")
+    return Settings(
+        slm_models_dir=placeholder,
+        llama_server_path=placeholder,
+        results_path=placeholder,
+    )
 
 
 def test_build_flags_matches_baseline() -> None:
-    flags = server.build_flags(Path("model.gguf"))
+    entry = _shipped_entry()
+    settings = _default_settings()
 
-    # The sampler constants moved from strings to numbers so `SAMPLER_SETTINGS`
-    # can be reused as the row's `sampling` block; the produced flag list must
-    # not move by one byte.
+    flags = server.build_flags(
+        entry,
+        settings.host_n_cpu_moe,
+        settings.host_threads,
+        model_path=Path("model.gguf"),
+    )
+
+    # The shipped roster entry plus the shipped host defaults must reproduce
+    # the exact flag list the old hardcoded-constant version built: this is
+    # the phase's first byte-identical checkpoint. The host values come from
+    # `Settings`' defaults, not from literals here, so a default edit fails
+    # this test rather than silently changing what the CLIs launch.
     assert flags == [
         "-m",
         "model.gguf",
@@ -51,8 +80,77 @@ def test_build_flags_matches_baseline() -> None:
     ]
 
 
-def test_sampler_settings_matches_the_flag_constants() -> None:
-    assert server.SAMPLER_SETTINGS == {
+def test_build_flags_refuses_a_dense_entry_given_a_host_n_cpu_moe() -> None:
+    dense_entry = _make_entry(
+        entry_id="fake-dense-model",
+        kind="dense",
+        expert_count=0,
+    )
+
+    with (
+        pytest.raises(roster.RosterError, match="fake-dense-model"),
+        patch("wave_local_ai_v2.server.subprocess.Popen") as mock_popen,
+    ):
+        server.build_flags(
+            dense_entry, host_n_cpu_moe=1, host_threads=8, model_path=Path("model.gguf")
+        )
+
+    mock_popen.assert_not_called()
+
+
+def test_build_flags_refuses_an_over_ceiling_host_n_cpu_moe() -> None:
+    moe_entry = _make_entry(
+        entry_id="fake-moe-model",
+        kind="moe",
+        expert_count=40,
+    )
+
+    with (
+        pytest.raises(roster.RosterError, match="40"),
+        patch("wave_local_ai_v2.server.subprocess.Popen") as mock_popen,
+    ):
+        server.build_flags(
+            moe_entry, host_n_cpu_moe=41, host_threads=8, model_path=Path("model.gguf")
+        )
+
+    mock_popen.assert_not_called()
+
+
+def _make_entry(*, entry_id: str, kind: str, expert_count: int) -> roster.RosterEntry:
+    return roster.RosterEntry(
+        entry_id=entry_id,
+        repo="fake/repo",
+        revision="main",
+        file="fake.gguf",
+        display_id="Fake Model",
+        quant="UD-IQ4_XS",
+        sha256="0" * 64,
+        architecture=roster.Architecture(
+            kind=kind, expert_count=expert_count, active_params_b=3.1
+        ),
+        server_flags={
+            "n_gpu_layers": 99,
+            "context_size": 32768,
+            "flash_attention": "on",
+            "jinja": True,
+            "parallel_slots": 1,
+            "load_mode": "none",
+            "sampler": {
+                "temperature": 1.0,
+                "top_p": 0.95,
+                "top_k": 20,
+                "min_p": 0,
+                "presence_penalty": 1.5,
+            },
+        },
+        validated_host={"n_cpu_moe": None, "threads": 8, "fiche_summary": "fake"},
+    )
+
+
+def test_sampler_settings_matches_the_shipped_entry() -> None:
+    entry = _shipped_entry()
+
+    assert server.sampler_settings(entry) == {
         "temperature": 1.0,
         "top_p": 0.95,
         "top_k": 20,
