@@ -43,6 +43,14 @@ flowchart LR
 
 ## Gotchas
 
+- The model roster (`aidd_docs/roster/models.json`, parsed by `roster.py`) is
+  now the source of truth for a model's identity (repo, revision, file,
+  checksum, architecture) and its full launch flag set. `server.py`,
+  `__init__.py` and `quality_cli.py` no longer hardcode these as source
+  constants — they resolve everything through `roster.resolve_entry` plus
+  two host-fitted settings (`SERVER_N_CPU_MOE`, `SERVER_THREADS` — see
+  `cli.md`) that are not roster data. `llama_cpp_build` is likewise a live
+  probe of the running binary (`build_probe.py`), never a constant string.
 - `detect-secrets` opens files with the locale default encoding and silently skips any it cannot decode ("we flat out ignore binary files"), so on Windows (cp1252) a doc containing `✏️`, `‌` or `←` is never scanned at all — always invoke it in UTF-8 mode (`python -X utf8 -m detect_secrets...`), on every OS.
 - Runtime metrics are NOT reproducible across machines. Every result row must carry its hardware fiche (CPU, RAM, GPU, driver, llama.cpp build, quant, flags). A number without a fiche is meaningless.
 - llama.cpp has architecture-specific flags that are not optional: `--load-mode none` is required when `--n-cpu-moe` is set (otherwise mmap pages from disk), `--jinja` is required for `<think>` tag parsing, `-np 1` avoids the 4-slot default allocation.

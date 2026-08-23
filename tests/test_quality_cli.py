@@ -1,5 +1,7 @@
 import dataclasses
+import json
 from datetime import datetime, timedelta
+from pathlib import Path
 from unittest.mock import DEFAULT, MagicMock, patch
 
 import pytest
@@ -9,7 +11,7 @@ from wave_local_ai_v2.classification_suite import CLASSIFICATION_TASK_SUITE
 from wave_local_ai_v2.mistral_client import MistralRequestError, ModelUnavailableError
 from wave_local_ai_v2.results import read_rows
 from wave_local_ai_v2.row_contract import SCHEMA_VERSION
-from wave_local_ai_v2.settings import Settings, SettingsError
+from wave_local_ai_v2.settings import DEFAULT_ROSTER_ENTRY_ID, Settings, SettingsError
 from wave_local_ai_v2.suite_gate import SuiteGateError
 
 RUNTIME_ONLY_FIELDS = {
@@ -22,14 +24,63 @@ RUNTIME_ONLY_FIELDS = {
     "energy_method",
 }
 
+FAKE_ROSTER_VERSION = 1
+
+# A minimal but structurally valid roster, independent of the tracked
+# aidd_docs/roster/models.json: these tests must not couple to its content.
+FAKE_ROSTER = {
+    "roster_version": FAKE_ROSTER_VERSION,
+    "entries": {
+        DEFAULT_ROSTER_ENTRY_ID: {
+            "repo": "fake/repo",
+            "revision": "main",
+            "display_id": "Fake Model",
+            "file": "fake.gguf",
+            "quant": "UD-IQ4_XS",
+            "sha256": "0" * 64,
+            "architecture": {
+                "kind": "moe",
+                "expert_count": 40,
+                "active_params_b": 3.1,
+            },
+            "server_flags": {
+                "n_gpu_layers": 99,
+                "context_size": 32768,
+                "flash_attention": "on",
+                "jinja": True,
+                "parallel_slots": 1,
+                "load_mode": "none",
+                "sampler": {
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "top_k": 20,
+                    "min_p": 0,
+                    "presence_penalty": 1.5,
+                },
+            },
+            "validated_host": {
+                "n_cpu_moe": 37,
+                "threads": 8,
+                "fiche_summary": "fake fiche",
+            },
+        }
+    },
+}
+
+
+def _write_fake_roster(tmp_path: Path) -> Path:
+    roster_path = tmp_path / "roster.json"
+    roster_path.write_text(json.dumps(FAKE_ROSTER))
+    return roster_path
+
 
 @pytest.fixture
 def stubbed_run(tmp_path, monkeypatch):
     """Stub every I/O boundary quality_cli.main() touches: process, both HTTP clients."""
     quality_results_path = tmp_path / "quality.jsonl"
     model_dir = tmp_path / "models"
-    (model_dir / quality_cli.LOCAL_MODEL_ID).mkdir(parents=True)
-    (model_dir / quality_cli.MODEL_RELATIVE_PATH).write_text("")
+    model_dir.mkdir(parents=True)
+    (model_dir / FAKE_ROSTER["entries"][DEFAULT_ROSTER_ENTRY_ID]["file"]).write_text("")
     server_path = tmp_path / "llama-server.exe"
     server_path.write_text("")
 
@@ -38,6 +89,7 @@ def stubbed_run(tmp_path, monkeypatch):
         llama_server_path=server_path,
         results_path=tmp_path / "runtime.jsonl",
         quality_results_path=quality_results_path,
+        roster_path=_write_fake_roster(tmp_path),
         mistral_api_key="fake-key",  # pragma: allowlist secret
     )
     fake_process = MagicMock(pid=1234)
@@ -102,6 +154,27 @@ def test_run_writes_one_row_per_item_per_model(stubbed_run) -> None:
     assert len(rows) == 2 * len(CLASSIFICATION_TASK_SUITE)
     for row in rows:
         assert row["schema_version"] == SCHEMA_VERSION
+        assert row["roster_entry_id"] == DEFAULT_ROSTER_ENTRY_ID
+        assert row["roster_version"] == FAKE_ROSTER_VERSION
+
+
+def test_local_rows_take_their_model_id_from_the_roster_entry(stubbed_run) -> None:
+    """No source constant names the local model: the entry that ran names itself.
+
+    The fixture roster's `display_id` is deliberately unlike the real one, so
+    a row still carrying a `quality_cli`-level literal would fail here.
+    """
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    local_rows = [
+        r for r in read_rows(quality_results_path) if r["provider"] == "local"
+    ]
+    assert local_rows
+    expected = FAKE_ROSTER["entries"][DEFAULT_ROSTER_ENTRY_ID]["display_id"]
+    for row in local_rows:
+        assert row["model_id"] == expected
 
 
 def test_every_row_carries_the_suite_caps_tags_and_gate_verdict(stubbed_run) -> None:
@@ -211,8 +284,8 @@ def test_run_raises_before_any_local_or_cloud_call_when_mistral_key_missing(
     tmp_path,
 ) -> None:
     model_dir = tmp_path / "models"
-    (model_dir / quality_cli.LOCAL_MODEL_ID).mkdir(parents=True)
-    (model_dir / quality_cli.MODEL_RELATIVE_PATH).write_text("")
+    model_dir.mkdir(parents=True)
+    (model_dir / FAKE_ROSTER["entries"][DEFAULT_ROSTER_ENTRY_ID]["file"]).write_text("")
     server_path = tmp_path / "llama-server.exe"
     server_path.write_text("")
 
@@ -221,6 +294,7 @@ def test_run_raises_before_any_local_or_cloud_call_when_mistral_key_missing(
         llama_server_path=server_path,
         results_path=tmp_path / "runtime.jsonl",
         quality_results_path=tmp_path / "quality.jsonl",
+        roster_path=_write_fake_roster(tmp_path),
         mistral_api_key="",
     )
     fake_process = MagicMock(pid=1234)

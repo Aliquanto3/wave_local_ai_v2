@@ -31,6 +31,9 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "release_version",
             "commit_sha",
             "tree_dirty",
+            # roster.load_roster / roster.resolve_entry
+            "roster_entry_id",
+            "roster_version",
             # prompt_provenance: call-path identity
             "endpoint",
             "prompt_template_id",
@@ -96,6 +99,9 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "release_version",
             "commit_sha",
             "tree_dirty",
+            # roster.load_roster / roster.resolve_entry
+            "roster_entry_id",
+            "roster_version",
             # prompt_provenance: call-path identity
             "endpoint",
             "prompt_template_id",

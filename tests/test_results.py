@@ -13,6 +13,8 @@ COMPLETE_QUALITY_ROW = {
     "release_version": "v0.1.0",
     "commit_sha": "deadbeef",
     "tree_dirty": False,
+    "roster_entry_id": "qwen3.6-35b-a3b-ud-iq4xs",
+    "roster_version": 1,
     "endpoint": "/completion",
     "prompt_template_id": "none",
     "prompt_template_hash": None,

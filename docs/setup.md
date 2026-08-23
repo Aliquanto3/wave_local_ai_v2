@@ -87,13 +87,16 @@ need, instead:
   `python:3.12-slim` — the shipped `Dockerfile` builds the CPU image only.
 - **Docker runtime flag:** `--gpus all` (or `--runtime=nvidia`, depending on
   your Docker Engine / NVIDIA Container Toolkit setup).
-- **`llama-server` flags that change:** the CPU build's `-ngl 99` and
-  `--n-cpu-moe 37` (both in `src/wave_local_ai_v2/server.py`) exist to force
-  every layer onto GPU and then push MoE experts back to CPU RAM under a
-  6 GB-VRAM ceiling; a GPU deployment with more VRAM would lower or drop
-  `--n-cpu-moe` to keep more experts resident on the GPU. There is no second
-  set of magic numbers documented here — `server.py`'s constants are the
-  bare-metal precedent to start from and re-tune per your own VRAM budget.
+- **`llama-server` flags that change:** the CPU build's `-ngl 99` (from the
+  roster entry's `server_flags`, `aidd_docs/roster/models.json`) and
+  `--n-cpu-moe 37` (the `SERVER_N_CPU_MOE` host setting, no longer a
+  `server.py` constant) exist to force every layer onto GPU and then push
+  MoE experts back to CPU RAM under a 6 GB-VRAM ceiling; a GPU deployment
+  with more VRAM would lower or drop `SERVER_N_CPU_MOE` to keep more experts
+  resident on the GPU. There is no second set of magic numbers documented
+  here — the roster's `validated_host` block and this project's own `.env`
+  are the bare-metal precedent to start from and re-tune per your own VRAM
+  budget.
 
 **Untested in CI** — no GitHub-hosted runner carries a GPU, so this path is
 documented, not built or exercised by this repository's CI.
@@ -154,16 +157,28 @@ the committed reference evidence.
 - Repo: `unsloth/Qwen3.6-35B-A3B-GGUF` on Hugging Face
 - Revision: `main` (commit `a483e9e6cbd595906af30beda3187c2663a1118c` at the
   time this was written)
-- File: `Qwen3.6-35B-A3B-UD-IQ4_XS.gguf` (17.7 GB)
+- File in the repo: `Qwen3.6-35B-A3B-UD-IQ4_XS.gguf` (17.7 GB) — the name the
+  download commands below ask Hugging Face for
+- File under `SLM_MODELS_DIR` (the roster entry's `file` field):
+  `Qwen3.6-35B-A3B/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf`
 - sha256: `649d7508507b84638732c4f52c24c8b15843c6dca2f3ff793ae07c14a67ebbb3`
 
-Download to this **exact** relative path under `SLM_MODELS_DIR` — it matches
-`MODEL_RELATIVE_PATH` in `src/wave_local_ai_v2/__init__.py` and
-`quality_cli.py` byte for byte:
+The weights live in a per-model subdirectory, not flat under
+`SLM_MODELS_DIR` — that is what the `--local-dir` in the download command
+below produces, and it is what the roster entry's `file` field pins. Download
+to this **exact** relative path, which is what `wave-local-ai-v2` and
+`wave-local-ai-v2-quality` resolve `SLM_MODELS_DIR` against:
 
 ```
 <SLM_MODELS_DIR>/Qwen3.6-35B-A3B/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
 ```
+
+The repo, revision, checksum and that relative path are the four values the
+shipped roster entry (`aidd_docs/roster/models.json`, entry
+`qwen3.6-35b-a3b-ud-iq4xs`) pins, verbatim. A mismatch between this section
+and the roster file is a bug, not a choice — the roster is the source of
+truth the running code reads, this section exists so a human downloading the
+weights doesn't have to parse JSON to find the same four values.
 
 Using the `hf` CLI:
 
@@ -198,6 +213,17 @@ copy .env.example .env     # Windows
 
 Fill `SLM_MODELS_DIR` (the parent directory from step 3) and
 `LLAMA_SERVER_PATH` (the binary path from step 2).
+
+Two more env vars set the host-fitted launch flags that are not part of the
+roster's model data: `SERVER_N_CPU_MOE` (default `37`) and `SERVER_THREADS`
+(default `8`), matching `--n-cpu-moe` and `-t` on this project's own laptop
+fiche. They exist to be overridden on different hardware; leave them unset to
+reproduce the committed reference evidence on comparable hardware.
+`ROSTER_PATH` (default `aidd_docs/roster/models.json`) and
+`ROSTER_ENTRY_ID` (default `qwen3.6-35b-a3b-ud-iq4xs`) are not expected to
+be overridden by a reader following this walkthrough — the tracked roster
+file ships with exactly one entry — but exist so a future roster with more
+than one model can select among them without a code change.
 
 **4.1 — everything up to here runs on a GPU-less container.**
 

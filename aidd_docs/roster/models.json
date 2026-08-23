@@ -1,0 +1,38 @@
+{
+  "roster_version": 1,
+  "entries": {
+    "qwen3.6-35b-a3b-ud-iq4xs": {
+      "repo": "unsloth/Qwen3.6-35B-A3B-GGUF",
+      "revision": "main",
+      "file": "Qwen3.6-35B-A3B/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf",
+      "display_id": "Qwen3.6-35B-A3B",
+      "quant": "UD-IQ4_XS",
+      "sha256": "649d7508507b84638732c4f52c24c8b15843c6dca2f3ff793ae07c14a67ebbb3",
+      "architecture": {
+        "kind": "moe",
+        "expert_count": 40,
+        "active_params_b": 3.1
+      },
+      "server_flags": {
+        "n_gpu_layers": 99,
+        "context_size": 32768,
+        "flash_attention": "on",
+        "jinja": true,
+        "parallel_slots": 1,
+        "load_mode": "none",
+        "sampler": {
+          "temperature": 1.0,
+          "top_p": 0.95,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5
+        }
+      },
+      "validated_host": {
+        "n_cpu_moe": 37,
+        "threads": 8,
+        "fiche_summary": "Consumer NVIDIA laptop GPU, ~6 GB VRAM, Windows"
+      }
+    }
+  }
+}

@@ -1,8 +1,9 @@
 """llama-server process lifecycle: flag builder, launch, readiness wait, shutdown.
 
 Reproduces the validated baseline command from `context_input/baseline_qwen36.md`
-verbatim. Every flag value is a named constant so a future increment can override
-one (e.g. --n-cpu-moe) without touching the builder's shape.
+verbatim, but sources every model-intrinsic flag from a roster entry
+(`roster.py`) and the two host-fitted flags (`--n-cpu-moe`, `-t`) from host
+settings, instead of from module constants.
 """
 
 from __future__ import annotations
@@ -20,31 +21,10 @@ from typing import IO
 
 import requests
 
+from wave_local_ai_v2 import roster
+
 HOST = "127.0.0.1"
 PORT = 8080
-N_GPU_LAYERS = 99
-N_CPU_MOE = 37
-CONTEXT_SIZE = 32768
-FLASH_ATTENTION = "on"
-THREADS = 8
-PARALLEL_SLOTS = 1
-TEMPERATURE = 1.0
-TOP_P = 0.95
-TOP_K = 20
-MIN_P = 0
-PRESENCE_PENALTY = 1.5
-
-# One source for the launch flags below and for what a runtime row reports
-# under `sampling` (`__init__.py`): the five values a `/completion` request
-# does not need to re-send because the server already applies them from these
-# flags. Only `seed` is sent per request (see RUNTIME_SAMPLING in `__init__.py`).
-SAMPLER_SETTINGS: dict[str, float | int] = {
-    "temperature": TEMPERATURE,
-    "top_p": TOP_P,
-    "top_k": TOP_K,
-    "min_p": MIN_P,
-    "presence_penalty": PRESENCE_PENALTY,
-}
 
 PORT_PROBE_TIMEOUT_S = 0.5
 READY_POLL_INTERVAL_S = 1.0
@@ -56,41 +36,82 @@ class ServerStartupError(RuntimeError):
     """Raised when llama-server fails to become ready."""
 
 
-def build_flags(model_path: Path) -> list[str]:
-    """Build the exact flag list validated in the baseline for this model/machine."""
-    return [
+def build_flags(
+    entry: roster.RosterEntry,
+    host_n_cpu_moe: int,
+    host_threads: int,
+    model_path: Path,
+) -> list[str]:
+    """Build the full launch flag list for `entry` on this host.
+
+    Model-intrinsic flags (`-ngl`, `-c`, `-fa`, `--jinja`, `-np`,
+    `--load-mode`, the sampler flags) come from `entry.server_flags`;
+    `--n-cpu-moe` and `-t` come from the host parameters; `--host`/`--port`
+    stay module constants. This is the one call site for
+    `roster.validate_host_fit`: it runs before any flag is built, so a
+    mismatched flag set refuses before `running_server` ever spawns a
+    process.
+    """
+    roster.validate_host_fit(entry, host_n_cpu_moe)
+
+    flags = entry.server_flags
+    sampler = flags["sampler"]
+    result = [
         "-m",
         str(model_path),
         "-ngl",
-        str(N_GPU_LAYERS),
+        str(flags["n_gpu_layers"]),
         "--n-cpu-moe",
-        str(N_CPU_MOE),
+        str(host_n_cpu_moe),
         "-c",
-        str(CONTEXT_SIZE),
+        str(flags["context_size"]),
         "-fa",
-        FLASH_ATTENTION,
+        str(flags["flash_attention"]),
         "-t",
-        str(THREADS),
-        "--jinja",
+        str(host_threads),
+    ]
+    if flags["jinja"]:
+        result.append("--jinja")
+    result += [
         "-np",
-        str(PARALLEL_SLOTS),
+        str(flags["parallel_slots"]),
         "--load-mode",
-        "none",
+        str(flags["load_mode"]),
         "--temp",
-        str(TEMPERATURE),
+        str(sampler["temperature"]),
         "--top-p",
-        str(TOP_P),
+        str(sampler["top_p"]),
         "--top-k",
-        str(TOP_K),
+        str(sampler["top_k"]),
         "--min-p",
-        str(MIN_P),
+        str(sampler["min_p"]),
         "--presence-penalty",
-        str(PRESENCE_PENALTY),
+        str(sampler["presence_penalty"]),
         "--host",
         HOST,
         "--port",
         str(PORT),
     ]
+    return result
+
+
+def sampler_settings(entry: roster.RosterEntry) -> dict[str, float | int]:
+    """The five sampler values `entry` launches with, as a runtime-row-shaped dict.
+
+    One source for what `build_flags` puts on the command line and what a
+    runtime row reports under `sampling` (`__init__.py`): the five values a
+    `/completion` request does not need to re-send because the server
+    already applies them from these flags. Only `seed` is sent per request
+    (see `RUNTIME_SAMPLING` in `__init__.py`).
+    """
+    sampler = entry.server_flags["sampler"]
+    return {
+        "temperature": sampler["temperature"],
+        "top_p": sampler["top_p"],
+        "top_k": sampler["top_k"],
+        "min_p": sampler["min_p"],
+        "presence_penalty": sampler["presence_penalty"],
+    }
 
 
 def _port_is_open(host: str, port: int, timeout: float = PORT_PROBE_TIMEOUT_S) -> bool:

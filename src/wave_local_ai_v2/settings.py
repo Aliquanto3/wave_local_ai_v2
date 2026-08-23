@@ -10,6 +10,15 @@ from dotenv import load_dotenv
 
 DEFAULT_RESULTS_PATH = "aidd_docs/results/runtime.jsonl"
 DEFAULT_QUALITY_RESULTS_PATH = "aidd_docs/results/quality.jsonl"
+DEFAULT_ROSTER_PATH = "aidd_docs/roster/models.json"
+DEFAULT_ROSTER_ENTRY_ID = "qwen3.6-35b-a3b-ud-iq4xs"
+# The two host-fitted launch flags, defaulted to the values the shipped roster
+# entry records in its `validated_host` block. Named constants, not literals
+# repeated in the dataclass and in `load_settings`: the byte-identical
+# guarantee is "the defaults reproduce the baseline command", so the defaults
+# must have exactly one definition for a test to bind.
+DEFAULT_HOST_N_CPU_MOE = 37
+DEFAULT_HOST_THREADS = 8
 
 
 class SettingsError(RuntimeError):
@@ -24,6 +33,11 @@ class Settings:
     llama_server_path: Path
     results_path: Path
     quality_results_path: Path = Path(DEFAULT_QUALITY_RESULTS_PATH)
+    # No existence check at settings-load time, unlike slm_models_dir /
+    # llama_server_path: a missing roster file is roster.py's failure to
+    # raise, not settings'.
+    roster_path: Path = Path(DEFAULT_ROSTER_PATH)
+    roster_entry_id: str = DEFAULT_ROSTER_ENTRY_ID
     # repr=False: a traceback frame, a pytest assertion diff or a logged
     # Settings must not carry the credential. Attribute access is unaffected.
     mistral_api_key: str = field(default="", repr=False)
@@ -33,6 +47,12 @@ class Settings:
     runtime_cooldown_s: float = 10.0
     runtime_warmup_count: int = 1
     runtime_spread_threshold: float = 0.10
+    # Host-fitted flags (plan.md's Decisions table): the only two launch flags
+    # that are not roster data, defaulted to today's validated baseline
+    # (`aidd_docs/roster/models.json`'s `validated_host` block) so a
+    # byte-identical launch needs no `.env` override on this machine.
+    host_n_cpu_moe: int = DEFAULT_HOST_N_CPU_MOE
+    host_threads: int = DEFAULT_HOST_THREADS
 
 
 def load_settings() -> Settings:
@@ -50,6 +70,8 @@ def load_settings() -> Settings:
     quality_results_path = Path(
         os.environ.get("QUALITY_RESULTS_PATH", DEFAULT_QUALITY_RESULTS_PATH)
     )
+    roster_path = Path(os.environ.get("ROSTER_PATH", DEFAULT_ROSTER_PATH))
+    roster_entry_id = os.environ.get("ROSTER_ENTRY_ID", DEFAULT_ROSTER_ENTRY_ID)
     mistral_api_key = os.environ.get("MISTRAL_API_KEY", "")
 
     runtime_repetitions = _require_numeric(
@@ -80,17 +102,35 @@ def load_settings() -> Settings:
         minimum=0.0,
         minimum_reason="a spread threshold cannot be negative",
     )
+    host_n_cpu_moe = _require_numeric(
+        "SERVER_N_CPU_MOE",
+        DEFAULT_HOST_N_CPU_MOE,
+        int,
+        minimum=0,
+        minimum_reason="--n-cpu-moe cannot offload a negative number of experts",
+    )
+    host_threads = _require_numeric(
+        "SERVER_THREADS",
+        DEFAULT_HOST_THREADS,
+        int,
+        minimum=1,
+        minimum_reason="-t needs at least one thread",
+    )
 
     return Settings(
         slm_models_dir=slm_models_dir,
         llama_server_path=llama_server_path,
         results_path=results_path,
         quality_results_path=quality_results_path,
+        roster_path=roster_path,
+        roster_entry_id=roster_entry_id,
         mistral_api_key=mistral_api_key,
         runtime_repetitions=runtime_repetitions,
         runtime_cooldown_s=runtime_cooldown_s,
         runtime_warmup_count=runtime_warmup_count,
         runtime_spread_threshold=runtime_spread_threshold,
+        host_n_cpu_moe=host_n_cpu_moe,
+        host_threads=host_threads,
     )
 
 

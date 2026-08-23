@@ -32,6 +32,8 @@ COMPLETE_RUNTIME_ROW = {
     "release_version": "v0.1.0",
     "commit_sha": "deadbeef",
     "tree_dirty": False,
+    "roster_entry_id": "qwen3.6-35b-a3b-ud-iq4xs",
+    "roster_version": 1,
     "endpoint": "/completion",
     "prompt_template_id": "none",
     "prompt_template_hash": None,
@@ -88,6 +90,8 @@ COMPLETE_QUALITY_ROW = {
     "release_version": "v0.1.0",
     "commit_sha": "deadbeef",
     "tree_dirty": False,
+    "roster_entry_id": "qwen3.6-35b-a3b-ud-iq4xs",
+    "roster_version": 1,
     "endpoint": "/completion",
     "prompt_template_id": "none",
     "prompt_template_hash": None,
@@ -136,6 +140,22 @@ def test_missing_field_raises_and_names_it() -> None:
 
     with pytest.raises(RowContractError, match="gpu_name"):
         validate_row("runtime", incomplete)
+
+
+@pytest.mark.parametrize("field", ["roster_entry_id", "roster_version"])
+def test_runtime_row_missing_a_roster_field_is_refused_by_name(field: str) -> None:
+    incomplete = {k: v for k, v in COMPLETE_RUNTIME_ROW.items() if k != field}
+
+    with pytest.raises(RowContractError, match=field):
+        validate_row("runtime", incomplete)
+
+
+@pytest.mark.parametrize("field", ["roster_entry_id", "roster_version"])
+def test_quality_row_missing_a_roster_field_is_refused_by_name(field: str) -> None:
+    incomplete = {k: v for k, v in COMPLETE_QUALITY_ROW.items() if k != field}
+
+    with pytest.raises(RowContractError, match=field):
+        validate_row("quality", incomplete)
 
 
 @pytest.mark.parametrize(

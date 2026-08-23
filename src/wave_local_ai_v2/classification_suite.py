@@ -18,8 +18,6 @@ import hashlib
 from collections.abc import Sequence
 from typing import Literal, TypedDict
 
-from wave_local_ai_v2 import server
-
 LABELS: frozenset[str] = frozenset({"billing", "technical", "account", "other"})
 
 _LABEL_LIST = ", ".join(sorted(LABELS))
@@ -40,11 +38,14 @@ SUITE_VERSION = "1"
 MAX_OUTPUT_TOKENS = 32
 # No stop sequence is sent to either provider today.
 STOP_SEQUENCES: list[str] = []
-# The context every compared model is assumed to run at. Same value the
-# runtime harness's server launches with (`server.CONTEXT_SIZE`); imported
-# directly rather than duplicated, since `server.py` does not import this
-# module and no cycle results.
-CONTEXT_LENGTH = server.CONTEXT_SIZE
+# The context every compared model is assumed to run at. Phase 2 of the
+# versioned-roster increment moved `context_size` from a `server.py` module
+# constant into the roster entry's own `server_flags` (`roster.py`), so this
+# suite-level assumption is now a literal matching the shipped roster entry's
+# value (`aidd_docs/roster/models.json`) rather than an import: `server.py`
+# no longer exposes one context-size constant to import, since a future
+# second roster entry could run at a different context.
+CONTEXT_LENGTH = 32768
 
 
 class ClassificationItem(TypedDict):
