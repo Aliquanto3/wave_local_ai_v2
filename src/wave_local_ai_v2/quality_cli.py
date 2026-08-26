@@ -18,6 +18,8 @@ import requests
 from wave_local_ai_v2 import (
     build_probe,
     classification_suite,
+    cost,
+    emissions,
     fiche_registry,
     mistral_client,
     prompt_provenance,
@@ -30,8 +32,13 @@ from wave_local_ai_v2 import (
     verdict,
 )
 from wave_local_ai_v2.classification_suite import CLASSIFICATION_TASK_SUITE
+from wave_local_ai_v2.energy import (
+    ENERGY_METHOD_UNAVAILABLE,
+    EnergyResult,
+    measure_energy,
+)
 from wave_local_ai_v2.hardware import build_fiche, capture_fiche
-from wave_local_ai_v2.mistral_client import MistralRequestError
+from wave_local_ai_v2.mistral_client import MistralCompletion, MistralRequestError
 from wave_local_ai_v2.results import append_row, captured_at, new_run_id
 from wave_local_ai_v2.scoring import score_item, score_suite
 from wave_local_ai_v2.settings import Settings, SettingsError, load_settings
@@ -156,7 +163,14 @@ def _run() -> None:
         run_fiche, settings.fiche_registry_dir
     )
 
-    local_completions = _run_local_suite(settings, flags)
+    # The tracker spans the whole suite loop (server launch, every item, the
+    # server's own teardown when the `with` block exits), not per item -- the
+    # same span `__init__.py`'s runtime harness measures over, and the same
+    # repeated-batch-value pattern `suite_accuracy` already uses.
+    local_completions, local_energy = measure_energy(
+        lambda: _run_local_suite(settings, flags),
+        country_iso_code=settings.emission_country_iso_code,
+    )
     # Persisted before the cloud suite starts: a 429, a dropped connection or a
     # malformed body would otherwise throw away the multi-minute local run and
     # write zero rows. Both batches share one run_id, so a partial run is still
@@ -176,9 +190,10 @@ def _run() -> None:
         roster_version=loaded_roster.roster_version,
         call_path_fields=_local_call_path(),
         fiche_hash=fiche_hash_value,
+        batch_fields=_local_batch_fields(settings, local_energy, local_completions),
     )
 
-    cloud_endpoint, cloud_completions = _run_cloud_suite(settings)
+    cloud_endpoint, cloud_completions, cloud_responses = _run_cloud_suite(settings)
     _score_and_write(
         settings,
         run_id=run_id,
@@ -192,6 +207,7 @@ def _run() -> None:
         roster_version=loaded_roster.roster_version,
         call_path_fields=_mistral_call_path(cloud_endpoint),
         fiche_hash=fiche_hash_value,
+        batch_fields=_cloud_batch_fields(settings, cloud_responses),
     )
 
 
@@ -268,7 +284,9 @@ def _run_local_suite(settings: Settings, flags: list[str]) -> list[_Completion]:
     return completions
 
 
-def _run_cloud_suite(settings: Settings) -> tuple[str, list[_Completion]]:
+def _run_cloud_suite(
+    settings: Settings,
+) -> tuple[str, list[_Completion], list[MistralCompletion]]:
     # The same cap the local half runs under (`n_predict` above): the suite
     # declares one generation cap for every model it compares, and every row
     # publishes it as what that row ran under. Sending it to only one provider
@@ -300,7 +318,101 @@ def _run_cloud_suite(settings: Settings) -> tuple[str, list[_Completion]]:
         )
         for response in responses
     ]
-    return endpoint, completions
+    return endpoint, completions, responses
+
+
+def _local_batch_fields(
+    settings: Settings, energy: EnergyResult, completions: list[_Completion]
+) -> dict[str, Any]:
+    """The per-batch energy/emissions/cost fields shared by every local row.
+
+    tokens_in_total stays null: the local `/completion` path this suite calls
+    (`_run_local_suite`) never captures a prompt-token count, so publishing
+    one here would fabricate it (same honesty rule `__init__.py`'s runtime
+    tokens_in_total follows).
+    """
+    emissions_kg = emissions.local_emissions(
+        energy["energy_kwh"], settings.emission_factor_kg_per_kwh
+    )
+    cost_total = cost.local_cost(energy["energy_kwh"], settings.kwh_price_eur)
+    tokens_out_total = sum(completion["generated_tokens"] for completion in completions)
+    return {
+        **energy,
+        "emissions_kg": emissions_kg,
+        "emission_factor_kg_per_kwh": settings.emission_factor_kg_per_kwh,
+        "emission_region": settings.emission_region,
+        "emissions_scope": emissions.EMISSIONS_SCOPE_2,
+        "emissions_scope_formula_id": None,
+        "scope_comparability": None,
+        "tokens_in_total": None,
+        "tokens_out_total": tokens_out_total,
+        "cost_total": cost_total,
+        "cost_currency": "EUR",
+        "cost_per_million_tokens": None,
+        "normalization_unit": cost.NORMALIZATION_UNIT,
+        "kwh_price_eur": settings.kwh_price_eur,
+        "kwh_price_currency": "EUR",
+        "kwh_price_recorded_at": settings.kwh_price_recorded_at,
+        "list_price_per_million_tokens": None,
+        "list_price_currency": None,
+        "list_price_retrieved_at": None,
+    }
+
+
+def _cloud_batch_fields(
+    settings: Settings, responses: list[MistralCompletion]
+) -> dict[str, Any]:
+    """The per-batch energy/emissions/cost fields shared by every mistral row.
+
+    No on-machine energy exists to attribute to a network call: the three
+    CodeCarbon channels stay null/"unavailable", and energy_kwh/emissions_kg
+    instead come from the Scope-3 Wh-per-token formula, keyed to this batch's
+    total tokens (plan.md's Decisions).
+    """
+    prompt_tokens_total = sum(response["prompt_tokens"] or 0 for response in responses)
+    completion_tokens_total = sum(
+        response["generated_tokens"] for response in responses
+    )
+    total_tokens = prompt_tokens_total + completion_tokens_total
+    energy_kwh, emissions_kg = emissions.scope3_cloud_emissions(
+        total_tokens, settings.scope3_wh_per_token, settings.emission_factor_kg_per_kwh
+    )
+    price = cost.MISTRAL_PRICE_TABLE[mistral_client.MODEL]
+    cost_total = cost.cloud_cost(prompt_tokens_total, completion_tokens_total, price)
+    # The list price for this batch's actual token mix, not a single input or
+    # output rate in isolation: what the price table says this exact split of
+    # prompt/completion tokens costs, cited as the derivation input cost_total
+    # was computed from.
+    list_price_per_million_tokens = cost_total / total_tokens * 1_000_000
+    return {
+        "cpu_energy_kwh": None,
+        "cpu_energy_method": ENERGY_METHOD_UNAVAILABLE,
+        "gpu_energy_kwh": None,
+        "gpu_energy_method": ENERGY_METHOD_UNAVAILABLE,
+        "ram_energy_kwh": None,
+        "ram_energy_method": ENERGY_METHOD_UNAVAILABLE,
+        "energy_kwh": energy_kwh,
+        "emissions_kg": emissions_kg,
+        "emission_factor_kg_per_kwh": settings.emission_factor_kg_per_kwh,
+        "emission_region": settings.emission_region,
+        "emissions_scope": emissions.EMISSIONS_SCOPE_3,
+        "emissions_scope_formula_id": emissions.SCOPE3_FORMULA_ID,
+        "scope_comparability": emissions.SCOPE_COMPARABILITY_NOTE,
+        "tokens_in_total": prompt_tokens_total,
+        "tokens_out_total": completion_tokens_total,
+        "cost_total": cost_total,
+        "cost_currency": price["currency"],
+        "cost_per_million_tokens": cost.cost_per_million_tokens(
+            cost_total, total_tokens
+        ),
+        "normalization_unit": cost.NORMALIZATION_UNIT,
+        "kwh_price_eur": None,
+        "kwh_price_currency": None,
+        "kwh_price_recorded_at": None,
+        "list_price_per_million_tokens": list_price_per_million_tokens,
+        "list_price_currency": price["currency"],
+        "list_price_retrieved_at": price["retrieved_at"],
+    }
 
 
 def _score_and_write(
@@ -317,6 +429,7 @@ def _score_and_write(
     roster_version: int,
     call_path_fields: dict[str, Any],
     fiche_hash: str,
+    batch_fields: dict[str, Any],
 ) -> None:
     scored_items = [
         score_item(
@@ -345,6 +458,7 @@ def _score_and_write(
             "model_id": model_id,
             "provider": provider,
             "fiche_hash": fiche_hash,
+            **batch_fields,
             "task_suite": "classification",
             "item_id": scored["item_id"],
             "prompt": item["prompt"],

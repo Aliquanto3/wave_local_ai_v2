@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 <!-- Fill or omit these sections; never add, rename, or reorder one. -->
@@ -63,6 +63,61 @@ journey
   section Edge case - live quality run
     Run `uv run wave-local-ai-v2-quality` for real on this machine => both provider batches' new fields are non-placeholder values, captured as evidence: 3: system
 ```
+
+### Live evidence (2026-08-26)
+
+**Runtime CLI** (`uv run wave-local-ai-v2`), full end-to-end, wrote to
+`aidd_docs/results/runtime.jsonl` (untracked). `validate_row("runtime", row)`
+passed. Non-placeholder values, GPU present so `measured_nvml` fired:
+
+```
+cpu_energy_kwh=0.0008841359500000001 cpu_energy_method=estimated_tdp
+gpu_energy_kwh=0.0012467673863020001 gpu_energy_method=measured_nvml
+ram_energy_kwh=0.0005159811377771095 ram_energy_method=estimated_constant
+energy_kwh=0.0026468844740791097
+emissions_kg=0.00014832875904291924 emission_region=FR emissions_scope=scope_2
+tokens_in_total=1490 tokens_out_total=640
+cost_total=0.0005134955879713473 cost_currency=EUR
+cost_per_million_tokens=0.24107774083161843
+kwh_price_eur=0.194 list_price_per_million_tokens=null
+```
+
+**Quality CLI** (`uv run wave-local-ai-v2-quality`) — **could not be run
+end-to-end**: the `.env` `MISTRAL_API_KEY` is a placeholder (13 chars,
+`sk-r...`, not a real Mistral key), and Mistral's live model-catalog check
+(the CLI's first network call, before the local suite runs) returns
+`401 Invalid API Key`. Asked the user how to proceed; chose "skip cloud, run
+local only" rather than block the phase on obtaining a real key.
+
+The **local-provider batch** was exercised live by directly calling
+`_run_local_suite` + `_local_batch_fields` against the real llama-server (the
+same code path `_run` calls, minus the Mistral gate), row assembled and
+checked with `validate_row("quality", row)` — passed, no results file
+written (evidence only, not appended to `quality.jsonl`):
+
+```
+cpu_energy_kwh=0.000412200425 cpu_energy_method=estimated_tdp
+gpu_energy_kwh=0.0004553920309800022 gpu_energy_method=measured_nvml
+ram_energy_kwh=0.00020689071444438822 ram_energy_method=estimated_constant
+energy_kwh=0.0010744831704243905
+emissions_kg=6.0212962387412416e-05 emission_region=FR emissions_scope=scope_2
+tokens_in_total=null tokens_out_total=170
+cost_total=0.00020844973506233176 cost_currency=EUR
+kwh_price_eur=0.194 list_price_per_million_tokens=null
+```
+
+The **mistral-provider batch** (Scope 3, `scope_comparability` populated,
+`list_price_*` fields) was **not** live-verified — no valid `MISTRAL_API_KEY`
+was available in this session. `_cloud_batch_fields` and `_run_cloud_suite`
+are covered by the stubbed `test_quality_cli.py` suite (36 passing tests,
+including `emissions_scope=="scope_3"` and populated `scope_comparability`
+assertions) but not by a real Mistral API call. This is a gap against this
+task's acceptance criterion 3 ("both provider batches' new fields are
+non-placeholder values") for the cloud half specifically — flagged here
+rather than silently marked complete. A follow-up live run with a real key
+would close it; no code change is implicated, since the local half's live
+run and the full stubbed suite already exercise every code path the cloud
+batch also runs.
 
 ## Tasks to do
 

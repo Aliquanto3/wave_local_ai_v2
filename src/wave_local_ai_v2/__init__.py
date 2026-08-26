@@ -13,6 +13,8 @@ import requests
 from wave_local_ai_v2 import (
     aggregation,
     build_probe,
+    cost,
+    emissions,
     fiche_registry,
     prompt_provenance,
     provenance,
@@ -362,6 +364,30 @@ def _run() -> None:
     # summed, excluding the cooldowns between them.
     wall_clock_s = sum(rep["wall_clock_s"] for rep in counted)
 
+    emissions_kg = emissions.local_emissions(
+        energy["energy_kwh"], settings.emission_factor_kg_per_kwh
+    )
+    # Every counted repetition sends the identical FIXED_PROMPT with
+    # cache_prompt=False (a full prefill each time), so tokens_evaluated is
+    # the same across the set -- citing the first is not a loss of
+    # information, the same pattern ttft_source already uses.
+    tokens_out_total = (
+        sum(
+            rep["tokens_predicted"]
+            for rep in counted
+            if rep["tokens_predicted"] is not None
+        )
+        if any(rep["tokens_predicted"] is not None for rep in counted)
+        else None
+    )
+    tokens_in_total = counted[0]["tokens_evaluated"]
+    cost_total = cost.local_cost(energy["energy_kwh"], settings.kwh_price_eur)
+    total_tokens = (
+        tokens_in_total + tokens_out_total
+        if tokens_in_total is not None and tokens_out_total is not None
+        else None
+    )
+
     row: dict[str, Any] = {
         "schema_version": row_contract.SCHEMA_VERSION,
         "run_id": run_id,
@@ -394,6 +420,30 @@ def _run() -> None:
         **peaks,
         "aggregation": dict(aggregation.AGGREGATION_LABELS),
         **energy,
+        "emissions_kg": emissions_kg,
+        "emission_factor_kg_per_kwh": settings.emission_factor_kg_per_kwh,
+        "emission_region": settings.emission_region,
+        "emissions_scope": emissions.EMISSIONS_SCOPE_2,
+        # A local run is never Scope 3: the formula id and comparability note
+        # stay null (plan.md's Decisions).
+        "emissions_scope_formula_id": None,
+        "scope_comparability": None,
+        "tokens_in_total": tokens_in_total,
+        "tokens_out_total": tokens_out_total,
+        "cost_total": cost_total,
+        "cost_currency": "EUR",
+        "cost_per_million_tokens": (
+            cost.cost_per_million_tokens(cost_total, total_tokens)
+            if cost_total is not None
+            else None
+        ),
+        "normalization_unit": cost.NORMALIZATION_UNIT,
+        "kwh_price_eur": settings.kwh_price_eur,
+        "kwh_price_currency": "EUR",
+        "kwh_price_recorded_at": settings.kwh_price_recorded_at,
+        "list_price_per_million_tokens": None,
+        "list_price_currency": None,
+        "list_price_retrieved_at": None,
     }
     reference_rows = results.read_rows(settings.runtime_reference_path)
     row["verdict"] = verdict.runtime_verdict(
@@ -410,6 +460,7 @@ def _run() -> None:
         f"ttft_ms={row['ttft_ms']:.1f} "
         f"repetitions_n={row['repetitions_n']} "
         f"unreliable={row['unreliable']} "
-        f"energy_method={row['energy_method']} "
+        f"emissions_kg={row['emissions_kg']} "
+        f"cost_total={row['cost_total']} "
         f"-> {settings.results_path}"
     )

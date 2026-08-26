@@ -22,7 +22,16 @@ RUNTIME_ONLY_FIELDS = {
     "ttft_ms",
     "prompt_tok_per_s",
     "gen_tok_per_s",
-    "energy_method",
+}
+
+FAKE_ENERGY_RESULT = {
+    "cpu_energy_kwh": 0.0003,
+    "cpu_energy_method": "estimated_tdp",
+    "gpu_energy_kwh": None,
+    "gpu_energy_method": "unavailable",
+    "ram_energy_kwh": 0.00012,
+    "ram_energy_method": "estimated_constant",
+    "energy_kwh": 0.00042,
 }
 
 FAKE_ROSTER_VERSION = 1
@@ -136,7 +145,13 @@ def stubbed_run(tmp_path, monkeypatch):
                 "endpoint": mistral_client.CHAT_COMPLETIONS_URL,
                 "finish_reason": "stop",
                 "generated_tokens": 3,
+                "prompt_tokens": 12,
+                "total_tokens": 15,
             },
+        ),
+        "energy": patch(
+            "wave_local_ai_v2.quality_cli.measure_energy",
+            side_effect=lambda fn, **kwargs: (fn(), dict(FAKE_ENERGY_RESULT)),
         ),
         # Without this every test in this file would issue a live GET to the
         # Mistral model catalog before the suite runs.
@@ -690,6 +705,8 @@ def test_cloud_context_truncated_response_scores_truncated_context(
         "endpoint": mistral_client.CHAT_COMPLETIONS_URL,
         "finish_reason": "model_length",
         "generated_tokens": classification_suite.MAX_OUTPUT_TOKENS - 1,
+        "prompt_tokens": 12,
+        "total_tokens": 12 + classification_suite.MAX_OUTPUT_TOKENS - 1,
     }
 
     quality_cli._run()
@@ -713,6 +730,8 @@ def test_cloud_cap_truncated_response_scores_truncated_max_tokens(
         "endpoint": mistral_client.CHAT_COMPLETIONS_URL,
         "finish_reason": "length",
         "generated_tokens": classification_suite.MAX_OUTPUT_TOKENS,
+        "prompt_tokens": 12,
+        "total_tokens": 12 + classification_suite.MAX_OUTPUT_TOKENS,
     }
 
     quality_cli._run()
@@ -779,6 +798,8 @@ def test_local_rows_are_written_before_the_first_cloud_call(stubbed_run) -> None
             "endpoint": mistral_client.CHAT_COMPLETIONS_URL,
             "finish_reason": "stop",
             "generated_tokens": 3,
+            "prompt_tokens": 12,
+            "total_tokens": 15,
         }
 
     started["complete_prompt"].side_effect = record_then_answer

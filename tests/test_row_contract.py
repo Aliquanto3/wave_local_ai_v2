@@ -22,6 +22,7 @@ def _repetition(index: int) -> dict:
         "wall_clock_s": 5.0,
         "stop_type": "limit",
         "tokens_predicted": 128,
+        "tokens_evaluated": 512,
     }
 
 

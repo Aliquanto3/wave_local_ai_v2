@@ -17,6 +17,7 @@ SAMPLE_RESPONSE = {
     },
     "stop_type": "limit",
     "tokens_predicted": 128,
+    "tokens_evaluated": 512,
 }
 
 
@@ -160,6 +161,7 @@ def test_repetition_result_carries_generation_facts_and_resource_reads() -> None
     assert result["process_rss_bytes"] == 500_000_000
     assert result["stop_type"] == "limit"
     assert result["tokens_predicted"] == 128
+    assert result["tokens_evaluated"] == 512
     assert result["wall_clock_s"] >= 0.0
     assert result["machine_state"] == read_machine_state.return_value
 
