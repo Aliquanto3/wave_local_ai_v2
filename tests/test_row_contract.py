@@ -74,6 +74,18 @@ COMPLETE_RUNTIME_ROW = {
     "emissions_scope": "scope_2",
     "emissions_scope_formula_id": None,
     "scope_comparability": None,
+    "tokens_in_total": None,
+    "tokens_out_total": 640,
+    "cost_total": 0.0000815,
+    "cost_currency": "EUR",
+    "cost_per_million_tokens": None,
+    "normalization_unit": "cost_per_million_total_tokens",
+    "kwh_price_eur": 0.194,
+    "kwh_price_currency": "EUR",
+    "kwh_price_recorded_at": "2026-02-01",
+    "list_price_per_million_tokens": None,
+    "list_price_currency": None,
+    "list_price_retrieved_at": None,
     "sampling": {"seed": 20260822, "temperature": 1.0},
     "seed_pinned": True,
     "warmup_count": 1,
@@ -115,6 +127,18 @@ COMPLETE_QUALITY_ROW = {
     "emissions_scope": "scope_2",
     "emissions_scope_formula_id": None,
     "scope_comparability": None,
+    "tokens_in_total": None,
+    "tokens_out_total": 640,
+    "cost_total": 0.0000815,
+    "cost_currency": "EUR",
+    "cost_per_million_tokens": None,
+    "normalization_unit": "cost_per_million_total_tokens",
+    "kwh_price_eur": 0.194,
+    "kwh_price_currency": "EUR",
+    "kwh_price_recorded_at": "2026-02-01",
+    "list_price_per_million_tokens": None,
+    "list_price_currency": None,
+    "list_price_retrieved_at": None,
     "verdict": {"verdict": "not_comparable", "reference_run_id": None},
     "task_suite": "classification",
     "item_id": "billing-01",
@@ -292,6 +316,35 @@ def test_every_declared_measurement_is_a_required_runtime_field() -> None:
     unbacked = aggregation.MEASUREMENT_FIELDS - REQUIRED_FIELDS["runtime"]
 
     assert unbacked == frozenset()
+
+
+def test_cost_present_without_either_derivation_basis_is_refused() -> None:
+    row = {
+        **COMPLETE_RUNTIME_ROW,
+        "cost_total": 0.0000815,
+        "kwh_price_eur": None,
+        "list_price_per_million_tokens": None,
+    }
+
+    with pytest.raises(RowContractError, match="cost_total"):
+        validate_row("runtime", row)
+
+
+def test_cost_present_with_only_list_price_basis_passes() -> None:
+    row = {
+        **COMPLETE_RUNTIME_ROW,
+        "cost_total": 0.003,
+        "kwh_price_eur": None,
+        "list_price_per_million_tokens": 0.15,
+    }
+
+    validate_row("runtime", row)
+
+
+def test_cost_absent_with_both_price_bases_null_passes() -> None:
+    row = {**COMPLETE_RUNTIME_ROW, "cost_total": None}
+
+    validate_row("runtime", row)
 
 
 def test_aggregation_map_naming_a_field_the_row_does_not_carry_is_refused() -> None:

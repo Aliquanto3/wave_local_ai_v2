@@ -8,6 +8,9 @@ choices[0].message.content, choices[0].finish_reason and
 usage.completion_tokens. `complete_prompt` returns all four as a
 `MistralCompletion`.
 
+`usage.prompt_tokens` and `usage.total_tokens` confirmed present alongside
+`usage.completion_tokens`, OpenAI-compatible naming, on 2026-08-26.
+
 The model id is deliberately dated, not the `mistral-small-latest` alias.
 `architecture.md` defines a quality score as reproducible on model + prompt +
 seed: behind an alias the model silently rotates, and no seed can make two runs
@@ -53,6 +56,8 @@ class MistralCompletion(TypedDict):
     endpoint: str
     finish_reason: str
     generated_tokens: int
+    prompt_tokens: int | None
+    total_tokens: int | None
 
 
 class ModelUnavailableError(MistralRequestError):
@@ -139,11 +144,33 @@ def complete_prompt(
             f"unexpected Mistral completion_tokens type: {generated_tokens!r}"
         )
 
+    # .get, not [...]: unlike completion_tokens (load-bearing for score_item),
+    # these two are not required to make a completion usable, so an absent
+    # key degrades to None rather than raising. A present-but-wrong-typed
+    # value still fails here, at the provider boundary.
+    usage = response_json["usage"]
+    prompt_tokens: Any = usage.get("prompt_tokens")
+    if prompt_tokens is not None and (
+        not isinstance(prompt_tokens, int) or isinstance(prompt_tokens, bool)
+    ):
+        raise MistralRequestError(
+            f"unexpected Mistral prompt_tokens type: {prompt_tokens!r}"
+        )
+    total_tokens: Any = usage.get("total_tokens")
+    if total_tokens is not None and (
+        not isinstance(total_tokens, int) or isinstance(total_tokens, bool)
+    ):
+        raise MistralRequestError(
+            f"unexpected Mistral total_tokens type: {total_tokens!r}"
+        )
+
     return MistralCompletion(
         content=content,
         endpoint=CHAT_COMPLETIONS_URL,
         finish_reason=finish_reason,
         generated_tokens=generated_tokens,
+        prompt_tokens=prompt_tokens,
+        total_tokens=total_tokens,
     )
 
 

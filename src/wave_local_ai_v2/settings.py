@@ -43,6 +43,14 @@ DEFAULT_EMISSION_FACTOR_KG_PER_KWH = 0.056039
 # plan.md's Decisions -- not model-specific, an order-of-magnitude figure for
 # a comparably-sized commercial cloud model.
 DEFAULT_SCOPE3_WH_PER_TOKEN = 0.0003
+# French residential regulated tariff (EDF Tarif Bleu, Base option),
+# 0.1940 EUR/kWh, effective February 2026 per the CRE's semiannual review
+# (https://en.selectra.info/energy-france/suppliers/edf/tarif-bleu),
+# confirmed 2026-08-26. A configured value, not a live retrieval --
+# kwh_price_recorded_at is the tariff's own effective date, not computed at
+# run time.
+DEFAULT_KWH_PRICE_EUR = 0.1940
+DEFAULT_KWH_PRICE_RECORDED_AT = "2026-02-01"
 
 
 class SettingsError(RuntimeError):
@@ -94,6 +102,10 @@ class Settings:
     emission_region: str = DEFAULT_EMISSION_REGION
     emission_factor_kg_per_kwh: float = DEFAULT_EMISSION_FACTOR_KG_PER_KWH
     scope3_wh_per_token: float = DEFAULT_SCOPE3_WH_PER_TOKEN
+    # Cost configuration (Story 16): the local kWh price local_cost derives
+    # cost_total from, and the date it was recorded. See the DEFAULT_* above.
+    kwh_price_eur: float = DEFAULT_KWH_PRICE_EUR
+    kwh_price_recorded_at: str = DEFAULT_KWH_PRICE_RECORDED_AT
 
 
 def fiche_registry_dir_from_env() -> Path:
@@ -203,6 +215,16 @@ def load_settings() -> Settings:
         minimum=0.0,
         minimum_reason="a Wh-per-token rate cannot be negative",
     )
+    kwh_price_eur = _require_numeric(
+        "KWH_PRICE_EUR",
+        DEFAULT_KWH_PRICE_EUR,
+        float,
+        minimum=0.0,
+        minimum_reason="a kWh price cannot be negative",
+    )
+    kwh_price_recorded_at = os.environ.get(
+        "KWH_PRICE_RECORDED_AT", DEFAULT_KWH_PRICE_RECORDED_AT
+    )
 
     return Settings(
         slm_models_dir=slm_models_dir,
@@ -226,6 +248,8 @@ def load_settings() -> Settings:
         emission_region=emission_region,
         emission_factor_kg_per_kwh=emission_factor_kg_per_kwh,
         scope3_wh_per_token=scope3_wh_per_token,
+        kwh_price_eur=kwh_price_eur,
+        kwh_price_recorded_at=kwh_price_recorded_at,
     )
 
 

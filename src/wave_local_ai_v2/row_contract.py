@@ -23,7 +23,9 @@ from wave_local_ai_v2 import aggregation, prompt_provenance, timings
 # "4": `energy_method` is gone, replaced by three independently-labelled
 # per-channel energy fields plus emissions/scope fields, on both row kinds
 # (Story 15: rows-carry-per-channel-energy-emissions-and-their-scope-boundary).
-SCHEMA_VERSION = "4"
+# "5": twelve cost + derivation-input fields became required on both row
+# kinds (Story 16: rows-carry-a-cost-and-what-it-was-derived-from).
+SCHEMA_VERSION = "5"
 
 # The schema version at which `fiche_hash` (and `verdict`) became required.
 # Fixed at "3" regardless of future `SCHEMA_VERSION` bumps: a stored row whose
@@ -83,6 +85,19 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "emissions_scope",
             "emissions_scope_formula_id",
             "scope_comparability",
+            # cost.cloud_cost / cost.local_cost / cost.cost_per_million_tokens
+            "tokens_in_total",
+            "tokens_out_total",
+            "cost_total",
+            "cost_currency",
+            "cost_per_million_tokens",
+            "normalization_unit",
+            "kwh_price_eur",
+            "kwh_price_currency",
+            "kwh_price_recorded_at",
+            "list_price_per_million_tokens",
+            "list_price_currency",
+            "list_price_retrieved_at",
             # repetitions.run_repetition_set / __init__._run
             "sampling",
             "seed_pinned",
@@ -144,6 +159,19 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "emissions_scope",
             "emissions_scope_formula_id",
             "scope_comparability",
+            # cost.cloud_cost / cost.local_cost / cost.cost_per_million_tokens
+            "tokens_in_total",
+            "tokens_out_total",
+            "cost_total",
+            "cost_currency",
+            "cost_per_million_tokens",
+            "normalization_unit",
+            "kwh_price_eur",
+            "kwh_price_currency",
+            "kwh_price_recorded_at",
+            "list_price_per_million_tokens",
+            "list_price_currency",
+            "list_price_retrieved_at",
             # verdict.quality_verdict
             "verdict",
             "task_suite",
@@ -197,6 +225,18 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
             f"row of kind {kind!r} pairs endpoint {endpoint!r} with "
             f"prompt_template_id {prompt_template_id!r}: an endpoint that "
             f"applies a template cannot declare 'none'"
+        )
+
+    cost_total = row["cost_total"]
+    if (
+        cost_total is not None
+        and row["kwh_price_eur"] is None
+        and (row["list_price_per_million_tokens"] is None)
+    ):
+        raise RowContractError(
+            f"row of kind {kind!r} carries cost_total={cost_total!r} but both "
+            "kwh_price_eur and list_price_per_million_tokens are null: a "
+            "non-null cost must carry at least one derivation basis"
         )
 
     if kind == "runtime":
