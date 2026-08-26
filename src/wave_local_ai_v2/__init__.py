@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import sys
 import time
-from pathlib import Path
 from typing import Any
 
 import requests
@@ -14,15 +13,18 @@ import requests
 from wave_local_ai_v2 import (
     aggregation,
     build_probe,
+    fiche_registry,
     prompt_provenance,
     provenance,
+    results,
     roster,
     row_contract,
     server,
+    verdict,
 )
 from wave_local_ai_v2.energy import measure_energy
 from wave_local_ai_v2.gpu import read_gpu_stats
-from wave_local_ai_v2.hardware import capture_fiche
+from wave_local_ai_v2.hardware import build_fiche, capture_fiche
 from wave_local_ai_v2.machine_state import read_machine_state
 from wave_local_ai_v2.repetitions import (
     EXCEED_CONTEXT_ERROR_TYPE,
@@ -244,6 +246,18 @@ def _run() -> None:
     # unreadable build is an explicit None, never a fallback string.
     llama_cpp_build = build_probe.probe_build(settings.llama_server_path)
 
+    run_fiche = build_fiche(
+        fiche,
+        llama_cpp_build=llama_cpp_build,
+        roster_entry_id=roster_entry.entry_id,
+        model_sha256=roster_entry.sha256,
+        quant=roster_entry.quant,
+        flags=flags,
+    )
+    fiche_hash_value = fiche_registry.write_fiche(
+        run_fiche, settings.fiche_registry_dir
+    )
+
     # A RepetitionFailure is a verdict on a generation, not on the server: the
     # process answered normally, so its stderr tail would bury the one-line
     # diagnosis the operator actually needs under unrelated log.
@@ -357,11 +371,7 @@ def _run() -> None:
         "prompt_template_id": prompt_provenance.TEMPLATE_ID_NONE,
         "prompt_template_hash": None,
         "prompt_capture": prompt_provenance.PROMPT_CAPTURE_CAPTURED,
-        **fiche,
-        "llama_cpp_build": llama_cpp_build,
-        "model_file": Path(roster_entry.file).name,
-        "quant": roster_entry.quant,
-        "flags": flags,
+        "fiche_hash": fiche_hash_value,
         "prompt": FIXED_PROMPT,
         "max_tokens": FIXED_MAX_TOKENS,
         "sampling": dict(runtime_sampling),
@@ -383,6 +393,13 @@ def _run() -> None:
         "aggregation": dict(aggregation.AGGREGATION_LABELS),
         **energy,
     }
+    reference_rows = results.read_rows(settings.runtime_reference_path)
+    row["verdict"] = verdict.runtime_verdict(
+        row,
+        reference_rows,
+        settings.fiche_registry_dir,
+        settings.runtime_reproduction_tolerance,
+    )
     append_row(settings.results_path, "runtime", row)
 
     print(

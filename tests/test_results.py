@@ -21,6 +21,8 @@ COMPLETE_QUALITY_ROW = {
     "prompt_capture": "captured",
     "model_id": "Qwen3.6-35B-A3B",
     "provider": "local",
+    "fiche_hash": "a" * 64,
+    "verdict": {"verdict": "not_comparable", "reference_run_id": None},
     "task_suite": "classification",
     "item_id": "billing-01",
     "prompt": "hello",

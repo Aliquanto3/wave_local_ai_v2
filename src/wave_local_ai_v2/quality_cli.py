@@ -16,16 +16,21 @@ from typing import Any, TypedDict
 import requests
 
 from wave_local_ai_v2 import (
+    build_probe,
     classification_suite,
+    fiche_registry,
     mistral_client,
     prompt_provenance,
     provenance,
+    results,
     roster,
     row_contract,
     server,
     suite_gate,
+    verdict,
 )
 from wave_local_ai_v2.classification_suite import CLASSIFICATION_TASK_SUITE
+from wave_local_ai_v2.hardware import build_fiche, capture_fiche
 from wave_local_ai_v2.mistral_client import MistralRequestError
 from wave_local_ai_v2.results import append_row, captured_at, new_run_id
 from wave_local_ai_v2.scoring import score_item, score_suite
@@ -124,7 +129,34 @@ def _run() -> None:
         # then. stderr keeps stdout to the accuracy lines the operator parses.
         print(deprecation_notice, file=sys.stderr)
 
-    local_completions = _run_local_suite(settings, roster_entry, model_path)
+    # Refuses (roster.RosterError) before any process spawns when
+    # settings.host_n_cpu_moe cannot be applied to roster_entry -- the check
+    # lives inside build_flags itself (server.py's one call site).
+    flags = server.build_flags(
+        roster_entry, settings.host_n_cpu_moe, settings.host_threads, model_path
+    )
+    # Probing the binary itself doesn't need the server running, so this is
+    # done before launch rather than costing readiness-wait time. An
+    # unreadable build is an explicit None, never a fallback string.
+    llama_cpp_build = build_probe.probe_build(settings.llama_server_path)
+    # One fiche per invocation, built from the one local launch this run
+    # performs, cited by both the local-provider and the mistral-provider
+    # rows it also writes (plan.md's Decisions table): the run-specific
+    # fiche follows the same run_id/roster_entry reuse pattern already
+    # established below.
+    run_fiche = build_fiche(
+        capture_fiche(),
+        llama_cpp_build=llama_cpp_build,
+        roster_entry_id=roster_entry.entry_id,
+        model_sha256=roster_entry.sha256,
+        quant=roster_entry.quant,
+        flags=flags,
+    )
+    fiche_hash_value = fiche_registry.write_fiche(
+        run_fiche, settings.fiche_registry_dir
+    )
+
+    local_completions = _run_local_suite(settings, flags)
     # Persisted before the cloud suite starts: a 429, a dropped connection or a
     # malformed body would otherwise throw away the multi-minute local run and
     # write zero rows. Both batches share one run_id, so a partial run is still
@@ -143,6 +175,7 @@ def _run() -> None:
         roster_entry=roster_entry,
         roster_version=loaded_roster.roster_version,
         call_path_fields=_local_call_path(),
+        fiche_hash=fiche_hash_value,
     )
 
     cloud_endpoint, cloud_completions = _run_cloud_suite(settings)
@@ -158,6 +191,7 @@ def _run() -> None:
         roster_entry=roster_entry,
         roster_version=loaded_roster.roster_version,
         call_path_fields=_mistral_call_path(cloud_endpoint),
+        fiche_hash=fiche_hash_value,
     )
 
 
@@ -195,15 +229,7 @@ def _local_model_path(settings: Settings, roster_entry: roster.RosterEntry) -> P
     return model_path
 
 
-def _run_local_suite(
-    settings: Settings, roster_entry: roster.RosterEntry, model_path: Path
-) -> list[_Completion]:
-    # Refuses (roster.RosterError) before any process spawns when
-    # settings.host_n_cpu_moe cannot be applied to roster_entry -- the check
-    # lives inside build_flags itself (server.py's one call site).
-    flags = server.build_flags(
-        roster_entry, settings.host_n_cpu_moe, settings.host_threads, model_path
-    )
+def _run_local_suite(settings: Settings, flags: list[str]) -> list[_Completion]:
     completions: list[_Completion] = []
 
     with server.running_server(settings.llama_server_path, flags):
@@ -290,6 +316,7 @@ def _score_and_write(
     roster_entry: roster.RosterEntry,
     roster_version: int,
     call_path_fields: dict[str, Any],
+    fiche_hash: str,
 ) -> None:
     scored_items = [
         score_item(
@@ -305,6 +332,7 @@ def _score_and_write(
     suite_accuracy = suite_score["accuracy"]
     failure_counts = suite_score["failure_counts"]
 
+    rows: list[dict[str, Any]] = []
     for item, scored in zip(CLASSIFICATION_TASK_SUITE, scored_items, strict=True):
         row = {
             "schema_version": row_contract.SCHEMA_VERSION,
@@ -316,6 +344,7 @@ def _score_and_write(
             **call_path_fields,
             "model_id": model_id,
             "provider": provider,
+            "fiche_hash": fiche_hash,
             "task_suite": "classification",
             "item_id": scored["item_id"],
             "prompt": item["prompt"],
@@ -343,6 +372,19 @@ def _score_and_write(
             "failure_reason": scored["failure_reason"],
             "failure_counts": dict(failure_counts),
         }
+        rows.append(row)
+
+    # The verdict is per suite-run, not per item: every row of this
+    # (model, provider) batch shares it, the same pattern suite_accuracy
+    # already uses.
+    reference_rows = [
+        row
+        for row in results.read_rows(settings.quality_reference_path)
+        if row.get("model_id") == model_id
+    ]
+    batch_verdict = verdict.quality_verdict(rows, reference_rows)
+    for row in rows:
+        row["verdict"] = batch_verdict
         append_row(settings.quality_results_path, "quality", row)
 
     print(f"model={model_id} provider={provider} accuracy={suite_accuracy:.2f}")

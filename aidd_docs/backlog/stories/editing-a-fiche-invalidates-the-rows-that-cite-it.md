@@ -1,6 +1,6 @@
 ---
 type: story
-status: ready
+status: done
 source: aidd_docs/backlog/epics/every-published-row-explains-and-reproduces-itself.md
 parent: aidd_docs/backlog/epics/every-published-row-explains-and-reproduces-itself.md
 depends_on: aidd_docs/backlog/stories/the-fiche-carries-a-normalised-hash-every-row-cites.md

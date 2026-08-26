@@ -256,6 +256,19 @@ overridable in `.env`); `thermal_posture` (today: `"fixed_cooldown"`); and
 `ttft_source` (today: `"server_reported"`, naming that `ttft_ms` is
 llama-server's own reported timing rather than an independent measurement).
 
+The row also carries a `verdict` block, computed against the reference file
+at `RUNTIME_REFERENCE_PATH` (default
+`aidd_docs/results/runtime-reference.jsonl`; the quality command uses
+`QUALITY_REFERENCE_PATH`, default `aidd_docs/results/quality-reference.jsonl`).
+A runtime re-run counts as `reproduced` when its `gen_tok_per_s` is within
+`RUNTIME_REPRODUCTION_TOLERANCE` (default `0.10`) of the matching reference
+row's; `not_reproduced` when it is outside; `not_comparable` when no
+reference row was configured or none matches on all four verdict-blocking
+fields (`llama_cpp_build`, `quant`, `gpu_name`, `flags`, all read from each
+row's stored fiche — CPU, RAM, driver and OS never block a comparison).
+Point `RUNTIME_REFERENCE_PATH` at an empty or absent file to opt out: that
+is `not_comparable`, not a failure.
+
 **4.3 — second run, set `MISTRAL_API_KEY` first:**
 
 ```sh
@@ -267,3 +280,23 @@ One row per (item, model) lands in `QUALITY_RESULTS_PATH` (default
 
 `GOOGLE_API_KEY` can be left unset — nothing under `src/` reads it yet, and
 both commands run without it.
+
+**4.4 — validate the fiches a run cited:**
+
+Every runtime and quality row cites its hardware/run fiche by `fiche_hash`
+rather than carrying it inline; the fiche itself is stored once, write-once,
+under `FICHE_REGISTRY_DIR` (default `aidd_docs/results/fiches/`, tracked in
+git). To prove none of those stored fiches were edited or went missing after
+the fact:
+
+```sh
+uv run wave-local-ai-v2-validate
+```
+
+With no arguments this checks the two live stores
+(`RUNTIME_RESULTS_PATH`, `QUALITY_RESULTS_PATH`); pass one or more result-file
+paths to check something else instead, e.g. the committed reference files.
+Exits `0` and prints the checked row count when every cited fiche is intact
+(or predates the `fiche_hash` contract entirely — reported separately as a
+non-fatal `legacy` count); exits `1` and names the affected run id and row
+position when a fiche was edited in place or is missing from the registry.

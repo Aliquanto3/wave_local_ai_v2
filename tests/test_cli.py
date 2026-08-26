@@ -9,6 +9,7 @@ import requests
 
 from wave_local_ai_v2 import FIXED_MAX_TOKENS, FIXED_PROMPT, _run, main
 from wave_local_ai_v2.aggregation import AGGREGATION_LABELS
+from wave_local_ai_v2.fiche_registry import read_fiche
 from wave_local_ai_v2.results import read_rows
 from wave_local_ai_v2.row_contract import SCHEMA_VERSION
 from wave_local_ai_v2.settings import DEFAULT_ROSTER_ENTRY_ID, Settings
@@ -124,6 +125,8 @@ def stubbed_run(tmp_path, monkeypatch):
         llama_server_path=server_path,
         results_path=results_path,
         roster_path=_write_fake_roster(tmp_path),
+        fiche_registry_dir=tmp_path / "fiches",
+        runtime_reference_path=tmp_path / "runtime-reference.jsonl",
     )
     fake_process = MagicMock(pid=1234)
 
@@ -197,7 +200,7 @@ def stubbed_run(tmp_path, monkeypatch):
         p.stop()
 
 
-def test_run_appends_one_row_with_fiche_and_metrics(stubbed_run) -> None:
+def test_run_appends_one_row_with_fiche_and_metrics(stubbed_run, tmp_path) -> None:
     results_path, _ = stubbed_run
 
     _run()
@@ -205,23 +208,35 @@ def test_run_appends_one_row_with_fiche_and_metrics(stubbed_run) -> None:
     rows = read_rows(results_path)
     assert len(rows) == 1
     row = rows[0]
-    for field in ("cpu", "ram_gb", "gpu_name", "os"):
-        assert field in row
     assert row["gen_tok_per_s"] == 26.0
     assert row["prompt_tok_per_s"] == 280.0
     assert row["energy_method"] == "estimated_tdp"
     assert row["energy_kwh"] == 0.00042
-    assert row["flags"]
     assert row["schema_version"] == SCHEMA_VERSION
     assert QUALITY_ONLY_FIELDS.isdisjoint(row.keys())
+    for field in (
+        "cpu",
+        "ram_gb",
+        "gpu_name",
+        "llama_cpp_build",
+        "model_file",
+        "flags",
+    ):
+        assert field not in row
     assert row["release_version"] == "v0.1.0"
     assert row["commit_sha"] == "deadbeef"
     assert row["tree_dirty"] is False
     assert row["roster_entry_id"] == DEFAULT_ROSTER_ENTRY_ID
     assert row["roster_version"] == FAKE_ROSTER_VERSION
-    assert row["llama_cpp_build"] == "b10537"
-    assert row["model_file"] == FAKE_ROSTER["entries"][DEFAULT_ROSTER_ENTRY_ID]["file"]
-    assert row["quant"] == FAKE_ROSTER["entries"][DEFAULT_ROSTER_ENTRY_ID]["quant"]
+    stored_fiche = read_fiche(row["fiche_hash"], tmp_path / "fiches")
+    assert stored_fiche is not None
+    assert stored_fiche["llama_cpp_build"] == "b10537"
+    assert stored_fiche["roster_entry_id"] == DEFAULT_ROSTER_ENTRY_ID
+    assert (
+        stored_fiche["quant"]
+        == FAKE_ROSTER["entries"][DEFAULT_ROSTER_ENTRY_ID]["quant"]
+    )
+    assert stored_fiche["flags"]
     assert row["endpoint"] == "/completion"
     assert row["prompt_template_id"] == "none"
     assert row["prompt_template_hash"] is None
@@ -249,10 +264,35 @@ def test_run_appends_one_row_with_fiche_and_metrics(stubbed_run) -> None:
     assert row["gen_tok_per_s_spread"] == 0.0
     assert "ttft_ms_spread" in row
     assert "prompt_tok_per_s_spread" in row
+    # No reference configured (default tmp path is absent): not_comparable.
+    assert row["verdict"]["verdict"] == "not_comparable"
+
+
+def test_run_reports_reproduced_against_a_matching_reference_row(
+    stubbed_run, tmp_path
+) -> None:
+    results_path, started = stubbed_run
+    reference_path = tmp_path / "runtime-reference.jsonl"
+    base_settings = started["load_settings"].return_value
+    started["load_settings"].return_value = replace(
+        base_settings, runtime_reference_path=reference_path
+    )
+
+    # First run establishes the fiche and the row this test then treats as
+    # the reference for a second, identical run.
+    _run()
+    reference_row = read_rows(results_path)[0]
+    reference_path.write_text(json.dumps(reference_row) + "\n")
+
+    _run()
+
+    candidate_row = read_rows(results_path)[1]
+    assert candidate_row["verdict"]["verdict"] == "reproduced"
+    assert candidate_row["verdict"]["reference_run_id"] == reference_row["run_id"]
 
 
 def test_run_publishes_an_explicit_none_when_the_build_cannot_be_read(
-    stubbed_run,
+    stubbed_run, tmp_path
 ) -> None:
     results_path, started = stubbed_run
     started["probe_build"].return_value = None
@@ -260,7 +300,9 @@ def test_run_publishes_an_explicit_none_when_the_build_cannot_be_read(
     _run()
 
     row = read_rows(results_path)[0]
-    assert row["llama_cpp_build"] is None
+    stored_fiche = read_fiche(row["fiche_hash"], tmp_path / "fiches")
+    assert stored_fiche is not None
+    assert stored_fiche["llama_cpp_build"] is None
 
 
 def _timings_response(ttft_ms: float, prompt_tps: float, gen_tps: float) -> dict:
@@ -364,6 +406,8 @@ def test_run_takes_the_mean_of_the_two_middle_values_when_n_is_even(
         llama_server_path=server_path,
         results_path=results_path,
         roster_path=_write_fake_roster(tmp_path),
+        fiche_registry_dir=tmp_path / "fiches",
+        runtime_reference_path=tmp_path / "runtime-reference.jsonl",
         runtime_repetitions=4,
     )
     fake_process = MagicMock(pid=1234)
@@ -452,12 +496,24 @@ def test_run_appends_zero_rows_when_request_fails(tmp_path, monkeypatch) -> None
         llama_server_path=server_path,
         results_path=results_path,
         roster_path=_write_fake_roster(tmp_path),
+        fiche_registry_dir=tmp_path / "fiches",
+        runtime_reference_path=tmp_path / "runtime-reference.jsonl",
     )
     fake_process = MagicMock(pid=1234)
 
     with (
         patch("wave_local_ai_v2.load_settings", return_value=fake_settings),
-        patch("wave_local_ai_v2.capture_fiche", return_value={}),
+        patch(
+            "wave_local_ai_v2.capture_fiche",
+            return_value={
+                "cpu": "x",
+                "ram_gb": 32.0,
+                "gpu_name": "y",
+                "gpu_driver_version": "1.2.3",
+                "os": "z",
+                "cuda_ceiling": "12.4",
+            },
+        ),
         patch("wave_local_ai_v2.server.running_server") as running_server,
         patch(
             "wave_local_ai_v2.requests.post",
@@ -493,11 +549,23 @@ def test_run_appends_zero_rows_when_server_never_becomes_ready(tmp_path) -> None
         llama_server_path=server_path,
         results_path=results_path,
         roster_path=_write_fake_roster(tmp_path),
+        fiche_registry_dir=tmp_path / "fiches",
+        runtime_reference_path=tmp_path / "runtime-reference.jsonl",
     )
 
     with (
         patch("wave_local_ai_v2.load_settings", return_value=fake_settings),
-        patch("wave_local_ai_v2.capture_fiche", return_value={}),
+        patch(
+            "wave_local_ai_v2.capture_fiche",
+            return_value={
+                "cpu": "x",
+                "ram_gb": 32.0,
+                "gpu_name": "y",
+                "gpu_driver_version": "1.2.3",
+                "os": "z",
+                "cuda_ceiling": "12.4",
+            },
+        ),
         patch(
             "wave_local_ai_v2.server.running_server",
             side_effect=ServerStartupError("timed out"),

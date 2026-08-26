@@ -8,6 +8,7 @@ import pytest
 
 from wave_local_ai_v2 import classification_suite, mistral_client, quality_cli
 from wave_local_ai_v2.classification_suite import CLASSIFICATION_TASK_SUITE
+from wave_local_ai_v2.fiche_registry import read_fiche
 from wave_local_ai_v2.mistral_client import MistralRequestError, ModelUnavailableError
 from wave_local_ai_v2.results import read_rows
 from wave_local_ai_v2.row_contract import SCHEMA_VERSION
@@ -90,6 +91,8 @@ def stubbed_run(tmp_path, monkeypatch):
         results_path=tmp_path / "runtime.jsonl",
         quality_results_path=quality_results_path,
         roster_path=_write_fake_roster(tmp_path),
+        fiche_registry_dir=tmp_path / "fiches",
+        quality_reference_path=tmp_path / "quality-reference.jsonl",
         mistral_api_key="fake-key",  # pragma: allowlist secret
     )
     fake_process = MagicMock(pid=1234)
@@ -97,6 +100,21 @@ def stubbed_run(tmp_path, monkeypatch):
     patches = {
         "load_settings": patch(
             "wave_local_ai_v2.quality_cli.load_settings", return_value=fake_settings
+        ),
+        "probe_build": patch(
+            "wave_local_ai_v2.quality_cli.build_probe.probe_build",
+            return_value="b10537",
+        ),
+        "capture_fiche": patch(
+            "wave_local_ai_v2.quality_cli.capture_fiche",
+            return_value={
+                "cpu": "x",
+                "ram_gb": 32.0,
+                "gpu_name": "y",
+                "gpu_driver_version": "1.2.3",
+                "os": "z",
+                "cuda_ceiling": "12.4",
+            },
         ),
         "running_server": patch("wave_local_ai_v2.quality_cli.server.running_server"),
         "post": patch(
@@ -156,6 +174,43 @@ def test_run_writes_one_row_per_item_per_model(stubbed_run) -> None:
         assert row["schema_version"] == SCHEMA_VERSION
         assert row["roster_entry_id"] == DEFAULT_ROSTER_ENTRY_ID
         assert row["roster_version"] == FAKE_ROSTER_VERSION
+        # No reference configured (default tmp path is absent): not_comparable.
+        assert row["verdict"]["verdict"] == "not_comparable"
+
+
+def test_one_verdict_shared_across_every_row_of_one_batch(stubbed_run) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    local_verdicts = {
+        json.dumps(row["verdict"], sort_keys=True)
+        for row in rows
+        if row["provider"] == "local"
+    }
+    mistral_verdicts = {
+        json.dumps(row["verdict"], sort_keys=True)
+        for row in rows
+        if row["provider"] == "mistral"
+    }
+    assert len(local_verdicts) == 1
+    assert len(mistral_verdicts) == 1
+
+
+def test_local_and_mistral_rows_cite_the_identical_fiche_hash(
+    stubbed_run, tmp_path
+) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    hashes = {row["fiche_hash"] for row in rows}
+    assert len(hashes) == 1
+    stored_fiche = read_fiche(hashes.pop(), tmp_path / "fiches")
+    assert stored_fiche is not None
+    assert stored_fiche["llama_cpp_build"] == "b10537"
 
 
 def test_local_rows_take_their_model_id_from_the_roster_entry(stubbed_run) -> None:

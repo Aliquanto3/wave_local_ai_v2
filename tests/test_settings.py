@@ -4,7 +4,10 @@ import pytest
 
 import wave_local_ai_v2.settings as settings_module
 from wave_local_ai_v2.settings import (
+    DEFAULT_FICHE_REGISTRY_DIR,
+    DEFAULT_QUALITY_REFERENCE_PATH,
     DEFAULT_QUALITY_RESULTS_PATH,
+    DEFAULT_RUNTIME_REFERENCE_PATH,
     Settings,
     SettingsError,
     load_settings,
@@ -84,6 +87,55 @@ def test_load_settings_reads_the_repetition_protocol_overrides(
     assert settings.runtime_spread_threshold == 0.20
 
 
+def test_load_settings_defaults_the_fiche_and_reference_paths_when_unset(
+    monkeypatch, tmp_path: Path
+) -> None:
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    server_path = tmp_path / "llama-server.exe"
+    server_path.write_text("")
+
+    monkeypatch.setenv("SLM_MODELS_DIR", str(models_dir))
+    monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
+    for env_var in (
+        "FICHE_REGISTRY_DIR",
+        "RUNTIME_REFERENCE_PATH",
+        "QUALITY_REFERENCE_PATH",
+        "RUNTIME_REPRODUCTION_TOLERANCE",
+    ):
+        monkeypatch.delenv(env_var, raising=False)
+
+    settings = load_settings()
+
+    assert settings.fiche_registry_dir == Path(DEFAULT_FICHE_REGISTRY_DIR)
+    assert settings.runtime_reference_path == Path(DEFAULT_RUNTIME_REFERENCE_PATH)
+    assert settings.quality_reference_path == Path(DEFAULT_QUALITY_REFERENCE_PATH)
+    assert settings.runtime_reproduction_tolerance == 0.10
+
+
+def test_load_settings_reads_the_fiche_and_reference_overrides(
+    monkeypatch, tmp_path: Path
+) -> None:
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    server_path = tmp_path / "llama-server.exe"
+    server_path.write_text("")
+
+    monkeypatch.setenv("SLM_MODELS_DIR", str(models_dir))
+    monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
+    monkeypatch.setenv("FICHE_REGISTRY_DIR", str(tmp_path / "fiches"))
+    monkeypatch.setenv("RUNTIME_REFERENCE_PATH", str(tmp_path / "runtime-ref.jsonl"))
+    monkeypatch.setenv("QUALITY_REFERENCE_PATH", str(tmp_path / "quality-ref.jsonl"))
+    monkeypatch.setenv("RUNTIME_REPRODUCTION_TOLERANCE", "0.25")
+
+    settings = load_settings()
+
+    assert settings.fiche_registry_dir == tmp_path / "fiches"
+    assert settings.runtime_reference_path == tmp_path / "runtime-ref.jsonl"
+    assert settings.quality_reference_path == tmp_path / "quality-ref.jsonl"
+    assert settings.runtime_reproduction_tolerance == 0.25
+
+
 @pytest.mark.parametrize(
     ("env_var", "value"),
     [
@@ -96,6 +148,8 @@ def test_load_settings_reads_the_repetition_protocol_overrides(
         ("RUNTIME_WARMUP_COUNT", "not-a-number"),
         ("RUNTIME_SPREAD_THRESHOLD", "-0.1"),
         ("RUNTIME_SPREAD_THRESHOLD", "not-a-number"),
+        ("RUNTIME_REPRODUCTION_TOLERANCE", "-0.1"),
+        ("RUNTIME_REPRODUCTION_TOLERANCE", "not-a-number"),
     ],
 )
 def test_load_settings_refuses_invalid_repetition_protocol_values(

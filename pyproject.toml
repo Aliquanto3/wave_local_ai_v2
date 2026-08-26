@@ -28,6 +28,7 @@ source = ["src/wave_local_ai_v2"]
 [project.scripts]
 wave-local-ai-v2 = "wave_local_ai_v2:main"
 wave-local-ai-v2-quality = "wave_local_ai_v2.quality_cli:main"
+wave-local-ai-v2-validate = "wave_local_ai_v2.fiche_validator:main"
 
 [build-system]
 requires = ["uv_build>=0.11.7,<0.12.0"]

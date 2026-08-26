@@ -69,6 +69,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   naming that its `ttft_ms` comes from llama-server's own reported timing,
   not an independent client-side measurement — refused by the row contract
   if it names anything else.
+- The hardware fiche is now a stored, content-addressed artifact
+  (`aidd_docs/results/fiches/<hash>.json`, write-once) instead of ten fields
+  flattened onto every row: a runtime or quality row now cites its fiche by
+  `fiche_hash` alone. The fiche's identity hash covers `cpu`, `ram_gb`,
+  `gpu_name`, `gpu_driver_version`, `os`, `cuda_ceiling`, `llama_cpp_build`,
+  `quant`, `roster_entry_id` and the roster entry's `sha256` — never the raw
+  flag list (kept on the stored fiche as evidence only) or a filesystem path.
+- `wave-local-ai-v2-validate`, a new CLI, proves a stored fiche was edited or
+  is missing: it re-hashes every cited fiche's own current content, names the
+  changed field(s) via `git show HEAD:...` when the registry is
+  git-tracked, and exits non-zero naming the affected row(s) by run id and
+  position — distinguishing `edited` from `missing` from a third, non-fatal
+  `legacy` class (a row predating the `fiche_hash` contract entirely,
+  `row_contract.FICHE_HASH_SCHEMA_VERSION`).
+- Every runtime and quality row now carries a `verdict` block
+  (`reproduced` / `not_reproduced` / `not_comparable`), computed and stored
+  by the harness against a configured reference file
+  (`RUNTIME_REFERENCE_PATH`, `QUALITY_REFERENCE_PATH`). A runtime match
+  compares exactly the four verdict-blocking fields resolved from the
+  candidate and reference rows' own fiches (`llama_cpp_build`, `quant`,
+  `gpu_name`, `flags`) — never CPU, RAM, driver, or OS — then compares
+  `gen_tok_per_s` within `RUNTIME_REPRODUCTION_TOLERANCE` (default `0.10`); a
+  quality match compares per-item `predicted_label` across a shared
+  `model_id`/`suite_version`/seed and the same set of `item_id`s — an item
+  present on one side only makes the batch `not_comparable`, so a partial
+  overlap can never read as agreement.
 
 ### Changed
 
