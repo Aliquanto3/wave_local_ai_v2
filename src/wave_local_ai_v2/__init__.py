@@ -344,7 +344,9 @@ def _run() -> None:
 
         # The warm-up runs outside this tracker: energy spans only the counted
         # repetitions and the cooldowns between them (plan.md's Decisions table).
-        (_, counted), energy = measure_energy(_run_counted)
+        (_, counted), energy = measure_energy(
+            _run_counted, country_iso_code=settings.emission_country_iso_code
+        )
 
     # The raw counted repetitions are kept on the row unmodified: a reader
     # recomputes these aggregates rather than trusting them.

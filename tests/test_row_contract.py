@@ -61,8 +61,19 @@ COMPLETE_RUNTIME_ROW = {
     "vram_used_mib": 3161.0,
     "gpu_draw_w": 45.0,
     "process_rss_bytes": 500_000_000,
+    "cpu_energy_kwh": 0.0003,
+    "cpu_energy_method": "estimated_tdp",
+    "gpu_energy_kwh": None,
+    "gpu_energy_method": "unavailable",
+    "ram_energy_kwh": 0.00012,
+    "ram_energy_method": "estimated_constant",
     "energy_kwh": 0.00042,
-    "energy_method": "estimated_tdp",
+    "emissions_kg": 0.0000235,
+    "emission_factor_kg_per_kwh": 0.056039,
+    "emission_region": "FR",
+    "emissions_scope": "scope_2",
+    "emissions_scope_formula_id": None,
+    "scope_comparability": None,
     "sampling": {"seed": 20260822, "temperature": 1.0},
     "seed_pinned": True,
     "warmup_count": 1,
@@ -91,6 +102,19 @@ COMPLETE_QUALITY_ROW = {
     "model_id": "Qwen3.6-35B-A3B",
     "provider": "local",
     "fiche_hash": "a" * 64,
+    "cpu_energy_kwh": 0.0003,
+    "cpu_energy_method": "estimated_tdp",
+    "gpu_energy_kwh": None,
+    "gpu_energy_method": "unavailable",
+    "ram_energy_kwh": 0.00012,
+    "ram_energy_method": "estimated_constant",
+    "energy_kwh": 0.00042,
+    "emissions_kg": 0.0000235,
+    "emission_factor_kg_per_kwh": 0.056039,
+    "emission_region": "FR",
+    "emissions_scope": "scope_2",
+    "emissions_scope_formula_id": None,
+    "scope_comparability": None,
     "verdict": {"verdict": "not_comparable", "reference_run_id": None},
     "task_suite": "classification",
     "item_id": "billing-01",
@@ -134,6 +158,37 @@ def test_missing_field_raises_and_names_it() -> None:
 
     with pytest.raises(RowContractError, match="fiche_hash"):
         validate_row("runtime", incomplete)
+
+
+def test_row_carrying_only_the_old_energy_method_field_is_refused() -> None:
+    # Pre-increment shape: the single composite energy_method field, none of
+    # the twelve per-channel/emissions fields it was replaced by.
+    per_channel_fields = {
+        "cpu_energy_kwh",
+        "cpu_energy_method",
+        "gpu_energy_kwh",
+        "gpu_energy_method",
+        "ram_energy_kwh",
+        "ram_energy_method",
+        "emissions_kg",
+        "emission_factor_kg_per_kwh",
+        "emission_region",
+        "emissions_scope",
+        "emissions_scope_formula_id",
+        "scope_comparability",
+    }
+    legacy_row = {
+        k: v for k, v in COMPLETE_RUNTIME_ROW.items() if k not in per_channel_fields
+    }
+    legacy_row["energy_method"] = "estimated_tdp"
+    legacy_row["aggregation"] = {
+        k: v
+        for k, v in legacy_row["aggregation"].items()
+        if k not in ("cpu_energy_kwh", "gpu_energy_kwh", "ram_energy_kwh")
+    }
+
+    with pytest.raises(RowContractError, match="cpu_energy_kwh"):
+        validate_row("runtime", legacy_row)
 
 
 @pytest.mark.parametrize("field", ["roster_entry_id", "roster_version"])

@@ -20,7 +20,10 @@ from wave_local_ai_v2 import aggregation, prompt_provenance, timings
 # "3": `fiche_hash` and `verdict` became required on both row kinds, and the
 # ten flattened hardware/run fields left the runtime row (fiche_hash-reproduction-
 # verdict increment).
-SCHEMA_VERSION = "3"
+# "4": `energy_method` is gone, replaced by three independently-labelled
+# per-channel energy fields plus emissions/scope fields, on both row kinds
+# (Story 15: rows-carry-per-channel-energy-emissions-and-their-scope-boundary).
+SCHEMA_VERSION = "4"
 
 # The schema version at which `fiche_hash` (and `verdict`) became required.
 # Fixed at "3" regardless of future `SCHEMA_VERSION` bumps: a stored row whose
@@ -66,8 +69,20 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "gpu_draw_w",
             "process_rss_bytes",
             # energy.EnergyResult
+            "cpu_energy_kwh",
+            "cpu_energy_method",
+            "gpu_energy_kwh",
+            "gpu_energy_method",
+            "ram_energy_kwh",
+            "ram_energy_method",
             "energy_kwh",
-            "energy_method",
+            # emissions.local_emissions / emissions.scope3_cloud_emissions
+            "emissions_kg",
+            "emission_factor_kg_per_kwh",
+            "emission_region",
+            "emissions_scope",
+            "emissions_scope_formula_id",
+            "scope_comparability",
             # repetitions.run_repetition_set / __init__._run
             "sampling",
             "seed_pinned",
@@ -113,6 +128,22 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "model_id",
             "provider",
             "fiche_hash",
+            # energy.EnergyResult / emissions.local_emissions / scope3_cloud_emissions
+            # -- same twelve fields as the runtime row (plan.md's Decisions:
+            # quality rows carry the same per-channel/emissions/cost shape).
+            "cpu_energy_kwh",
+            "cpu_energy_method",
+            "gpu_energy_kwh",
+            "gpu_energy_method",
+            "ram_energy_kwh",
+            "ram_energy_method",
+            "energy_kwh",
+            "emissions_kg",
+            "emission_factor_kg_per_kwh",
+            "emission_region",
+            "emissions_scope",
+            "emissions_scope_formula_id",
+            "scope_comparability",
             # verdict.quality_verdict
             "verdict",
             "task_suite",
