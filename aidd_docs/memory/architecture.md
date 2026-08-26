@@ -52,7 +52,7 @@ flowchart LR
   `cli.md`) that are not roster data. `llama_cpp_build` is likewise a live
   probe of the running binary (`build_probe.py`), never a constant string.
 - `detect-secrets` opens files with the locale default encoding and silently skips any it cannot decode ("we flat out ignore binary files"), so on Windows (cp1252) a doc containing `✏️`, `‌` or `←` is never scanned at all — always invoke it in UTF-8 mode (`python -X utf8 -m detect_secrets...`), on every OS.
-- Runtime metrics are NOT reproducible across machines. Every result row must carry its hardware fiche (CPU, RAM, GPU, driver, llama.cpp build, quant, flags). A number without a fiche is meaningless.
+- Runtime metrics are NOT reproducible across machines. Every result row must cite its hardware fiche by `fiche_hash` (CPU, RAM, GPU, driver, llama.cpp build, quant, roster entry + its sha256, and the raw flags as evidence); the fiche itself is stored write-once under `aidd_docs/results/fiches/<hash>.json` (`fiche_registry.py`) rather than flattened onto the row, and `wave-local-ai-v2-validate` proves a cited fiche was neither edited nor lost. A number without a fiche is meaningless.
 - llama.cpp has architecture-specific flags that are not optional: `--load-mode none` is required when `--n-cpu-moe` is set (otherwise mmap pages from disk), `--jinja` is required for `<think>` tag parsing, `-np 1` avoids the 4-slot default allocation.
 - MoE models (e.g. Qwen3) have a fixed number of experts; `--n-cpu-moe` has a hard ceiling and sweep gains are typically within measurement noise.
 - Energy and carbon figures are ESTIMATES, not measurements. On Windows, CodeCarbon

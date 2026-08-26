@@ -24,7 +24,17 @@ repos:
         always_run: true
       - id: detect-secrets
         name: detect-secrets
-        entry: uv run python -X utf8 -m detect_secrets.pre_commit_hook --baseline .secrets.baseline
+        # The fiche registry (aidd_docs/results/fiches/<sha256>.json) is a
+        # content-addressed store of hardware fiches: every file is named by
+        # its own hash and carries the model's published sha256, so the
+        # Hex High Entropy String plugin fires on each new one. Baselining
+        # them one at a time would block every future run's fiche, and the
+        # value is the public GGUF checksum docs/setup.md tells a reader to
+        # verify -- already baselined at aidd_docs/roster/models.json. The
+        # pattern uses `.` for the separator and a character class rather
+        # than `\.` so it survives shlex-splitting and Windows path
+        # separators alike.
+        entry: uv run python -X utf8 -m detect_secrets.pre_commit_hook --baseline .secrets.baseline --exclude-files fiches.[0-9a-f]{64}[.]json$
         language: system
         pass_filenames: true
       - id: pytest

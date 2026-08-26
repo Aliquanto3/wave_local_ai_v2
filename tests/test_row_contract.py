@@ -38,16 +38,8 @@ COMPLETE_RUNTIME_ROW = {
     "prompt_template_id": "none",
     "prompt_template_hash": None,
     "prompt_capture": "captured",
-    "cpu": "x",
-    "ram_gb": 32.0,
-    "gpu_name": "y",
-    "gpu_driver_version": "1.2.3",
-    "os": "z",
-    "cuda_ceiling": "12.4",
-    "llama_cpp_build": "b10537",
-    "model_file": "model.gguf",
-    "quant": "UD-IQ4_XS",
-    "flags": ["-m", "model.gguf"],
+    "fiche_hash": "a" * 64,
+    "verdict": {"verdict": "not_comparable", "reference_run_id": None},
     "prompt": "hello",
     "max_tokens": 128,
     "wall_clock_s": 25.0,
@@ -98,6 +90,8 @@ COMPLETE_QUALITY_ROW = {
     "prompt_capture": "captured",
     "model_id": "Qwen3.6-35B-A3B",
     "provider": "local",
+    "fiche_hash": "a" * 64,
+    "verdict": {"verdict": "not_comparable", "reference_run_id": None},
     "task_suite": "classification",
     "item_id": "billing-01",
     "prompt": "hello",
@@ -136,9 +130,9 @@ def test_complete_quality_row_passes() -> None:
 
 
 def test_missing_field_raises_and_names_it() -> None:
-    incomplete = {k: v for k, v in COMPLETE_RUNTIME_ROW.items() if k != "gpu_name"}
+    incomplete = {k: v for k, v in COMPLETE_RUNTIME_ROW.items() if k != "fiche_hash"}
 
-    with pytest.raises(RowContractError, match="gpu_name"):
+    with pytest.raises(RowContractError, match="fiche_hash"):
         validate_row("runtime", incomplete)
 
 
@@ -189,7 +183,7 @@ def test_ttft_source_with_an_unrecognised_value_is_refused_and_named() -> None:
 
 
 def test_explicit_none_value_is_accepted() -> None:
-    row = {**COMPLETE_RUNTIME_ROW, "gpu_name": None}
+    row = {**COMPLETE_RUNTIME_ROW, "fiche_hash": None}
 
     validate_row("runtime", row)
 

@@ -19,6 +19,14 @@ DEFAULT_ROSTER_ENTRY_ID = "qwen3.6-35b-a3b-ud-iq4xs"
 # must have exactly one definition for a test to bind.
 DEFAULT_HOST_N_CPU_MOE = 37
 DEFAULT_HOST_THREADS = 8
+DEFAULT_FICHE_REGISTRY_DIR = "aidd_docs/results/fiches"
+DEFAULT_RUNTIME_REFERENCE_PATH = "aidd_docs/results/runtime-reference.jsonl"
+DEFAULT_QUALITY_REFERENCE_PATH = "aidd_docs/results/quality-reference.jsonl"
+# Distinct from runtime_spread_threshold (criterion 7) even though both
+# default to the same value: the spread threshold gates whether one run's own
+# repetitions agree with each other, this gates whether two separate runs'
+# medians agree -- a future PRD revision can move one without the other.
+DEFAULT_RUNTIME_REPRODUCTION_TOLERANCE = 0.10
 
 
 class SettingsError(RuntimeError):
@@ -53,6 +61,30 @@ class Settings:
     # byte-identical launch needs no `.env` override on this machine.
     host_n_cpu_moe: int = DEFAULT_HOST_N_CPU_MOE
     host_threads: int = DEFAULT_HOST_THREADS
+    # No existence check at load time, mirrors roster_path: fiche_registry.write_fiche
+    # creates it via mkdir(parents=True, exist_ok=True), matching results.append_row's
+    # own pattern.
+    fiche_registry_dir: Path = Path(DEFAULT_FICHE_REGISTRY_DIR)
+    # Reference files a candidate row's verdict is computed against (story 16).
+    # No existence check at load time: an absent reference is zero rows, i.e.
+    # `not_comparable`, not a load failure.
+    runtime_reference_path: Path = Path(DEFAULT_RUNTIME_REFERENCE_PATH)
+    quality_reference_path: Path = Path(DEFAULT_QUALITY_REFERENCE_PATH)
+    runtime_reproduction_tolerance: float = DEFAULT_RUNTIME_REPRODUCTION_TOLERANCE
+
+
+def fiche_registry_dir_from_env() -> Path:
+    """Resolve `FICHE_REGISTRY_DIR` alone, without a full settings load.
+
+    `fiche_validator` reads published artifacts only: given explicit result
+    paths it needs the registry directory and nothing else, so going through
+    `load_settings` would make it refuse on a machine with no local model
+    install (`SLM_MODELS_DIR` / `LLAMA_SERVER_PATH` must exist on disk there).
+    `load_settings` reads the same value through this function, so the two
+    forms can never resolve the directory differently.
+    """
+    load_dotenv()
+    return Path(os.environ.get("FICHE_REGISTRY_DIR", DEFAULT_FICHE_REGISTRY_DIR))
 
 
 def load_settings() -> Settings:
@@ -71,6 +103,13 @@ def load_settings() -> Settings:
         os.environ.get("QUALITY_RESULTS_PATH", DEFAULT_QUALITY_RESULTS_PATH)
     )
     roster_path = Path(os.environ.get("ROSTER_PATH", DEFAULT_ROSTER_PATH))
+    fiche_registry_dir = fiche_registry_dir_from_env()
+    runtime_reference_path = Path(
+        os.environ.get("RUNTIME_REFERENCE_PATH", DEFAULT_RUNTIME_REFERENCE_PATH)
+    )
+    quality_reference_path = Path(
+        os.environ.get("QUALITY_REFERENCE_PATH", DEFAULT_QUALITY_REFERENCE_PATH)
+    )
     roster_entry_id = os.environ.get("ROSTER_ENTRY_ID", DEFAULT_ROSTER_ENTRY_ID)
     mistral_api_key = os.environ.get("MISTRAL_API_KEY", "")
 
@@ -116,6 +155,13 @@ def load_settings() -> Settings:
         minimum=1,
         minimum_reason="-t needs at least one thread",
     )
+    runtime_reproduction_tolerance = _require_numeric(
+        "RUNTIME_REPRODUCTION_TOLERANCE",
+        DEFAULT_RUNTIME_REPRODUCTION_TOLERANCE,
+        float,
+        minimum=0.0,
+        minimum_reason="a reproduction tolerance cannot be negative",
+    )
 
     return Settings(
         slm_models_dir=slm_models_dir,
@@ -123,6 +169,7 @@ def load_settings() -> Settings:
         results_path=results_path,
         quality_results_path=quality_results_path,
         roster_path=roster_path,
+        fiche_registry_dir=fiche_registry_dir,
         roster_entry_id=roster_entry_id,
         mistral_api_key=mistral_api_key,
         runtime_repetitions=runtime_repetitions,
@@ -131,6 +178,9 @@ def load_settings() -> Settings:
         runtime_spread_threshold=runtime_spread_threshold,
         host_n_cpu_moe=host_n_cpu_moe,
         host_threads=host_threads,
+        runtime_reference_path=runtime_reference_path,
+        quality_reference_path=quality_reference_path,
+        runtime_reproduction_tolerance=runtime_reproduction_tolerance,
     )
 
 

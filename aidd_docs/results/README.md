@@ -105,3 +105,49 @@ reconstructed.
 The only edit applied to the copied bytes is the line terminator: the live stores
 are written in Windows text mode and use CRLF, and these snapshots use LF like
 the rest of the repository. Every JSON payload is verbatim, byte for byte.
+
+## Fiche hash, invalidation validator, and reproduction verdict (this increment)
+
+Both `runtime-reference.jsonl` (3 rows) and `quality-reference.jsonl` (40 rows)
+predate `fiche_hash` and `verdict` entirely -- neither key exists on any row in
+either file. `row_contract.FICHE_HASH_SCHEMA_VERSION` ("3") is the version this
+increment introduced; every row in both files carries a `schema_version` below
+it (or none at all), so `wave-local-ai-v2-validate` reports all of them under
+its non-fatal `legacy` class rather than `missing`: `uv run
+wave-local-ai-v2-validate aidd_docs/results/runtime-reference.jsonl
+aidd_docs/results/quality-reference.jsonl` exits **0**, printing `checked 43
+row(s)` and `legacy (pre-fiche-hash, not fatal): 43`. This is expected, not a
+bug -- these rows were produced by earlier increments' harness code, before
+`fiche_hash` existed -- and it is exactly what story 19 (regenerating these
+files against the current harness) resolves.
+
+The same run against this machine's live `runtime.jsonl` (default paths, no
+arguments) exits **0**, `checked 5 row(s)`, `legacy (pre-fiche-hash, not
+fatal): 4` -- the four pre-existing rows above, plus one current row (below)
+that is not legacy and validates clean.
+
+A fresh run (`uv run wave-local-ai-v2`, default settings) on 2026-08-23, branch
+`feat/fiche-hash-reproduction-verdict` at tip `d1709f6` (`tree_dirty: true` --
+this branch's own uncommitted work), run_id `89c3d14104584f4c87da7f2cff646562`,
+wrote a row carrying `schema_version: "3"`, `fiche_hash`
+`b9d1af56db2b6a26bfb265842bfd757dc78ed2d95e4ad3fce0088b8396d9003a` (its file
+committed under `fiches/`), and no inline `cpu`/`gpu_name`/`llama_cpp_build`/
+`quant`/`flags` at the row's top level any more -- all resolved through the
+fiche. Its `verdict` block:
+
+| Field | Observed value |
+| ----- | --------------- |
+| `verdict` | `"not_comparable"` |
+| `reason` | `"no reference row shares this candidate's roster_entry_id"` |
+| `reference_run_id` | `null` |
+| `differing_fields` | `[]` |
+
+Correct, not a defect: `runtime-reference.jsonl`'s rows carry no
+`roster_entry_id` at all (predating that field too), so `runtime_verdict`
+narrows to zero candidate reference rows before it ever reaches the
+fiche-based blocking-field comparison, and reports `not_comparable` rather
+than guessing a match. This run's own `gen_tok_per_s` (18.50 tok/s) and
+`ttft_ms` (5598 ms) are markedly below the earlier reference rows (26.0 /
+25.5 tok/s) -- consistent with the machine's GPU cooling/warm-up state at run
+time, not a regression this increment introduces; the verdict correctly
+declines to compare rather than reporting a false `not_reproduced`.

@@ -17,7 +17,17 @@ from wave_local_ai_v2 import aggregation, prompt_provenance, timings
 # became a median over a repetition set). Quality rows move to "2" with it
 # because the constant is shared -- splitting into per-kind versions is out
 # of scope for this increment.
-SCHEMA_VERSION = "2"
+# "3": `fiche_hash` and `verdict` became required on both row kinds, and the
+# ten flattened hardware/run fields left the runtime row (fiche_hash-reproduction-
+# verdict increment).
+SCHEMA_VERSION = "3"
+
+# The schema version at which `fiche_hash` (and `verdict`) became required.
+# Fixed at "3" regardless of future `SCHEMA_VERSION` bumps: a stored row whose
+# own `schema_version` is below this predates the fiche-hash contract
+# entirely, so its missing `fiche_hash` is not an integrity failure the
+# validator should treat as fatal (`fiche_validator.py`'s `legacy` class).
+FICHE_HASH_SCHEMA_VERSION = "3"
 
 RowKind = Literal["runtime", "quality"]
 
@@ -39,17 +49,10 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "prompt_template_id",
             "prompt_template_hash",
             "prompt_capture",
-            # hardware.HardwareFiche
-            "cpu",
-            "ram_gb",
-            "gpu_name",
-            "gpu_driver_version",
-            "os",
-            "cuda_ceiling",
-            "llama_cpp_build",
-            "model_file",
-            "quant",
-            "flags",
+            # fiche_registry: the hardware + run-specific fiche, cited by hash
+            "fiche_hash",
+            # verdict.runtime_verdict
+            "verdict",
             "prompt",
             "max_tokens",
             "wall_clock_s",
@@ -109,6 +112,9 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "prompt_capture",
             "model_id",
             "provider",
+            "fiche_hash",
+            # verdict.quality_verdict
+            "verdict",
             "task_suite",
             "item_id",
             "prompt",
