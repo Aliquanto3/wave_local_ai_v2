@@ -8,6 +8,7 @@ import pytest
 
 from wave_local_ai_v2 import classification_suite, mistral_client, quality_cli
 from wave_local_ai_v2.classification_suite import CLASSIFICATION_TASK_SUITE
+from wave_local_ai_v2.cost import MISTRAL_PRICE_TABLE
 from wave_local_ai_v2.fiche_registry import read_fiche
 from wave_local_ai_v2.mistral_client import MistralRequestError, ModelUnavailableError
 from wave_local_ai_v2.results import read_rows
@@ -211,6 +212,150 @@ def test_one_verdict_shared_across_every_row_of_one_batch(stubbed_run) -> None:
     }
     assert len(local_verdicts) == 1
     assert len(mistral_verdicts) == 1
+
+
+def test_local_rows_carry_scope_2_energy_emissions_and_a_kwh_derived_cost(
+    stubbed_run,
+) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    local_rows = [
+        r for r in read_rows(quality_results_path) if r["provider"] == "local"
+    ]
+    assert local_rows
+    for row in local_rows:
+        assert row["cpu_energy_kwh"] == FAKE_ENERGY_RESULT["cpu_energy_kwh"]
+        assert row["cpu_energy_method"] == "estimated_tdp"
+        assert row["ram_energy_method"] == "estimated_constant"
+        assert row["energy_kwh"] == FAKE_ENERGY_RESULT["energy_kwh"]
+        assert row["emissions_scope"] == "scope_2"
+        assert row["emissions_scope_formula_id"] is None
+        assert row["scope_comparability"] is None
+        assert row["emissions_kg"] == pytest.approx(
+            FAKE_ENERGY_RESULT["energy_kwh"] * 0.056039
+        )
+        assert row["cost_total"] == pytest.approx(
+            FAKE_ENERGY_RESULT["energy_kwh"] * 0.194
+        )
+        assert row["cost_currency"] == "EUR"
+        assert row["kwh_price_eur"] == 0.194
+        assert row["kwh_price_currency"] == "EUR"
+        assert row["normalization_unit"] == "cost_per_million_total_tokens"
+        # The local /completion path returns no prompt-token count, so the
+        # denominator is unknown and the rate is undefined, never fabricated.
+        assert row["tokens_in_total"] is None
+        assert row["cost_per_million_tokens"] is None
+        # A local batch buys kWh, not tokens: the whole list-price half is null.
+        assert row["list_price_input_per_million"] is None
+        assert row["list_price_output_per_million"] is None
+        assert row["list_price_per_million_tokens"] is None
+
+
+def test_mistral_rows_carry_scope_3_emissions_and_the_list_price_they_cost_from(
+    stubbed_run,
+) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    mistral_rows = [
+        r for r in read_rows(quality_results_path) if r["provider"] == "mistral"
+    ]
+    assert mistral_rows
+    items = len(CLASSIFICATION_TASK_SUITE)
+    prompt_tokens_total = 12 * items
+    completion_tokens_total = 3 * items
+    total_tokens = prompt_tokens_total + completion_tokens_total
+    price = MISTRAL_PRICE_TABLE[mistral_client.MODEL]
+    expected_cost = (
+        prompt_tokens_total / 1e6 * price["input_per_million"]
+        + completion_tokens_total / 1e6 * price["output_per_million"]
+    )
+    for row in mistral_rows:
+        # No on-machine energy is attributable to a network call.
+        assert row["cpu_energy_kwh"] is None
+        assert row["cpu_energy_method"] == "unavailable"
+        assert row["gpu_energy_method"] == "unavailable"
+        assert row["ram_energy_method"] == "unavailable"
+        assert row["emissions_scope"] == "scope_3"
+        assert row["emissions_scope_formula_id"] == "scope3-v1-wh-per-token"
+        assert "not like-for-like" in row["scope_comparability"]
+        assert row["energy_kwh"] == pytest.approx(total_tokens * 0.0003 / 1000)
+        assert row["emissions_kg"] == pytest.approx(
+            total_tokens * 0.0003 / 1000 * 0.056039
+        )
+        assert row["tokens_in_total"] == prompt_tokens_total
+        assert row["tokens_out_total"] == completion_tokens_total
+        assert row["cost_total"] == pytest.approx(expected_cost)
+        assert row["cost_currency"] == price["currency"]
+        # The two rates the table charges are on the row, so cost_total is
+        # recomputable from tokens_in_total and tokens_out_total alone.
+        assert row["list_price_input_per_million"] == price["input_per_million"]
+        assert row["list_price_output_per_million"] == price["output_per_million"]
+        assert row["list_price_currency"] == price["currency"]
+        assert row["list_price_retrieved_at"] == price["retrieved_at"]
+        assert row["cost_per_million_tokens"] == pytest.approx(
+            expected_cost / total_tokens * 1_000_000
+        )
+        # A local run's half stays null on a cloud row.
+        assert row["kwh_price_eur"] is None
+        assert row["kwh_price_currency"] is None
+
+
+def test_each_batch_shares_one_energy_emissions_and_cost_figure(stubbed_run) -> None:
+    # The tracker spans the whole suite loop and the price is charged per
+    # batch, so these are batch-level facts repeated per item row -- the same
+    # pattern suite_accuracy already follows. A per-item figure would be
+    # fabricated: nothing measures one item's share.
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    batch_fields = ("energy_kwh", "emissions_kg", "cost_total", "tokens_in_total")
+    for provider in ("local", "mistral"):
+        provider_rows = [r for r in rows if r["provider"] == provider]
+        assert len(provider_rows) == len(CLASSIFICATION_TASK_SUITE)
+        for field in batch_fields:
+            assert len({repr(r[field]) for r in provider_rows}) == 1
+
+
+def test_a_response_without_prompt_tokens_leaves_the_cloud_batch_uncosted(
+    stubbed_run,
+) -> None:
+    # An absent prompt-token count makes the batch's input unknown, not zero:
+    # pricing the prompts at nothing would publish an understated cost with
+    # nothing on the row saying so.
+    quality_results_path, started = stubbed_run
+    started["complete_prompt"].return_value = {
+        "content": "billing",
+        "endpoint": mistral_client.CHAT_COMPLETIONS_URL,
+        "finish_reason": "stop",
+        "generated_tokens": 3,
+        "prompt_tokens": None,
+        "total_tokens": None,
+    }
+
+    quality_cli._run()
+
+    mistral_rows = [
+        r for r in read_rows(quality_results_path) if r["provider"] == "mistral"
+    ]
+    assert mistral_rows
+    price = MISTRAL_PRICE_TABLE[mistral_client.MODEL]
+    for row in mistral_rows:
+        assert row["tokens_in_total"] is None
+        assert row["tokens_out_total"] == 3 * len(CLASSIFICATION_TASK_SUITE)
+        assert row["cost_total"] is None
+        assert row["cost_per_million_tokens"] is None
+        assert row["energy_kwh"] is None
+        assert row["emissions_kg"] is None
+        # The price snapshot is what the provider charges, not something this
+        # batch derived, so it still lands on the row.
+        assert row["list_price_input_per_million"] == price["input_per_million"]
+        assert row["list_price_per_million_tokens"] is None
 
 
 def test_local_and_mistral_rows_cite_the_identical_fiche_hash(

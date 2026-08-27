@@ -367,20 +367,14 @@ def _run() -> None:
     emissions_kg = emissions.local_emissions(
         energy["energy_kwh"], settings.emission_factor_kg_per_kwh
     )
-    # Every counted repetition sends the identical FIXED_PROMPT with
-    # cache_prompt=False (a full prefill each time), so tokens_evaluated is
-    # the same across the set -- citing the first is not a loss of
-    # information, the same pattern ttft_source already uses.
-    tokens_out_total = (
-        sum(
-            rep["tokens_predicted"]
-            for rep in counted
-            if rep["tokens_predicted"] is not None
-        )
-        if any(rep["tokens_predicted"] is not None for rep in counted)
-        else None
-    )
-    tokens_in_total = counted[0]["tokens_evaluated"]
+    # Both totals span the counted set, the same window energy_kwh and
+    # cost_total are measured over. tokens_evaluated is summed, not read off
+    # the first repetition: cache_prompt=False forces a full prefill on every
+    # request, so the set really did evaluate the prompt N times, and citing
+    # one repetition would divide a whole-set cost by a single request's
+    # prompt.
+    tokens_out_total = cost.total_or_none(rep["tokens_predicted"] for rep in counted)
+    tokens_in_total = cost.total_or_none(rep["tokens_evaluated"] for rep in counted)
     cost_total = cost.local_cost(energy["energy_kwh"], settings.kwh_price_eur)
     total_tokens = (
         tokens_in_total + tokens_out_total
@@ -432,15 +426,17 @@ def _run() -> None:
         "tokens_out_total": tokens_out_total,
         "cost_total": cost_total,
         "cost_currency": "EUR",
-        "cost_per_million_tokens": (
-            cost.cost_per_million_tokens(cost_total, total_tokens)
-            if cost_total is not None
-            else None
+        "cost_per_million_tokens": cost.cost_per_million_tokens(
+            cost_total, total_tokens
         ),
         "normalization_unit": cost.NORMALIZATION_UNIT,
         "kwh_price_eur": settings.kwh_price_eur,
         "kwh_price_currency": "EUR",
         "kwh_price_recorded_at": settings.kwh_price_recorded_at,
+        # A local run buys kWh, not tokens: every list-price field is null,
+        # the same half-null pattern the cloud rows apply to kwh_price_*.
+        "list_price_input_per_million": None,
+        "list_price_output_per_million": None,
         "list_price_per_million_tokens": None,
         "list_price_currency": None,
         "list_price_retrieved_at": None,

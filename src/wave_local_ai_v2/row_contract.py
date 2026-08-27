@@ -25,7 +25,13 @@ from wave_local_ai_v2 import aggregation, prompt_provenance, timings
 # (Story 15: rows-carry-per-channel-energy-emissions-and-their-scope-boundary).
 # "5": twelve cost + derivation-input fields became required on both row
 # kinds (Story 16: rows-carry-a-cost-and-what-it-was-derived-from).
-SCHEMA_VERSION = "5"
+# "6": `list_price_input_per_million` and `list_price_output_per_million`
+# became required on both row kinds. `list_price_per_million_tokens` alone is
+# a blended effective rate derived FROM cost_total, so a row carrying only it
+# could not recompute its own cost -- the two rates the price table actually
+# charges have to be on the row for Story 16's "carries what it was derived
+# from" to hold.
+SCHEMA_VERSION = "6"
 
 # The schema version at which `fiche_hash` (and `verdict`) became required.
 # Fixed at "3" regardless of future `SCHEMA_VERSION` bumps: a stored row whose
@@ -95,6 +101,10 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "kwh_price_eur",
             "kwh_price_currency",
             "kwh_price_recorded_at",
+            # The two rates the price table charges, plus the blended
+            # effective rate this batch's own token mix worked out to.
+            "list_price_input_per_million",
+            "list_price_output_per_million",
             "list_price_per_million_tokens",
             "list_price_currency",
             "list_price_retrieved_at",
@@ -169,6 +179,8 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "kwh_price_eur",
             "kwh_price_currency",
             "kwh_price_recorded_at",
+            "list_price_input_per_million",
+            "list_price_output_per_million",
             "list_price_per_million_tokens",
             "list_price_currency",
             "list_price_retrieved_at",
@@ -228,14 +240,19 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
         )
 
     cost_total = row["cost_total"]
+    # The two bases are the values the cost was actually computed from: a kWh
+    # price for a local run, the table's own input rate for a cloud one.
+    # `list_price_per_million_tokens` is deliberately not accepted here -- it
+    # is a blended rate derived FROM cost_total, so a row carrying only it
+    # would satisfy the gate without carrying any input at all.
     if (
         cost_total is not None
         and row["kwh_price_eur"] is None
-        and (row["list_price_per_million_tokens"] is None)
+        and row["list_price_input_per_million"] is None
     ):
         raise RowContractError(
             f"row of kind {kind!r} carries cost_total={cost_total!r} but both "
-            "kwh_price_eur and list_price_per_million_tokens are null: a "
+            "kwh_price_eur and list_price_input_per_million are null: a "
             "non-null cost must carry at least one derivation basis"
         )
 

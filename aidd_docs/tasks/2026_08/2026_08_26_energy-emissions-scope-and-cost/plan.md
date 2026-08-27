@@ -1,6 +1,6 @@
 ---
 objective: "Every runtime and quality row carries per-channel energy with per-channel method labels, an emissions figure with its factor/region/scope boundary, and a derived cost with its normalization unit and derivation inputs — never a single mislabeled composite, never a cost without what produced it."
-status: in-progress
+status: implemented
 ---
 
 <!-- Fill or omit these sections; never add, rename, or reorder one. -->

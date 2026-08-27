@@ -44,6 +44,8 @@ COMPLETE_QUALITY_ROW = {
     "kwh_price_eur": 0.194,
     "kwh_price_currency": "EUR",
     "kwh_price_recorded_at": "2026-02-01",
+    "list_price_input_per_million": None,
+    "list_price_output_per_million": None,
     "list_price_per_million_tokens": None,
     "list_price_currency": None,
     "list_price_retrieved_at": None,

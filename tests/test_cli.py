@@ -228,11 +228,19 @@ def test_run_appends_one_row_with_fiche_and_metrics(stubbed_run, tmp_path) -> No
     assert row["emissions_scope_formula_id"] is None
     assert row["scope_comparability"] is None
     assert row["tokens_out_total"] == 128 * 5
-    assert row["tokens_in_total"] == 512
+    # Both totals span the same five counted repetitions the energy and the
+    # cost were measured over: cache_prompt=False re-evaluates the prompt
+    # every time, so the set really did process 512 prompt tokens five times.
+    assert row["tokens_in_total"] == 512 * 5
     assert row["cost_total"] == pytest.approx(0.00042 * 0.194)
     assert row["cost_currency"] == "EUR"
     assert row["normalization_unit"] == "cost_per_million_total_tokens"
+    assert row["cost_per_million_tokens"] == pytest.approx(
+        0.00042 * 0.194 / (512 * 5 + 128 * 5) * 1_000_000
+    )
     assert row["kwh_price_eur"] == 0.194
+    assert row["list_price_input_per_million"] is None
+    assert row["list_price_output_per_million"] is None
     assert row["list_price_per_million_tokens"] is None
     assert row["schema_version"] == SCHEMA_VERSION
     assert QUALITY_ONLY_FIELDS.isdisjoint(row.keys())

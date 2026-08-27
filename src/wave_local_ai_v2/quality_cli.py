@@ -348,11 +348,16 @@ def _local_batch_fields(
         "tokens_out_total": tokens_out_total,
         "cost_total": cost_total,
         "cost_currency": "EUR",
-        "cost_per_million_tokens": None,
+        # Derived, not hardcoded null: total_tokens is unknown while
+        # tokens_in_total is, so the rate is undefined today -- but it starts
+        # publishing on its own the day the local path captures prompt tokens.
+        "cost_per_million_tokens": cost.cost_per_million_tokens(cost_total, None),
         "normalization_unit": cost.NORMALIZATION_UNIT,
         "kwh_price_eur": settings.kwh_price_eur,
         "kwh_price_currency": "EUR",
         "kwh_price_recorded_at": settings.kwh_price_recorded_at,
+        "list_price_input_per_million": None,
+        "list_price_output_per_million": None,
         "list_price_per_million_tokens": None,
         "list_price_currency": None,
         "list_price_retrieved_at": None,
@@ -368,22 +373,44 @@ def _cloud_batch_fields(
     CodeCarbon channels stay null/"unavailable", and energy_kwh/emissions_kg
     instead come from the Scope-3 Wh-per-token formula, keyed to this batch's
     total tokens (plan.md's Decisions).
+
+    A response that returned no `prompt_tokens` makes the batch's input token
+    count unknown, not zero: every figure keyed to a token total -- the
+    Scope-3 energy and emissions estimate, the cost, the normalized rate --
+    degrades to `None` rather than silently pricing the prompts at nothing.
+    The price snapshot itself still lands on the row: it is what the provider
+    charges, not something this batch derived.
     """
-    prompt_tokens_total = sum(response["prompt_tokens"] or 0 for response in responses)
+    prompt_tokens_total = cost.total_or_none(
+        response["prompt_tokens"] for response in responses
+    )
     completion_tokens_total = sum(
         response["generated_tokens"] for response in responses
     )
-    total_tokens = prompt_tokens_total + completion_tokens_total
-    energy_kwh, emissions_kg = emissions.scope3_cloud_emissions(
-        total_tokens, settings.scope3_wh_per_token, settings.emission_factor_kg_per_kwh
+    total_tokens = (
+        prompt_tokens_total + completion_tokens_total
+        if prompt_tokens_total is not None
+        else None
     )
     price = cost.MISTRAL_PRICE_TABLE[mistral_client.MODEL]
-    cost_total = cost.cloud_cost(prompt_tokens_total, completion_tokens_total, price)
-    # The list price for this batch's actual token mix, not a single input or
-    # output rate in isolation: what the price table says this exact split of
-    # prompt/completion tokens costs, cited as the derivation input cost_total
-    # was computed from.
-    list_price_per_million_tokens = cost_total / total_tokens * 1_000_000
+    if total_tokens is None or prompt_tokens_total is None:
+        energy_kwh: float | None = None
+        emissions_kg: float | None = None
+        cost_total: float | None = None
+    else:
+        energy_kwh, emissions_kg = emissions.scope3_cloud_emissions(
+            total_tokens,
+            settings.scope3_wh_per_token,
+            settings.emission_factor_kg_per_kwh,
+        )
+        cost_total = cost.cloud_cost(
+            prompt_tokens_total, completion_tokens_total, price
+        )
+    # Three price figures, not one: the two rates the table actually charges,
+    # so a reader can recompute cost_total from tokens_in_total and
+    # tokens_out_total a year later, plus the blended rate this batch's own
+    # token mix worked out to. The blend alone is derived FROM cost_total, so
+    # publishing only it would be circular.
     return {
         "cpu_energy_kwh": None,
         "cpu_energy_method": ENERGY_METHOD_UNAVAILABLE,
@@ -401,6 +428,8 @@ def _cloud_batch_fields(
         "tokens_in_total": prompt_tokens_total,
         "tokens_out_total": completion_tokens_total,
         "cost_total": cost_total,
+        # The currency the price table quotes, published even when cost_total
+        # is null: it names the unit the list-price fields beside it are in.
         "cost_currency": price["currency"],
         "cost_per_million_tokens": cost.cost_per_million_tokens(
             cost_total, total_tokens
@@ -409,7 +438,11 @@ def _cloud_batch_fields(
         "kwh_price_eur": None,
         "kwh_price_currency": None,
         "kwh_price_recorded_at": None,
-        "list_price_per_million_tokens": list_price_per_million_tokens,
+        "list_price_input_per_million": price["input_per_million"],
+        "list_price_output_per_million": price["output_per_million"],
+        "list_price_per_million_tokens": cost.cost_per_million_tokens(
+            cost_total, total_tokens
+        ),
         "list_price_currency": price["currency"],
         "list_price_retrieved_at": price["retrieved_at"],
     }

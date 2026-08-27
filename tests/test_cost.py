@@ -1,12 +1,18 @@
+import importlib
+from pathlib import Path
+from unittest.mock import patch
+
 import pytest
 
-from wave_local_ai_v2 import mistral_client
+from wave_local_ai_v2 import cost, mistral_client
 from wave_local_ai_v2.cost import (
     MISTRAL_PRICE_TABLE,
     NORMALIZATION_UNIT,
+    CostTableError,
     cloud_cost,
     cost_per_million_tokens,
     local_cost,
+    total_or_none,
 )
 
 
@@ -53,3 +59,46 @@ def test_mistral_price_table_carries_one_dated_sourced_entry_for_the_model() -> 
 
 def test_normalization_unit_is_the_named_constant() -> None:
     assert NORMALIZATION_UNIT == "cost_per_million_total_tokens"
+
+
+def test_cost_per_million_tokens_is_none_on_unknown_cost() -> None:
+    assert cost_per_million_tokens(None, 1000) is None
+
+
+def test_the_price_table_is_keyed_by_a_literal_id_not_by_the_model_constant() -> None:
+    # Keyed by the variable, the module's own import-time guard could never
+    # fire and a model rotation would silently cost at the retired model's
+    # rates. The literal key is what makes the guard falsifiable.
+    for key in MISTRAL_PRICE_TABLE:
+        assert isinstance(key, str)
+    source = Path(cost.__file__).read_text(encoding="utf-8")
+    assert '"mistral-small-2603": {' in source
+    assert "mistral_client.MODEL: {" not in source
+
+
+def test_an_unpriced_model_is_refused_at_import_rather_than_costed_at_zero() -> None:
+    try:
+        # RuntimeError, not CostTableError: a reload defines a fresh exception
+        # class, so the raised one is not the imported one by identity. Both
+        # subclass RuntimeError, and the name is asserted below.
+        with (
+            patch.object(mistral_client, "MODEL", "mistral-not-in-the-table-2799"),
+            pytest.raises(RuntimeError, match="mistral-not-in-the-table-2799") as exc,
+        ):
+            importlib.reload(cost)
+        assert type(exc.value).__name__ == CostTableError.__name__
+    finally:
+        # The failed reload left the module half-built (every definition below
+        # the guard is gone). Restore it under the real MODEL, whatever the
+        # assertions above did.
+        importlib.reload(cost)
+
+
+def test_total_or_none_sums_when_every_sample_is_present() -> None:
+    assert total_or_none([1, 2, 3]) == 6
+
+
+def test_total_or_none_is_none_when_any_sample_is_absent() -> None:
+    # Not 3: a partial sum published as a total understates a cost
+    # denominator with nothing on the row saying a sample was missing.
+    assert total_or_none([1, None, 2]) is None

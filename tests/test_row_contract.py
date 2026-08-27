@@ -84,6 +84,8 @@ COMPLETE_RUNTIME_ROW = {
     "kwh_price_eur": 0.194,
     "kwh_price_currency": "EUR",
     "kwh_price_recorded_at": "2026-02-01",
+    "list_price_input_per_million": None,
+    "list_price_output_per_million": None,
     "list_price_per_million_tokens": None,
     "list_price_currency": None,
     "list_price_retrieved_at": None,
@@ -137,6 +139,8 @@ COMPLETE_QUALITY_ROW = {
     "kwh_price_eur": 0.194,
     "kwh_price_currency": "EUR",
     "kwh_price_recorded_at": "2026-02-01",
+    "list_price_input_per_million": None,
+    "list_price_output_per_million": None,
     "list_price_per_million_tokens": None,
     "list_price_currency": None,
     "list_price_retrieved_at": None,
@@ -324,7 +328,7 @@ def test_cost_present_without_either_derivation_basis_is_refused() -> None:
         **COMPLETE_RUNTIME_ROW,
         "cost_total": 0.0000815,
         "kwh_price_eur": None,
-        "list_price_per_million_tokens": None,
+        "list_price_input_per_million": None,
     }
 
     with pytest.raises(RowContractError, match="cost_total"):
@@ -336,10 +340,26 @@ def test_cost_present_with_only_list_price_basis_passes() -> None:
         **COMPLETE_RUNTIME_ROW,
         "cost_total": 0.003,
         "kwh_price_eur": None,
-        "list_price_per_million_tokens": 0.15,
+        "list_price_input_per_million": 0.15,
     }
 
     validate_row("runtime", row)
+
+
+def test_a_blended_rate_alone_is_not_a_derivation_basis() -> None:
+    # list_price_per_million_tokens is cost_total / total_tokens: a row
+    # carrying only it satisfies nothing, because the "input" it cites was
+    # computed from the very cost it is supposed to explain.
+    row = {
+        **COMPLETE_RUNTIME_ROW,
+        "cost_total": 0.003,
+        "kwh_price_eur": None,
+        "list_price_input_per_million": None,
+        "list_price_per_million_tokens": 0.4235,
+    }
+
+    with pytest.raises(RowContractError, match="list_price_input_per_million"):
+        validate_row("runtime", row)
 
 
 def test_cost_absent_with_both_price_bases_null_passes() -> None:

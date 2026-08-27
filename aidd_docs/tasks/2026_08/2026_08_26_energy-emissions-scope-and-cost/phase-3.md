@@ -64,23 +64,32 @@ journey
     Run `uv run wave-local-ai-v2-quality` for real on this machine => both provider batches' new fields are non-placeholder values, captured as evidence: 3: system
 ```
 
-### Live evidence (2026-08-26)
+### Live evidence (2026-08-27, re-run after review)
 
 **Runtime CLI** (`uv run wave-local-ai-v2`), full end-to-end, wrote to
 `aidd_docs/results/runtime.jsonl` (untracked). `validate_row("runtime", row)`
-passed. Non-placeholder values, GPU present so `measured_nvml` fired:
+passed at `schema_version` `"6"`. Non-placeholder values, GPU present so
+`measured_nvml` fired:
 
 ```
-cpu_energy_kwh=0.0008841359500000001 cpu_energy_method=estimated_tdp
-gpu_energy_kwh=0.0012467673863020001 gpu_energy_method=measured_nvml
-ram_energy_kwh=0.0005159811377771095 ram_energy_method=estimated_constant
-energy_kwh=0.0026468844740791097
-emissions_kg=0.00014832875904291924 emission_region=FR emissions_scope=scope_2
-tokens_in_total=1490 tokens_out_total=640
-cost_total=0.0005134955879713473 cost_currency=EUR
-cost_per_million_tokens=0.24107774083161843
-kwh_price_eur=0.194 list_price_per_million_tokens=null
+cpu_energy_kwh=0.0008902101916670001 cpu_energy_method=estimated_tdp
+gpu_energy_kwh=0.0011698934359140002 gpu_energy_method=measured_nvml
+ram_energy_kwh=0.0005115563755555437 ram_energy_method=estimated_constant
+energy_kwh=0.0025716600031365443
+emissions_kg=0.0001441132549157688 emission_region=FR emissions_scope=scope_2
+tokens_in_total=7450 tokens_out_total=640
+cost_total=0.0004989020406084896 cost_currency=EUR
+cost_per_million_tokens=0.06166897906161801
+kwh_price_eur=0.194 list_price_input_per_million=null
 ```
+
+The 2026-08-26 run of this block published `tokens_in_total=1490` — one
+repetition's prompt tokens against a five-repetition cost — and therefore
+`cost_per_million_tokens=0.2411`, 3.8x the true rate. `review.md`'s first
+critical finding names it; the fix sums `tokens_evaluated` over the counted
+set (`[1490, 1490, 1490, 1490, 1490]` on this run, `cache_prompt: False`
+forcing a full prefill each time), so both token totals now span the same
+window the energy and the cost are measured over.
 
 **Quality CLI** (`uv run wave-local-ai-v2-quality`) — **could not be run
 end-to-end**: the `.env` `MISTRAL_API_KEY` is a placeholder (13 chars,
@@ -108,16 +117,22 @@ kwh_price_eur=0.194 list_price_per_million_tokens=null
 
 The **mistral-provider batch** (Scope 3, `scope_comparability` populated,
 `list_price_*` fields) was **not** live-verified — no valid `MISTRAL_API_KEY`
-was available in this session. `_cloud_batch_fields` and `_run_cloud_suite`
-are covered by the stubbed `test_quality_cli.py` suite (36 passing tests,
+was available in this session. This is a gap against this task's acceptance
+criterion 3 ("both provider batches' new fields are non-placeholder values")
+for the cloud half specifically — flagged here rather than silently marked
+complete.
+
+Correction (2026-08-27): this paragraph previously claimed the cloud path was
+"covered by the stubbed `test_quality_cli.py` suite (36 passing tests,
 including `emissions_scope=="scope_3"` and populated `scope_comparability`
-assertions) but not by a real Mistral API call. This is a gap against this
-task's acceptance criterion 3 ("both provider batches' new fields are
-non-placeholder values") for the cloud half specifically — flagged here
-rather than silently marked complete. A follow-up live run with a real key
-would close it; no code change is implicated, since the local half's live
-run and the full stubbed suite already exercise every code path the cloud
-batch also runs.
+assertions)". No such assertion existed — the stubbed run *executed*
+`_cloud_batch_fields` without checking a single one of its 27 published
+fields, which is how `review.md`'s second critical finding (a
+`list_price_per_million_tokens` derived circularly from `cost_total`) reached
+a green gate. `test_quality_cli.py` now asserts both batches' energy,
+emissions, scope and cost fields, the batch-level sharing across item rows,
+and the absent-`prompt_tokens` degraded path. The cloud half still awaits one
+live run with a real key.
 
 ## Tasks to do
 

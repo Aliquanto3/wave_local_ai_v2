@@ -7,6 +7,7 @@ snapshot, dated.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import TypedDict
 
 from wave_local_ai_v2 import mistral_client
@@ -25,15 +26,22 @@ class CostTableError(RuntimeError):
     """Raised when a model id has no entry in MISTRAL_PRICE_TABLE."""
 
 
+# Keyed by the literal dated model id, never by `mistral_client.MODEL`: keying
+# by the variable would make the guard below unfalsifiable and let a model
+# rotation silently cost the new model at the retired model's rates.
+#
 # mistral-small-2603: $0.15/M input, $0.60/M output, confirmed against
-# https://openrouter.ai/mistralai/mistral-small-2603 (mirroring Mistral's own
-# published rate) on 2026-08-26.
+# Mistral's own https://mistral.ai/pricing/api on 2026-08-27. That page lists
+# the rate against the `mistral-small-latest` alias ("Mistral Small 4"); this
+# project pins the dated id the alias resolved to when it was read live
+# (see mistral_client.py's docstring), so the rate is recorded here against
+# the dated id it was actually charged for.
 MISTRAL_PRICE_TABLE: dict[str, MistralPrice] = {
-    mistral_client.MODEL: {
+    "mistral-small-2603": {
         "input_per_million": 0.15,
         "output_per_million": 0.60,
         "currency": "USD",
-        "retrieved_at": "2026-08-26",
+        "retrieved_at": "2026-08-27",
     },
 }
 
@@ -46,6 +54,22 @@ if mistral_client.MODEL not in MISTRAL_PRICE_TABLE:
         f"MISTRAL_PRICE_TABLE has no entry for mistral_client.MODEL "
         f"({mistral_client.MODEL!r}) -- add one before costing a batch run"
     )
+
+
+def total_or_none(values: Iterable[int | None]) -> int | None:
+    """Sum `values`, or `None` if any one of them is absent.
+
+    Not "sum what is there": a partial sum published as a total is the
+    understated-figure failure the row contract exists to prevent, and a token
+    total is a cost denominator. One missing sample makes the total unknown,
+    not smaller. Deliberately stricter than `aggregation.peak`, which reports
+    a maximum over the samples that did read: a peak over fewer samples is
+    still a real observed maximum, a sum over fewer samples is not a total.
+    """
+    materialized = list(values)
+    if any(value is None for value in materialized):
+        return None
+    return sum(value for value in materialized if value is not None)
 
 
 def cloud_cost(
@@ -69,14 +93,17 @@ def local_cost(energy_kwh: float | None, kwh_price: float) -> float | None:
 
 
 def cost_per_million_tokens(
-    cost_total: float, total_tokens: int | None
+    cost_total: float | None, total_tokens: int | None
 ) -> float | None:
     """Normalize `cost_total` to a per-million-token rate.
 
-    Returns `None` when `total_tokens` is `None` or `0` -- undefined, not a
-    fabricated `0.0` or a `ZeroDivisionError` (same rule `aggregation.spread`
-    applies to a zero median).
+    Returns `None` when `cost_total` is `None`, or when `total_tokens` is
+    `None` or `0` -- undefined, not a fabricated `0.0` or a
+    `ZeroDivisionError` (same rule `aggregation.spread` applies to a zero
+    median). Every rate this project publishes per million tokens goes
+    through here, so no call site re-derives the division and re-introduces
+    the zero-denominator case.
     """
-    if not total_tokens:
+    if cost_total is None or not total_tokens:
         return None
     return cost_total / total_tokens * 1_000_000
