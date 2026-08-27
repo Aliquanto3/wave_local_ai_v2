@@ -4,10 +4,16 @@ import pytest
 
 import wave_local_ai_v2.settings as settings_module
 from wave_local_ai_v2.settings import (
+    DEFAULT_EMISSION_COUNTRY_ISO_CODE,
+    DEFAULT_EMISSION_FACTOR_KG_PER_KWH,
+    DEFAULT_EMISSION_REGION,
     DEFAULT_FICHE_REGISTRY_DIR,
+    DEFAULT_KWH_PRICE_EUR,
+    DEFAULT_KWH_PRICE_RECORDED_AT,
     DEFAULT_QUALITY_REFERENCE_PATH,
     DEFAULT_QUALITY_RESULTS_PATH,
     DEFAULT_RUNTIME_REFERENCE_PATH,
+    DEFAULT_SCOPE3_WH_PER_TOKEN,
     Settings,
     SettingsError,
     load_settings,
@@ -111,6 +117,135 @@ def test_load_settings_defaults_the_fiche_and_reference_paths_when_unset(
     assert settings.runtime_reference_path == Path(DEFAULT_RUNTIME_REFERENCE_PATH)
     assert settings.quality_reference_path == Path(DEFAULT_QUALITY_REFERENCE_PATH)
     assert settings.runtime_reproduction_tolerance == 0.10
+
+
+def test_load_settings_defaults_the_emission_fields_when_unset(
+    monkeypatch, tmp_path: Path
+) -> None:
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    server_path = tmp_path / "llama-server.exe"
+    server_path.write_text("")
+
+    monkeypatch.setenv("SLM_MODELS_DIR", str(models_dir))
+    monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
+    for env_var in (
+        "EMISSION_COUNTRY_ISO_CODE",
+        "EMISSION_REGION",
+        "EMISSION_FACTOR_KG_PER_KWH",
+        "SCOPE3_WH_PER_TOKEN",
+    ):
+        monkeypatch.delenv(env_var, raising=False)
+
+    settings = load_settings()
+
+    assert settings.emission_country_iso_code == DEFAULT_EMISSION_COUNTRY_ISO_CODE
+    assert settings.emission_region == DEFAULT_EMISSION_REGION
+    assert settings.emission_factor_kg_per_kwh == DEFAULT_EMISSION_FACTOR_KG_PER_KWH
+    assert settings.scope3_wh_per_token == DEFAULT_SCOPE3_WH_PER_TOKEN
+
+
+def test_load_settings_reads_the_emission_overrides(
+    monkeypatch, tmp_path: Path
+) -> None:
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    server_path = tmp_path / "llama-server.exe"
+    server_path.write_text("")
+
+    monkeypatch.setenv("SLM_MODELS_DIR", str(models_dir))
+    monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
+    monkeypatch.setenv("EMISSION_COUNTRY_ISO_CODE", "USA")
+    monkeypatch.setenv("EMISSION_REGION", "US")
+    monkeypatch.setenv("EMISSION_FACTOR_KG_PER_KWH", "0.4")
+    monkeypatch.setenv("SCOPE3_WH_PER_TOKEN", "0.0005")
+
+    settings = load_settings()
+
+    assert settings.emission_country_iso_code == "USA"
+    assert settings.emission_region == "US"
+    assert settings.emission_factor_kg_per_kwh == 0.4
+    assert settings.scope3_wh_per_token == 0.0005
+
+
+@pytest.mark.parametrize(
+    ("env_var", "value"),
+    [
+        ("EMISSION_FACTOR_KG_PER_KWH", "-0.1"),
+        ("EMISSION_FACTOR_KG_PER_KWH", "not-a-number"),
+        ("SCOPE3_WH_PER_TOKEN", "-0.1"),
+        ("SCOPE3_WH_PER_TOKEN", "not-a-number"),
+    ],
+)
+def test_load_settings_refuses_invalid_emission_values(
+    monkeypatch, tmp_path: Path, env_var: str, value: str
+) -> None:
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    server_path = tmp_path / "llama-server.exe"
+    server_path.write_text("")
+
+    monkeypatch.setenv("SLM_MODELS_DIR", str(models_dir))
+    monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
+    monkeypatch.setenv(env_var, value)
+
+    with pytest.raises(SettingsError, match=env_var):
+        load_settings()
+
+
+def test_load_settings_defaults_the_kwh_price_fields_when_unset(
+    monkeypatch, tmp_path: Path
+) -> None:
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    server_path = tmp_path / "llama-server.exe"
+    server_path.write_text("")
+
+    monkeypatch.setenv("SLM_MODELS_DIR", str(models_dir))
+    monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
+    monkeypatch.delenv("KWH_PRICE_EUR", raising=False)
+    monkeypatch.delenv("KWH_PRICE_RECORDED_AT", raising=False)
+
+    settings = load_settings()
+
+    assert settings.kwh_price_eur == DEFAULT_KWH_PRICE_EUR
+    assert settings.kwh_price_recorded_at == DEFAULT_KWH_PRICE_RECORDED_AT
+
+
+def test_load_settings_reads_the_kwh_price_overrides(
+    monkeypatch, tmp_path: Path
+) -> None:
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    server_path = tmp_path / "llama-server.exe"
+    server_path.write_text("")
+
+    monkeypatch.setenv("SLM_MODELS_DIR", str(models_dir))
+    monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
+    monkeypatch.setenv("KWH_PRICE_EUR", "0.25")
+    monkeypatch.setenv("KWH_PRICE_RECORDED_AT", "2026-01-01")
+
+    settings = load_settings()
+
+    assert settings.kwh_price_eur == 0.25
+    assert settings.kwh_price_recorded_at == "2026-01-01"
+
+
+@pytest.mark.parametrize("value", ["-0.1", "not-a-number"])
+def test_load_settings_refuses_invalid_kwh_price(
+    monkeypatch, tmp_path: Path, value: str
+) -> None:
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    server_path = tmp_path / "llama-server.exe"
+    server_path.write_text("")
+
+    monkeypatch.setenv("SLM_MODELS_DIR", str(models_dir))
+    monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
+    monkeypatch.setenv("KWH_PRICE_EUR", value)
+
+    with pytest.raises(SettingsError, match="KWH_PRICE_EUR"):
+        load_settings()
 
 
 def test_load_settings_reads_the_fiche_and_reference_overrides(

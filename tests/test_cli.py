@@ -73,6 +73,17 @@ SAMPLE_TIMINGS_RESPONSE = {
     },
     "stop_type": "limit",
     "tokens_predicted": 128,
+    "tokens_evaluated": 512,
+}
+
+FAKE_ENERGY_RESULT = {
+    "cpu_energy_kwh": 0.0003,
+    "cpu_energy_method": "estimated_tdp",
+    "gpu_energy_kwh": None,
+    "gpu_energy_method": "unavailable",
+    "ram_energy_kwh": 0.00012,
+    "ram_energy_method": "estimated_constant",
+    "energy_kwh": 0.00042,
 }
 
 # The mirror of `RUNTIME_ONLY_FIELDS` in tests/test_quality_cli.py. Both
@@ -181,10 +192,7 @@ def stubbed_run(tmp_path, monkeypatch):
         "rss": patch("wave_local_ai_v2.read_process_rss", return_value=500_000_000),
         "energy": patch(
             "wave_local_ai_v2.measure_energy",
-            side_effect=lambda fn: (
-                fn(),
-                {"energy_kwh": 0.00042, "energy_method": "estimated_tdp"},
-            ),
+            side_effect=lambda fn, **kwargs: (fn(), dict(FAKE_ENERGY_RESULT)),
         ),
         # Real would sleep runtime_cooldown_s (10.0 by default) between every
         # repetition -- N-1 times plus once after the warm-up.
@@ -210,8 +218,30 @@ def test_run_appends_one_row_with_fiche_and_metrics(stubbed_run, tmp_path) -> No
     row = rows[0]
     assert row["gen_tok_per_s"] == 26.0
     assert row["prompt_tok_per_s"] == 280.0
-    assert row["energy_method"] == "estimated_tdp"
+    assert row["cpu_energy_method"] == "estimated_tdp"
+    assert row["gpu_energy_method"] == "unavailable"
+    assert row["ram_energy_method"] == "estimated_constant"
     assert row["energy_kwh"] == 0.00042
+    assert row["emissions_kg"] == pytest.approx(0.00042 * 0.056039)
+    assert row["emission_region"] == "FR"
+    assert row["emissions_scope"] == "scope_2"
+    assert row["emissions_scope_formula_id"] is None
+    assert row["scope_comparability"] is None
+    assert row["tokens_out_total"] == 128 * 5
+    # Both totals span the same five counted repetitions the energy and the
+    # cost were measured over: cache_prompt=False re-evaluates the prompt
+    # every time, so the set really did process 512 prompt tokens five times.
+    assert row["tokens_in_total"] == 512 * 5
+    assert row["cost_total"] == pytest.approx(0.00042 * 0.194)
+    assert row["cost_currency"] == "EUR"
+    assert row["normalization_unit"] == "cost_per_million_total_tokens"
+    assert row["cost_per_million_tokens"] == pytest.approx(
+        0.00042 * 0.194 / (512 * 5 + 128 * 5) * 1_000_000
+    )
+    assert row["kwh_price_eur"] == 0.194
+    assert row["list_price_input_per_million"] is None
+    assert row["list_price_output_per_million"] is None
+    assert row["list_price_per_million_tokens"] is None
     assert row["schema_version"] == SCHEMA_VERSION
     assert QUALITY_ONLY_FIELDS.isdisjoint(row.keys())
     for field in (
@@ -315,6 +345,7 @@ def _timings_response(ttft_ms: float, prompt_tps: float, gen_tps: float) -> dict
         },
         "stop_type": "limit",
         "tokens_predicted": 128,
+        "tokens_evaluated": 512,
     }
 
 
@@ -465,10 +496,7 @@ def test_run_takes_the_mean_of_the_two_middle_values_when_n_is_even(
         patch("wave_local_ai_v2.read_process_rss", return_value=500_000_000),
         patch(
             "wave_local_ai_v2.measure_energy",
-            side_effect=lambda fn: (
-                fn(),
-                {"energy_kwh": 0.00042, "energy_method": "estimated_tdp"},
-            ),
+            side_effect=lambda fn, **kwargs: (fn(), dict(FAKE_ENERGY_RESULT)),
         ),
         patch("wave_local_ai_v2.time.sleep"),
     ):
@@ -523,7 +551,7 @@ def test_run_appends_zero_rows_when_request_fails(tmp_path, monkeypatch) -> None
         # fails, costing seconds for a test about appending zero rows.
         patch(
             "wave_local_ai_v2.measure_energy",
-            side_effect=lambda fn: (fn(), {"energy_kwh": None, "energy_method": "x"}),
+            side_effect=lambda fn, **kwargs: (fn(), dict(FAKE_ENERGY_RESULT)),
         ),
         pytest.raises(requests.ConnectionError),
     ):

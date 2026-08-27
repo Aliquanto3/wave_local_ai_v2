@@ -22,6 +22,7 @@ def _repetition(index: int) -> dict:
         "wall_clock_s": 5.0,
         "stop_type": "limit",
         "tokens_predicted": 128,
+        "tokens_evaluated": 512,
     }
 
 
@@ -61,8 +62,33 @@ COMPLETE_RUNTIME_ROW = {
     "vram_used_mib": 3161.0,
     "gpu_draw_w": 45.0,
     "process_rss_bytes": 500_000_000,
+    "cpu_energy_kwh": 0.0003,
+    "cpu_energy_method": "estimated_tdp",
+    "gpu_energy_kwh": None,
+    "gpu_energy_method": "unavailable",
+    "ram_energy_kwh": 0.00012,
+    "ram_energy_method": "estimated_constant",
     "energy_kwh": 0.00042,
-    "energy_method": "estimated_tdp",
+    "emissions_kg": 0.0000235,
+    "emission_factor_kg_per_kwh": 0.056039,
+    "emission_region": "FR",
+    "emissions_scope": "scope_2",
+    "emissions_scope_formula_id": None,
+    "scope_comparability": None,
+    "tokens_in_total": None,
+    "tokens_out_total": 640,
+    "cost_total": 0.0000815,
+    "cost_currency": "EUR",
+    "cost_per_million_tokens": None,
+    "normalization_unit": "cost_per_million_total_tokens",
+    "kwh_price_eur": 0.194,
+    "kwh_price_currency": "EUR",
+    "kwh_price_recorded_at": "2026-02-01",
+    "list_price_input_per_million": None,
+    "list_price_output_per_million": None,
+    "list_price_per_million_tokens": None,
+    "list_price_currency": None,
+    "list_price_retrieved_at": None,
     "sampling": {"seed": 20260822, "temperature": 1.0},
     "seed_pinned": True,
     "warmup_count": 1,
@@ -91,6 +117,33 @@ COMPLETE_QUALITY_ROW = {
     "model_id": "Qwen3.6-35B-A3B",
     "provider": "local",
     "fiche_hash": "a" * 64,
+    "cpu_energy_kwh": 0.0003,
+    "cpu_energy_method": "estimated_tdp",
+    "gpu_energy_kwh": None,
+    "gpu_energy_method": "unavailable",
+    "ram_energy_kwh": 0.00012,
+    "ram_energy_method": "estimated_constant",
+    "energy_kwh": 0.00042,
+    "emissions_kg": 0.0000235,
+    "emission_factor_kg_per_kwh": 0.056039,
+    "emission_region": "FR",
+    "emissions_scope": "scope_2",
+    "emissions_scope_formula_id": None,
+    "scope_comparability": None,
+    "tokens_in_total": None,
+    "tokens_out_total": 640,
+    "cost_total": 0.0000815,
+    "cost_currency": "EUR",
+    "cost_per_million_tokens": None,
+    "normalization_unit": "cost_per_million_total_tokens",
+    "kwh_price_eur": 0.194,
+    "kwh_price_currency": "EUR",
+    "kwh_price_recorded_at": "2026-02-01",
+    "list_price_input_per_million": None,
+    "list_price_output_per_million": None,
+    "list_price_per_million_tokens": None,
+    "list_price_currency": None,
+    "list_price_retrieved_at": None,
     "verdict": {"verdict": "not_comparable", "reference_run_id": None},
     "task_suite": "classification",
     "item_id": "billing-01",
@@ -134,6 +187,37 @@ def test_missing_field_raises_and_names_it() -> None:
 
     with pytest.raises(RowContractError, match="fiche_hash"):
         validate_row("runtime", incomplete)
+
+
+def test_row_carrying_only_the_old_energy_method_field_is_refused() -> None:
+    # Pre-increment shape: the single composite energy_method field, none of
+    # the twelve per-channel/emissions fields it was replaced by.
+    per_channel_fields = {
+        "cpu_energy_kwh",
+        "cpu_energy_method",
+        "gpu_energy_kwh",
+        "gpu_energy_method",
+        "ram_energy_kwh",
+        "ram_energy_method",
+        "emissions_kg",
+        "emission_factor_kg_per_kwh",
+        "emission_region",
+        "emissions_scope",
+        "emissions_scope_formula_id",
+        "scope_comparability",
+    }
+    legacy_row = {
+        k: v for k, v in COMPLETE_RUNTIME_ROW.items() if k not in per_channel_fields
+    }
+    legacy_row["energy_method"] = "estimated_tdp"
+    legacy_row["aggregation"] = {
+        k: v
+        for k, v in legacy_row["aggregation"].items()
+        if k not in ("cpu_energy_kwh", "gpu_energy_kwh", "ram_energy_kwh")
+    }
+
+    with pytest.raises(RowContractError, match="cpu_energy_kwh"):
+        validate_row("runtime", legacy_row)
 
 
 @pytest.mark.parametrize("field", ["roster_entry_id", "roster_version"])
@@ -237,6 +321,51 @@ def test_every_declared_measurement_is_a_required_runtime_field() -> None:
     unbacked = aggregation.MEASUREMENT_FIELDS - REQUIRED_FIELDS["runtime"]
 
     assert unbacked == frozenset()
+
+
+def test_cost_present_without_either_derivation_basis_is_refused() -> None:
+    row = {
+        **COMPLETE_RUNTIME_ROW,
+        "cost_total": 0.0000815,
+        "kwh_price_eur": None,
+        "list_price_input_per_million": None,
+    }
+
+    with pytest.raises(RowContractError, match="cost_total"):
+        validate_row("runtime", row)
+
+
+def test_cost_present_with_only_list_price_basis_passes() -> None:
+    row = {
+        **COMPLETE_RUNTIME_ROW,
+        "cost_total": 0.003,
+        "kwh_price_eur": None,
+        "list_price_input_per_million": 0.15,
+    }
+
+    validate_row("runtime", row)
+
+
+def test_a_blended_rate_alone_is_not_a_derivation_basis() -> None:
+    # list_price_per_million_tokens is cost_total / total_tokens: a row
+    # carrying only it satisfies nothing, because the "input" it cites was
+    # computed from the very cost it is supposed to explain.
+    row = {
+        **COMPLETE_RUNTIME_ROW,
+        "cost_total": 0.003,
+        "kwh_price_eur": None,
+        "list_price_input_per_million": None,
+        "list_price_per_million_tokens": 0.4235,
+    }
+
+    with pytest.raises(RowContractError, match="list_price_input_per_million"):
+        validate_row("runtime", row)
+
+
+def test_cost_absent_with_both_price_bases_null_passes() -> None:
+    row = {**COMPLETE_RUNTIME_ROW, "cost_total": None}
+
+    validate_row("runtime", row)
 
 
 def test_aggregation_map_naming_a_field_the_row_does_not_carry_is_refused() -> None:

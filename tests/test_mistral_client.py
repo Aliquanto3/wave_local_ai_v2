@@ -25,7 +25,7 @@ MAX_TOKENS = 17
 
 SAMPLE_RESPONSE = {
     "choices": [{"message": {"content": "billing"}, "finish_reason": "stop"}],
-    "usage": {"completion_tokens": 3},
+    "usage": {"completion_tokens": 3, "prompt_tokens": 12, "total_tokens": 15},
 }
 
 
@@ -42,6 +42,8 @@ def test_complete_prompt_returns_content_and_sends_expected_request() -> None:
     assert result["endpoint"] == EXPECTED_CHAT_COMPLETIONS_URL
     assert result["finish_reason"] == "stop"
     assert result["generated_tokens"] == 3
+    assert result["prompt_tokens"] == 12
+    assert result["total_tokens"] == 15
     args, kwargs = post.call_args
     assert args[0] == EXPECTED_CHAT_COMPLETIONS_URL
     assert kwargs["headers"]["Authorization"] == "Bearer fake-key"
@@ -143,6 +145,47 @@ def test_complete_prompt_raises_on_wrong_typed_stop_fields(
             ),
         ),
         pytest.raises(MistralRequestError),
+    ):
+        complete_prompt("classify this", "fake-key", **SAMPLING, max_tokens=MAX_TOKENS)
+
+
+def test_complete_prompt_reads_none_when_prompt_tokens_is_absent() -> None:
+    with patch(
+        "wave_local_ai_v2.mistral_client.requests.post",
+        return_value=MagicMock(
+            status_code=200,
+            json=lambda: {
+                "choices": [
+                    {"message": {"content": "billing"}, "finish_reason": "stop"}
+                ],
+                "usage": {"completion_tokens": 3},
+            },
+        ),
+    ):
+        result = complete_prompt(
+            "classify this", "fake-key", **SAMPLING, max_tokens=MAX_TOKENS
+        )
+
+    assert result["generated_tokens"] == 3
+    assert result["prompt_tokens"] is None
+    assert result["total_tokens"] is None
+
+
+def test_complete_prompt_raises_on_wrong_typed_prompt_tokens() -> None:
+    with (
+        patch(
+            "wave_local_ai_v2.mistral_client.requests.post",
+            return_value=MagicMock(
+                status_code=200,
+                json=lambda: {
+                    "choices": [
+                        {"message": {"content": "billing"}, "finish_reason": "stop"}
+                    ],
+                    "usage": {"completion_tokens": 3, "prompt_tokens": "12"},
+                },
+            ),
+        ),
+        pytest.raises(MistralRequestError, match="prompt_tokens"),
     ):
         complete_prompt("classify this", "fake-key", **SAMPLING, max_tokens=MAX_TOKENS)
 

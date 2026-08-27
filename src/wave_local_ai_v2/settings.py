@@ -27,6 +27,30 @@ DEFAULT_QUALITY_REFERENCE_PATH = "aidd_docs/results/quality-reference.jsonl"
 # repetitions agree with each other, this gates whether two separate runs'
 # medians agree -- a future PRD revision can move one without the other.
 DEFAULT_RUNTIME_REPRODUCTION_TOLERANCE = 0.10
+# Offline CodeCarbon grid mix + emissions factor (Story 15, plan.md's
+# Resources): "FRA" selects the static country mix with no live geolocation
+# call. The factor is CodeCarbon's own "FRA" carbon_intensity, 56.039
+# gCO2eq/kWh (year 2023), from
+# .venv/Lib/site-packages/codecarbon/data/private_infra/global_energy_mix.json.
+DEFAULT_EMISSION_COUNTRY_ISO_CODE = "FRA"
+DEFAULT_EMISSION_REGION = "FR"
+DEFAULT_EMISSION_FACTOR_KG_PER_KWH = 0.056039
+# Scope-3 cloud-inference estimate: median energy per output token reported
+# for GPT-4o-scale frontier models, ~3e-4 Wh/token (0.3 Wh/query median),
+# Joule (2026) "Energy use of AI inference, efficiency pathways, and
+# test-time scaling" (https://www.cell.com/joule/fulltext/S2542-4351(26)00114-5),
+# confirmed 2026-08-26. Chosen as the project's one Scope-3 estimate per
+# plan.md's Decisions -- not model-specific, an order-of-magnitude figure for
+# a comparably-sized commercial cloud model.
+DEFAULT_SCOPE3_WH_PER_TOKEN = 0.0003
+# French residential regulated tariff (EDF Tarif Bleu, Base option),
+# 0.1940 EUR/kWh, effective February 2026 per the CRE's semiannual review
+# (https://en.selectra.info/energy-france/suppliers/edf/tarif-bleu),
+# confirmed 2026-08-26. A configured value, not a live retrieval --
+# kwh_price_recorded_at is the tariff's own effective date, not computed at
+# run time.
+DEFAULT_KWH_PRICE_EUR = 0.1940
+DEFAULT_KWH_PRICE_RECORDED_AT = "2026-02-01"
 
 
 class SettingsError(RuntimeError):
@@ -71,6 +95,17 @@ class Settings:
     runtime_reference_path: Path = Path(DEFAULT_RUNTIME_REFERENCE_PATH)
     quality_reference_path: Path = Path(DEFAULT_QUALITY_REFERENCE_PATH)
     runtime_reproduction_tolerance: float = DEFAULT_RUNTIME_REPRODUCTION_TOLERANCE
+    # Emissions configuration (Story 15, plan.md's Resources): the offline
+    # grid mix, the published region label, and the local Scope-2 factor. See
+    # the DEFAULT_* constants above for sources.
+    emission_country_iso_code: str = DEFAULT_EMISSION_COUNTRY_ISO_CODE
+    emission_region: str = DEFAULT_EMISSION_REGION
+    emission_factor_kg_per_kwh: float = DEFAULT_EMISSION_FACTOR_KG_PER_KWH
+    scope3_wh_per_token: float = DEFAULT_SCOPE3_WH_PER_TOKEN
+    # Cost configuration (Story 16): the local kWh price local_cost derives
+    # cost_total from, and the date it was recorded. See the DEFAULT_* above.
+    kwh_price_eur: float = DEFAULT_KWH_PRICE_EUR
+    kwh_price_recorded_at: str = DEFAULT_KWH_PRICE_RECORDED_AT
 
 
 def fiche_registry_dir_from_env() -> Path:
@@ -162,6 +197,34 @@ def load_settings() -> Settings:
         minimum=0.0,
         minimum_reason="a reproduction tolerance cannot be negative",
     )
+    emission_country_iso_code = os.environ.get(
+        "EMISSION_COUNTRY_ISO_CODE", DEFAULT_EMISSION_COUNTRY_ISO_CODE
+    )
+    emission_region = os.environ.get("EMISSION_REGION", DEFAULT_EMISSION_REGION)
+    emission_factor_kg_per_kwh = _require_numeric(
+        "EMISSION_FACTOR_KG_PER_KWH",
+        DEFAULT_EMISSION_FACTOR_KG_PER_KWH,
+        float,
+        minimum=0.0,
+        minimum_reason="an emission factor cannot be negative",
+    )
+    scope3_wh_per_token = _require_numeric(
+        "SCOPE3_WH_PER_TOKEN",
+        DEFAULT_SCOPE3_WH_PER_TOKEN,
+        float,
+        minimum=0.0,
+        minimum_reason="a Wh-per-token rate cannot be negative",
+    )
+    kwh_price_eur = _require_numeric(
+        "KWH_PRICE_EUR",
+        DEFAULT_KWH_PRICE_EUR,
+        float,
+        minimum=0.0,
+        minimum_reason="a kWh price cannot be negative",
+    )
+    kwh_price_recorded_at = os.environ.get(
+        "KWH_PRICE_RECORDED_AT", DEFAULT_KWH_PRICE_RECORDED_AT
+    )
 
     return Settings(
         slm_models_dir=slm_models_dir,
@@ -181,6 +244,12 @@ def load_settings() -> Settings:
         runtime_reference_path=runtime_reference_path,
         quality_reference_path=quality_reference_path,
         runtime_reproduction_tolerance=runtime_reproduction_tolerance,
+        emission_country_iso_code=emission_country_iso_code,
+        emission_region=emission_region,
+        emission_factor_kg_per_kwh=emission_factor_kg_per_kwh,
+        scope3_wh_per_token=scope3_wh_per_token,
+        kwh_price_eur=kwh_price_eur,
+        kwh_price_recorded_at=kwh_price_recorded_at,
     )
 
 

@@ -95,6 +95,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `model_id`/`suite_version`/seed and the same set of `item_id`s — an item
   present on one side only makes the batch `not_comparable`, so a partial
   overlap can never read as agreement.
+- Every runtime and quality row now carries three independently-labelled
+  energy channels (`cpu_energy_kwh`/`cpu_energy_method`,
+  `gpu_energy_kwh`/`gpu_energy_method`, `ram_energy_kwh`/`ram_energy_method`)
+  in place of the single composite `energy_method`, plus an emissions block
+  (`emissions_kg`, `emission_factor_kg_per_kwh`, `emission_region`,
+  `emissions_scope`, `emissions_scope_formula_id`, `scope_comparability`). A
+  channel's method label now derives from what CodeCarbon can structurally
+  report (GPU: `measured_nvml` only when NVML found a GPU, else `unavailable`
+  — never a value check), not from its magnitude, so a GPU that genuinely
+  drew ~0W stays distinguishable from no GPU present. `measure_energy` moves
+  to `codecarbon.OfflineEmissionsTracker`, removing a live IP-geolocation
+  call. Local rows are Scope 2 (measured on this machine); mistral quality
+  rows are Scope 3 (a Wh-per-token formula estimate, `emissions_scope_formula_id`
+  set, `scope_comparability` naming the two are not like-for-like).
+  `SCHEMA_VERSION` moves `"3"` → `"4"`.
+- Every runtime and quality row now carries a cost block: `cost_total`,
+  `cost_currency`, `cost_per_million_tokens` (normalized to
+  `cost_per_million_total_tokens`, `null` when its denominator is unknown or
+  zero — never fabricated), plus every field it was derived from
+  (`kwh_price_eur`/`kwh_price_currency`/`kwh_price_recorded_at` for a local
+  run, `list_price_input_per_million`/`list_price_output_per_million`/
+  `list_price_per_million_tokens`/`list_price_currency`/
+  `list_price_retrieved_at` for a cloud run — the inapplicable half is
+  `null`, never both). A cloud row carries the two rates the price table
+  actually charges, not only the blended effective rate its own token mix
+  worked out to: the blend is derived *from* `cost_total`, so a row carrying
+  only it could not recompute its own cost. Currencies (EUR for local, USD
+  for Mistral's list price) are never converted between each other. The
+  writer gate now refuses a row whose `cost_total` is non-null but both
+  derivation bases (`kwh_price_eur`, `list_price_input_per_million`) are
+  null. `mistral_client.complete_prompt` now also surfaces `prompt_tokens`
+  and `total_tokens` from the response's `usage` block; a cloud batch whose
+  responses omit `prompt_tokens` publishes a `null` token total, cost and
+  Scope-3 estimate rather than pricing the prompts at zero. A runtime row's
+  `tokens_in_total` sums `tokens_evaluated` across the counted repetitions,
+  so it spans the same window as `tokens_out_total`, `energy_kwh` and
+  `cost_total`. `SCHEMA_VERSION` moves `"4"` → `"6"`.
 
 ### Changed
 

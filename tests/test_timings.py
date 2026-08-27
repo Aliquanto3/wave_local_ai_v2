@@ -6,6 +6,7 @@ import pytest
 from wave_local_ai_v2.timings import (
     TTFT_SOURCE_SERVER_REPORTED,
     MissingTimingsError,
+    parse_generation_facts,
     parse_timings,
     read_process_rss,
 )
@@ -41,6 +42,26 @@ def test_parse_timings_raises_named_error_when_timings_missing() -> None:
 def test_parse_timings_raises_named_error_on_partial_timings() -> None:
     with pytest.raises(MissingTimingsError):
         parse_timings({"timings": {"prompt_ms": 1.0}})
+
+
+def test_parse_generation_facts_reads_tokens_evaluated() -> None:
+    facts = parse_generation_facts(
+        {
+            "content": "hello",
+            "stop_type": "limit",
+            "tokens_predicted": 64,
+            "tokens_evaluated": 512,
+            "truncated": False,
+        }
+    )
+
+    assert facts["tokens_evaluated"] == 512
+
+
+def test_parse_generation_facts_defaults_tokens_evaluated_to_none_when_absent() -> None:
+    facts = parse_generation_facts({"content": "hello"})
+
+    assert facts["tokens_evaluated"] is None
 
 
 def test_read_process_rss_returns_positive_integer() -> None:

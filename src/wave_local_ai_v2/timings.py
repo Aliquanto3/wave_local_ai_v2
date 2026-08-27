@@ -45,15 +45,23 @@ class GenerationFacts(TypedDict):
 
     stop_type: str | None
     tokens_predicted: int | None
+    tokens_evaluated: int | None
     truncated: bool | None
     content: str
 
 
 def parse_generation_facts(response_json: dict[str, Any]) -> GenerationFacts:
-    """Extract the generation facts a repetition's outcome is classified on."""
+    """Extract the generation facts a repetition's outcome is classified on.
+
+    `tokens_evaluated` is the prompt-token count: confirmed live on build
+    b10537 (2026-08-26) as the top-level `tokens_evaluated` field, equal to
+    `timings.prompt_n` on the same response -- either would do, this one is
+    read because it sits alongside `tokens_predicted` at the top level.
+    """
     return GenerationFacts(
         stop_type=response_json.get("stop_type"),
         tokens_predicted=response_json.get("tokens_predicted"),
+        tokens_evaluated=response_json.get("tokens_evaluated"),
         truncated=response_json.get("truncated"),
         content=response_json.get("content", ""),
     )

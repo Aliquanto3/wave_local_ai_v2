@@ -69,6 +69,7 @@ def _rep(index: int, ttft: float, prompt_tps: float, gen_tps: float) -> dict:
         "wall_clock_s": 5.0,
         "stop_type": "limit",
         "tokens_predicted": 128,
+        "tokens_evaluated": 512,
     }
 
 
@@ -188,6 +189,16 @@ def test_aggregation_labels_cover_every_declared_measurement() -> None:
         == "total_over_counted_repetitions_including_cooldowns"
     )
     assert MEASUREMENT_FIELDS == frozenset(AGGREGATION_LABELS)
+
+
+def test_per_channel_energy_fields_are_measurement_fields() -> None:
+    for field in ("cpu_energy_kwh", "gpu_energy_kwh", "ram_energy_kwh"):
+        assert field in MEASUREMENT_FIELDS
+        assert (
+            AGGREGATION_LABELS[field]
+            == "total_over_counted_repetitions_including_cooldowns"
+        )
+    assert "emissions_kg" not in MEASUREMENT_FIELDS
 
 
 def test_power_is_not_labelled_a_peak_because_it_is_sampled_after_decode() -> None:

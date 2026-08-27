@@ -92,6 +92,7 @@ class RepetitionResult(TypedDict):
     wall_clock_s: float
     stop_type: str | None
     tokens_predicted: int | None
+    tokens_evaluated: int | None
 
 
 def run_repetition_set(
@@ -179,4 +180,5 @@ def _run_one(
         wall_clock_s=wall_clock_s,
         stop_type=facts["stop_type"],
         tokens_predicted=facts["tokens_predicted"],
+        tokens_evaluated=facts["tokens_evaluated"],
     )

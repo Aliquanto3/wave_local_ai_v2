@@ -94,18 +94,25 @@ must not be read as evidence "for v0.1.0" or any other tag.
 
 ### Energy caveat
 
-Every row carries an `energy_method` field, and it is the only thing that says
-whether the number means anything:
+Every row carries three independently-labelled channels
+(`cpu_energy_method`, `gpu_energy_method`, `ram_energy_method`), each naming
+whether its own figure means anything:
 
-- `measured_nvml` — GPU draw read via NVML, a real measurement.
-- `estimated_tdp` — no NVML figure, so the total is TDP-estimated. CPU energy on
-  Windows is always in this class (no RAPL access) and can be off by a **factor
-  of 2-3** under thermal throttling.
-- `unavailable` — the tracker failed to start or to stop cleanly; the row has no
-  energy figure at all.
+- `measured_nvml` — GPU draw read via NVML, a real measurement. Set only when
+  a GPU was actually detected — never inferred from the energy value itself.
+- `estimated_tdp` — CPU energy, always in this class on Windows (no RAPL
+  access), can be off by a **factor of 2-3** under thermal throttling.
+- `estimated_constant` — RAM energy, always a fixed W-per-8GB estimate on
+  every platform, never a measured channel.
+- `unavailable` — the tracker failed to start or to stop cleanly, or (GPU
+  only) no GPU was detected; that channel's row has no energy figure at all.
 
 Treat energy and carbon figures as **estimates**, not measurements, unless the
-row says `measured_nvml`.
+channel says `measured_nvml`. A local run's emissions are Scope 2 (measured
+on this machine); a cloud (Mistral) quality batch's are Scope 3 (a
+Wh-per-token formula estimate, since no on-machine energy exists to
+attribute to a network call) — the two are not directly comparable, see
+`docs/setup.md` section 5.
 
 ## Pull and run (no clone)
 

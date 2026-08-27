@@ -55,8 +55,20 @@ flowchart LR
 - Runtime metrics are NOT reproducible across machines. Every result row must cite its hardware fiche by `fiche_hash` (CPU, RAM, GPU, driver, llama.cpp build, quant, roster entry + its sha256, and the raw flags as evidence); the fiche itself is stored write-once under `aidd_docs/results/fiches/<hash>.json` (`fiche_registry.py`) rather than flattened onto the row, and `wave-local-ai-v2-validate` proves a cited fiche was neither edited nor lost. A number without a fiche is meaningless.
 - llama.cpp has architecture-specific flags that are not optional: `--load-mode none` is required when `--n-cpu-moe` is set (otherwise mmap pages from disk), `--jinja` is required for `<think>` tag parsing, `-np 1` avoids the 4-slot default allocation.
 - MoE models (e.g. Qwen3) have a fixed number of experts; `--n-cpu-moe` has a hard ceiling and sweep gains are typically within measurement noise.
-- Energy and carbon figures are ESTIMATES, not measurements. On Windows, CodeCarbon
-  has no RAPL access and falls back to TDP-based estimation, which can be off by a
-  factor of 2-3 on a laptop under thermal throttling. Every result row must carry an
-  `energy_method` field (`estimated_tdp` | `measured_nvml`) and the front end must
-  surface it. GPU draw via NVML is a real measurement; CPU is not.
+- Energy and carbon figures are ESTIMATES, not measurements, except GPU energy. Every
+  result row carries three independently-labelled channels: `cpu_energy_kwh`/
+  `cpu_energy_method` (always `estimated_tdp` — on Windows, CodeCarbon has no RAPL
+  access and falls back to TDP-based estimation, which can be off by a factor of 2-3
+  on a laptop under thermal throttling), `ram_energy_kwh`/`ram_energy_method` (always
+  `estimated_constant` — a fixed W-per-8GB rule, never a measured channel on any
+  platform), and `gpu_energy_kwh`/`gpu_energy_method` (`measured_nvml` only when
+  CodeCarbon's `gpu_count` confirms NVML found a GPU, else `null`/`unavailable` — an
+  *availability* check, never a magnitude check, so a GPU that genuinely drew ~0W in a
+  short run stays distinguishable from no GPU present). `measure_energy` uses
+  `codecarbon.OfflineEmissionsTracker` (declared `country_iso_code`, no live
+  geolocation call). A local run's emissions are Scope 2 (`emissions_scope`
+  `"scope_2"`, measured on this machine via `emissions.local_emissions`); a Mistral
+  quality batch's emissions are Scope 3 (`"scope_3"`, estimated from a
+  Wh-per-token formula since no on-machine energy exists to attribute to a network
+  call) — the two are not directly comparable, and every Scope-3 row states that in
+  its own `scope_comparability` field. See `docs/setup.md` section 5.

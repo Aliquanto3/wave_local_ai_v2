@@ -20,7 +20,18 @@ from wave_local_ai_v2 import aggregation, prompt_provenance, timings
 # "3": `fiche_hash` and `verdict` became required on both row kinds, and the
 # ten flattened hardware/run fields left the runtime row (fiche_hash-reproduction-
 # verdict increment).
-SCHEMA_VERSION = "3"
+# "4": `energy_method` is gone, replaced by three independently-labelled
+# per-channel energy fields plus emissions/scope fields, on both row kinds
+# (Story 15: rows-carry-per-channel-energy-emissions-and-their-scope-boundary).
+# "5": twelve cost + derivation-input fields became required on both row
+# kinds (Story 16: rows-carry-a-cost-and-what-it-was-derived-from).
+# "6": `list_price_input_per_million` and `list_price_output_per_million`
+# became required on both row kinds. `list_price_per_million_tokens` alone is
+# a blended effective rate derived FROM cost_total, so a row carrying only it
+# could not recompute its own cost -- the two rates the price table actually
+# charges have to be on the row for Story 16's "carries what it was derived
+# from" to hold.
+SCHEMA_VERSION = "6"
 
 # The schema version at which `fiche_hash` (and `verdict`) became required.
 # Fixed at "3" regardless of future `SCHEMA_VERSION` bumps: a stored row whose
@@ -66,8 +77,37 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "gpu_draw_w",
             "process_rss_bytes",
             # energy.EnergyResult
+            "cpu_energy_kwh",
+            "cpu_energy_method",
+            "gpu_energy_kwh",
+            "gpu_energy_method",
+            "ram_energy_kwh",
+            "ram_energy_method",
             "energy_kwh",
-            "energy_method",
+            # emissions.local_emissions / emissions.scope3_cloud_emissions
+            "emissions_kg",
+            "emission_factor_kg_per_kwh",
+            "emission_region",
+            "emissions_scope",
+            "emissions_scope_formula_id",
+            "scope_comparability",
+            # cost.cloud_cost / cost.local_cost / cost.cost_per_million_tokens
+            "tokens_in_total",
+            "tokens_out_total",
+            "cost_total",
+            "cost_currency",
+            "cost_per_million_tokens",
+            "normalization_unit",
+            "kwh_price_eur",
+            "kwh_price_currency",
+            "kwh_price_recorded_at",
+            # The two rates the price table charges, plus the blended
+            # effective rate this batch's own token mix worked out to.
+            "list_price_input_per_million",
+            "list_price_output_per_million",
+            "list_price_per_million_tokens",
+            "list_price_currency",
+            "list_price_retrieved_at",
             # repetitions.run_repetition_set / __init__._run
             "sampling",
             "seed_pinned",
@@ -113,6 +153,37 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "model_id",
             "provider",
             "fiche_hash",
+            # energy.EnergyResult / emissions.local_emissions / scope3_cloud_emissions
+            # -- same twelve fields as the runtime row (plan.md's Decisions:
+            # quality rows carry the same per-channel/emissions/cost shape).
+            "cpu_energy_kwh",
+            "cpu_energy_method",
+            "gpu_energy_kwh",
+            "gpu_energy_method",
+            "ram_energy_kwh",
+            "ram_energy_method",
+            "energy_kwh",
+            "emissions_kg",
+            "emission_factor_kg_per_kwh",
+            "emission_region",
+            "emissions_scope",
+            "emissions_scope_formula_id",
+            "scope_comparability",
+            # cost.cloud_cost / cost.local_cost / cost.cost_per_million_tokens
+            "tokens_in_total",
+            "tokens_out_total",
+            "cost_total",
+            "cost_currency",
+            "cost_per_million_tokens",
+            "normalization_unit",
+            "kwh_price_eur",
+            "kwh_price_currency",
+            "kwh_price_recorded_at",
+            "list_price_input_per_million",
+            "list_price_output_per_million",
+            "list_price_per_million_tokens",
+            "list_price_currency",
+            "list_price_retrieved_at",
             # verdict.quality_verdict
             "verdict",
             "task_suite",
@@ -166,6 +237,23 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
             f"row of kind {kind!r} pairs endpoint {endpoint!r} with "
             f"prompt_template_id {prompt_template_id!r}: an endpoint that "
             f"applies a template cannot declare 'none'"
+        )
+
+    cost_total = row["cost_total"]
+    # The two bases are the values the cost was actually computed from: a kWh
+    # price for a local run, the table's own input rate for a cloud one.
+    # `list_price_per_million_tokens` is deliberately not accepted here -- it
+    # is a blended rate derived FROM cost_total, so a row carrying only it
+    # would satisfy the gate without carrying any input at all.
+    if (
+        cost_total is not None
+        and row["kwh_price_eur"] is None
+        and row["list_price_input_per_million"] is None
+    ):
+        raise RowContractError(
+            f"row of kind {kind!r} carries cost_total={cost_total!r} but both "
+            "kwh_price_eur and list_price_input_per_million are null: a "
+            "non-null cost must carry at least one derivation basis"
         )
 
     if kind == "runtime":

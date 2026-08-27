@@ -300,3 +300,33 @@ Exits `0` and prints the checked row count when every cited fiche is intact
 (or predates the `fiche_hash` contract entirely — reported separately as a
 non-fatal `legacy` count); exits `1` and names the affected run id and row
 position when a fiche was edited in place or is missing from the registry.
+
+## 5. Energy, emissions and cost configuration
+
+Six env vars, all optional — every one has a default, listed with its source:
+
+| Var | Default | Source |
+| --- | ------- | ------ |
+| `EMISSION_COUNTRY_ISO_CODE` | `FRA` | CodeCarbon's offline grid-mix selector (3-letter ISO code) — no live geolocation call. |
+| `EMISSION_REGION` | `FR` | The 2-letter region label published on the row; distinct from CodeCarbon's own `region` kwarg, which this project does not use (that kwarg only supports US states / Canadian provinces). |
+| `EMISSION_FACTOR_KG_PER_KWH` | `0.056039` | CodeCarbon's own `"FRA"` grid-carbon-intensity entry, 56.039 gCO2eq/kWh (year 2023), from `global_energy_mix.json`. |
+| `SCOPE3_WH_PER_TOKEN` | `0.0003` | Median energy per output token for a frontier-scale cloud model (~3×10⁻⁴ Wh/token), Joule (2026) "Energy use of AI inference, efficiency pathways, and test-time scaling." One order-of-magnitude estimate for the project's whole Scope-3 path, not model-specific. |
+| `KWH_PRICE_EUR` | `0.1940` | EDF Tarif Bleu (French residential regulated tariff, Base option), effective February 2026. |
+| `KWH_PRICE_RECORDED_AT` | `2026-02-01` | The tariff's own effective date above — a configured value, not a live retrieval. |
+
+**Scope 2 vs. Scope 3, and why they are not directly comparable.** A local run
+(`wave-local-ai-v2`, and a quality row's `local`-provider batch) is measured
+on this machine by CodeCarbon: its `emissions_scope` is `"scope_2"`,
+`emissions_scope_formula_id` is `null`, and `scope_comparability` is `null` —
+there is nothing to caveat, the number came from a real per-channel
+measurement (CPU: TDP-estimated, GPU: NVML-measured when present, RAM:
+constant-estimated). A cloud run (a quality row's `mistral`-provider batch)
+has no on-machine energy to measure at all, so its energy and emissions are
+instead *estimated* from `SCOPE3_WH_PER_TOKEN` and the batch's total token
+count (`emissions.scope3_cloud_emissions`, `emissions_scope_formula_id` set
+to a named formula id, `emissions_scope` `"scope_3"`). The row's own
+`scope_comparability` field states in words why the two are not like-for-like:
+the Scope-3 estimate has no local counterpart yet for facility overhead or
+hardware amortization, so a Scope-2 number and a Scope-3 number on the same
+dashboard describe different boundaries, not the same thing measured two
+ways. Read `emissions_scope` before comparing any two rows' `emissions_kg`.

@@ -58,6 +58,13 @@ AGGREGATION_LABELS: dict[str, str] = {
     "gpu_draw_w": "max_post_completion_sample_over_counted_repetitions",
     "wall_clock_s": "total_over_counted_repetitions",
     "energy_kwh": "total_over_counted_repetitions_including_cooldowns",
+    # Same span as energy_kwh: measured by the same tracker over the same
+    # whole-run window (energy.py's per-channel EnergyResult). emissions_kg is
+    # deliberately not a member -- it is a downstream computation of
+    # energy_kwh, not an independent tracker measurement (plan.md's Decisions).
+    "cpu_energy_kwh": "total_over_counted_repetitions_including_cooldowns",
+    "gpu_energy_kwh": "total_over_counted_repetitions_including_cooldowns",
+    "ram_energy_kwh": "total_over_counted_repetitions_including_cooldowns",
 }
 
 MEASUREMENT_FIELDS = frozenset(AGGREGATION_LABELS)
