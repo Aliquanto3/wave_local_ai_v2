@@ -24,6 +24,7 @@ results/*.jsonl
 # are the committed acceptance evidence and are re-included.
 aidd_docs/results/*.jsonl
 !aidd_docs/results/*-reference.jsonl
+!aidd_docs/results/*-reference.schema-*.jsonl
 __pycache__/
 .pytest_cache/
 .ruff_cache/
