@@ -1,5 +1,10 @@
 from wave_local_ai_v2.classification_suite import LABELS, ClassificationItem
-from wave_local_ai_v2.scoring import normalize_label, score_item, score_suite
+from wave_local_ai_v2.scoring import (
+    normalize_label,
+    score_item,
+    score_suite,
+    score_suite_by_language,
+)
 
 MAX_OUTPUT_TOKENS = 32
 
@@ -169,3 +174,47 @@ def test_score_suite_failure_counts_sum_to_the_failed_item_count() -> None:
         "truncated_context": 1,
     }
     assert sum(suite_score["failure_counts"].values()) == 4
+
+
+def _language_item(item_id: str, language: str) -> ClassificationItem:
+    return ClassificationItem(
+        item_id=item_id,
+        prompt="p",
+        expected_label="billing",
+        language=language,
+        provenance="hand_written",
+        contamination_risk=False,
+    )
+
+
+def test_score_suite_by_language_computes_accuracy_n_and_indicative_per_language() -> (
+    None
+):
+    # en: 2 items, 1 correct; fr: 1 item, correct; de: 12 items, all correct
+    # (n=12 pushes de above the per-cell threshold, en/fr stay below it).
+    items = (
+        [_language_item(f"en-{i}", "en") for i in range(2)]
+        + [_language_item("fr-0", "fr")]
+        + [_language_item(f"de-{i}", "de") for i in range(12)]
+    )
+    scored = (
+        [_score("billing"), _score("technical")]  # en: 1/2 correct
+        + [_score("billing")]  # fr: 1/1 correct
+        + [_score("billing") for _ in range(12)]  # de: 12/12 correct
+    )
+
+    breakdown = score_suite_by_language(items, scored)
+
+    assert breakdown["en"] == {"accuracy": 0.5, "n": 2, "indicative": True}
+    assert breakdown["fr"] == {"accuracy": 1.0, "n": 1, "indicative": True}
+    assert breakdown["de"] == {"accuracy": 1.0, "n": 12, "indicative": False}
+
+
+def test_score_suite_by_language_zero_n_gives_zero_accuracy() -> None:
+    items = [_language_item("en-0", "en")]
+    scored = [_score("billing")]
+
+    breakdown = score_suite_by_language(items, scored)
+
+    assert breakdown["fr"] == {"accuracy": 0.0, "n": 0, "indicative": True}
+    assert breakdown["de"] == {"accuracy": 0.0, "n": 0, "indicative": True}

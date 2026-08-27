@@ -31,7 +31,10 @@ from wave_local_ai_v2 import aggregation, prompt_provenance, timings
 # could not recompute its own cost -- the two rates the price table actually
 # charges have to be on the row for Story 16's "carries what it was derived
 # from" to hold.
-SCHEMA_VERSION = "6"
+# "7": `language_breakdown` (per-language accuracy/n/indicative) became
+# required on quality rows (Story 20: the-classification-suite-reaches-
+# twenty-items-across-three-languages).
+SCHEMA_VERSION = "7"
 
 # The schema version at which `fiche_hash` (and `verdict`) became required.
 # Fixed at "3" regardless of future `SCHEMA_VERSION` bumps: a stored row whose
@@ -193,6 +196,7 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "predicted_label",
             "correct",
             "suite_accuracy",
+            "language_breakdown",
             "sampling",
             "max_output_tokens",
             "stop_sequences",

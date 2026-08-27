@@ -93,6 +93,7 @@ FAKE_ENERGY_RESULT = {
 # `sampling` is not here: both row kinds carry it now, one seeded per request.
 QUALITY_ONLY_FIELDS = {
     "suite_accuracy",
+    "language_breakdown",
     "expected_label",
     "predicted_label",
     "correct",

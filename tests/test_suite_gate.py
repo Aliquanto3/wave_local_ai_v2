@@ -108,11 +108,12 @@ def test_fully_compliant_suite_is_not_indicative() -> None:
     assert not any(result["per_language_indicative"].values())
 
 
-def test_real_classification_suite_is_indicative_for_count_and_language_share() -> None:
+def test_real_classification_suite_is_not_indicative_at_the_suite_level() -> None:
     result = gate_suite(CLASSIFICATION_TASK_SUITE)
 
-    assert result["indicative"] is True
-    reasons = " ".join(result["indicative_reasons"])
-    assert "10" in reasons  # item count shortfall names the 10-item count
-    assert "fr" in reasons
-    assert "de" in reasons
+    assert result["indicative"] is False
+    assert result["per_language_indicative"] == {
+        "en": False,
+        "fr": True,
+        "de": True,
+    }

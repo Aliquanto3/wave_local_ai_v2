@@ -419,10 +419,18 @@ def test_every_row_carries_the_suite_caps_tags_and_gate_verdict(stubbed_run) -> 
         assert row["language"] == item["language"]
         assert row["provenance"] == item["provenance"]
         assert row["contamination_risk"] == item["contamination_risk"]
-        # The real suite is under-sized and EN-only: every row this fixture
-        # writes must land marked indicative, never a silent pass.
-        assert row["indicative"] is True
-        assert row["indicative_reasons"]
+        # The real 20-item suite meets every suite-level threshold (count and
+        # every language share), so the gate-level mark is a clean pass.
+        assert row["indicative"] is False
+        assert row["indicative_reasons"] == []
+        # FR/DE still sit below the per-cell threshold at n=5 -- an observed
+        # consequence of the 25%-share split, not a defect.
+        assert row["language_breakdown"]["en"]["n"] == 10
+        assert row["language_breakdown"]["en"]["indicative"] is False
+        assert row["language_breakdown"]["fr"]["n"] == 5
+        assert row["language_breakdown"]["fr"]["indicative"] is True
+        assert row["language_breakdown"]["de"]["n"] == 5
+        assert row["language_breakdown"]["de"]["indicative"] is True
 
     # Methodology 3's "two models compared on one item record identical values"
     # stated as its own assertion: the caps are what makes the two halves

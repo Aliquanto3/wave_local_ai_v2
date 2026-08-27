@@ -15,9 +15,11 @@ caller (`quality_cli.py`).
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from typing import TypedDict
 
 from wave_local_ai_v2.classification_suite import LABELS, ClassificationItem
+from wave_local_ai_v2.suite_gate import LANGUAGES, MIN_PER_LANGUAGE_CELL_ITEMS
 
 _TOKEN_RE = re.compile(r"[a-z]+")
 
@@ -62,6 +64,14 @@ class SuiteScore(TypedDict):
 
     accuracy: float
     failure_counts: dict[str, int]
+
+
+class LanguageCell(TypedDict):
+    """One language's slice of a suite score: accuracy, sample size, mark."""
+
+    accuracy: float
+    n: int
+    indicative: bool
 
 
 def score_item(
@@ -142,3 +152,33 @@ def score_suite(scored_items: list[ScoredItem]) -> SuiteScore:
         accuracy = correct_count / len(scored_items)
 
     return SuiteScore(accuracy=accuracy, failure_counts=failure_counts)
+
+
+def score_suite_by_language(
+    items: Sequence[ClassificationItem], scored_items: list[ScoredItem]
+) -> dict[str, LanguageCell]:
+    """Accuracy, n and the indicative mark per language, one cell per language.
+
+    `items` and `scored_items` are zipped by position -- the same convention
+    `quality_cli._score_and_write` already uses to pair a suite item with its
+    scored outcome. `indicative` reuses `suite_gate.MIN_PER_LANGUAGE_CELL_ITEMS`
+    rather than redeclaring the threshold, so the gate and the per-language
+    score agree on what counts as too small a sample to trust.
+    """
+    by_language: dict[str, list[ScoredItem]] = {lang: [] for lang in LANGUAGES}
+    for item, scored in zip(items, scored_items, strict=True):
+        by_language[item["language"]].append(scored)
+
+    cells: dict[str, LanguageCell] = {}
+    for lang in LANGUAGES:
+        lang_items = by_language[lang]
+        n = len(lang_items)
+        if n == 0:
+            accuracy = 0.0
+        else:
+            correct_count = sum(1 for scored in lang_items if scored["correct"])
+            accuracy = correct_count / n
+        cells[lang] = LanguageCell(
+            accuracy=accuracy, n=n, indicative=n < MIN_PER_LANGUAGE_CELL_ITEMS
+        )
+    return cells

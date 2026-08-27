@@ -40,7 +40,7 @@ from wave_local_ai_v2.energy import (
 from wave_local_ai_v2.hardware import build_fiche, capture_fiche
 from wave_local_ai_v2.mistral_client import MistralCompletion, MistralRequestError
 from wave_local_ai_v2.results import append_row, captured_at, new_run_id
-from wave_local_ai_v2.scoring import score_item, score_suite
+from wave_local_ai_v2.scoring import score_item, score_suite, score_suite_by_language
 from wave_local_ai_v2.settings import Settings, SettingsError, load_settings
 from wave_local_ai_v2.suite_gate import SuiteGateError, SuiteGateResult
 
@@ -477,6 +477,9 @@ def _score_and_write(
     suite_score = score_suite(scored_items)
     suite_accuracy = suite_score["accuracy"]
     failure_counts = suite_score["failure_counts"]
+    language_breakdown = score_suite_by_language(
+        CLASSIFICATION_TASK_SUITE, scored_items
+    )
 
     rows: list[dict[str, Any]] = []
     for item, scored in zip(CLASSIFICATION_TASK_SUITE, scored_items, strict=True):
@@ -499,6 +502,7 @@ def _score_and_write(
             "predicted_label": scored["predicted_label"],
             "correct": scored["correct"],
             "suite_accuracy": suite_accuracy,
+            "language_breakdown": language_breakdown,
             # Nested so a row is self-describing: a greedy row and a future
             # sampled row can share `quality.jsonl` and stay distinguishable
             # without consulting git history, and adding a sampler key can never
