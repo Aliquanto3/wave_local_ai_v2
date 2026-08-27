@@ -1,6 +1,6 @@
 ---
 objective: "The classification suite holds 20 natively-authored items across EN/FR/DE at compliant shares with per-language reporting, and the published reference bundle (runtime + quality reference files, fiche registry, roster, suite snapshot) is regenerated under the current schema with two verdict-bearing runs each and a validator proof, superseding — never deleting — the old evidence."
-status: in-progress
+status: implemented
 ---
 
 <!-- Fill or omit these sections; never add, rename, or reorder one. -->
