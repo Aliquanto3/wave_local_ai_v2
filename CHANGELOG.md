@@ -28,8 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runtime runs and two quality runs (local + mistral), the second of each
   kind carrying a verdict against the first, validated clean (`checked 82
   row(s)`, exit 0) with a deliberate-edit proof case. The prior 10-item,
-  schema-6 bundle is kept, not deleted, renamed to `*-reference.schema-1.jsonl`
-  for published-evidence continuity.
+  EN-only bundle is kept, not deleted, renamed to `*-reference.schema-1.jsonl`
+  for published-evidence continuity — the suffix counts superseded bundle
+  generations, not a `schema_version`: those rows carry `schema_version` `"2"`
+  or no such key at all.
 - A tracked, versioned roster file (`aidd_docs/roster/models.json`) now pins
   each model's identity (repo, revision, file, display name, checksum,
   architecture) and its full flag set. `server.build_flags`, the resolved

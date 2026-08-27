@@ -59,6 +59,9 @@ def test_every_quality_row_resolves_its_suite_definition() -> None:
         snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
         assert snapshot["suite_id"] == suite_id
         assert snapshot["suite_version"] == row["suite_version"]
+        # The hash, not the version, is what catches a suite edited without a
+        # version bump -- the one drift `suite_version` alone cannot see.
+        assert snapshot["prompt_set_hash"] == row["prompt_set_hash"]
 
 
 def test_every_row_carries_the_current_schema_version() -> None:
