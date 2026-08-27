@@ -43,6 +43,19 @@ flowchart LR
 
 ## Gotchas
 
+- The published reference bundle is five parts handed to an auditor together,
+  not any one file alone: `runtime-reference.jsonl` + `quality-reference.jsonl`
+  (curated snapshots, no CLI writes to them) + `fiches/` (cited by
+  `fiche_hash`) + `aidd_docs/roster/models.json` (cited by `roster_entry_id`)
+  + `suite-definitions/` (cited by `suite_id`/`suite_version` on quality
+  rows, `suite_snapshot.py` — see `cli.md`). `tests/test_reference_bundle.py`
+  asserts every row's pointers resolve inside that set. A superseded
+  reference file (schema or item-set change) is `git mv`-renamed to
+  `*-reference.schema-<N>.jsonl` and kept, never deleted — published-evidence
+  continuity for the epic's duration — with a `.gitignore` negation
+  (`!aidd_docs/results/*-reference.schema-*.jsonl`) so the rename does not
+  silently drop it from tracking, and `aidd_docs/results/README.md` names
+  each superseded file and why it is kept.
 - The model roster (`aidd_docs/roster/models.json`, parsed by `roster.py`) is
   now the source of truth for a model's identity (repo, revision, file,
   checksum, architecture) and its full launch flag set. `server.py`,

@@ -13,9 +13,18 @@ The command-line interface for running benchmarks.
   `RUNTIME_COOLDOWN_S` (default 10.0) and `RUNTIME_WARMUP_COUNT` (default 1)
   override the protocol. A failing repetition fails the whole row: nothing
   is written.
-- `wave-local-ai-v2-quality` — quality benchmark: scores the classification suite
-  against the local SLM and the Mistral cloud model, appending one row per
-  (item, model) to `aidd_docs/results/quality.jsonl`
+- `wave-local-ai-v2-quality` — quality benchmark: scores the 20-item
+  classification suite (`en`/`fr`/`de`, each >=25% share) against the local
+  SLM and the Mistral cloud model, appending one row per (item, model) to
+  `aidd_docs/results/quality.jsonl`. Every row carries `language_breakdown`
+  (`scoring.score_suite_by_language`): per-language accuracy/n/indicative,
+  the same batch-level pattern `suite_accuracy` uses.
+- `uv run python -m wave_local_ai_v2.suite_snapshot` — exports the
+  classification suite's identity (id, version, prompt-set hash), caps and
+  every item to `aidd_docs/results/suite-definitions/<suite_id>.json`. A
+  snapshot of the suite as the code holds it at export time, not a live
+  registry a row resolves through at read time; re-run after any suite edit.
+  No `pyproject.toml` entry point — invoked as a module, not a CLI command.
 - `wave-local-ai-v2-validate` — invalidation validator: checks every row of
   one or more results files (default: the two live stores,
   `RUNTIME_RESULTS_PATH`/`QUALITY_RESULTS_PATH`) against the stored fiche
