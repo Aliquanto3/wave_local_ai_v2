@@ -30,6 +30,11 @@ _MINIMAL_QUALITY_ROW = {
     "predicted_label": "billing",
     "correct": True,
     "suite_accuracy": 1.0,
+    "language_breakdown": {
+        "en": {"accuracy": 1.0, "n": 1, "indicative": True},
+        "fr": {"accuracy": 0.0, "n": 0, "indicative": True},
+        "de": {"accuracy": 0.0, "n": 0, "indicative": True},
+    },
     "sampling": {"seed": 1},
     "max_output_tokens": 32,
     "stop_sequences": [],

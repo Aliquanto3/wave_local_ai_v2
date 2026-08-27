@@ -29,8 +29,11 @@ _INSTRUCTION = (
 
 # This suite's stable identity, versioned independently from the row schema
 # (Methodology 19): the id names the suite, the version tracks its item set.
+# "2": +5 FR + 5 DE hand-written items (Story 20: the-classification-suite-
+# reaches-twenty-items-across-three-languages) -- adding items is the same
+# class of change as editing a prompt (Methodology 2).
 SUITE_ID = "classification-support-routing"
-SUITE_VERSION = "1"
+SUITE_VERSION = "2"
 
 # The generation cap `quality_cli.py` sends for every local completion. Declared
 # here, on the suite, rather than in the CLI: the cap is a property of what the
@@ -127,6 +130,74 @@ CLASSIFICATION_TASK_SUITE: list[ClassificationItem] = [
         "technical-03",
         "Search results stopped updating after the last update went out.",
         "technical",
+    ),
+    _item(
+        "billing-fr-01",
+        "Le prélèvement automatique de ce mois ne correspond pas au montant "
+        "indiqué sur mon devis, pouvez-vous vérifier ?",
+        "billing",
+        language="fr",
+    ),
+    _item(
+        "technical-fr-01",
+        "Depuis la dernière mise à jour, l'application se fige dès que "
+        "j'ouvre le tableau de bord.",
+        "technical",
+        language="fr",
+    ),
+    _item(
+        "account-fr-01",
+        "Je n'ai jamais reçu l'e-mail de confirmation pour activer mon "
+        "compte, pouvez-vous le renvoyer ?",
+        "account",
+        language="fr",
+    ),
+    _item(
+        "other-fr-01",
+        "Est-ce que vous prévoyez une version mobile de l'application dans "
+        "les prochains mois ?",
+        "other",
+        language="fr",
+    ),
+    _item(
+        "technical-fr-02",
+        "Le fichier que j'exporte en CSV contient des caractères accentués "
+        "mal encodés.",
+        "technical",
+        language="fr",
+    ),
+    _item(
+        "billing-de-01",
+        "Auf meiner letzten Rechnung fehlt der vereinbarte Rabatt aus unserem Vertrag.",
+        "billing",
+        language="de",
+    ),
+    _item(
+        "technical-de-01",
+        "Der Upload bricht immer bei etwa 80 Prozent ab, egal welche Datei "
+        "ich verwende.",
+        "technical",
+        language="de",
+    ),
+    _item(
+        "account-de-01",
+        "Ich möchte meine Zwei-Faktor-Authentifizierung deaktivieren, finde "
+        "aber die Option nicht.",
+        "account",
+        language="de",
+    ),
+    _item(
+        "other-de-01",
+        "Gibt es einen Zeitplan für die nächste Feature-Ankündigung?",
+        "other",
+        language="de",
+    ),
+    _item(
+        "account-de-02",
+        "Mein Account wurde offenbar mit einer falschen E-Mail-Adresse "
+        "verknüpft, können Sie das korrigieren?",
+        "account",
+        language="de",
     ),
 ]
 

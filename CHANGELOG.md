@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The classification suite reaches 20 items across `en`/`fr`/`de` (10/5/5,
+  each language >=25% share): 5 natively-authored French and 5 German
+  hand-written items added alongside the existing 10 English ones,
+  `SUITE_VERSION` `"1"` → `"2"`. A new `scoring.score_suite_by_language`
+  computes per-language accuracy/n/indicative, reusing `suite_gate.LANGUAGES`
+  and `MIN_PER_LANGUAGE_CELL_ITEMS`; every quality row now carries the result
+  as `language_breakdown`, required by the writer gate. `SCHEMA_VERSION`
+  `"6"` → `"7"`.
+- A suite definition snapshot (`suite_snapshot.py`, `uv run python -m
+  wave_local_ai_v2.suite_snapshot`) exports the classification suite's
+  identity, caps and every item to `aidd_docs/results/suite-definitions/
+  <suite_id>.json` — a snapshot a bundle reader resolves a published row's
+  `suite_id`/`suite_version` against, not a live registry.
+- The published reference bundle (`runtime-reference.jsonl`,
+  `quality-reference.jsonl`, `fiches/`, the roster, `suite-definitions/`) is
+  regenerated under the current schema against the 20-item suite: two
+  runtime runs and two quality runs (local + mistral), the second of each
+  kind carrying a verdict against the first, validated clean (`checked 82
+  row(s)`, exit 0) with a deliberate-edit proof case. The prior 10-item,
+  EN-only bundle is kept, not deleted, renamed to `*-reference.schema-1.jsonl`
+  for published-evidence continuity — the suffix counts superseded bundle
+  generations, not a `schema_version`: those rows carry `schema_version` `"2"`
+  or no such key at all.
 - A tracked, versioned roster file (`aidd_docs/roster/models.json`) now pins
   each model's identity (repo, revision, file, display name, checksum,
   architecture) and its full flag set. `server.build_flags`, the resolved

@@ -34,7 +34,12 @@ repos:
         # pattern uses `.` for the separator and a character class rather
         # than `\.` so it survives shlex-splitting and Windows path
         # separators alike.
-        entry: uv run python -X utf8 -m detect_secrets.pre_commit_hook --baseline .secrets.baseline --exclude-files fiches.[0-9a-f]{64}[.]json$
+        # Same reasoning applies to the suite definition snapshot
+        # (aidd_docs/results/suite-definitions/<suite_id>.json): its
+        # prompt_set_hash is a SHA-256 over the suite's own public prompt
+        # text (Story 20), re-exported -- and re-flagged -- on every suite
+        # edit if not excluded the same way.
+        entry: uv run python -X utf8 -m detect_secrets.pre_commit_hook --baseline .secrets.baseline --exclude-files fiches.[0-9a-f]{64}[.]json$|suite-definitions.[a-z0-9-]+[.]json$
         language: system
         pass_filenames: true
       - id: pytest
