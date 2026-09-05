@@ -176,6 +176,8 @@ COMPLETE_QUALITY_ROW = {
         "truncated_max_tokens": 0,
         "truncated_context": 0,
     },
+    "retries": 0,
+    "resumed": False,
 }
 
 
@@ -371,6 +373,22 @@ def test_cost_absent_with_both_price_bases_null_passes() -> None:
     row = {**COMPLETE_RUNTIME_ROW, "cost_total": None}
 
     validate_row("runtime", row)
+
+
+@pytest.mark.parametrize("field", ["retries", "resumed"])
+def test_quality_row_missing_retries_or_resumed_is_refused_by_name(field: str) -> None:
+    incomplete = {k: v for k, v in COMPLETE_QUALITY_ROW.items() if k != field}
+
+    with pytest.raises(RowContractError, match=field):
+        validate_row("quality", incomplete)
+
+
+def test_runtime_row_does_not_require_retries_or_resumed() -> None:
+    # Resume/retry are quality-CLI-only in this story's scope: the runtime
+    # harness has no cloud calls and no resume flag.
+    assert "retries" not in REQUIRED_FIELDS["runtime"]
+    assert "resumed" not in REQUIRED_FIELDS["runtime"]
+    validate_row("runtime", COMPLETE_RUNTIME_ROW)
 
 
 def test_aggregation_map_naming_a_field_the_row_does_not_carry_is_refused() -> None:

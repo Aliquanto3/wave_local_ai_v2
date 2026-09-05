@@ -60,6 +60,16 @@ DEFAULT_KWH_PRICE_RECORDED_AT = "2026-02-01"
 # individually disabled.
 DEFAULT_QUALITY_PROVIDERS = "local,mistral,google"
 KNOWN_QUALITY_PROVIDERS = frozenset({"local", "mistral", "google"})
+# Per-provider request pacing (a rate-limited run persists, resumes and never
+# re-pays): a suite item costs one Mistral request but two Google ones
+# (check_context_fits, then complete_prompt), which is why Google's interval
+# sits closer to the free tier's 15 RPM ceiling. 4.1s narrows the 4.5s a
+# live run confirmed safe (see this story's plan.md Decisions/Risks) -- a
+# margin miss now degrades to a paced retry instead of a hard failure, which
+# is the whole point of this story existing.
+DEFAULT_MISTRAL_REQUEST_PACING_S = 1.1
+DEFAULT_GOOGLE_REQUEST_PACING_S = 4.1
+DEFAULT_CLOUD_RETRY_MAX_ATTEMPTS = 4
 
 
 class SettingsError(RuntimeError):
@@ -122,6 +132,11 @@ class Settings:
     # cost_total from, and the date it was recorded. See the DEFAULT_* above.
     kwh_price_eur: float = DEFAULT_KWH_PRICE_EUR
     kwh_price_recorded_at: str = DEFAULT_KWH_PRICE_RECORDED_AT
+    # Pacing/retry configuration (a rate-limited run persists, resumes and
+    # never re-pays): see the DEFAULT_* constants above for sources.
+    mistral_request_pacing_s: float = DEFAULT_MISTRAL_REQUEST_PACING_S
+    google_request_pacing_s: float = DEFAULT_GOOGLE_REQUEST_PACING_S
+    cloud_retry_max_attempts: int = DEFAULT_CLOUD_RETRY_MAX_ATTEMPTS
 
 
 def fiche_registry_dir_from_env() -> Path:
@@ -247,6 +262,27 @@ def load_settings() -> Settings:
     kwh_price_recorded_at = os.environ.get(
         "KWH_PRICE_RECORDED_AT", DEFAULT_KWH_PRICE_RECORDED_AT
     )
+    mistral_request_pacing_s = _require_numeric(
+        "MISTRAL_REQUEST_PACING_S",
+        DEFAULT_MISTRAL_REQUEST_PACING_S,
+        float,
+        minimum=0.0,
+        minimum_reason="a pacing interval cannot be negative",
+    )
+    google_request_pacing_s = _require_numeric(
+        "GOOGLE_REQUEST_PACING_S",
+        DEFAULT_GOOGLE_REQUEST_PACING_S,
+        float,
+        minimum=0.0,
+        minimum_reason="a pacing interval cannot be negative",
+    )
+    cloud_retry_max_attempts = _require_numeric(
+        "CLOUD_RETRY_MAX_ATTEMPTS",
+        DEFAULT_CLOUD_RETRY_MAX_ATTEMPTS,
+        int,
+        minimum=1,
+        minimum_reason="at least one attempt must be allowed",
+    )
 
     return Settings(
         slm_models_dir=slm_models_dir,
@@ -274,6 +310,9 @@ def load_settings() -> Settings:
         scope3_wh_per_token=scope3_wh_per_token,
         kwh_price_eur=kwh_price_eur,
         kwh_price_recorded_at=kwh_price_recorded_at,
+        mistral_request_pacing_s=mistral_request_pacing_s,
+        google_request_pacing_s=google_request_pacing_s,
+        cloud_retry_max_attempts=cloud_retry_max_attempts,
     )
 
 

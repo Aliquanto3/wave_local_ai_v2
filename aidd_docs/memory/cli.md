@@ -15,10 +15,31 @@ The command-line interface for running benchmarks.
   is written.
 - `wave-local-ai-v2-quality` — quality benchmark: scores the 20-item
   classification suite (`en`/`fr`/`de`, each >=25% share) against the local
-  SLM and the Mistral cloud model, appending one row per (item, model) to
+  SLM and up to two cloud models (`QUALITY_PROVIDERS`, default
+  `local,mistral,google`), appending one row per (item, model) to
   `aidd_docs/results/quality.jsonl`. Every row carries `language_breakdown`
   (`scoring.score_suite_by_language`): per-language accuracy/n/indicative,
   the same batch-level pattern `suite_accuracy` uses.
+  - Each cloud provider's requests are paced (`MISTRAL_REQUEST_PACING_S`,
+    default `1.1`; `GOOGLE_REQUEST_PACING_S`, default `4.1`, seconds between
+    requests) and retried with backoff on a 429/5xx up to
+    `CLOUD_RETRY_MAX_ATTEMPTS` (default `4`, shared across the whole batch,
+    not per item, and counted as retries beyond the first attempt) before
+    that provider is skipped — the same skip-not-abort contract as a missing
+    key or a pre-flight failure. Every row records how many retries it took
+    (`retries`).
+  - `--resume <run_id>` re-runs a prior invocation under its own id instead
+    of minting a fresh one: a provider whose rows for that `run_id` are
+    already all on disk is skipped (`"<provider> skipped: run <run_id>
+    already complete"`), never re-paid for; one with no rows at all
+    (including `local`) is re-run from item 1. A provider holding *some* of
+    the suite's items is skipped too (`"... is partially written (N/20
+    items); re-running would duplicate them"`): resume works per
+    `(run_id, provider)` batch, so re-running it would write a second row
+    for every item already on disk. Every row a `--resume` invocation writes
+    is marked `resumed: true`, even a provider it re-ran from scratch, and
+    even when the given `run_id` was never used before (behaves like a
+    fresh run, honestly marked resumed anyway).
 - `uv run python -m wave_local_ai_v2.suite_snapshot` — exports the
   classification suite's identity (id, version, prompt-set hash), caps and
   every item to `aidd_docs/results/suite-definitions/<suite_id>.json`. A

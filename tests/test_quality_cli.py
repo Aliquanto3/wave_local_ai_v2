@@ -103,6 +103,9 @@ def _write_fake_roster(tmp_path: Path) -> Path:
 @pytest.fixture
 def stubbed_run(tmp_path, monkeypatch):
     """Stub every I/O boundary quality_cli.main() touches: process, both HTTP clients."""
+    # main() now parses --resume via argparse off sys.argv; pytest's own argv
+    # would otherwise reach it. Tests exercising --resume set this themselves.
+    monkeypatch.setattr("sys.argv", ["wave-local-ai-v2-quality"])
     quality_results_path = tmp_path / "quality.jsonl"
     model_dir = tmp_path / "models"
     model_dir.mkdir(parents=True)
@@ -200,7 +203,7 @@ def stubbed_run(tmp_path, monkeypatch):
             return_value=None,
         ),
         # Otherwise every google-enabled test would burn real wall-clock time
-        # on GOOGLE_REQUEST_PACING_S -- see that constant's docstring.
+        # on settings.google_request_pacing_s (Pacer.wait's sleep call).
         "sleep": patch("wave_local_ai_v2.quality_cli.time.sleep", return_value=None),
         "capture_provenance": patch(
             "wave_local_ai_v2.quality_cli.provenance.capture_provenance",
@@ -1024,15 +1027,41 @@ def test_google_batch_paces_every_request_under_the_free_tier_rpm_cap(
 ) -> None:
     quality_results_path, started = stubbed_run
     _enable_google(started)
+    # Isolated to local+google: a mistral batch sharing this run would add its
+    # own pacer's sleep calls to the same stubbed_run["sleep"] mock.
+    started["load_settings"].return_value = dataclasses.replace(
+        started["load_settings"].return_value,
+        quality_providers=frozenset({"local", "google"}),
+    )
+    settings = started["load_settings"].return_value
 
     quality_cli._run()
 
-    # Two paced calls per item (check_context_fits, complete_prompt) -- the
-    # cause of the live 429 this pacing exists to avoid.
-    assert started["sleep"].call_count == 2 * len(CLASSIFICATION_TASK_SUITE)
+    # Two paced calls per item (check_context_fits, complete_prompt), minus
+    # the very first: a Pacer never sleeps before its first-ever call.
+    n = len(CLASSIFICATION_TASK_SUITE)
+    assert started["sleep"].call_count == 2 * n - 1
+    # A lower bound, not an exact value: the stub never actually sleeps, so
+    # Pacer's own real-clock bookkeeping (advancing by min_interval_s on the
+    # assumption a real sleep just happened) compounds across calls -- the
+    # one property that must hold regardless is "never less than the pacing
+    # interval", which is what the free-tier RPM cap actually needs.
     for call in started["sleep"].call_args_list:
-        assert call.args[0] == quality_cli.GOOGLE_REQUEST_PACING_S
+        assert call.args[0] >= settings.google_request_pacing_s - 0.05
     assert {row["provider"] for row in read_rows(quality_results_path)} >= {"google"}
+
+
+def test_mistral_batch_never_sleeps_before_its_first_request(stubbed_run) -> None:
+    _, started = stubbed_run
+    settings = started["load_settings"].return_value
+
+    quality_cli._run()
+
+    n = len(CLASSIFICATION_TASK_SUITE)
+    # One paced call per item, minus the very first.
+    assert started["sleep"].call_count == n - 1
+    for call in started["sleep"].call_args_list:
+        assert call.args[0] >= settings.mistral_request_pacing_s - 0.05
 
 
 def test_google_rows_carry_their_own_identity_sampling_and_cost(stubbed_run) -> None:
@@ -1202,6 +1231,179 @@ def test_google_context_refusal_scores_truncated_context_without_a_generate_call
         started["google_complete_prompt"].call_count
         == len(CLASSIFICATION_TASK_SUITE) - 1
     )
+
+
+def test_local_rows_never_retry(stubbed_run) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    local_rows = [
+        r for r in read_rows(quality_results_path) if r["provider"] == "local"
+    ]
+    assert local_rows
+    assert all(row["retries"] == 0 for row in local_rows)
+
+
+def test_fresh_run_marks_every_row_resumed_false(stubbed_run) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    assert rows
+    assert all(row["resumed"] is False for row in rows)
+
+
+def test_mistral_429_then_success_retries_once_and_records_it(stubbed_run) -> None:
+    quality_results_path, started = stubbed_run
+    calls = {"n": 0}
+
+    def side_effect(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise mistral_client.RetryableRequestError(
+                "rate limited", status_code=429, retry_after_s=None
+            )
+        return {
+            "content": "billing",
+            "endpoint": mistral_client.CHAT_COMPLETIONS_URL,
+            "finish_reason": "stop",
+            "generated_tokens": 3,
+            "prompt_tokens": 12,
+            "total_tokens": 15,
+        }
+
+    started["complete_prompt"].side_effect = side_effect
+
+    quality_cli._run()
+
+    mistral_rows = [
+        r for r in read_rows(quality_results_path) if r["provider"] == "mistral"
+    ]
+    assert mistral_rows
+    # Only the very first call (item 1's first attempt) fails; every later
+    # call -- item 1's retry included -- succeeds on the first try.
+    assert mistral_rows[0]["retries"] == 1
+    assert all(row["retries"] == 0 for row in mistral_rows[1:])
+
+
+def test_mistral_retry_budget_exhaustion_skips_but_google_still_runs(
+    stubbed_run, capsys
+) -> None:
+    quality_results_path, started = stubbed_run
+    _enable_google(started)
+    started["complete_prompt"].side_effect = mistral_client.RetryableRequestError(
+        "rate limited", status_code=429, retry_after_s=None
+    )
+
+    quality_cli.main()  # must not raise SystemExit: exit code stays 0
+
+    stderr = capsys.readouterr().err
+    assert "mistral skipped:" in stderr
+    rows = read_rows(quality_results_path)
+    assert {row["provider"] for row in rows} == {"local", "google"}
+
+
+def test_resume_skips_a_provider_whose_rows_for_the_run_are_already_complete(
+    stubbed_run, capsys
+) -> None:
+    quality_results_path, started = stubbed_run
+    run_id = "resume-run-complete"
+    quality_cli._run(resume_run_id=run_id)
+    assert {row["provider"] for row in read_rows(quality_results_path)} == {
+        "local",
+        "mistral",
+    }
+    started["complete_prompt"].reset_mock()
+    started["check_model"].reset_mock()
+
+    quality_cli._run(resume_run_id=run_id)
+
+    assert started["check_model"].call_count == 0
+    assert started["complete_prompt"].call_count == 0
+    stderr = capsys.readouterr().err
+    assert f"mistral skipped: run {run_id} already complete" in stderr
+    assert f"local skipped: run {run_id} already complete" in stderr
+    # No duplicate rows: the second invocation wrote nothing new.
+    rows = read_rows(quality_results_path)
+    assert len(rows) == 2 * len(CLASSIFICATION_TASK_SUITE)
+
+
+def test_resume_reruns_an_incomplete_provider_from_scratch(stubbed_run) -> None:
+    quality_results_path, started = stubbed_run
+    run_id = "resume-run-incomplete"
+    # First invocation: google disabled (no key), so local+mistral are the
+    # only rows this run_id has -- google's batch never happened at all,
+    # which the resume/completeness check treats identically to "started but
+    # never finished" (both are zero rows for (run_id, "google")).
+    quality_cli._run(resume_run_id=run_id)
+    assert {row["provider"] for row in read_rows(quality_results_path)} == {
+        "local",
+        "mistral",
+    }
+
+    _enable_google(started)
+    started["complete_prompt"].reset_mock()
+
+    quality_cli._run(resume_run_id=run_id)
+
+    assert started["complete_prompt"].call_count == 0  # mistral stayed skipped
+    rows = read_rows(quality_results_path)
+    google_rows = [row for row in rows if row["provider"] == "google"]
+    assert len(google_rows) == len(CLASSIFICATION_TASK_SUITE)
+    assert all(row["run_id"] == run_id for row in google_rows)
+    assert all(row["resumed"] is True for row in google_rows)
+
+
+def test_resume_refuses_a_partially_written_provider_instead_of_duplicating_it(
+    stubbed_run, capsys
+) -> None:
+    quality_results_path, started = stubbed_run
+    run_id = "resume-run-partial"
+    quality_cli._run(resume_run_id=run_id)
+    # Truncate mistral's half to five items, the state an interrupt or a disk
+    # failure part-way through _score_and_write's append loop leaves behind.
+    rows = read_rows(quality_results_path)
+    kept = [row for row in rows if row["provider"] == "local"] + [
+        row for row in rows if row["provider"] == "mistral"
+    ][:5]
+    quality_results_path.write_text(
+        "".join(f"{json.dumps(row)}\n" for row in kept), encoding="utf-8"
+    )
+    started["complete_prompt"].reset_mock()
+
+    quality_cli._run(resume_run_id=run_id)
+
+    assert started["complete_prompt"].call_count == 0
+    stderr = capsys.readouterr().err
+    assert f"mistral skipped: run {run_id} is partially written (5/" in stderr
+    # Not one new row: five mistral items would otherwise be on disk twice.
+    assert len(read_rows(quality_results_path)) == len(kept)
+
+
+def test_resume_with_a_never_used_run_id_behaves_like_a_fresh_run(
+    stubbed_run,
+) -> None:
+    quality_results_path, _ = stubbed_run
+    run_id = "never-seen-before"
+
+    quality_cli._run(resume_run_id=run_id)
+
+    rows = read_rows(quality_results_path)
+    assert rows
+    assert all(row["run_id"] == run_id for row in rows)
+    # Honest behavior, not an error: nothing existed to skip, but every row
+    # this invocation wrote is still marked resumed=true.
+    assert all(row["resumed"] is True for row in rows)
+
+
+def test_parse_args_defaults_resume_to_none() -> None:
+    assert quality_cli._parse_args([]).resume is None
+
+
+def test_parse_args_reads_the_resume_flag() -> None:
+    assert quality_cli._parse_args(["--resume", "run-123"]).resume == "run-123"
 
 
 def test_local_rows_are_written_before_the_first_cloud_call(stubbed_run) -> None:

@@ -4,12 +4,15 @@ import pytest
 
 import wave_local_ai_v2.settings as settings_module
 from wave_local_ai_v2.settings import (
+    DEFAULT_CLOUD_RETRY_MAX_ATTEMPTS,
     DEFAULT_EMISSION_COUNTRY_ISO_CODE,
     DEFAULT_EMISSION_FACTOR_KG_PER_KWH,
     DEFAULT_EMISSION_REGION,
     DEFAULT_FICHE_REGISTRY_DIR,
+    DEFAULT_GOOGLE_REQUEST_PACING_S,
     DEFAULT_KWH_PRICE_EUR,
     DEFAULT_KWH_PRICE_RECORDED_AT,
+    DEFAULT_MISTRAL_REQUEST_PACING_S,
     DEFAULT_QUALITY_REFERENCE_PATH,
     DEFAULT_QUALITY_RESULTS_PATH,
     DEFAULT_RUNTIME_REFERENCE_PATH,
@@ -393,6 +396,99 @@ def test_load_settings_refuses_an_unrecognised_quality_provider(
     monkeypatch.setenv("QUALITY_PROVIDERS", "local,anthropic")
 
     with pytest.raises(SettingsError, match="anthropic"):
+        load_settings()
+
+
+def test_load_settings_defaults_the_pacing_and_retry_fields_when_unset(
+    monkeypatch, tmp_path: Path
+) -> None:
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    server_path = tmp_path / "llama-server.exe"
+    server_path.write_text("")
+
+    monkeypatch.setenv("SLM_MODELS_DIR", str(models_dir))
+    monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
+    monkeypatch.delenv("MISTRAL_REQUEST_PACING_S", raising=False)
+    monkeypatch.delenv("GOOGLE_REQUEST_PACING_S", raising=False)
+    monkeypatch.delenv("CLOUD_RETRY_MAX_ATTEMPTS", raising=False)
+
+    settings = load_settings()
+
+    assert settings.mistral_request_pacing_s == DEFAULT_MISTRAL_REQUEST_PACING_S
+    assert settings.google_request_pacing_s == DEFAULT_GOOGLE_REQUEST_PACING_S
+    assert settings.cloud_retry_max_attempts == DEFAULT_CLOUD_RETRY_MAX_ATTEMPTS
+
+
+def test_load_settings_reads_the_pacing_and_retry_overrides(
+    monkeypatch, tmp_path: Path
+) -> None:
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    server_path = tmp_path / "llama-server.exe"
+    server_path.write_text("")
+
+    monkeypatch.setenv("SLM_MODELS_DIR", str(models_dir))
+    monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
+    monkeypatch.setenv("MISTRAL_REQUEST_PACING_S", "2.5")
+    monkeypatch.setenv("GOOGLE_REQUEST_PACING_S", "6")
+    monkeypatch.setenv("CLOUD_RETRY_MAX_ATTEMPTS", "9")
+
+    settings = load_settings()
+
+    assert settings.mistral_request_pacing_s == 2.5
+    assert settings.google_request_pacing_s == 6.0
+    assert settings.cloud_retry_max_attempts == 9
+
+
+def test_load_settings_accepts_a_zero_pacing_interval(
+    monkeypatch, tmp_path: Path
+) -> None:
+    # Zero is pacing disabled, an operator's choice on a paid tier; only a
+    # negative interval is refused.
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    server_path = tmp_path / "llama-server.exe"
+    server_path.write_text("")
+
+    monkeypatch.setenv("SLM_MODELS_DIR", str(models_dir))
+    monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
+    monkeypatch.setenv("MISTRAL_REQUEST_PACING_S", "0")
+    monkeypatch.setenv("GOOGLE_REQUEST_PACING_S", "0")
+
+    settings = load_settings()
+
+    assert settings.mistral_request_pacing_s == 0.0
+    assert settings.google_request_pacing_s == 0.0
+
+
+@pytest.mark.parametrize(
+    ("env_var", "value"),
+    [
+        ("MISTRAL_REQUEST_PACING_S", "-0.1"),
+        ("MISTRAL_REQUEST_PACING_S", "not-a-number"),
+        ("GOOGLE_REQUEST_PACING_S", "-0.1"),
+        ("GOOGLE_REQUEST_PACING_S", "not-a-number"),
+        # Zero attempts would make the budget refuse every retry, which is not
+        # "no retry configuration" but a batch that gives up on its first 429.
+        ("CLOUD_RETRY_MAX_ATTEMPTS", "0"),
+        ("CLOUD_RETRY_MAX_ATTEMPTS", "not-a-number"),
+        ("CLOUD_RETRY_MAX_ATTEMPTS", "1.5"),
+    ],
+)
+def test_load_settings_refuses_invalid_pacing_and_retry_values(
+    monkeypatch, tmp_path: Path, env_var: str, value: str
+) -> None:
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    server_path = tmp_path / "llama-server.exe"
+    server_path.write_text("")
+
+    monkeypatch.setenv("SLM_MODELS_DIR", str(models_dir))
+    monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
+    monkeypatch.setenv(env_var, value)
+
+    with pytest.raises(SettingsError, match=env_var):
         load_settings()
 
 

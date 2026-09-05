@@ -71,6 +71,24 @@ class ContextWindowExceededError(GoogleRequestError):
     """
 
 
+class RetryableRequestError(GoogleRequestError):
+    """Raised on a 429 or 503: worth retrying, unlike every other non-200 status.
+
+    A subclass, not a sibling, same reasoning as `ModelUnavailableError`:
+    every existing `except GoogleRequestError` keeps catching it. Carries
+    `status_code` and `retry_after_s` so a caller's `is_retryable`/
+    `retry_hint_s` (`retry.call_with_retry`) can decide without re-parsing
+    the response.
+    """
+
+    def __init__(
+        self, message: str, *, status_code: int, retry_after_s: float | None
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.retry_after_s = retry_after_s
+
+
 class GoogleBlockedError(GoogleRequestError):
     """Raised when generation stopped for a reason the taxonomy has no value for.
 
@@ -145,6 +163,13 @@ def complete_prompt(
     )
 
     if response.status_code != 200:
+        if response.status_code in (429, 503):
+            raise RetryableRequestError(
+                f"Google request failed with status {response.status_code}: "
+                f"{_retry_hint(response)}{response.text[:500]}",
+                status_code=response.status_code,
+                retry_after_s=_parse_retry_delay_s(response),
+            )
         raise GoogleRequestError(
             f"Google request failed with status {response.status_code}: "
             f"{_retry_hint(response)}{response.text[:500]}"
@@ -315,6 +340,13 @@ def check_context_fits(
     )
 
     if response.status_code != 200:
+        if response.status_code in (429, 503):
+            raise RetryableRequestError(
+                f"Google countTokens request failed with status "
+                f"{response.status_code}: {_retry_hint(response)}{response.text[:500]}",
+                status_code=response.status_code,
+                retry_after_s=_parse_retry_delay_s(response),
+            )
         raise GoogleRequestError(
             f"Google countTokens request failed with status "
             f"{response.status_code}: {response.text[:500]}"
@@ -336,33 +368,47 @@ def check_context_fits(
         )
 
 
-def _retry_hint(response: requests.Response) -> str:
-    """Extract the `RetryInfo.retryDelay` string from a 429 body, when present.
+def _parse_retry_delay_s(response: requests.Response) -> float | None:
+    """Extract `RetryInfo.retryDelay` from a 429/503 body as numeric seconds.
 
     There is no `Retry-After` header on this provider -- the wait hint, when
     Google sends one at all, is in `error.details[]` at the entry whose
-    `@type` is `type.googleapis.com/google.rpc.RetryInfo`. Absence is not an
-    error: no retry is attempted here, this only enriches the message.
+    `@type` is `type.googleapis.com/google.rpc.RetryInfo`, a duration string
+    shaped like `"13s"`. Absence is not an error: `None` just means the caller
+    falls back to backoff-only retry.
     """
     try:
         body: Any = response.json()
     except ValueError:
-        return ""
+        return None
     if not isinstance(body, dict):
-        return ""
+        return None
     details = (
         body.get("error", {}).get("details", [])
         if isinstance(body.get("error"), dict)
         else []
     )
     if not isinstance(details, list):
-        return ""
+        return None
     for detail in details:
         if (
             isinstance(detail, dict)
             and detail.get("@type") == "type.googleapis.com/google.rpc.RetryInfo"
         ):
             retry_delay = detail.get("retryDelay")
-            if isinstance(retry_delay, str):
-                return f"retry after {retry_delay}; "
-    return ""
+            if isinstance(retry_delay, str) and retry_delay.endswith("s"):
+                try:
+                    return float(retry_delay[:-1])
+                except ValueError:
+                    return None
+    return None
+
+
+def _retry_hint(response: requests.Response) -> str:
+    """Format `_parse_retry_delay_s`'s result for an error message, or "" absent.
+
+    A thin wrapper kept for the existing message-building use in
+    `complete_prompt`'s non-200 branch.
+    """
+    delay_s = _parse_retry_delay_s(response)
+    return "" if delay_s is None else f"retry after {delay_s:g}s; "

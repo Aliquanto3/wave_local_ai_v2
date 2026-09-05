@@ -57,3 +57,12 @@ def read_rows(path: Path, schema_version: str | None = None) -> list[dict[str, A
     if schema_version is None:
         return rows
     return [row for row in rows if row.get("schema_version") == schema_version]
+
+
+def rows_for_run(path: Path, run_id: str) -> list[dict[str, Any]]:
+    """Return every row of the store at `path` whose `run_id` matches.
+
+    An absent store and a `run_id` no row carries both return an empty list --
+    both mean "nothing to skip" to a `--resume` caller, never an error.
+    """
+    return [row for row in read_rows(path) if row.get("run_id") == run_id]
