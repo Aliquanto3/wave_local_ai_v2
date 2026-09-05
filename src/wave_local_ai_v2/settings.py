@@ -51,6 +51,15 @@ DEFAULT_SCOPE3_WH_PER_TOKEN = 0.0003
 # run time.
 DEFAULT_KWH_PRICE_EUR = 0.1940
 DEFAULT_KWH_PRICE_RECORDED_AT = "2026-02-01"
+# The quality CLI's cloud provider set is configuration, not a hard-wired
+# pair: an operator can run with only one cloud subject enabled (or none),
+# without editing code. `local` names the on-machine SLM batch; it stays
+# unconditional (quality_cli always attempts it) -- only membership of
+# `mistral`/`google` in this set is checked. Listed anyway for a reader
+# scanning .env to see the whole picture, not just the two that can be
+# individually disabled.
+DEFAULT_QUALITY_PROVIDERS = "local,mistral,google"
+KNOWN_QUALITY_PROVIDERS = frozenset({"local", "mistral", "google"})
 
 
 class SettingsError(RuntimeError):
@@ -75,6 +84,11 @@ class Settings:
     mistral_api_key: str = field(default="", repr=False)
     # Same reasoning and same repr=False as mistral_api_key above.
     google_api_key: str = field(default="", repr=False)
+    # Which quality-CLI providers to attempt this run, drawn from
+    # KNOWN_QUALITY_PROVIDERS. A cloud provider (mistral/google) not in this
+    # set is skipped the same way a missing key or a pre-flight failure is:
+    # one stderr line naming it, zero rows, run continues.
+    quality_providers: frozenset[str] = frozenset({"local", "mistral", "google"})
     # The repetition protocol: N counted repetitions, a cooldown between them,
     # a warm-up count excluded from N. Defaults are the PRD's published values.
     runtime_repetitions: int = 5
@@ -130,7 +144,8 @@ def load_settings() -> Settings:
     `MISTRAL_API_KEY` and `GOOGLE_API_KEY` are read but not required here: the
     runtime-only harness (`__init__.py`) must keep working with no cloud
     credential configured at all. The quality CLI validates each at its own
-    point of use -- Mistral's absence aborts the run, Google's skips its batch.
+    point of use: a missing key, or a provider absent from
+    `QUALITY_PROVIDERS`, skips that provider's batch rather than aborting.
     """
     load_dotenv()
 
@@ -151,6 +166,9 @@ def load_settings() -> Settings:
     roster_entry_id = os.environ.get("ROSTER_ENTRY_ID", DEFAULT_ROSTER_ENTRY_ID)
     mistral_api_key = os.environ.get("MISTRAL_API_KEY", "")
     google_api_key = os.environ.get("GOOGLE_API_KEY", "")
+    quality_providers = _parse_quality_providers(
+        os.environ.get("QUALITY_PROVIDERS", DEFAULT_QUALITY_PROVIDERS)
+    )
 
     runtime_repetitions = _require_numeric(
         "RUNTIME_REPETITIONS",
@@ -240,6 +258,7 @@ def load_settings() -> Settings:
         roster_entry_id=roster_entry_id,
         mistral_api_key=mistral_api_key,
         google_api_key=google_api_key,
+        quality_providers=quality_providers,
         runtime_repetitions=runtime_repetitions,
         runtime_cooldown_s=runtime_cooldown_s,
         runtime_warmup_count=runtime_warmup_count,
@@ -256,6 +275,24 @@ def load_settings() -> Settings:
         kwh_price_eur=kwh_price_eur,
         kwh_price_recorded_at=kwh_price_recorded_at,
     )
+
+
+def _parse_quality_providers(raw: str) -> frozenset[str]:
+    """Parse a comma list of provider names, rejecting anything unrecognised.
+
+    Raises `SettingsError` naming the unknown entries rather than silently
+    ignoring a typo (`QUALITY_PROVIDERS=locale,mistral` would otherwise run
+    with no local batch and no error).
+    """
+    names = frozenset(name.strip() for name in raw.split(",") if name.strip())
+    unknown = names - KNOWN_QUALITY_PROVIDERS
+    if unknown:
+        raise SettingsError(
+            f"QUALITY_PROVIDERS names unrecognised provider(s): "
+            f"{', '.join(sorted(unknown))} -- must be drawn from "
+            f"{', '.join(sorted(KNOWN_QUALITY_PROVIDERS))}"
+        )
+    return names
 
 
 def _require_existing_path(env_var: str) -> Path:

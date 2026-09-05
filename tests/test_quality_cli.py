@@ -22,7 +22,7 @@ from wave_local_ai_v2.google_client import (
 from wave_local_ai_v2.mistral_client import MistralRequestError, ModelUnavailableError
 from wave_local_ai_v2.results import read_rows
 from wave_local_ai_v2.row_contract import SCHEMA_VERSION
-from wave_local_ai_v2.settings import DEFAULT_ROSTER_ENTRY_ID, Settings, SettingsError
+from wave_local_ai_v2.settings import DEFAULT_ROSTER_ENTRY_ID, Settings
 from wave_local_ai_v2.suite_gate import SuiteGateError
 
 RUNTIME_ONLY_FIELDS = {
@@ -549,47 +549,22 @@ def test_cloud_call_made_once_per_item_with_the_shared_prompt(stubbed_run) -> No
     assert called_prompts == expected_prompts
 
 
-def test_run_raises_before_any_local_or_cloud_call_when_mistral_key_missing(
-    tmp_path,
+def test_run_skips_mistral_when_the_key_is_missing_but_still_runs_local(
+    stubbed_run, capsys
 ) -> None:
-    model_dir = tmp_path / "models"
-    model_dir.mkdir(parents=True)
-    (model_dir / FAKE_ROSTER["entries"][DEFAULT_ROSTER_ENTRY_ID]["file"]).write_text("")
-    server_path = tmp_path / "llama-server.exe"
-    server_path.write_text("")
-
-    fake_settings = Settings(
-        slm_models_dir=model_dir,
-        llama_server_path=server_path,
-        results_path=tmp_path / "runtime.jsonl",
-        quality_results_path=tmp_path / "quality.jsonl",
-        roster_path=_write_fake_roster(tmp_path),
-        mistral_api_key="",
+    quality_results_path, started = stubbed_run
+    started["load_settings"].return_value = dataclasses.replace(
+        started["load_settings"].return_value, mistral_api_key=""
     )
-    fake_process = MagicMock(pid=1234)
 
-    with (
-        patch("wave_local_ai_v2.quality_cli.load_settings", return_value=fake_settings),
-        patch("wave_local_ai_v2.quality_cli.server.running_server") as running_server,
-        patch(
-            "wave_local_ai_v2.quality_cli.requests.post",
-            return_value=MagicMock(
-                status_code=200,
-                json=lambda: {"content": "billing"},
-                raise_for_status=lambda: None,
-            ),
-        ),
-        patch(
-            "wave_local_ai_v2.quality_cli.mistral_client.complete_prompt"
-        ) as complete,
-        pytest.raises(SettingsError),
-    ):
-        running_server.return_value.__enter__.return_value = fake_process
-        running_server.return_value.__exit__.return_value = False
-        quality_cli._run()
+    quality_cli._run()
 
-    running_server.assert_not_called()
-    complete.assert_not_called()
+    # Offline first: an unset key must not cost a network round trip.
+    assert started["check_model"].call_count == 0
+    assert started["complete_prompt"].call_count == 0
+    rows = read_rows(quality_results_path)
+    assert {row["provider"] for row in rows} == {"local"}
+    assert "mistral skipped: MISTRAL_API_KEY is not set" in capsys.readouterr().err
 
 
 def test_run_raises_local_completion_error_on_malformed_response(stubbed_run) -> None:
@@ -604,12 +579,17 @@ def test_run_raises_local_completion_error_on_malformed_response(stubbed_run) ->
         quality_cli._run()
 
 
-def test_run_propagates_mistral_request_error(stubbed_run) -> None:
-    _, started = stubbed_run
+def test_run_skips_mistral_on_a_request_error_without_raising(
+    stubbed_run, capsys
+) -> None:
+    quality_results_path, started = stubbed_run
     started["complete_prompt"].side_effect = MistralRequestError("boom")
 
-    with pytest.raises(MistralRequestError):
-        quality_cli._run()
+    quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    assert {row["provider"] for row in rows} == {"local"}
+    assert "mistral skipped: boom" in capsys.readouterr().err
 
 
 def test_run_raises_local_completion_error_when_response_is_not_an_object(
@@ -724,31 +704,23 @@ def test_cloud_rows_record_the_dated_model_id(stubbed_run) -> None:
     assert not mistral_client.MODEL.endswith("-latest")
 
 
-def test_run_pays_no_local_lifecycle_when_the_model_id_is_gone(stubbed_run) -> None:
-    _, started = stubbed_run
+def test_run_still_runs_local_and_writes_its_rows_when_the_mistral_model_id_is_gone(
+    stubbed_run,
+) -> None:
+    quality_results_path, started = stubbed_run
     started["check_model"].side_effect = ModelUnavailableError("gone")
 
-    with pytest.raises(ModelUnavailableError):
-        quality_cli._run()
+    quality_cli._run()
 
-    assert started["running_server"].call_count == 0
-    assert started["post"].call_count == 0
-
-
-def test_run_rejects_an_unset_key_before_touching_the_catalog(stubbed_run) -> None:
-    _, started = stubbed_run
-    started["load_settings"].return_value = dataclasses.replace(
-        started["load_settings"].return_value, mistral_api_key=""
-    )
-
-    with pytest.raises(SettingsError, match="MISTRAL_API_KEY is not set"):
-        quality_cli._run()
-
-    # Offline first: an unset key must not cost a network round trip.
-    assert started["check_model"].call_count == 0
+    # The local lifecycle runs unconditionally now: a cloud pre-flight
+    # failure is a skip, not an abort, so it no longer gates the local batch.
+    assert started["running_server"].call_count == 1
+    assert started["post"].call_count == len(CLASSIFICATION_TASK_SUITE)
+    rows = read_rows(quality_results_path)
+    assert {row["provider"] for row in rows} == {"local"}
 
 
-def test_run_checks_the_model_once_before_starting_the_local_server(
+def test_run_checks_the_mistral_model_only_after_the_local_server_ran(
     stubbed_run,
 ) -> None:
     _, started = stubbed_run
@@ -761,7 +733,9 @@ def test_run_checks_the_model_once_before_starting_the_local_server(
 
     quality_cli._run()
 
-    assert order == ["check", "server"]
+    # Local's own failures still abort the run, so there is no reason left to
+    # gate it behind a cloud pre-flight -- the cloud batches run after.
+    assert order == ["server", "check"]
 
 
 def test_run_surfaces_a_deprecation_notice_and_still_writes_every_row(
@@ -783,17 +757,18 @@ def test_run_surfaces_a_deprecation_notice_and_still_writes_every_row(
     assert len(read_rows(quality_results_path)) == 2 * len(CLASSIFICATION_TASK_SUITE)
 
 
-def test_main_exits_1_when_the_model_id_is_gone(stubbed_run, capsys) -> None:
-    _, started = stubbed_run
+def test_main_exits_0_and_skips_mistral_when_the_model_id_is_gone(
+    stubbed_run, capsys
+) -> None:
+    quality_results_path, started = stubbed_run
     started["check_model"].side_effect = ModelUnavailableError(
         "Mistral model 'mistral-small-9999' is not on the live catalog"
     )
 
-    with pytest.raises(SystemExit) as exit_info:
-        quality_cli.main()
+    quality_cli.main()
 
-    assert exit_info.value.code == 1
     assert "mistral-small-9999" in capsys.readouterr().err
+    assert {row["provider"] for row in read_rows(quality_results_path)} == {"local"}
 
 
 def test_all_rows_of_one_run_share_one_run_id(stubbed_run) -> None:
@@ -977,13 +952,32 @@ def test_a_cloud_failure_leaves_the_local_rows_on_disk(stubbed_run) -> None:
     quality_results_path, started = stubbed_run
     started["complete_prompt"].side_effect = MistralRequestError("429 rate limited")
 
-    with pytest.raises(MistralRequestError):
-        quality_cli._run()
+    quality_cli._run()
 
     rows = read_rows(quality_results_path)
     assert len(rows) == len(CLASSIFICATION_TASK_SUITE)
     assert {row["provider"] for row in rows} == {"local"}
     assert len({row["run_id"] for row in rows}) == 1
+
+
+def test_run_skips_a_provider_absent_from_quality_providers(
+    stubbed_run, capsys
+) -> None:
+    quality_results_path, started = stubbed_run
+    _enable_google(started)
+    started["load_settings"].return_value = dataclasses.replace(
+        started["load_settings"].return_value, quality_providers=frozenset({"local"})
+    )
+
+    quality_cli._run()
+
+    assert started["check_model"].call_count == 0
+    assert started["google_check_model"].call_count == 0
+    rows = read_rows(quality_results_path)
+    assert {row["provider"] for row in rows} == {"local"}
+    stderr = capsys.readouterr().err
+    assert "mistral skipped: not enabled in QUALITY_PROVIDERS" in stderr
+    assert "google skipped: not enabled in QUALITY_PROVIDERS" in stderr
 
 
 def test_run_skips_google_when_the_key_is_unset(stubbed_run, capsys) -> None:
@@ -1103,18 +1097,26 @@ def test_google_max_tokens_under_the_cap_scores_truncated_max_tokens_not_context
         assert row["failure_reason"] == "truncated_max_tokens"
 
 
-def test_google_blocked_error_aborts_the_run_and_exits_1(stubbed_run, capsys) -> None:
-    _, started = stubbed_run
+def test_google_blocked_error_skips_google_without_aborting_the_run(
+    stubbed_run, capsys
+) -> None:
+    # Superseded by the QUALITY_PROVIDERS scope change: every cloud-provider
+    # failure -- pre-flight or mid-batch -- is now a skip, never an abort, so
+    # a blocked generation no longer costs the mistral/local rows already
+    # written.
+    quality_results_path, started = stubbed_run
     _enable_google(started)
     started["google_complete_prompt"].side_effect = GoogleBlockedError(
         "blocked: SAFETY"
     )
 
-    with pytest.raises(SystemExit) as exit_info:
-        quality_cli.main()
+    quality_cli.main()
 
-    assert exit_info.value.code == 1
-    assert "SAFETY" in capsys.readouterr().err
+    stderr = capsys.readouterr().err
+    assert "google skipped" in stderr
+    assert "SAFETY" in stderr
+    rows = read_rows(quality_results_path)
+    assert {row["provider"] for row in rows} == {"local", "mistral"}
 
 
 def test_google_context_refusal_scores_truncated_context_without_a_generate_call(

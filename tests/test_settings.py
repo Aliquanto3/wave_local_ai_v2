@@ -14,6 +14,7 @@ from wave_local_ai_v2.settings import (
     DEFAULT_QUALITY_RESULTS_PATH,
     DEFAULT_RUNTIME_REFERENCE_PATH,
     DEFAULT_SCOPE3_WH_PER_TOKEN,
+    KNOWN_QUALITY_PROVIDERS,
     Settings,
     SettingsError,
     load_settings,
@@ -343,6 +344,56 @@ def test_repr_omits_the_mistral_api_key_but_attribute_access_keeps_it(
 
     assert secret not in repr(settings)
     assert settings.mistral_api_key == secret
+
+
+def test_load_settings_defaults_quality_providers_to_all_three(
+    monkeypatch, tmp_path: Path
+) -> None:
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    server_path = tmp_path / "llama-server.exe"
+    server_path.write_text("")
+
+    monkeypatch.setenv("SLM_MODELS_DIR", str(models_dir))
+    monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
+    monkeypatch.delenv("QUALITY_PROVIDERS", raising=False)
+
+    settings = load_settings()
+
+    assert settings.quality_providers == KNOWN_QUALITY_PROVIDERS
+
+
+def test_load_settings_reads_a_restricted_quality_providers_list(
+    monkeypatch, tmp_path: Path
+) -> None:
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    server_path = tmp_path / "llama-server.exe"
+    server_path.write_text("")
+
+    monkeypatch.setenv("SLM_MODELS_DIR", str(models_dir))
+    monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
+    monkeypatch.setenv("QUALITY_PROVIDERS", "local,google")
+
+    settings = load_settings()
+
+    assert settings.quality_providers == {"local", "google"}
+
+
+def test_load_settings_refuses_an_unrecognised_quality_provider(
+    monkeypatch, tmp_path: Path
+) -> None:
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    server_path = tmp_path / "llama-server.exe"
+    server_path.write_text("")
+
+    monkeypatch.setenv("SLM_MODELS_DIR", str(models_dir))
+    monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
+    monkeypatch.setenv("QUALITY_PROVIDERS", "local,anthropic")
+
+    with pytest.raises(SettingsError, match="anthropic"):
+        load_settings()
 
 
 def test_repr_omits_the_google_api_key_but_attribute_access_keeps_it(

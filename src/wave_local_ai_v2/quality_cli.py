@@ -10,10 +10,17 @@ The two cloud providers share one dispatch shape (`_run_cloud_batch`, fed a
 provider-specific per-item completion function, call-path builder and price
 table) rather than two copy-pasted `_run_..._suite`/`_..._call_path`/
 `_..._batch_fields` triplets -- the cloud subject is selectable by provider,
-not hard-wired to Mistral. Mistral's key is required (its absence aborts the
-run before any network call); Google's is optional (its absence skips only
-its own batch), so the two are still wired into `_run` at different points
-rather than through one uniform loop.
+not hard-wired to Mistral.
+
+The provider *set* is itself configuration (`settings.QUALITY_PROVIDERS`).
+Both cloud providers are optional: a provider absent from that set, missing
+its API key, or failing its pre-flight/batch call (`_try_run_cloud_provider`,
+keyed by `_CLOUD_PROVIDERS`) is skipped with one stderr line rather than
+aborting the run -- the local batch is the only one whose own failure still
+does. This was a live-run finding: this project's Mistral workspace sits on
+the Free tier, whose rate floor 429s a request burst like this suite's
+20-item loop; a provider that fails there should not discard local rows that
+already succeeded.
 """
 
 from __future__ import annotations
@@ -138,11 +145,11 @@ def main() -> None:
         # problem and belongs on stderr as one line, not as a traceback.
         OSError,
         roster.RosterError,
-        MistralRequestError,
-        # GoogleRequestError alone: ModelUnavailableError, GoogleBlockedError
-        # and ContextWindowExceededError all subclass it, same widening rule
-        # already applied for MistralRequestError above.
-        google_client.GoogleRequestError,
+        # MistralRequestError and google_client.GoogleRequestError are
+        # deliberately absent here: both cloud providers are optional and
+        # `_try_run_cloud_provider` catches its own provider's error type
+        # internally, printing a skip line rather than letting it reach main.
+        # Only a local-suite failure still aborts the whole run.
         LocalCompletionError,
         SuiteGateError,
     ) as exc:
@@ -157,25 +164,13 @@ def _run() -> None:
     # rows a given cloud row was scored against.
     run_id = new_run_id()
     provenance_fields = provenance.capture_provenance()
-    # Every pre-condition is checked before the (expensive) local suite runs,
-    # cheapest first: the three offline ones cost nothing, and the catalog call is
-    # the only one that needs the network. The order still matters even though a
-    # cloud failure no longer discards the local rows: it avoids paying for a
-    # multi-minute local run that could never have been completed anyway.
-    if not settings.mistral_api_key:
-        raise SettingsError("MISTRAL_API_KEY is not set")
     # Loaded once per run, not once per row: raises before any HTTP call is made.
     loaded_roster = roster.load_roster(settings.roster_path)
     roster_entry = roster.resolve_entry(loaded_roster, settings.roster_entry_id)
     model_path = _local_model_path(settings, roster_entry)
-    # Also offline, also cheap: a refused suite (missing/inconsistent tags) must
-    # abort before the network catalog call, let alone the multi-minute local run.
+    # Offline, cheap: a refused suite (missing/inconsistent tags) must abort
+    # before the multi-minute local run, let alone any network call.
     gate_result = suite_gate.gate_suite(CLASSIFICATION_TASK_SUITE)
-    deprecation_notice = mistral_client.check_model_available(settings.mistral_api_key)
-    if deprecation_notice:
-        # A retirement date is news, not a failure: the model still answers until
-        # then. stderr keeps stdout to the accuracy lines the operator parses.
-        print(deprecation_notice, file=sys.stderr)
 
     # Refuses (roster.RosterError) before any process spawns when
     # settings.host_n_cpu_moe cannot be applied to roster_entry -- the check
@@ -234,69 +229,157 @@ def _run() -> None:
         batch_fields=_local_batch_fields(settings, local_energy, local_completions),
     )
 
-    cloud_completions, cloud_call_path, cloud_batch_fields, _ = _run_cloud_batch(
+    for provider in ("mistral", "google"):
+        _try_run_cloud_provider(
+            provider,
+            settings,
+            run_id=run_id,
+            gate_result=gate_result,
+            provenance_fields=provenance_fields,
+            roster_entry=roster_entry,
+            roster_version=loaded_roster.roster_version,
+            fiche_hash=fiche_hash_value,
+        )
+
+
+def _mistral_batch(
+    settings: Settings, api_key: str
+) -> tuple[
+    str, dict[str, Any], list[_Completion], dict[str, Any], dict[str, Any], None
+]:
+    deprecation_notice = mistral_client.check_model_available(api_key)
+    if deprecation_notice:
+        # A retirement date is news, not a failure: the model still answers
+        # until then. stderr keeps stdout to the accuracy lines the operator
+        # parses.
+        print(deprecation_notice, file=sys.stderr)
+    completions, call_path_fields, batch_fields, _ = _run_cloud_batch(
         settings,
-        settings.mistral_api_key,
+        api_key,
         mistral_client.MODEL,
         cost.PRICE_TABLES["mistral"],
         _mistral_complete_item,
         _mistral_call_path,
     )
+    return (
+        mistral_client.MODEL,
+        CLOUD_SAMPLING,
+        completions,
+        call_path_fields,
+        batch_fields,
+        None,
+    )
+
+
+def _google_batch(
+    settings: Settings, api_key: str
+) -> tuple[
+    str,
+    dict[str, Any],
+    list[_Completion],
+    dict[str, Any],
+    dict[str, Any],
+    list[dict[str, Any]],
+]:
+    model_info = google_client.check_model_available(api_key)
+    completions, call_path_fields, batch_fields, extra_row_fields = _run_cloud_batch(
+        settings,
+        api_key,
+        google_client.MODEL,
+        cost.PRICE_TABLES["google"],
+        _make_google_complete_item(model_info),
+        _google_call_path,
+        extra_row_fields_fn=lambda response: _google_extra_fields(response, model_info),
+    )
+    return (
+        google_client.MODEL,
+        GOOGLE_SAMPLING,
+        completions,
+        call_path_fields,
+        batch_fields,
+        extra_row_fields,
+    )
+
+
+# The one dispatch table both cloud providers run through: an api-key getter,
+# the env var name to name in a skip line, the request-error type that means
+# "this provider failed, skip it" (never abort the run), and the batch runner
+# itself (pre-flight + suite loop, in one function so a mid-batch failure --
+# Google's GoogleBlockedError included -- is caught by the same except clause
+# as a pre-flight failure and never partially writes a row).
+_CLOUD_PROVIDERS: dict[str, dict[str, Any]] = {
+    "mistral": {
+        "api_key": lambda settings: settings.mistral_api_key,
+        "env_var": "MISTRAL_API_KEY",
+        "error_type": MistralRequestError,
+        "run_batch": _mistral_batch,
+    },
+    "google": {
+        "api_key": lambda settings: settings.google_api_key,
+        "env_var": "GOOGLE_API_KEY",
+        "error_type": google_client.GoogleRequestError,
+        "run_batch": _google_batch,
+    },
+}
+
+
+def _try_run_cloud_provider(
+    provider: str,
+    settings: Settings,
+    *,
+    run_id: str,
+    gate_result: SuiteGateResult,
+    provenance_fields: dict[str, Any],
+    roster_entry: roster.RosterEntry,
+    roster_version: int,
+    fiche_hash: str,
+) -> None:
+    """Run one cloud provider's batch, or skip it with one stderr line.
+
+    A configured provider whose key is missing or whose pre-flight/batch call
+    fails is skipped, never aborts the run: this is what makes the quality
+    CLI's cloud provider set configuration rather than two hard-wired,
+    all-or-nothing calls. Nothing about a skipped provider lands in the rows.
+    """
+    spec = _CLOUD_PROVIDERS[provider]
+    if provider not in settings.quality_providers:
+        print(f"{provider} skipped: not enabled in QUALITY_PROVIDERS", file=sys.stderr)
+        return
+
+    api_key = spec["api_key"](settings)
+    if not api_key:
+        print(f"{provider} skipped: {spec['env_var']} is not set", file=sys.stderr)
+        return
+
+    try:
+        (
+            model_id,
+            sampling,
+            completions,
+            call_path_fields,
+            batch_fields,
+            extra_row_fields,
+        ) = spec["run_batch"](settings, api_key)
+    except spec["error_type"] as exc:
+        print(f"{provider} skipped: {exc}", file=sys.stderr)
+        return
+
     _score_and_write(
         settings,
         run_id=run_id,
-        model_id=mistral_client.MODEL,
-        provider="mistral",
-        completions=cloud_completions,
-        sampling=CLOUD_SAMPLING,
+        model_id=model_id,
+        provider=provider,
+        completions=completions,
+        sampling=sampling,
         gate_result=gate_result,
         provenance_fields=provenance_fields,
         roster_entry=roster_entry,
-        roster_version=loaded_roster.roster_version,
-        call_path_fields=cloud_call_path,
-        fiche_hash=fiche_hash_value,
-        batch_fields=cloud_batch_fields,
+        roster_version=roster_version,
+        call_path_fields=call_path_fields,
+        fiche_hash=fiche_hash,
+        batch_fields=batch_fields,
+        extra_row_fields=extra_row_fields,
     )
-
-    if not settings.google_api_key:
-        # A skip, not a failure: the story's own acceptance criterion for this
-        # provider. Mistral's absence still aborts the run above -- no
-        # criterion asks that behavior to change.
-        print("google skipped: GOOGLE_API_KEY is not set", file=sys.stderr)
-    else:
-        model_info = google_client.check_model_available(settings.google_api_key)
-        (
-            google_completions,
-            google_call_path,
-            google_batch_fields,
-            google_extra_row_fields,
-        ) = _run_cloud_batch(
-            settings,
-            settings.google_api_key,
-            google_client.MODEL,
-            cost.PRICE_TABLES["google"],
-            _make_google_complete_item(model_info),
-            _google_call_path,
-            extra_row_fields_fn=lambda response: _google_extra_fields(
-                response, model_info
-            ),
-        )
-        _score_and_write(
-            settings,
-            run_id=run_id,
-            model_id=google_client.MODEL,
-            provider="google",
-            completions=google_completions,
-            sampling=GOOGLE_SAMPLING,
-            gate_result=gate_result,
-            provenance_fields=provenance_fields,
-            roster_entry=roster_entry,
-            roster_version=loaded_roster.roster_version,
-            call_path_fields=google_call_path,
-            fiche_hash=fiche_hash_value,
-            batch_fields=google_batch_fields,
-            extra_row_fields=google_extra_row_fields,
-        )
 
 
 def _local_call_path() -> dict[str, Any]:
