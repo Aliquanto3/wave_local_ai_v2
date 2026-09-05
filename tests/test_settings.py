@@ -14,6 +14,7 @@ from wave_local_ai_v2.settings import (
     DEFAULT_QUALITY_RESULTS_PATH,
     DEFAULT_RUNTIME_REFERENCE_PATH,
     DEFAULT_SCOPE3_WH_PER_TOKEN,
+    KNOWN_QUALITY_PROVIDERS,
     Settings,
     SettingsError,
     load_settings,
@@ -37,6 +38,7 @@ def test_load_settings_returns_populated_settings(monkeypatch, tmp_path: Path) -
     monkeypatch.setenv("RUNTIME_RESULTS_PATH", str(tmp_path / "runtime.jsonl"))
     monkeypatch.setenv("QUALITY_RESULTS_PATH", str(tmp_path / "quality.jsonl"))
     monkeypatch.setenv("MISTRAL_API_KEY", "fake-key")
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
 
     settings = load_settings()
 
@@ -45,6 +47,7 @@ def test_load_settings_returns_populated_settings(monkeypatch, tmp_path: Path) -
     assert settings.results_path == tmp_path / "runtime.jsonl"
     assert settings.quality_results_path == tmp_path / "quality.jsonl"
     assert settings.mistral_api_key == "fake-key"  # pragma: allowlist secret
+    assert settings.google_api_key == ""
     assert settings.runtime_repetitions == 5
     assert settings.runtime_cooldown_s == 10.0
     assert settings.runtime_warmup_count == 1
@@ -63,11 +66,13 @@ def test_load_settings_defaults_quality_path_and_mistral_key_when_unset(
     monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
     monkeypatch.delenv("QUALITY_RESULTS_PATH", raising=False)
     monkeypatch.delenv("MISTRAL_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
 
     settings = load_settings()
 
     assert settings.quality_results_path == Path(DEFAULT_QUALITY_RESULTS_PATH)
     assert settings.mistral_api_key == ""
+    assert settings.google_api_key == ""
 
 
 def test_load_settings_reads_the_repetition_protocol_overrides(
@@ -339,3 +344,68 @@ def test_repr_omits_the_mistral_api_key_but_attribute_access_keeps_it(
 
     assert secret not in repr(settings)
     assert settings.mistral_api_key == secret
+
+
+def test_load_settings_defaults_quality_providers_to_all_three(
+    monkeypatch, tmp_path: Path
+) -> None:
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    server_path = tmp_path / "llama-server.exe"
+    server_path.write_text("")
+
+    monkeypatch.setenv("SLM_MODELS_DIR", str(models_dir))
+    monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
+    monkeypatch.delenv("QUALITY_PROVIDERS", raising=False)
+
+    settings = load_settings()
+
+    assert settings.quality_providers == KNOWN_QUALITY_PROVIDERS
+
+
+def test_load_settings_reads_a_restricted_quality_providers_list(
+    monkeypatch, tmp_path: Path
+) -> None:
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    server_path = tmp_path / "llama-server.exe"
+    server_path.write_text("")
+
+    monkeypatch.setenv("SLM_MODELS_DIR", str(models_dir))
+    monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
+    monkeypatch.setenv("QUALITY_PROVIDERS", "local,google")
+
+    settings = load_settings()
+
+    assert settings.quality_providers == {"local", "google"}
+
+
+def test_load_settings_refuses_an_unrecognised_quality_provider(
+    monkeypatch, tmp_path: Path
+) -> None:
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    server_path = tmp_path / "llama-server.exe"
+    server_path.write_text("")
+
+    monkeypatch.setenv("SLM_MODELS_DIR", str(models_dir))
+    monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
+    monkeypatch.setenv("QUALITY_PROVIDERS", "local,anthropic")
+
+    with pytest.raises(SettingsError, match="anthropic"):
+        load_settings()
+
+
+def test_repr_omits_the_google_api_key_but_attribute_access_keeps_it(
+    tmp_path: Path,
+) -> None:
+    secret = "secret-value"  # pragma: allowlist secret
+    settings = Settings(
+        slm_models_dir=tmp_path,
+        llama_server_path=tmp_path / "llama-server.exe",
+        results_path=tmp_path / "runtime.jsonl",
+        google_api_key=secret,
+    )
+
+    assert secret not in repr(settings)
+    assert settings.google_api_key == secret

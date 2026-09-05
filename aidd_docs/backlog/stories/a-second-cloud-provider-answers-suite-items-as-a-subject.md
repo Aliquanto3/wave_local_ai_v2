@@ -1,6 +1,6 @@
 ---
 type: story
-status: ready
+status: done
 source: aidd_docs/backlog/epics/any-open-ended-output-carries-two-judges-or-an-honest-flag.md
 parent: aidd_docs/backlog/epics/any-open-ended-output-carries-two-judges-or-an-honest-flag.md
 depends_on: aidd_docs/backlog/stories/google-ai-studio-api-surface-is-confirmed-live.md
@@ -22,6 +22,27 @@ order: 2
 - Methodology 16: prompt and output token counts are read off the response, and a cost is derived from a dated list-price entry keyed by the literal dated model id. A model id with no entry fails at import time rather than costing at zero, the guard `cost.py` already applies to Mistral.
 - Running the existing classification suite against this provider writes contract-valid quality rows under its own `provider` value, distinguishable from `mistral`, reaching `append_row` with no change to the quality kind's required-field list.
 - The API key is read from the environment, is absent from the repo, from logs and from any `Settings` repr; a run with no key configured for this provider reports its rows skipped, not failed, per the PRD's credential-free reproduction criterion.
+
+## Delivered with two deviations
+
+- **"A run refuses to start when that dated id is absent"** — the *provider's
+  batch* refuses; the run continues. A mid-implementation scope change made
+  the cloud provider set configuration (`QUALITY_PROVIDERS`) and both cloud
+  providers optional-to-skip, so an absent id, a missing key, a rate limit or
+  a transport failure all degrade to one stderr line and zero rows for that
+  provider rather than aborting a run whose local batch already succeeded.
+  The refusal still names the id and both endpoints it checked. Recorded in
+  `aidd_docs/tasks/2026_09/2026_09_05_google-cloud-subject/phase-3.md`'s
+  Evidence section and in `CHANGELOG.md`.
+- **"A blocked generation is recorded as blocked"** — a blocked generation
+  raises `GoogleBlockedError` naming the `finishReason` verbatim and writes
+  no row. The four-value failure taxonomy has no honest home for "the
+  provider refused", and inventing a fifth `blocked` reason is a row-schema
+  change owned by `every-published-row-explains-and-reproduces-itself`, not
+  by this story. Deferral recorded at
+  `aidd_docs/memory/external/google-ai-studio-api.md`, "The taxonomy has no
+  value for a blocked generation". The story's other half holds: a block is
+  never published as unparseable output.
 
 ## Code it changes
 

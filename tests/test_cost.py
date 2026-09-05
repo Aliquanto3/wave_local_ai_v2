@@ -4,10 +4,12 @@ from unittest.mock import patch
 
 import pytest
 
-from wave_local_ai_v2 import cost, mistral_client
+from wave_local_ai_v2 import cost, google_client, mistral_client
 from wave_local_ai_v2.cost import (
+    GOOGLE_PRICE_TABLE,
     MISTRAL_PRICE_TABLE,
     NORMALIZATION_UNIT,
+    PRICE_TABLES,
     CostTableError,
     cloud_cost,
     cost_per_million_tokens,
@@ -74,6 +76,8 @@ def test_the_price_table_is_keyed_by_a_literal_id_not_by_the_model_constant() ->
     source = Path(cost.__file__).read_text(encoding="utf-8")
     assert '"mistral-small-2603": {' in source
     assert "mistral_client.MODEL: {" not in source
+    assert '"gemini-3.5-flash-lite": {' in source
+    assert "google_client.MODEL: {" not in source
 
 
 def test_an_unpriced_model_is_refused_at_import_rather_than_costed_at_zero() -> None:
@@ -91,6 +95,34 @@ def test_an_unpriced_model_is_refused_at_import_rather_than_costed_at_zero() -> 
         # The failed reload left the module half-built (every definition below
         # the guard is gone). Restore it under the real MODEL, whatever the
         # assertions above did.
+        importlib.reload(cost)
+
+
+def test_google_price_table_carries_one_dated_sourced_entry_for_the_model() -> None:
+    price = GOOGLE_PRICE_TABLE[google_client.MODEL]
+
+    assert price["input_per_million"] > 0
+    assert price["output_per_million"] > 0
+    assert price["currency"]
+    assert price["retrieved_at"]
+
+
+def test_price_tables_maps_provider_id_to_the_matching_table_by_identity() -> None:
+    assert PRICE_TABLES["mistral"] is MISTRAL_PRICE_TABLE
+    assert PRICE_TABLES["google"] is GOOGLE_PRICE_TABLE
+
+
+def test_an_unpriced_google_model_is_refused_at_import_rather_than_costed_at_zero() -> (
+    None
+):
+    try:
+        with (
+            patch.object(google_client, "MODEL", "gemini-not-in-the-table-2799"),
+            pytest.raises(RuntimeError, match="gemini-not-in-the-table-2799") as exc,
+        ):
+            importlib.reload(cost)
+        assert type(exc.value).__name__ == CostTableError.__name__
+    finally:
         importlib.reload(cost)
 
 

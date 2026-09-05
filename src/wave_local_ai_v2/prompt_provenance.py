@@ -14,11 +14,17 @@ import hashlib
 LOCAL_COMPLETION_ENDPOINT = "/completion"
 TEMPLATE_ID_NONE = "none"
 TEMPLATE_ID_MISTRAL_CHAT_MESSAGE = "mistral-chat-user-message"
+TEMPLATE_ID_GOOGLE_CHAT_MESSAGE = "google-generatecontent-user-part"
 
 # Documents the fixed structural wrapper the Mistral chat endpoint applies
 # around the literal prompt text; the prompt text itself is not part of the
 # hashed template.
 _MISTRAL_CHAT_MESSAGE_TEMPLATE = '{"role": "user", "content": <prompt>}'
+
+# Documents the fixed structural wrapper generateContent applies around the
+# literal prompt text: {"role": "user", "parts": [{"text": <prompt>}]}, one
+# entry in the "contents" list.
+_GOOGLE_CHAT_MESSAGE_TEMPLATE = '{"role": "user", "parts": [{"text": <prompt>}]}'
 
 PROMPT_CAPTURE_CAPTURED = "captured"
 PROMPT_CAPTURE_RECONSTRUCTED = "reconstructed"
@@ -36,6 +42,7 @@ def template_hash(template: str | None) -> str | None:
 
 
 MISTRAL_CHAT_MESSAGE_HASH = template_hash(_MISTRAL_CHAT_MESSAGE_TEMPLATE)
+GOOGLE_CHAT_MESSAGE_HASH = template_hash(_GOOGLE_CHAT_MESSAGE_TEMPLATE)
 
 
 def is_consistent(endpoint: str, prompt_template_id: str) -> bool:

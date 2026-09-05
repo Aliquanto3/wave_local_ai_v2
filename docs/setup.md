@@ -269,17 +269,31 @@ row's stored fiche — CPU, RAM, driver and OS never block a comparison).
 Point `RUNTIME_REFERENCE_PATH` at an empty or absent file to opt out: that
 is `not_comparable`, not a failure.
 
-**4.3 — second run, set `MISTRAL_API_KEY` first:**
+**4.3 — second run, set `MISTRAL_API_KEY` and `GOOGLE_API_KEY` first:**
 
 ```sh
 uv run wave-local-ai-v2-quality
 ```
 
 One row per (item, model) lands in `QUALITY_RESULTS_PATH` (default
-`aidd_docs/results/quality.jsonl`).
+`aidd_docs/results/quality.jsonl`) for each of three providers: `local`,
+`mistral`, `google`.
 
-`GOOGLE_API_KEY` can be left unset — nothing under `src/` reads it yet, and
-both commands run without it.
+Both cloud providers behave the same way when something goes wrong: a
+missing `MISTRAL_API_KEY` or `GOOGLE_API_KEY`, a provider absent from
+`QUALITY_PROVIDERS` (default `local,mistral,google`), or a provider's own
+pre-flight/batch call failing (a rate limit, a retired model id) all degrade
+to the same thing — one stderr line naming the provider and why, zero rows
+for it, and the run still exits `0` as long as the local batch succeeded.
+Nothing aborts the whole run for a cloud provider's sake. If `quality.jsonl`
+has no rows for a provider you expected, check stderr before assuming
+something is broken.
+
+Google's free tier caps at 15 requests/minute; each suite item costs two
+Google calls (a context-fits pre-flight, then the generation itself), so
+`quality_cli` paces those calls (`GOOGLE_REQUEST_PACING_S`) rather than
+firing all ~40 at once. A full google batch on the 20-item suite therefore
+takes a few minutes by design, not a hang.
 
 **4.4 — validate the fiches a run cited:**
 
