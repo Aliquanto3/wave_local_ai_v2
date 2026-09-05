@@ -238,8 +238,11 @@ def _run(resume_run_id: str | None = None) -> None:
     # above is still built (cheap, no process spawn) because the cloud
     # batches below cite the same fiche_hash regardless of whether local ran
     # this invocation.
-    if is_resume and _provider_batch_complete(settings, run_id, "local"):
-        print(f"local skipped: run {run_id} already complete", file=sys.stderr)
+    local_skip_reason = (
+        _resume_skip_reason(settings, run_id, "local") if is_resume else None
+    )
+    if local_skip_reason is not None:
+        print(f"local skipped: {local_skip_reason}", file=sys.stderr)
     else:
         # The tracker spans the whole suite loop (server launch, every item,
         # the server's own teardown when the `with` block exits), not per
@@ -288,18 +291,43 @@ def _run(resume_run_id: str | None = None) -> None:
         )
 
 
-def _provider_batch_complete(settings: Settings, run_id: str, provider: str) -> bool:
-    """A `(run_id, provider)` batch is complete when it already has one row per suite item.
+def _resume_skip_reason(settings: Settings, run_id: str, provider: str) -> str | None:
+    """Why `--resume` must not re-run this `(run_id, provider)` batch, or None to run it.
 
     Used only under `--resume`: a fresh run never has any prior rows for its
     own (freshly minted) run_id, so this is never called there.
+
+    Distinct item_ids, not a row count: the question is which of the suite's
+    items this `(run_id, provider)` pair already owns. Three cases, because a
+    batch is skipped for two different reasons and re-run for one:
+
+    - none of them: nothing was ever written, re-run the batch from item 1.
+    - all of them: the batch already cost what it cost, never pay again.
+    - some of them: re-running would append a second row for every item
+      already on disk, and `append_row` only ever appends -- so the pair
+      `(run_id, provider, item_id)` would stop being unique and a reader
+      (`verdict.select_quality_references` included) would meet the same item
+      twice. `plan.md`'s Decision holds that a partial batch is unreachable
+      (a mid-batch failure never reaches `_score_and_write`), but nothing
+      enforces it: `_score_and_write` appends row by row, so an interrupt or
+      a disk failure part-way through leaves exactly this state. Refuse it
+      rather than duplicate; per-item resume is out of scope by that same
+      Decision.
     """
-    existing = [
-        row
+    written_items = {
+        row.get("item_id")
         for row in results.rows_for_run(settings.quality_results_path, run_id)
         if row.get("provider") == provider
-    ]
-    return len(existing) >= len(CLASSIFICATION_TASK_SUITE)
+    }
+    if not written_items:
+        return None
+    if len(written_items) >= len(CLASSIFICATION_TASK_SUITE):
+        return f"run {run_id} already complete"
+    return (
+        f"run {run_id} is partially written "
+        f"({len(written_items)}/{len(CLASSIFICATION_TASK_SUITE)} items); "
+        f"re-running would duplicate them"
+    )
 
 
 def _mistral_batch(
@@ -412,8 +440,9 @@ def _try_run_cloud_provider(
         print(f"{provider} skipped: {spec['env_var']} is not set", file=sys.stderr)
         return
 
-    if is_resume and _provider_batch_complete(settings, run_id, provider):
-        print(f"{provider} skipped: run {run_id} already complete", file=sys.stderr)
+    skip_reason = _resume_skip_reason(settings, run_id, provider) if is_resume else None
+    if skip_reason is not None:
+        print(f"{provider} skipped: {skip_reason}", file=sys.stderr)
         return
 
     try:

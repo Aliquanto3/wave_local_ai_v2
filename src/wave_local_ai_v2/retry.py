@@ -17,10 +17,15 @@ class Pacer:
     """Sleeps just enough that consecutive `.wait()` calls are spaced `min_interval_s` apart.
 
     The first call never sleeps -- there is no previous call to space against.
-    `.wait()` advances its own notion of "last call time" by exactly
-    `min_interval_s` after a sleep (not by the wall clock read after sleeping),
-    so a slow test clock, or a slow real call, never compounds drift across a
-    batch.
+    After a sleep, `.wait()` advances its own notion of "last call time" by
+    exactly `min_interval_s` rather than by the wall clock read after sleeping,
+    so sleep overshoot never compounds drift across a batch. When no sleep was
+    needed -- the caller's own work already outlasted the interval -- it resets
+    to the clock instead: carrying the overrun forward as a credit would let
+    the next few calls fire back to back, which is precisely the burst the
+    pacing exists to prevent (a retry's backoff is the common way an item
+    outlasts the interval, so the credit would be spent on the provider that
+    just rate-limited us).
     """
 
     def __init__(
@@ -44,7 +49,11 @@ class Pacer:
         remaining = self._min_interval_s - elapsed
         if remaining > 0:
             self._sleep(remaining)
-        self._last_call_at = self._last_call_at + self._min_interval_s
+        # max, not a bare advance: with a sleep, `now` is behind
+        # `last + interval` and the advance wins (no drift from sleep
+        # overshoot); without one, `now` is ahead and the clock wins (no
+        # accumulated credit to spend as an unpaced burst).
+        self._last_call_at = max(now, self._last_call_at + self._min_interval_s)
 
 
 class RetryBudget:

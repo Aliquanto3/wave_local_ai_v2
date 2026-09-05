@@ -61,9 +61,9 @@ DEFAULT_KWH_PRICE_RECORDED_AT = "2026-02-01"
 DEFAULT_QUALITY_PROVIDERS = "local,mistral,google"
 KNOWN_QUALITY_PROVIDERS = frozenset({"local", "mistral", "google"})
 # Per-provider request pacing (a rate-limited run persists, resumes and never
-# re-pays): each item costs two Mistral requests? no -- one; Google costs two
-# (check_context_fits, complete_prompt), which is why its interval sits closer
-# to the free tier's 15 RPM ceiling. 4.1s narrows the already-validated 4.5s a
+# re-pays): a suite item costs one Mistral request but two Google ones
+# (check_context_fits, then complete_prompt), which is why Google's interval
+# sits closer to the free tier's 15 RPM ceiling. 4.1s narrows the 4.5s a
 # live run confirmed safe (see this story's plan.md Decisions/Risks) -- a
 # margin miss now degrades to a paced retry instead of a hard failure, which
 # is the whole point of this story existing.

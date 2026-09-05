@@ -1356,6 +1356,32 @@ def test_resume_reruns_an_incomplete_provider_from_scratch(stubbed_run) -> None:
     assert all(row["resumed"] is True for row in google_rows)
 
 
+def test_resume_refuses_a_partially_written_provider_instead_of_duplicating_it(
+    stubbed_run, capsys
+) -> None:
+    quality_results_path, started = stubbed_run
+    run_id = "resume-run-partial"
+    quality_cli._run(resume_run_id=run_id)
+    # Truncate mistral's half to five items, the state an interrupt or a disk
+    # failure part-way through _score_and_write's append loop leaves behind.
+    rows = read_rows(quality_results_path)
+    kept = [row for row in rows if row["provider"] == "local"] + [
+        row for row in rows if row["provider"] == "mistral"
+    ][:5]
+    quality_results_path.write_text(
+        "".join(f"{json.dumps(row)}\n" for row in kept), encoding="utf-8"
+    )
+    started["complete_prompt"].reset_mock()
+
+    quality_cli._run(resume_run_id=run_id)
+
+    assert started["complete_prompt"].call_count == 0
+    stderr = capsys.readouterr().err
+    assert f"mistral skipped: run {run_id} is partially written (5/" in stderr
+    # Not one new row: five mistral items would otherwise be on disk twice.
+    assert len(read_rows(quality_results_path)) == len(kept)
+
+
 def test_resume_with_a_never_used_run_id_behaves_like_a_fresh_run(
     stubbed_run,
 ) -> None:

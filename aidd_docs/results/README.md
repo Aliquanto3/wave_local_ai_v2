@@ -19,6 +19,22 @@ nothing appends to them on a benchmark run. The two files the CLIs actually appe
 (`.gitignore`). Tracking them instead would dirty the working tree on every run and would
 ship rows that do not belong to any acceptance criterion.
 
+## The published bundle is one schema behind the code
+
+The bundle's rows carry `schema_version` `"7"`; `row_contract.SCHEMA_VERSION` is `"8"`
+(`retries` and `resumed` became required on quality rows). The bytes are **not**
+back-filled to `"8"`: adding two fields to eighty rows produced on 2026-08-27 would make
+them rows no harness ever wrote, which is the discipline this file states twice below and
+which Story 19's acceptance requires. `tests/test_reference_bundle.py` therefore asserts
+the bundle against its own `PUBLISHED_BUNDLE_SCHEMA_VERSION` rather than the live
+constant, and separately that the published version is never *ahead* of the code.
+
+A row of this bundle read beside a row a current CLI writes is short those two fields.
+Regenerating it under `"8"` is a bench-time job on the Story 19 protocol (two runtime
+runs in a quiet thermal window, two quality runs, the validator proof, this README's
+tables rebuilt), filed in `aidd_docs/backlog/tech-debt.md`, not something a schema bump
+does to the published bytes on its way past.
+
 ## This regeneration (Story 19 + Story 20, 2026-08-27)
 
 Both files were regenerated from scratch under the current schema (`schema_version` `"7"`),

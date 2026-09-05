@@ -59,6 +59,23 @@ def test_pacer_sleeps_only_the_remainder_of_min_interval() -> None:
     assert sleep.calls == [3.0]
 
 
+def test_pacer_never_banks_an_overrun_as_a_burst_of_unpaced_calls() -> None:
+    # The retry case: one item outlasts the interval (a backoff sleep, a
+    # retryDelay hint), so its own wait needs no sleep. The next calls must
+    # still be spaced a full interval apart -- banking the overrun would fire
+    # them back to back at the provider that just rate-limited us.
+    clock = _FakeClock()
+    sleep = _RecordingSleep()
+    pacer = Pacer(5.0, clock=clock, sleep=sleep)
+
+    pacer.wait()  # no sleep, last_call_at = 0
+    clock.advance(30.0)  # the call itself took 30s: six intervals of overrun
+    pacer.wait()  # nothing to wait for
+    pacer.wait()  # immediately after: must sleep the full interval
+
+    assert sleep.calls == [5.0]
+
+
 def test_call_with_retry_succeeds_after_one_retryable_failure() -> None:
     sleep = _RecordingSleep()
     attempts_made = {"n": 0}
