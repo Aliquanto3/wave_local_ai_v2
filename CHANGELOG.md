@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A shared, provider-agnostic pacing/retry layer (`retry.py`: `Pacer`,
+  `RetryBudget`, `call_with_retry`) backs both cloud clients, which now raise
+  a typed `RetryableRequestError` (429/5xx for Mistral, 429/503 for Google,
+  carrying a parsed retry hint where the provider sends one) distinct from
+  their existing non-retryable errors. The quality CLI wires one `Pacer` +
+  one run-scoped `RetryBudget` per provider batch (`MISTRAL_REQUEST_PACING_S`
+  default `1.1`, `GOOGLE_REQUEST_PACING_S` default `4.1`,
+  `CLOUD_RETRY_MAX_ATTEMPTS` default `4`), replacing the unpaced Mistral loop
+  and the prior `GOOGLE_REQUEST_PACING_S` stopgap; a budget exhaustion still
+  skips that provider with one stderr line rather than aborting the run. A
+  new `--resume <run_id>` flag re-runs a prior invocation's id, skipping a
+  `(run_id, provider)` batch already fully written (`results.rows_for_run`)
+  and re-running an incomplete one from item 1 — never re-paying a cloud
+  provider for a batch it already finished. `retries` and `resumed` become
+  required on quality rows (`SCHEMA_VERSION` `"7"` → `"8"`).
 - Google AI Studio (`gemini-3.5-flash-lite`, pinned) added as a second cloud
   subject to the quality CLI, alongside Mistral, under the same pinning and
   reproducibility discipline (`google_client.py`; `GOOGLE_API_KEY`).
