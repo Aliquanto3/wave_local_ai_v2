@@ -25,6 +25,10 @@ Refreshed automatically by the memory hook. Do not edit by hand.
 - [aidd_docs/memory/project-brief.md](aidd_docs/memory/project-brief.md)
 - [aidd_docs/memory/testing.md](aidd_docs/memory/testing.md)
 - [aidd_docs/memory/vcs.md](aidd_docs/memory/vcs.md)
+
+Read on demand:
+
+- [aidd_docs/memory/external/google-ai-studio-api.md](aidd_docs/memory/external/google-ai-studio-api.md)
 <!-- files:end -->
 
 ## Maintaining it
