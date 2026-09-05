@@ -1,6 +1,6 @@
 ---
 objective: "The quality CLI runs local, Mistral and Google as three subjects against the classification suite, each batch persisted before the next, with Google's rows carrying its dated id, its API version, its read-only version snapshot and a list-price cost, under the same contract Mistral's rows already satisfy."
-status: in-progress
+status: implemented
 ---
 
 <!-- Fill or omit these sections; never add, rename, or reorder one. -->

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 <!-- Fill or omit these sections; never add, rename, or reorder one. -->
@@ -99,3 +99,58 @@ journey
 | 4    | `docs/setup.md` tells an operator both env vars matter and that a missing Google key degrades to a skip, not a failure |
 | 5    | `aidd_docs/memory/ecosystem.md` names Google as the second cloud subject |
 | 6    | `aidd_docs/memory/codebase-map.md` lists `google_client.py` |
+
+## Evidence (live run, 2026-09-05)
+
+Scope change from the product owner, mid-phase: the cloud provider set
+became configuration (`settings.QUALITY_PROVIDERS`), and both cloud
+providers moved from hard-required/optional-skip to a uniform optional-skip
+shape. See `feat(quality): make the cloud provider set configuration` on
+this branch. This changes what this phase's live run can honestly claim
+against the original three-provider acceptance text above.
+
+**Mistral — skipped, not run.** Two live attempts (`uv run
+wave-local-ai-v2-quality`, default `QUALITY_PROVIDERS`) both 429'd on the
+very first Mistral call (`code 1300`, "Rate limit exceeded"), immediately
+after a fresh ~1-minute local batch completed each time. The Mistral console
+confirmed the cause: this project's workspace is on the Free plan, with
+Billing usage at 0 — not a monthly-quota exhaustion, but the Free tier's own
+rate floor, low enough that this suite's unpaced 20-item loop 429s before a
+single completion lands. **Story 5** ("a rate-limited run persists, resumes
+and never re-pays") is the tracked fix; until then, an operator on a Free
+Mistral workspace should expect `mistral skipped: ...` on every run and set
+`QUALITY_PROVIDERS=local,google` (or add a Mistral payment method) rather
+than treat it as broken.
+
+**Google — succeeded after adding request pacing.** The first
+`QUALITY_PROVIDERS=local,google` attempt also 429'd
+(`RESOURCE_EXHAUSTED`, `generate_content_free_tier_requests`, limit 15):
+`google_client`'s design costs two requests per suite item
+(`check_context_fits` + `complete_prompt`) plus two for
+`check_model_available`, so a 20-item suite fires ~42 calls — well over
+Google's 15 requests/minute free-tier cap even though "20 items" reads as
+comfortably under it. Fixed in-scope with `GOOGLE_REQUEST_PACING_S` (4.5s
+between every Google request in `quality_cli`, mocked to a no-op in tests):
+a second attempt completed clean, `google accuracy=1.00`.
+
+**Run recorded** (`run_id=70b654faf73b49faae9012b6515e987b`,
+`QUALITY_PROVIDERS=local,google`): 20 local + 20 google rows, all
+`row_contract`-valid (checked programmatically). Local: accuracy 0.80,
+verdict `reproduced` (against the prior local reference), `cost_total≈0.000274`
+(kWh-derived). Google: accuracy 1.00, verdict `not_comparable` (no prior
+google-provider reference exists yet — honest, not fabricated, per the Test
+Scope's own edge case), `cost_total≈0.000372` (list-price-derived),
+`model_id=gemini-3.5-flash-lite`, `model_version=gemini-3.5-flash-lite`,
+`api_version=v1`.
+
+**Tech debt — three noise run_ids in the live store.** The two Mistral 429
+attempts and the one unpaced-Google 429 attempt each still ran and persisted
+a full local batch before failing (by design: local is written before any
+cloud call). These three run_ids carry only local rows and should be
+excluded from any future local-provider median/reproduction analysis over
+`aidd_docs/results/quality.jsonl` — they are real local runs, just not part
+of a completed three-provider comparison:
+
+- `3b685236fe70455dab1f65cbb5a68078`
+- `a9529fca36234085bb4e31bda576a52d`
+- `fbc4d63b6f3f4960a8d88dfdfd377ed5`

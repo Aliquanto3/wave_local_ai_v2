@@ -198,6 +198,9 @@ def stubbed_run(tmp_path, monkeypatch):
             "wave_local_ai_v2.quality_cli.google_client.check_context_fits",
             return_value=None,
         ),
+        # Otherwise every google-enabled test would burn real wall-clock time
+        # on GOOGLE_REQUEST_PACING_S -- see that constant's docstring.
+        "sleep": patch("wave_local_ai_v2.quality_cli.time.sleep", return_value=None),
         "capture_provenance": patch(
             "wave_local_ai_v2.quality_cli.provenance.capture_provenance",
             return_value={
@@ -1013,6 +1016,22 @@ def test_full_run_writes_one_row_per_item_per_provider_in_order(stubbed_run) -> 
     assert write_order[:n] == ["local"] * n
     assert write_order[n : 2 * n] == ["mistral"] * n
     assert write_order[2 * n :] == ["google"] * n
+
+
+def test_google_batch_paces_every_request_under_the_free_tier_rpm_cap(
+    stubbed_run,
+) -> None:
+    quality_results_path, started = stubbed_run
+    _enable_google(started)
+
+    quality_cli._run()
+
+    # Two paced calls per item (check_context_fits, complete_prompt) -- the
+    # cause of the live 429 this pacing exists to avoid.
+    assert started["sleep"].call_count == 2 * len(CLASSIFICATION_TASK_SUITE)
+    for call in started["sleep"].call_args_list:
+        assert call.args[0] == quality_cli.GOOGLE_REQUEST_PACING_S
+    assert {row["provider"] for row in read_rows(quality_results_path)} >= {"google"}
 
 
 def test_google_rows_carry_their_own_identity_sampling_and_cost(stubbed_run) -> None:

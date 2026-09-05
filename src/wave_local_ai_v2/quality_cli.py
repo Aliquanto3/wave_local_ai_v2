@@ -26,6 +26,7 @@ already succeeded.
 from __future__ import annotations
 
 import sys
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, TypedDict
@@ -113,6 +114,15 @@ GOOGLE_SAMPLING: dict[str, Any] = {
     "top_k": 1,
     "seed": QUALITY_SEED,
 }
+
+# A stopgap ahead of story 5's proper backoff/retry (a rate-limited run
+# persists, resumes and never re-pays). Each item costs two Google requests
+# (check_context_fits, complete_prompt), so a 20-item suite makes ~40 calls;
+# the free tier caps at 15 requests/minute, so fired with no pacing at all it
+# 429s partway through -- a live run confirmed this on 2026-09-05. 4.5s
+# keeps any 60s window under the cap with margin, mirroring the decision
+# file's own "pacing at 4 seconds between calls" recommendation.
+GOOGLE_REQUEST_PACING_S = 4.5
 
 
 class LocalCompletionError(RuntimeError):
@@ -515,6 +525,7 @@ def _make_google_complete_item(
     def complete_item(
         item: ClassificationItem, api_key: str
     ) -> tuple[_Completion, google_client.GoogleCompletion | None]:
+        time.sleep(GOOGLE_REQUEST_PACING_S)
         try:
             google_client.check_context_fits(
                 item["prompt"], api_key, model_info["input_token_limit"]
@@ -539,6 +550,7 @@ def _make_google_complete_item(
                 None,
             )
 
+        time.sleep(GOOGLE_REQUEST_PACING_S)
         response = google_client.complete_prompt(
             item["prompt"],
             api_key,

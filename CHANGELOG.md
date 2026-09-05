@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Google AI Studio (`gemini-3.5-flash-lite`, pinned) added as a second cloud
+  subject to the quality CLI, alongside Mistral, under the same pinning and
+  reproducibility discipline (`google_client.py`; `GOOGLE_API_KEY`).
+  `cost.GOOGLE_PRICE_TABLE` and `PRICE_TABLES` generalise the per-provider
+  cost lookup; `scoring.score_item` gains an optional `truncation_reason`
+  override, since Google can report fewer generated tokens than the cap it
+  enforced. The quality CLI's cloud provider set is itself configuration
+  (`QUALITY_PROVIDERS`, default `local,mistral,google`): a provider left out,
+  missing its key, or failing its own pre-flight/batch call is skipped —
+  one stderr line, zero rows — rather than aborting the whole run, a change
+  from Mistral's prior hard-required behavior, made after a live run found
+  this project's Mistral workspace rate-limited on its Free tier.
+
 - The classification suite reaches 20 items across `en`/`fr`/`de` (10/5/5,
   each language >=25% share): 5 natively-authored French and 5 German
   hand-written items added alongside the existing 10 English ones,
