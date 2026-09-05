@@ -8,6 +8,7 @@ from wave_local_ai_v2.mistral_client import (
     REQUEST_TIMEOUT_S,
     MistralRequestError,
     ModelUnavailableError,
+    RetryableRequestError,
     check_model_available,
     complete_prompt,
 )
@@ -188,6 +189,73 @@ def test_complete_prompt_raises_on_wrong_typed_prompt_tokens() -> None:
         pytest.raises(MistralRequestError, match="prompt_tokens"),
     ):
         complete_prompt("classify this", "fake-key", **SAMPLING, max_tokens=MAX_TOKENS)
+
+
+def test_complete_prompt_raises_retryable_on_a_429() -> None:
+    with (
+        patch(
+            "wave_local_ai_v2.mistral_client.requests.post",
+            return_value=MagicMock(status_code=429, text="rate limited", headers={}),
+        ),
+        pytest.raises(RetryableRequestError) as exc_info,
+    ):
+        complete_prompt("classify this", "fake-key", **SAMPLING, max_tokens=MAX_TOKENS)
+
+    assert exc_info.value.status_code == 429
+
+
+def test_complete_prompt_raises_retryable_on_a_500() -> None:
+    with (
+        patch(
+            "wave_local_ai_v2.mistral_client.requests.post",
+            return_value=MagicMock(status_code=500, text="server error", headers={}),
+        ),
+        pytest.raises(RetryableRequestError) as exc_info,
+    ):
+        complete_prompt("classify this", "fake-key", **SAMPLING, max_tokens=MAX_TOKENS)
+
+    assert exc_info.value.status_code == 500
+
+
+def test_complete_prompt_raises_plain_error_on_a_400() -> None:
+    with (
+        patch(
+            "wave_local_ai_v2.mistral_client.requests.post",
+            return_value=MagicMock(status_code=400, text="bad body", headers={}),
+        ),
+        pytest.raises(MistralRequestError) as exc_info,
+    ):
+        complete_prompt("classify this", "fake-key", **SAMPLING, max_tokens=MAX_TOKENS)
+
+    assert not isinstance(exc_info.value, RetryableRequestError)
+
+
+def test_complete_prompt_reads_retry_after_header_when_present() -> None:
+    with (
+        patch(
+            "wave_local_ai_v2.mistral_client.requests.post",
+            return_value=MagicMock(
+                status_code=429, text="", headers={"Retry-After": "7"}
+            ),
+        ),
+        pytest.raises(RetryableRequestError) as exc_info,
+    ):
+        complete_prompt("classify this", "fake-key", **SAMPLING, max_tokens=MAX_TOKENS)
+
+    assert exc_info.value.retry_after_s == 7.0
+
+
+def test_complete_prompt_retry_after_s_is_none_when_header_absent() -> None:
+    with (
+        patch(
+            "wave_local_ai_v2.mistral_client.requests.post",
+            return_value=MagicMock(status_code=429, text="", headers={}),
+        ),
+        pytest.raises(RetryableRequestError) as exc_info,
+    ):
+        complete_prompt("classify this", "fake-key", **SAMPLING, max_tokens=MAX_TOKENS)
+
+    assert exc_info.value.retry_after_s is None
 
 
 def test_model_id_is_dated_not_a_rotating_alias() -> None:

@@ -68,6 +68,40 @@ class ModelUnavailableError(MistralRequestError):
     """
 
 
+class RetryableRequestError(MistralRequestError):
+    """Raised on a 429 or 5xx: worth retrying, unlike every other non-200 status.
+
+    A subclass, not a sibling, for the same reason as `ModelUnavailableError`:
+    every existing `except MistralRequestError` keeps catching it. Carries
+    `status_code` and `retry_after_s` so a caller's `is_retryable`/
+    `retry_hint_s` (`retry.call_with_retry`) can decide without re-parsing
+    the response.
+    """
+
+    def __init__(
+        self, message: str, *, status_code: int, retry_after_s: float | None
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.retry_after_s = retry_after_s
+
+
+def _mistral_retry_hint(response: requests.Response) -> float | None:
+    """Read the standard `Retry-After` header (integer seconds), if present.
+
+    Not a live-confirmed Mistral behavior the way Google's `RetryInfo` is --
+    no memory file documents whether Mistral sends this header on a 429.
+    Absence just means `None`, falling back to backoff-only retry.
+    """
+    raw = response.headers.get("Retry-After")
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None
+
+
 def complete_prompt(
     prompt: str, api_key: str, *, temperature: float, random_seed: int, max_tokens: int
 ) -> MistralCompletion:
@@ -104,6 +138,13 @@ def complete_prompt(
     )
 
     if response.status_code != 200:
+        if response.status_code == 429 or response.status_code >= 500:
+            raise RetryableRequestError(
+                f"Mistral request failed with status {response.status_code}: "
+                f"{response.text[:500]}",
+                status_code=response.status_code,
+                retry_after_s=_mistral_retry_hint(response),
+            )
         raise MistralRequestError(
             f"Mistral request failed with status {response.status_code}: "
             f"{response.text[:500]}"

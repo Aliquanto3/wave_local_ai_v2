@@ -10,6 +10,7 @@ from wave_local_ai_v2.google_client import (
     GoogleBlockedError,
     GoogleRequestError,
     ModelUnavailableError,
+    RetryableRequestError,
     check_context_fits,
     check_model_available,
     complete_prompt,
@@ -137,6 +138,72 @@ def test_complete_prompt_surfaces_the_retry_delay_on_a_429() -> None:
         pytest.raises(GoogleRequestError, match="31s"),
     ):
         complete_prompt("classify this", "fake-key", **SAMPLING, max_tokens=MAX_TOKENS)
+
+
+def test_complete_prompt_raises_retryable_with_parsed_retry_delay_on_a_429() -> None:
+    body = {
+        "error": {
+            "status": "RESOURCE_EXHAUSTED",
+            "details": [
+                {
+                    "@type": "type.googleapis.com/google.rpc.RetryInfo",
+                    "retryDelay": "13s",
+                }
+            ],
+        }
+    }
+    with (
+        patch(
+            "wave_local_ai_v2.google_client.requests.post",
+            return_value=MagicMock(status_code=429, text="", json=lambda: body),
+        ),
+        pytest.raises(RetryableRequestError) as exc_info,
+    ):
+        complete_prompt("classify this", "fake-key", **SAMPLING, max_tokens=MAX_TOKENS)
+
+    assert exc_info.value.status_code == 429
+    assert exc_info.value.retry_after_s == 13.0
+
+
+def test_complete_prompt_retry_after_s_is_none_with_no_retry_info() -> None:
+    with (
+        patch(
+            "wave_local_ai_v2.google_client.requests.post",
+            return_value=MagicMock(
+                status_code=429, text="", json=lambda: {"error": {"details": []}}
+            ),
+        ),
+        pytest.raises(RetryableRequestError) as exc_info,
+    ):
+        complete_prompt("classify this", "fake-key", **SAMPLING, max_tokens=MAX_TOKENS)
+
+    assert exc_info.value.retry_after_s is None
+
+
+def test_complete_prompt_raises_retryable_on_a_503() -> None:
+    with (
+        patch(
+            "wave_local_ai_v2.google_client.requests.post",
+            return_value=MagicMock(status_code=503, text="high demand", json=dict),
+        ),
+        pytest.raises(RetryableRequestError) as exc_info,
+    ):
+        complete_prompt("classify this", "fake-key", **SAMPLING, max_tokens=MAX_TOKENS)
+
+    assert exc_info.value.status_code == 503
+
+
+def test_complete_prompt_raises_plain_error_on_a_400() -> None:
+    with (
+        patch(
+            "wave_local_ai_v2.google_client.requests.post",
+            return_value=MagicMock(status_code=400, text="bad body", json=dict),
+        ),
+        pytest.raises(GoogleRequestError) as exc_info,
+    ):
+        complete_prompt("classify this", "fake-key", **SAMPLING, max_tokens=MAX_TOKENS)
+
+    assert not isinstance(exc_info.value, RetryableRequestError)
 
 
 def test_complete_prompt_generated_tokens_defaults_to_zero_when_absent() -> None:
@@ -354,6 +421,21 @@ def test_check_context_fits_never_calls_generate_content() -> None:
         check_context_fits("short", "fake-key", input_token_limit=1_048_576)
 
     assert calls == [EXPECTED_COUNT_TOKENS_URL]
+
+
+def test_check_context_fits_raises_retryable_on_a_429_from_count_tokens() -> None:
+    with (
+        patch(
+            "wave_local_ai_v2.google_client.requests.post",
+            return_value=MagicMock(
+                status_code=429, text="", json=lambda: {"error": {"details": []}}
+            ),
+        ),
+        pytest.raises(RetryableRequestError) as exc_info,
+    ):
+        check_context_fits("short", "fake-key", input_token_limit=1_048_576)
+
+    assert exc_info.value.status_code == 429
 
 
 def test_complete_prompt_raises_on_non_200_and_malformed_bodies() -> None:
