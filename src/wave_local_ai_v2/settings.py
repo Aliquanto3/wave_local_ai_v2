@@ -73,6 +73,8 @@ class Settings:
     # repr=False: a traceback frame, a pytest assertion diff or a logged
     # Settings must not carry the credential. Attribute access is unaffected.
     mistral_api_key: str = field(default="", repr=False)
+    # Same reasoning and same repr=False as mistral_api_key above.
+    google_api_key: str = field(default="", repr=False)
     # The repetition protocol: N counted repetitions, a cooldown between them,
     # a warm-up count excluded from N. Defaults are the PRD's published values.
     runtime_repetitions: int = 5
@@ -125,9 +127,10 @@ def fiche_registry_dir_from_env() -> Path:
 def load_settings() -> Settings:
     """Load settings from the environment (`.env` included), validating paths exist.
 
-    `MISTRAL_API_KEY` is read but not required here: the runtime-only harness
-    (`__init__.py`) must keep working with no cloud credential configured at
-    all. The quality CLI validates it's non-empty at its own point of use.
+    `MISTRAL_API_KEY` and `GOOGLE_API_KEY` are read but not required here: the
+    runtime-only harness (`__init__.py`) must keep working with no cloud
+    credential configured at all. The quality CLI validates each at its own
+    point of use -- Mistral's absence aborts the run, Google's skips its batch.
     """
     load_dotenv()
 
@@ -147,6 +150,7 @@ def load_settings() -> Settings:
     )
     roster_entry_id = os.environ.get("ROSTER_ENTRY_ID", DEFAULT_ROSTER_ENTRY_ID)
     mistral_api_key = os.environ.get("MISTRAL_API_KEY", "")
+    google_api_key = os.environ.get("GOOGLE_API_KEY", "")
 
     runtime_repetitions = _require_numeric(
         "RUNTIME_REPETITIONS",
@@ -235,6 +239,7 @@ def load_settings() -> Settings:
         fiche_registry_dir=fiche_registry_dir,
         roster_entry_id=roster_entry_id,
         mistral_api_key=mistral_api_key,
+        google_api_key=google_api_key,
         runtime_repetitions=runtime_repetitions,
         runtime_cooldown_s=runtime_cooldown_s,
         runtime_warmup_count=runtime_warmup_count,
