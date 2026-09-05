@@ -34,7 +34,10 @@ from wave_local_ai_v2 import aggregation, prompt_provenance, timings
 # "7": `language_breakdown` (per-language accuracy/n/indicative) became
 # required on quality rows (Story 20: the-classification-suite-reaches-
 # twenty-items-across-three-languages).
-SCHEMA_VERSION = "7"
+# "8": `retries` and `resumed` became required on quality rows only (a
+# rate-limited run persists, resumes and never re-pays) -- the runtime row is
+# untouched, since resume and retry are quality-CLI-only in this story's scope.
+SCHEMA_VERSION = "8"
 
 # The schema version at which `fiche_hash` (and `verdict`) became required.
 # Fixed at "3" regardless of future `SCHEMA_VERSION` bumps: a stored row whose
@@ -212,6 +215,10 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             # scoring.score_item / score_suite
             "failure_reason",
             "failure_counts",
+            # retry.call_with_retry / quality_cli's --resume (Story: a
+            # rate-limited run persists, resumes and never re-pays)
+            "retries",
+            "resumed",
         }
     ),
 }

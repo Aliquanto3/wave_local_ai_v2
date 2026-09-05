@@ -3,7 +3,13 @@ from pathlib import Path
 
 import pytest
 
-from wave_local_ai_v2.results import append_row, captured_at, new_run_id, read_rows
+from wave_local_ai_v2.results import (
+    append_row,
+    captured_at,
+    new_run_id,
+    read_rows,
+    rows_for_run,
+)
 from wave_local_ai_v2.row_contract import RowContractError
 
 COMPLETE_QUALITY_ROW = {
@@ -81,6 +87,8 @@ COMPLETE_QUALITY_ROW = {
         "truncated_max_tokens": 0,
         "truncated_context": 0,
     },
+    "retries": 0,
+    "resumed": False,
 }
 
 
@@ -151,3 +159,26 @@ def test_read_rows_filters_by_schema_version(tmp_path: Path) -> None:
     append_row(path, "quality", row_v2)
 
     assert read_rows(path, schema_version="1") == [row_v1]
+
+
+def test_rows_for_run_returns_empty_list_when_the_store_is_absent(
+    tmp_path: Path,
+) -> None:
+    assert rows_for_run(tmp_path / "absent.jsonl", "run-1") == []
+
+
+def test_rows_for_run_returns_empty_list_for_an_unknown_run_id(tmp_path: Path) -> None:
+    path = tmp_path / "quality.jsonl"
+    append_row(path, "quality", COMPLETE_QUALITY_ROW)
+
+    assert rows_for_run(path, "run-unknown") == []
+
+
+def test_rows_for_run_filters_to_the_matching_run_id_only(tmp_path: Path) -> None:
+    path = tmp_path / "quality.jsonl"
+    row_a = {**COMPLETE_QUALITY_ROW, "run_id": "run-a"}
+    row_b = {**COMPLETE_QUALITY_ROW, "run_id": "run-b"}
+    append_row(path, "quality", row_a)
+    append_row(path, "quality", row_b)
+
+    assert rows_for_run(path, "run-a") == [row_a]

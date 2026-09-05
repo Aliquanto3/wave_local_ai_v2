@@ -25,6 +25,7 @@ already succeeded.
 
 from __future__ import annotations
 
+import argparse
 import sys
 import time
 from collections.abc import Callable
@@ -44,6 +45,7 @@ from wave_local_ai_v2 import (
     prompt_provenance,
     provenance,
     results,
+    retry,
     roster,
     row_contract,
     server,
@@ -115,14 +117,11 @@ GOOGLE_SAMPLING: dict[str, Any] = {
     "seed": QUALITY_SEED,
 }
 
-# A stopgap ahead of story 5's proper backoff/retry (a rate-limited run
-# persists, resumes and never re-pays). Each item costs two Google requests
-# (check_context_fits, complete_prompt), so a 20-item suite makes ~40 calls;
-# the free tier caps at 15 requests/minute, so fired with no pacing at all it
-# 429s partway through -- a live run confirmed this on 2026-09-05. 4.5s
-# keeps any 60s window under the cap with margin, mirroring the decision
-# file's own "pacing at 4 seconds between calls" recommendation.
-GOOGLE_REQUEST_PACING_S = 4.5
+# The exponential-backoff base for a retryable cloud failure with no
+# provider-supplied retry hint (retry.call_with_retry's base_delay_s). Not a
+# settings field: the pacing interval already governs steady-state request
+# spacing, this only shapes how quickly a single item's retries widen.
+_RETRY_BASE_DELAY_S = 1.0
 
 
 class LocalCompletionError(RuntimeError):
@@ -140,11 +139,33 @@ class _Completion(TypedDict):
     # Google's own call site sets this directly off finishReason / the
     # context pre-flight, since that comparison misclassifies its responses.
     truncation_reason: str | None
+    # Retries `retry.call_with_retry` took to produce this item's completion.
+    # 0 for local, which never retries (no `RetryableRequestError` type exists
+    # for the local /completion path).
+    retries: int
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="wave-local-ai-v2-quality")
+    parser.add_argument(
+        "--resume",
+        metavar="RUN_ID",
+        default=None,
+        help=(
+            "Resume a prior invocation's run_id: a provider whose rows for "
+            "that run_id are already complete is skipped, never re-paid for; "
+            "an incomplete one is re-run from item 1. Every row this "
+            "invocation writes is marked resumed=true, including a provider "
+            "resume re-ran from scratch."
+        ),
+    )
+    return parser.parse_args(argv)
 
 
 def main() -> None:
+    args = _parse_args()
     try:
-        _run()
+        _run(resume_run_id=args.resume)
     except (
         SettingsError,
         server.ServerStartupError,
@@ -167,12 +188,15 @@ def main() -> None:
         sys.exit(1)
 
 
-def _run() -> None:
+def _run(resume_run_id: str | None = None) -> None:
     settings = load_settings()
     # One id for the whole invocation: the local and cloud batches are two
     # halves of one comparison, and a reader must be able to tell which local
-    # rows a given cloud row was scored against.
-    run_id = new_run_id()
+    # rows a given cloud row was scored against. `--resume` reuses a prior
+    # invocation's id instead of minting a fresh one, so a provider's rows
+    # from that earlier invocation are recognizable as the same run.
+    run_id = resume_run_id or new_run_id()
+    is_resume = resume_run_id is not None
     provenance_fields = provenance.capture_provenance()
     # Loaded once per run, not once per row: raises before any HTTP call is made.
     loaded_roster = roster.load_roster(settings.roster_path)
@@ -209,47 +233,73 @@ def _run() -> None:
         run_fiche, settings.fiche_registry_dir
     )
 
-    # The tracker spans the whole suite loop (server launch, every item, the
-    # server's own teardown when the `with` block exits), not per item -- the
-    # same span `__init__.py`'s runtime harness measures over, and the same
-    # repeated-batch-value pattern `suite_accuracy` already uses.
-    local_completions, local_energy = measure_energy(
-        lambda: _run_local_suite(settings, flags),
-        country_iso_code=settings.emission_country_iso_code,
-    )
-    # Persisted before the cloud suite starts: a 429, a dropped connection or a
-    # malformed body would otherwise throw away the multi-minute local run and
-    # write zero rows. Both batches share one run_id, so a partial run is still
-    # recognizable as one session.
-    _score_and_write(
-        settings,
-        run_id=run_id,
-        # The entry the local half actually launched names itself: a row can
-        # never report one model while its `roster_entry_id` cites another.
-        model_id=roster_entry.display_id,
-        provider="local",
-        completions=local_completions,
-        sampling=LOCAL_SAMPLING,
-        gate_result=gate_result,
-        provenance_fields=provenance_fields,
-        roster_entry=roster_entry,
-        roster_version=loaded_roster.roster_version,
-        call_path_fields=_local_call_path(),
-        fiche_hash=fiche_hash_value,
-        batch_fields=_local_batch_fields(settings, local_energy, local_completions),
-    )
+    # `--resume` on a run_id whose local rows are already all on disk skips the
+    # local batch entirely, before the server is even launched: the fiche
+    # above is still built (cheap, no process spawn) because the cloud
+    # batches below cite the same fiche_hash regardless of whether local ran
+    # this invocation.
+    if is_resume and _provider_batch_complete(settings, run_id, "local"):
+        print(f"local skipped: run {run_id} already complete", file=sys.stderr)
+    else:
+        # The tracker spans the whole suite loop (server launch, every item,
+        # the server's own teardown when the `with` block exits), not per
+        # item -- the same span `__init__.py`'s runtime harness measures
+        # over, and the same repeated-batch-value pattern `suite_accuracy`
+        # already uses.
+        local_completions, local_energy = measure_energy(
+            lambda: _run_local_suite(settings, flags),
+            country_iso_code=settings.emission_country_iso_code,
+        )
+        # Persisted before the cloud suite starts: a 429, a dropped connection
+        # or a malformed body would otherwise throw away the multi-minute
+        # local run and write zero rows. Both batches share one run_id, so a
+        # partial run is still recognizable as one session.
+        _score_and_write(
+            settings,
+            run_id=run_id,
+            # The entry the local half actually launched names itself: a row
+            # can never report one model while its `roster_entry_id` cites
+            # another.
+            model_id=roster_entry.display_id,
+            provider="local",
+            completions=local_completions,
+            sampling=LOCAL_SAMPLING,
+            gate_result=gate_result,
+            provenance_fields=provenance_fields,
+            roster_entry=roster_entry,
+            roster_version=loaded_roster.roster_version,
+            call_path_fields=_local_call_path(),
+            fiche_hash=fiche_hash_value,
+            batch_fields=_local_batch_fields(settings, local_energy, local_completions),
+            resumed=is_resume,
+        )
 
     for provider in ("mistral", "google"):
         _try_run_cloud_provider(
             provider,
             settings,
             run_id=run_id,
+            is_resume=is_resume,
             gate_result=gate_result,
             provenance_fields=provenance_fields,
             roster_entry=roster_entry,
             roster_version=loaded_roster.roster_version,
             fiche_hash=fiche_hash_value,
         )
+
+
+def _provider_batch_complete(settings: Settings, run_id: str, provider: str) -> bool:
+    """A `(run_id, provider)` batch is complete when it already has one row per suite item.
+
+    Used only under `--resume`: a fresh run never has any prior rows for its
+    own (freshly minted) run_id, so this is never called there.
+    """
+    existing = [
+        row
+        for row in results.rows_for_run(settings.quality_results_path, run_id)
+        if row.get("provider") == provider
+    ]
+    return len(existing) >= len(CLASSIFICATION_TASK_SUITE)
 
 
 def _mistral_batch(
@@ -268,7 +318,7 @@ def _mistral_batch(
         api_key,
         mistral_client.MODEL,
         cost.PRICE_TABLES["mistral"],
-        _mistral_complete_item,
+        _make_mistral_complete_item(settings),
         _mistral_call_path,
     )
     return (
@@ -297,7 +347,7 @@ def _google_batch(
         api_key,
         google_client.MODEL,
         cost.PRICE_TABLES["google"],
-        _make_google_complete_item(model_info),
+        _make_google_complete_item(model_info, settings),
         _google_call_path,
         extra_row_fields_fn=lambda response: _google_extra_fields(response, model_info),
     )
@@ -338,6 +388,7 @@ def _try_run_cloud_provider(
     settings: Settings,
     *,
     run_id: str,
+    is_resume: bool,
     gate_result: SuiteGateResult,
     provenance_fields: dict[str, Any],
     roster_entry: roster.RosterEntry,
@@ -361,6 +412,10 @@ def _try_run_cloud_provider(
         print(f"{provider} skipped: {spec['env_var']} is not set", file=sys.stderr)
         return
 
+    if is_resume and _provider_batch_complete(settings, run_id, provider):
+        print(f"{provider} skipped: run {run_id} already complete", file=sys.stderr)
+        return
+
     try:
         (
             model_id,
@@ -370,12 +425,15 @@ def _try_run_cloud_provider(
             batch_fields,
             extra_row_fields,
         ) = spec["run_batch"](settings, api_key)
-    except (spec["error_type"], requests.RequestException) as exc:
-        # requests.RequestException alongside the provider's own error type: a
-        # connection reset or a read timeout is this provider failing exactly
-        # as a 429 or a retired id is, and it would otherwise reach main's
-        # OSError clause and abort the whole run -- the one thing this
-        # function exists to prevent.
+    except (
+        spec["error_type"],
+        requests.RequestException,
+        # A retry-budget exhaustion is this provider still failing, the same
+        # way a 429 that outlives its own retries always was -- caught
+        # alongside the provider's own error type and requests.RequestException
+        # rather than reaching main's OSError clause and aborting the run.
+        retry.RetryBudgetExhausted,
+    ) as exc:
         print(f"{provider} skipped: {exc}", file=sys.stderr)
         return
 
@@ -394,6 +452,7 @@ def _try_run_cloud_provider(
         fiche_hash=fiche_hash,
         batch_fields=batch_fields,
         extra_row_fields=extra_row_fields,
+        resumed=is_resume,
     )
 
 
@@ -482,41 +541,77 @@ def _run_local_suite(settings: Settings, flags: list[str]) -> list[_Completion]:
                     truncated=bool(response_json.get("stopped_limit", False)),
                     generated_tokens=response_json.get("tokens_predicted", 0),
                     truncation_reason=None,
+                    retries=0,
                 )
             )
 
     return completions
 
 
-def _mistral_complete_item(
-    item: ClassificationItem, api_key: str
-) -> tuple[_Completion, MistralCompletion]:
-    # The same cap the local half runs under (`n_predict` above): the suite
-    # declares one generation cap for every model it compares, and every row
-    # publishes it as what that row ran under. Sending it to only one provider
-    # would make the cloud rows' `max_output_tokens` a claim about a limit that
-    # was never applied.
-    response = mistral_client.complete_prompt(
-        item["prompt"],
-        api_key,
-        temperature=CLOUD_SAMPLING["temperature"],
-        random_seed=CLOUD_SAMPLING["random_seed"],
-        max_tokens=classification_suite.MAX_OUTPUT_TOKENS,
-    )
-    completion = _Completion(
-        content=response["content"],
-        # Both of Mistral's cut-short reasons, not just the cap one: which of
-        # the two it was is `generated_tokens` versus the suite's cap,
-        # decided in `score_item`'s default comparison (no override here).
-        truncated=response["finish_reason"] in mistral_client.TRUNCATING_FINISH_REASONS,
-        generated_tokens=response["generated_tokens"],
-        truncation_reason=None,
-    )
-    return completion, response
+def _make_mistral_complete_item(
+    settings: Settings,
+) -> Callable[[ClassificationItem, str], tuple[_Completion, MistralCompletion]]:
+    """Build this batch's per-item completion function, closed over one Pacer/RetryBudget pair.
+
+    A closure, not a plain function: a `Pacer` and a `RetryBudget` are built
+    once per batch and shared across every item, the same reason Google's
+    counterpart is a closure over `model_info`. The budget is run-scoped, not
+    per-item -- a batch's retries are spent as a shared pool.
+    """
+    pacer = retry.Pacer(settings.mistral_request_pacing_s, sleep=time.sleep)
+    budget = retry.RetryBudget(settings.cloud_retry_max_attempts)
+
+    def _is_retryable(exc: Exception) -> bool:
+        return isinstance(exc, mistral_client.RetryableRequestError)
+
+    def _retry_hint_s(exc: Exception) -> float | None:
+        return (
+            exc.retry_after_s
+            if isinstance(exc, mistral_client.RetryableRequestError)
+            else None
+        )
+
+    def complete_item(
+        item: ClassificationItem, api_key: str
+    ) -> tuple[_Completion, MistralCompletion]:
+        pacer.wait()
+        # The same cap the local half runs under (`n_predict` above): the
+        # suite declares one generation cap for every model it compares, and
+        # every row publishes it as what that row ran under. Sending it to
+        # only one provider would make the cloud rows' `max_output_tokens` a
+        # claim about a limit that was never applied.
+        response, retries_taken = retry.call_with_retry(
+            lambda: mistral_client.complete_prompt(
+                item["prompt"],
+                api_key,
+                temperature=CLOUD_SAMPLING["temperature"],
+                random_seed=CLOUD_SAMPLING["random_seed"],
+                max_tokens=classification_suite.MAX_OUTPUT_TOKENS,
+            ),
+            is_retryable=_is_retryable,
+            retry_hint_s=_retry_hint_s,
+            budget=budget,
+            base_delay_s=_RETRY_BASE_DELAY_S,
+            sleep=time.sleep,
+        )
+        completion = _Completion(
+            content=response["content"],
+            # Both of Mistral's cut-short reasons, not just the cap one: which
+            # of the two it was is `generated_tokens` versus the suite's cap,
+            # decided in `score_item`'s default comparison (no override here).
+            truncated=response["finish_reason"]
+            in mistral_client.TRUNCATING_FINISH_REASONS,
+            generated_tokens=response["generated_tokens"],
+            truncation_reason=None,
+            retries=retries_taken,
+        )
+        return completion, response
+
+    return complete_item
 
 
 def _make_google_complete_item(
-    model_info: google_client.GoogleModelInfo,
+    model_info: google_client.GoogleModelInfo, settings: Settings
 ) -> Callable[
     [ClassificationItem, str], tuple[_Completion, google_client.GoogleCompletion | None]
 ]:
@@ -524,16 +619,39 @@ def _make_google_complete_item(
 
     A closure, not a plain function, because Google's per-item call needs the
     pre-flight's `input_token_limit` -- known only after `check_model_available`
-    runs, once per batch, not once per item.
+    runs, once per batch, not once per item. Also closes over one `Pacer` and
+    one `RetryBudget`, shared across the whole batch: an item's own two
+    requests (context-fits, generateContent) take turns waiting on the same
+    pacer, and every item's retries draw from the same run-scoped budget.
     """
+    pacer = retry.Pacer(settings.google_request_pacing_s, sleep=time.sleep)
+    budget = retry.RetryBudget(settings.cloud_retry_max_attempts)
+
+    def _is_retryable(exc: Exception) -> bool:
+        return isinstance(exc, google_client.RetryableRequestError)
+
+    def _retry_hint_s(exc: Exception) -> float | None:
+        return (
+            exc.retry_after_s
+            if isinstance(exc, google_client.RetryableRequestError)
+            else None
+        )
 
     def complete_item(
         item: ClassificationItem, api_key: str
     ) -> tuple[_Completion, google_client.GoogleCompletion | None]:
-        time.sleep(GOOGLE_REQUEST_PACING_S)
+        pacer.wait()
+        context_retries = 0
         try:
-            google_client.check_context_fits(
-                item["prompt"], api_key, model_info["input_token_limit"]
+            _, context_retries = retry.call_with_retry(
+                lambda: google_client.check_context_fits(
+                    item["prompt"], api_key, model_info["input_token_limit"]
+                ),
+                is_retryable=_is_retryable,
+                retry_hint_s=_retry_hint_s,
+                budget=budget,
+                base_delay_s=_RETRY_BASE_DELAY_S,
+                sleep=time.sleep,
             )
         except google_client.ContextWindowExceededError:
             # Refused pre-flight, never sent to generateContent: this is the
@@ -551,19 +669,27 @@ def _make_google_complete_item(
                     truncated=True,
                     generated_tokens=0,
                     truncation_reason=FAILURE_REASON_TRUNCATED_CONTEXT,
+                    retries=context_retries,
                 ),
                 None,
             )
 
-        time.sleep(GOOGLE_REQUEST_PACING_S)
-        response = google_client.complete_prompt(
-            item["prompt"],
-            api_key,
-            temperature=GOOGLE_SAMPLING["temperature"],
-            top_p=GOOGLE_SAMPLING["top_p"],
-            top_k=GOOGLE_SAMPLING["top_k"],
-            seed=GOOGLE_SAMPLING["seed"],
-            max_tokens=classification_suite.MAX_OUTPUT_TOKENS,
+        pacer.wait()
+        response, generate_retries = retry.call_with_retry(
+            lambda: google_client.complete_prompt(
+                item["prompt"],
+                api_key,
+                temperature=GOOGLE_SAMPLING["temperature"],
+                top_p=GOOGLE_SAMPLING["top_p"],
+                top_k=GOOGLE_SAMPLING["top_k"],
+                seed=GOOGLE_SAMPLING["seed"],
+                max_tokens=classification_suite.MAX_OUTPUT_TOKENS,
+            ),
+            is_retryable=_is_retryable,
+            retry_hint_s=_retry_hint_s,
+            budget=budget,
+            base_delay_s=_RETRY_BASE_DELAY_S,
+            sleep=time.sleep,
         )
         # Read off finishReason directly, never generated_tokens versus the
         # cap: Google can report fewer generated tokens than the cap it
@@ -579,6 +705,7 @@ def _make_google_complete_item(
             truncation_reason=(
                 FAILURE_REASON_TRUNCATED_MAX_TOKENS if truncated else None
             ),
+            retries=context_retries + generate_retries,
         )
         return completion, response
 
@@ -787,6 +914,7 @@ def _score_and_write(
     call_path_fields: dict[str, Any],
     fiche_hash: str,
     batch_fields: dict[str, Any],
+    resumed: bool,
     extra_row_fields: list[dict[str, Any]] | None = None,
 ) -> None:
     scored_items = [
@@ -850,6 +978,8 @@ def _score_and_write(
             "indicative_reasons": list(gate_result["indicative_reasons"]),
             "failure_reason": scored["failure_reason"],
             "failure_counts": dict(failure_counts),
+            "retries": completions[index]["retries"],
+            "resumed": resumed,
         }
         # Extra, non-required keys (google rows' model_version/api_version):
         # applied after every contract field, never overriding one.
