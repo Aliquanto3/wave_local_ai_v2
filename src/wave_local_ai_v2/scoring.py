@@ -81,6 +81,7 @@ def score_item(
     truncated: bool,
     generated_tokens: int,
     max_output_tokens: int,
+    truncation_reason: str | None = None,
 ) -> ScoredItem:
     """Score one completion, naming why it failed when it did.
 
@@ -90,6 +91,17 @@ def score_item(
     label-free prose the completion could not be parsed into. A failed item
     is `correct=False` with `predicted_label=None` but stays in the suite's
     denominator -- it is scored, not dropped.
+
+    `truncation_reason`, when given and `truncated` is True, is used as-is
+    instead of the `generated_tokens >= max_output_tokens` comparison -- it
+    must be `FAILURE_REASON_TRUNCATED_MAX_TOKENS` or
+    `FAILURE_REASON_TRUNCATED_CONTEXT`, anything else is a caller bug. Some
+    providers (Google) report fewer generated tokens than the cap they
+    actually enforced, which makes the token-count comparison alone
+    misclassify a cap-truncated item as context-truncated; a caller that
+    already knows the cause from its own response shape passes it directly.
+    Every existing call site (Mistral, local) passes nothing and keeps
+    today's comparison unchanged.
     """
     if raw_completion.strip() == "":
         return ScoredItem(
@@ -101,11 +113,23 @@ def score_item(
         )
 
     if truncated:
-        reason = (
-            FAILURE_REASON_TRUNCATED_MAX_TOKENS
-            if generated_tokens >= max_output_tokens
-            else FAILURE_REASON_TRUNCATED_CONTEXT
-        )
+        if truncation_reason is not None:
+            if truncation_reason not in (
+                FAILURE_REASON_TRUNCATED_MAX_TOKENS,
+                FAILURE_REASON_TRUNCATED_CONTEXT,
+            ):
+                raise ValueError(
+                    f"truncation_reason must be "
+                    f"{FAILURE_REASON_TRUNCATED_MAX_TOKENS!r} or "
+                    f"{FAILURE_REASON_TRUNCATED_CONTEXT!r}, got {truncation_reason!r}"
+                )
+            reason = truncation_reason
+        else:
+            reason = (
+                FAILURE_REASON_TRUNCATED_MAX_TOKENS
+                if generated_tokens >= max_output_tokens
+                else FAILURE_REASON_TRUNCATED_CONTEXT
+            )
         return ScoredItem(
             item_id=item["item_id"],
             expected_label=item["expected_label"],

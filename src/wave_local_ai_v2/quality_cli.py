@@ -1,15 +1,25 @@
 """CLI entry point: score the classification task suite against one local SLM
-and one cloud model, writing one quality row per (task, model).
+and two cloud models, writing one quality row per (task, model).
 
 Deliberately collects none of the runtime harness's fields (fiche, timings,
 GPU stats, energy): a quality row must be readable on its own, without any
 hardware or runtime context, and vice versa (`aidd_docs/memory/architecture.md`:
 "the two are never merged into a single table").
+
+The two cloud providers share one dispatch shape (`_run_cloud_batch`, fed a
+provider-specific per-item completion function, call-path builder and price
+table) rather than two copy-pasted `_run_..._suite`/`_..._call_path`/
+`_..._batch_fields` triplets -- the cloud subject is selectable by provider,
+not hard-wired to Mistral. Mistral's key is required (its absence aborts the
+run before any network call); Google's is optional (its absence skips only
+its own batch), so the two are still wired into `_run` at different points
+rather than through one uniform loop.
 """
 
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, TypedDict
 
@@ -21,6 +31,7 @@ from wave_local_ai_v2 import (
     cost,
     emissions,
     fiche_registry,
+    google_client,
     mistral_client,
     prompt_provenance,
     provenance,
@@ -31,7 +42,10 @@ from wave_local_ai_v2 import (
     suite_gate,
     verdict,
 )
-from wave_local_ai_v2.classification_suite import CLASSIFICATION_TASK_SUITE
+from wave_local_ai_v2.classification_suite import (
+    CLASSIFICATION_TASK_SUITE,
+    ClassificationItem,
+)
 from wave_local_ai_v2.energy import (
     ENERGY_METHOD_UNAVAILABLE,
     EnergyResult,
@@ -40,7 +54,13 @@ from wave_local_ai_v2.energy import (
 from wave_local_ai_v2.hardware import build_fiche, capture_fiche
 from wave_local_ai_v2.mistral_client import MistralCompletion, MistralRequestError
 from wave_local_ai_v2.results import append_row, captured_at, new_run_id
-from wave_local_ai_v2.scoring import score_item, score_suite, score_suite_by_language
+from wave_local_ai_v2.scoring import (
+    FAILURE_REASON_TRUNCATED_CONTEXT,
+    FAILURE_REASON_TRUNCATED_MAX_TOKENS,
+    score_item,
+    score_suite,
+    score_suite_by_language,
+)
 from wave_local_ai_v2.settings import Settings, SettingsError, load_settings
 from wave_local_ai_v2.suite_gate import SuiteGateError, SuiteGateResult
 
@@ -75,6 +95,18 @@ CLOUD_SAMPLING: dict[str, Any] = {
     "random_seed": QUALITY_SEED,
 }
 
+# Distinct keys from both existing sampling blocks (parity with the
+# "random_seed" not in sampling / "presence_penalty" not in sampling test
+# pattern): a google row's sampling block is never confusable with a local or
+# mistral one just by inspecting its keys. temperature 0 alone is not
+# reproducible on this provider -- the seed is what makes it so.
+GOOGLE_SAMPLING: dict[str, Any] = {
+    "temperature": 0,
+    "top_p": 1,
+    "top_k": 1,
+    "seed": QUALITY_SEED,
+}
+
 
 class LocalCompletionError(RuntimeError):
     """Raised when a local llama-server /completion response has no usable content."""
@@ -86,6 +118,11 @@ class _Completion(TypedDict):
     content: str
     truncated: bool
     generated_tokens: int
+    # None on every existing (local, mistral) call site, which keeps today's
+    # generated_tokens >= max_output_tokens comparison in score_item.
+    # Google's own call site sets this directly off finishReason / the
+    # context pre-flight, since that comparison misclassifies its responses.
+    truncation_reason: str | None
 
 
 def main() -> None:
@@ -102,6 +139,10 @@ def main() -> None:
         OSError,
         roster.RosterError,
         MistralRequestError,
+        # GoogleRequestError alone: ModelUnavailableError, GoogleBlockedError
+        # and ContextWindowExceededError all subclass it, same widening rule
+        # already applied for MistralRequestError above.
+        google_client.GoogleRequestError,
         LocalCompletionError,
         SuiteGateError,
     ) as exc:
@@ -193,7 +234,14 @@ def _run() -> None:
         batch_fields=_local_batch_fields(settings, local_energy, local_completions),
     )
 
-    cloud_endpoint, cloud_completions, cloud_responses = _run_cloud_suite(settings)
+    cloud_completions, cloud_call_path, cloud_batch_fields, _ = _run_cloud_batch(
+        settings,
+        settings.mistral_api_key,
+        mistral_client.MODEL,
+        cost.PRICE_TABLES["mistral"],
+        _mistral_complete_item,
+        _mistral_call_path,
+    )
     _score_and_write(
         settings,
         run_id=run_id,
@@ -205,10 +253,50 @@ def _run() -> None:
         provenance_fields=provenance_fields,
         roster_entry=roster_entry,
         roster_version=loaded_roster.roster_version,
-        call_path_fields=_mistral_call_path(cloud_endpoint),
+        call_path_fields=cloud_call_path,
         fiche_hash=fiche_hash_value,
-        batch_fields=_cloud_batch_fields(settings, cloud_responses),
+        batch_fields=cloud_batch_fields,
     )
+
+    if not settings.google_api_key:
+        # A skip, not a failure: the story's own acceptance criterion for this
+        # provider. Mistral's absence still aborts the run above -- no
+        # criterion asks that behavior to change.
+        print("google skipped: GOOGLE_API_KEY is not set", file=sys.stderr)
+    else:
+        model_info = google_client.check_model_available(settings.google_api_key)
+        (
+            google_completions,
+            google_call_path,
+            google_batch_fields,
+            google_extra_row_fields,
+        ) = _run_cloud_batch(
+            settings,
+            settings.google_api_key,
+            google_client.MODEL,
+            cost.PRICE_TABLES["google"],
+            _make_google_complete_item(model_info),
+            _google_call_path,
+            extra_row_fields_fn=lambda response: _google_extra_fields(
+                response, model_info
+            ),
+        )
+        _score_and_write(
+            settings,
+            run_id=run_id,
+            model_id=google_client.MODEL,
+            provider="google",
+            completions=google_completions,
+            sampling=GOOGLE_SAMPLING,
+            gate_result=gate_result,
+            provenance_fields=provenance_fields,
+            roster_entry=roster_entry,
+            roster_version=loaded_roster.roster_version,
+            call_path_fields=google_call_path,
+            fiche_hash=fiche_hash_value,
+            batch_fields=google_batch_fields,
+            extra_row_fields=google_extra_row_fields,
+        )
 
 
 def _local_call_path() -> dict[str, Any]:
@@ -221,18 +309,35 @@ def _local_call_path() -> dict[str, Any]:
     }
 
 
-def _mistral_call_path(endpoint: str) -> dict[str, Any]:
+def _mistral_call_path(responses: list[MistralCompletion]) -> dict[str, Any]:
     """The four call-path fields of the Mistral chat path, endpoint as called.
 
-    Built here, beside the call that produced `endpoint`, rather than derived
-    from the `provider` string inside `_score_and_write`: the endpoint and the
-    template that endpoint applies are one fact, and a future third provider
-    must state its own rather than inherit Mistral's by falling off an `else`.
+    Built from the batch's own responses rather than a module constant: the
+    endpoint and the template that endpoint applies are one fact, sourced
+    from the module that actually made the call.
     """
     return {
-        "endpoint": endpoint,
+        "endpoint": responses[0]["endpoint"],
         "prompt_template_id": prompt_provenance.TEMPLATE_ID_MISTRAL_CHAT_MESSAGE,
         "prompt_template_hash": prompt_provenance.MISTRAL_CHAT_MESSAGE_HASH,
+        "prompt_capture": prompt_provenance.PROMPT_CAPTURE_CAPTURED,
+    }
+
+
+def _google_call_path(
+    _responses: list[google_client.GoogleCompletion | None],
+) -> dict[str, Any]:
+    """The four call-path fields of the Google generateContent path.
+
+    The endpoint is a fixed module constant here, unlike Mistral's: every
+    Google call in a batch hits the same URL, including the items whose
+    response is None (a context-fits refusal never reaches generateContent,
+    but the row still names the endpoint the batch as a whole targets).
+    """
+    return {
+        "endpoint": google_client.GENERATE_URL,
+        "prompt_template_id": prompt_provenance.TEMPLATE_ID_GOOGLE_CHAT_MESSAGE,
+        "prompt_template_hash": prompt_provenance.GOOGLE_CHAT_MESSAGE_HASH,
         "prompt_capture": prompt_provenance.PROMPT_CAPTURE_CAPTURED,
     }
 
@@ -278,47 +383,163 @@ def _run_local_suite(settings: Settings, flags: list[str]) -> list[_Completion]:
                     content=content,
                     truncated=bool(response_json.get("stopped_limit", False)),
                     generated_tokens=response_json.get("tokens_predicted", 0),
+                    truncation_reason=None,
                 )
             )
 
     return completions
 
 
-def _run_cloud_suite(
-    settings: Settings,
-) -> tuple[str, list[_Completion], list[MistralCompletion]]:
+def _mistral_complete_item(
+    item: ClassificationItem, api_key: str
+) -> tuple[_Completion, MistralCompletion]:
     # The same cap the local half runs under (`n_predict` above): the suite
     # declares one generation cap for every model it compares, and every row
     # publishes it as what that row ran under. Sending it to only one provider
     # would make the cloud rows' `max_output_tokens` a claim about a limit that
     # was never applied.
-    responses = [
-        mistral_client.complete_prompt(
+    response = mistral_client.complete_prompt(
+        item["prompt"],
+        api_key,
+        temperature=CLOUD_SAMPLING["temperature"],
+        random_seed=CLOUD_SAMPLING["random_seed"],
+        max_tokens=classification_suite.MAX_OUTPUT_TOKENS,
+    )
+    completion = _Completion(
+        content=response["content"],
+        # Both of Mistral's cut-short reasons, not just the cap one: which of
+        # the two it was is `generated_tokens` versus the suite's cap,
+        # decided in `score_item`'s default comparison (no override here).
+        truncated=response["finish_reason"] in mistral_client.TRUNCATING_FINISH_REASONS,
+        generated_tokens=response["generated_tokens"],
+        truncation_reason=None,
+    )
+    return completion, response
+
+
+def _make_google_complete_item(
+    model_info: google_client.GoogleModelInfo,
+) -> Callable[
+    [ClassificationItem, str], tuple[_Completion, google_client.GoogleCompletion | None]
+]:
+    """Build this batch's per-item completion function, closed over `model_info`.
+
+    A closure, not a plain function, because Google's per-item call needs the
+    pre-flight's `input_token_limit` -- known only after `check_model_available`
+    runs, once per batch, not once per item.
+    """
+
+    def complete_item(
+        item: ClassificationItem, api_key: str
+    ) -> tuple[_Completion, google_client.GoogleCompletion | None]:
+        try:
+            google_client.check_context_fits(
+                item["prompt"], api_key, model_info["input_token_limit"]
+            )
+        except google_client.ContextWindowExceededError:
+            # Refused pre-flight, never sent to generateContent: this is the
+            # only place `truncated_context` can honestly originate from on
+            # this provider (free-tier context overflow never surfaces as a
+            # finishReason -- the input-token quota's 429 always fires first).
+            # Non-blank placeholder content: score_item checks blankness
+            # before truncation, so an empty string here would score `empty`
+            # instead of the truncation_reason override below. Never
+            # published on the row -- score_item only reads it to decide the
+            # failure taxonomy.
+            return (
+                _Completion(
+                    content="[context window exceeded, no generateContent call made]",
+                    truncated=True,
+                    generated_tokens=0,
+                    truncation_reason=FAILURE_REASON_TRUNCATED_CONTEXT,
+                ),
+                None,
+            )
+
+        response = google_client.complete_prompt(
             item["prompt"],
-            settings.mistral_api_key,
-            temperature=CLOUD_SAMPLING["temperature"],
-            random_seed=CLOUD_SAMPLING["random_seed"],
+            api_key,
+            temperature=GOOGLE_SAMPLING["temperature"],
+            top_p=GOOGLE_SAMPLING["top_p"],
+            top_k=GOOGLE_SAMPLING["top_k"],
+            seed=GOOGLE_SAMPLING["seed"],
             max_tokens=classification_suite.MAX_OUTPUT_TOKENS,
         )
-        for item in CLASSIFICATION_TASK_SUITE
-    ]
-    # Every call hits the same endpoint within one run; the first response
-    # names it, sourced from the module that actually made the call rather
-    # than read off mistral_client's own constants at this call site.
-    endpoint = responses[0]["endpoint"]
-    completions = [
-        _Completion(
+        # Read off finishReason directly, never generated_tokens versus the
+        # cap: Google can report fewer generated tokens than the cap it
+        # actually enforced, which would misclassify a cap-truncated item as
+        # context-truncated under score_item's default comparison.
+        truncated = response["finish_reason"] == "MAX_TOKENS"
+        completion = _Completion(
             content=response["content"],
-            # Both of Mistral's cut-short reasons, not just the cap one: which
-            # of the two it was is `generated_tokens` versus the suite's cap,
-            # decided in `score_item`.
-            truncated=response["finish_reason"]
-            in mistral_client.TRUNCATING_FINISH_REASONS,
+            truncated=truncated,
             generated_tokens=response["generated_tokens"],
+            truncation_reason=(
+                FAILURE_REASON_TRUNCATED_MAX_TOKENS if truncated else None
+            ),
         )
+        return completion, response
+
+    return complete_item
+
+
+def _google_extra_fields(
+    response: google_client.GoogleCompletion | None,
+    model_info: google_client.GoogleModelInfo,
+) -> dict[str, Any]:
+    """The two non-required keys a google row carries beyond every other row's.
+
+    `model_version` falls back to the pre-flight's catalog `version` when the
+    response omitted `modelVersion` -- including when there was no response
+    at all (a context-fits refusal): the row still names the build the batch
+    ran against.
+    """
+    model_version = response["model_version"] if response is not None else None
+    return {
+        "model_version": model_version or model_info["version"],
+        "api_version": "v1",
+    }
+
+
+def _run_cloud_batch(
+    settings: Settings,
+    api_key: str,
+    model: str,
+    price_table: dict[str, cost.Price],
+    complete_item: Callable[[ClassificationItem, str], tuple[_Completion, Any]],
+    call_path_fields_fn: Callable[[list[Any]], dict[str, Any]],
+    extra_row_fields_fn: Callable[[Any], dict[str, Any]] = lambda _response: {},
+) -> tuple[list[_Completion], dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
+    """Run one cloud provider's suite loop, then derive its call-path and cost fields.
+
+    The one dispatch shape both cloud providers run through: `complete_item`
+    supplies the provider-specific per-item call, everything after the loop
+    (call-path identity, cost/energy) is generic over the raw responses it
+    collected. A `None` response (Google's context-fits refusal) costs
+    nothing -- known-zero, not unknown -- rather than making the whole
+    batch's token total undefined.
+    """
+    completions: list[_Completion] = []
+    responses: list[Any] = []
+    for item in CLASSIFICATION_TASK_SUITE:
+        completion, response = complete_item(item, api_key)
+        completions.append(completion)
+        responses.append(response)
+
+    prompt_tokens = [
+        response["prompt_tokens"] if response is not None else 0
         for response in responses
     ]
-    return endpoint, completions, responses
+    completion_tokens_total = sum(
+        response["generated_tokens"] if response is not None else 0
+        for response in responses
+    )
+    batch_fields = _cloud_batch_fields(
+        settings, model, price_table, prompt_tokens, completion_tokens_total
+    )
+    call_path_fields = call_path_fields_fn(responses)
+    extra_row_fields = [extra_row_fields_fn(response) for response in responses]
+    return completions, call_path_fields, batch_fields, extra_row_fields
 
 
 def _local_batch_fields(
@@ -365,34 +586,35 @@ def _local_batch_fields(
 
 
 def _cloud_batch_fields(
-    settings: Settings, responses: list[MistralCompletion]
+    settings: Settings,
+    model: str,
+    price_table: dict[str, cost.Price],
+    prompt_tokens: list[int | None],
+    completion_tokens_total: int,
 ) -> dict[str, Any]:
-    """The per-batch energy/emissions/cost fields shared by every mistral row.
+    """The per-batch energy/emissions/cost fields shared by every cloud row.
 
-    No on-machine energy exists to attribute to a network call: the three
-    CodeCarbon channels stay null/"unavailable", and energy_kwh/emissions_kg
-    instead come from the Scope-3 Wh-per-token formula, keyed to this batch's
-    total tokens (plan.md's Decisions).
+    Generic over `model`/`price_table` so one function serves both Mistral
+    and Google rather than being copy-pasted per provider (plan.md's
+    Decisions). No on-machine energy exists to attribute to a network call:
+    the three CodeCarbon channels stay null/"unavailable", and
+    energy_kwh/emissions_kg instead come from the Scope-3 Wh-per-token
+    formula, keyed to this batch's total tokens.
 
-    A response that returned no `prompt_tokens` makes the batch's input token
-    count unknown, not zero: every figure keyed to a token total -- the
-    Scope-3 energy and emissions estimate, the cost, the normalized rate --
-    degrades to `None` rather than silently pricing the prompts at nothing.
-    The price snapshot itself still lands on the row: it is what the provider
-    charges, not something this batch derived.
+    A `None` entry in `prompt_tokens` (an absent count on a real response)
+    makes the batch's input token count unknown, not zero: every figure keyed
+    to a token total -- the Scope-3 energy and emissions estimate, the cost,
+    the normalized rate -- degrades to `None` rather than silently pricing
+    the prompts at nothing. The price snapshot itself still lands on the row:
+    it is what the provider charges, not something this batch derived.
     """
-    prompt_tokens_total = cost.total_or_none(
-        response["prompt_tokens"] for response in responses
-    )
-    completion_tokens_total = sum(
-        response["generated_tokens"] for response in responses
-    )
+    prompt_tokens_total = cost.total_or_none(prompt_tokens)
     total_tokens = (
         prompt_tokens_total + completion_tokens_total
         if prompt_tokens_total is not None
         else None
     )
-    price = cost.MISTRAL_PRICE_TABLE[mistral_client.MODEL]
+    price = price_table[model]
     if total_tokens is None or prompt_tokens_total is None:
         energy_kwh: float | None = None
         emissions_kg: float | None = None
@@ -463,6 +685,7 @@ def _score_and_write(
     call_path_fields: dict[str, Any],
     fiche_hash: str,
     batch_fields: dict[str, Any],
+    extra_row_fields: list[dict[str, Any]] | None = None,
 ) -> None:
     scored_items = [
         score_item(
@@ -471,6 +694,7 @@ def _score_and_write(
             truncated=completion["truncated"],
             generated_tokens=completion["generated_tokens"],
             max_output_tokens=classification_suite.MAX_OUTPUT_TOKENS,
+            truncation_reason=completion["truncation_reason"],
         )
         for item, completion in zip(CLASSIFICATION_TASK_SUITE, completions, strict=True)
     ]
@@ -482,7 +706,9 @@ def _score_and_write(
     )
 
     rows: list[dict[str, Any]] = []
-    for item, scored in zip(CLASSIFICATION_TASK_SUITE, scored_items, strict=True):
+    for index, (item, scored) in enumerate(
+        zip(CLASSIFICATION_TASK_SUITE, scored_items, strict=True)
+    ):
         row = {
             "schema_version": row_contract.SCHEMA_VERSION,
             "run_id": run_id,
@@ -523,6 +749,10 @@ def _score_and_write(
             "failure_reason": scored["failure_reason"],
             "failure_counts": dict(failure_counts),
         }
+        # Extra, non-required keys (google rows' model_version/api_version):
+        # applied after every contract field, never overriding one.
+        if extra_row_fields is not None:
+            row.update(extra_row_fields[index])
         rows.append(row)
 
     # The verdict is per suite-run, not per item: every row of this

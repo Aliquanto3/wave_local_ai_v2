@@ -1,8 +1,8 @@
 """Cost: the two derivations (cloud list-price, local kWh-price), the
-normalization unit, and the Mistral price table.
+normalization unit, and the per-provider price tables.
 
-No live Mistral price API exists; the table below is a manually retrieved
-snapshot, dated.
+No live pricing API exists for either provider; the tables below are
+manually retrieved snapshots, dated.
 """
 
 from __future__ import annotations
@@ -10,12 +10,12 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import TypedDict
 
-from wave_local_ai_v2 import mistral_client
+from wave_local_ai_v2 import google_client, mistral_client
 
 NORMALIZATION_UNIT = "cost_per_million_total_tokens"
 
 
-class MistralPrice(TypedDict):
+class Price(TypedDict):
     input_per_million: float
     output_per_million: float
     currency: str
@@ -36,7 +36,7 @@ class CostTableError(RuntimeError):
 # project pins the dated id the alias resolved to when it was read live
 # (see mistral_client.py's docstring), so the rate is recorded here against
 # the dated id it was actually charged for.
-MISTRAL_PRICE_TABLE: dict[str, MistralPrice] = {
+MISTRAL_PRICE_TABLE: dict[str, Price] = {
     "mistral-small-2603": {
         "input_per_million": 0.15,
         "output_per_million": 0.60,
@@ -55,6 +55,35 @@ if mistral_client.MODEL not in MISTRAL_PRICE_TABLE:
         f"({mistral_client.MODEL!r}) -- add one before costing a batch run"
     )
 
+# Keyed by the literal id, never by `google_client.MODEL`, same rule and same
+# reason as MISTRAL_PRICE_TABLE above. Paid Standard tier -- the tier this
+# project's key is served on -- confirmed against Google's list price on
+# 2026-08-27 (aidd_docs/memory/external/google-ai-studio-api.md). Free-tier
+# runs cost nothing; that fact belongs on the row, not implied by a zero rate
+# here.
+GOOGLE_PRICE_TABLE: dict[str, Price] = {
+    "gemini-3.5-flash-lite": {
+        "input_per_million": 0.30,
+        "output_per_million": 2.50,
+        "currency": "USD",
+        "retrieved_at": "2026-08-27",
+    },
+}
+
+if google_client.MODEL not in GOOGLE_PRICE_TABLE:
+    raise CostTableError(
+        f"GOOGLE_PRICE_TABLE has no entry for google_client.MODEL "
+        f"({google_client.MODEL!r}) -- add one before costing a batch run"
+    )
+
+# Generic per-provider lookup for quality_cli's cloud dispatch table.
+# MISTRAL_PRICE_TABLE and GOOGLE_PRICE_TABLE stay public and unchanged in
+# shape -- this is an additional view onto them, not a replacement.
+PRICE_TABLES: dict[str, dict[str, Price]] = {
+    "mistral": MISTRAL_PRICE_TABLE,
+    "google": GOOGLE_PRICE_TABLE,
+}
+
 
 def total_or_none(values: Iterable[int | None]) -> int | None:
     """Sum `values`, or `None` if any one of them is absent.
@@ -72,9 +101,7 @@ def total_or_none(values: Iterable[int | None]) -> int | None:
     return sum(value for value in materialized if value is not None)
 
 
-def cloud_cost(
-    prompt_tokens: int, completion_tokens: int, price: MistralPrice
-) -> float:
+def cloud_cost(prompt_tokens: int, completion_tokens: int, price: Price) -> float:
     """Total cost of a cloud batch from its token counts and list price."""
     return (
         prompt_tokens / 1e6 * price["input_per_million"]

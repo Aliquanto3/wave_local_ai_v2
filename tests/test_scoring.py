@@ -1,3 +1,5 @@
+import pytest
+
 from wave_local_ai_v2.classification_suite import LABELS, ClassificationItem
 from wave_local_ai_v2.scoring import (
     normalize_label,
@@ -35,6 +37,7 @@ def _score(
     generated_tokens: int = 5,
     max_output_tokens: int = MAX_OUTPUT_TOKENS,
     expected_label: str = "billing",
+    truncation_reason: str | None = None,
 ):
     item = ClassificationItem(item_id="x", prompt="p", expected_label=expected_label)
     return score_item(
@@ -43,6 +46,7 @@ def _score(
         truncated=truncated,
         generated_tokens=generated_tokens,
         max_output_tokens=max_output_tokens,
+        truncation_reason=truncation_reason,
     )
 
 
@@ -110,6 +114,45 @@ def test_score_item_truncated_below_the_suites_cap_is_context_truncation() -> No
     assert scored["correct"] is False
     assert scored["predicted_label"] is None
     assert scored["failure_reason"] == "truncated_context"
+
+
+def test_score_item_truncation_reason_override_wins_over_the_token_comparison() -> None:
+    # generated_tokens=4 < max_output_tokens=8 would pick truncated_context by
+    # the default comparison -- Google can report fewer generated tokens than
+    # the cap it actually enforced, so a caller that already knows the cause
+    # from finishReason must be able to override it.
+    scored = _score(
+        "billi",
+        truncated=True,
+        generated_tokens=4,
+        max_output_tokens=8,
+        truncation_reason="truncated_max_tokens",
+    )
+
+    assert scored["failure_reason"] == "truncated_max_tokens"
+
+
+def test_score_item_truncation_reason_override_accepts_context_too() -> None:
+    scored = _score(
+        "billi",
+        truncated=True,
+        generated_tokens=8,
+        max_output_tokens=8,
+        truncation_reason="truncated_context",
+    )
+
+    assert scored["failure_reason"] == "truncated_context"
+
+
+def test_score_item_rejects_an_unrecognised_truncation_reason() -> None:
+    with pytest.raises(ValueError, match="truncation_reason"):
+        _score(
+            "billi",
+            truncated=True,
+            generated_tokens=4,
+            max_output_tokens=8,
+            truncation_reason="something_else",
+        )
 
 
 def test_score_suite_returns_zero_accuracy_for_empty_list() -> None:

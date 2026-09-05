@@ -6,10 +6,19 @@ from unittest.mock import DEFAULT, MagicMock, patch
 
 import pytest
 
-from wave_local_ai_v2 import classification_suite, mistral_client, quality_cli
+from wave_local_ai_v2 import (
+    classification_suite,
+    google_client,
+    mistral_client,
+    quality_cli,
+)
 from wave_local_ai_v2.classification_suite import CLASSIFICATION_TASK_SUITE
-from wave_local_ai_v2.cost import MISTRAL_PRICE_TABLE
+from wave_local_ai_v2.cost import GOOGLE_PRICE_TABLE, MISTRAL_PRICE_TABLE
 from wave_local_ai_v2.fiche_registry import read_fiche
+from wave_local_ai_v2.google_client import (
+    ContextWindowExceededError,
+    GoogleBlockedError,
+)
 from wave_local_ai_v2.mistral_client import MistralRequestError, ModelUnavailableError
 from wave_local_ai_v2.results import read_rows
 from wave_local_ai_v2.row_contract import SCHEMA_VERSION
@@ -36,6 +45,11 @@ FAKE_ENERGY_RESULT = {
 }
 
 FAKE_ROSTER_VERSION = 1
+
+GOOGLE_MODEL_INFO = {
+    "version": "3.5-flash-lite-07-2026",
+    "input_token_limit": 1_048_576,
+}
 
 # A minimal but structurally valid roster, independent of the tracked
 # aidd_docs/roster/models.json: these tests must not couple to its content.
@@ -160,6 +174,30 @@ def stubbed_run(tmp_path, monkeypatch):
             "wave_local_ai_v2.quality_cli.mistral_client.check_model_available",
             return_value=None,
         ),
+        # google_api_key stays "" by default (Settings' own default, unset
+        # above), so these three are dormant on every existing test -- the
+        # google branch in _run never calls them unless a test opts in via
+        # dataclasses.replace(..., google_api_key=...).
+        "google_check_model": patch(
+            "wave_local_ai_v2.quality_cli.google_client.check_model_available",
+            return_value=dict(GOOGLE_MODEL_INFO),
+        ),
+        "google_complete_prompt": patch(
+            "wave_local_ai_v2.quality_cli.google_client.complete_prompt",
+            return_value={
+                "content": "billing",
+                "endpoint": google_client.GENERATE_URL,
+                "finish_reason": "STOP",
+                "generated_tokens": 3,
+                "prompt_tokens": 12,
+                "total_tokens": 15,
+                "model_version": GOOGLE_MODEL_INFO["version"],
+            },
+        ),
+        "google_check_context_fits": patch(
+            "wave_local_ai_v2.quality_cli.google_client.check_context_fits",
+            return_value=None,
+        ),
         "capture_provenance": patch(
             "wave_local_ai_v2.quality_cli.provenance.capture_provenance",
             return_value={
@@ -177,6 +215,14 @@ def stubbed_run(tmp_path, monkeypatch):
 
     for p in patches.values():
         p.stop()
+
+
+def _enable_google(started: dict) -> None:
+    """Opt a test into the google batch by giving its stubbed settings a key."""
+    started["load_settings"].return_value = dataclasses.replace(
+        started["load_settings"].return_value,
+        google_api_key="fake-google-key",  # pragma: allowlist secret
+    )
 
 
 def test_run_writes_one_row_per_item_per_model(stubbed_run) -> None:
@@ -938,6 +984,175 @@ def test_a_cloud_failure_leaves_the_local_rows_on_disk(stubbed_run) -> None:
     assert len(rows) == len(CLASSIFICATION_TASK_SUITE)
     assert {row["provider"] for row in rows} == {"local"}
     assert len({row["run_id"] for row in rows}) == 1
+
+
+def test_run_skips_google_when_the_key_is_unset(stubbed_run, capsys) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    assert {row["provider"] for row in rows} == {"local", "mistral"}
+    assert len(rows) == 2 * len(CLASSIFICATION_TASK_SUITE)
+    assert "google skipped: GOOGLE_API_KEY is not set" in capsys.readouterr().err
+
+
+def test_full_run_writes_one_row_per_item_per_provider_in_order(stubbed_run) -> None:
+    quality_results_path, started = stubbed_run
+    _enable_google(started)
+    write_order: list[str] = []
+    real_append_row = quality_cli.append_row
+
+    def record_provider(path, kind, row):
+        write_order.append(row["provider"])
+        return real_append_row(path, kind, row)
+
+    with patch("wave_local_ai_v2.quality_cli.append_row", side_effect=record_provider):
+        quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    assert len(rows) == 3 * len(CLASSIFICATION_TASK_SUITE)
+    assert {row["provider"] for row in rows} == {"local", "mistral", "google"}
+    # Each batch's own rows are already on disk before the next batch's first
+    # network call: three contiguous blocks, local then mistral then google.
+    n = len(CLASSIFICATION_TASK_SUITE)
+    assert write_order[:n] == ["local"] * n
+    assert write_order[n : 2 * n] == ["mistral"] * n
+    assert write_order[2 * n :] == ["google"] * n
+
+
+def test_google_rows_carry_their_own_identity_sampling_and_cost(stubbed_run) -> None:
+    quality_results_path, started = stubbed_run
+    _enable_google(started)
+
+    quality_cli._run()
+
+    google_rows = [
+        r for r in read_rows(quality_results_path) if r["provider"] == "google"
+    ]
+    assert google_rows
+    items = len(CLASSIFICATION_TASK_SUITE)
+    prompt_tokens_total = 12 * items
+    completion_tokens_total = 3 * items
+    price = GOOGLE_PRICE_TABLE[google_client.MODEL]
+    expected_cost = (
+        prompt_tokens_total / 1e6 * price["input_per_million"]
+        + completion_tokens_total / 1e6 * price["output_per_million"]
+    )
+    for row in google_rows:
+        assert row["model_id"] == google_client.MODEL
+        assert row["endpoint"] == google_client.GENERATE_URL
+        assert row["prompt_template_id"] == "google-generatecontent-user-part"
+        sampling = row["sampling"]
+        assert sampling["temperature"] == 0
+        assert sampling["top_p"] == 1
+        assert sampling["top_k"] == 1
+        assert isinstance(sampling["seed"], int)
+        assert "random_seed" not in sampling
+        assert "presence_penalty" not in sampling
+        assert row["cost_total"] == pytest.approx(expected_cost)
+        assert row["cost_currency"] == price["currency"]
+        assert row["list_price_input_per_million"] == price["input_per_million"]
+        assert row["model_version"] == GOOGLE_MODEL_INFO["version"]
+        assert row["api_version"] == "v1"
+    # Confirm row_contract's required-field list is unchanged by this phase.
+    from wave_local_ai_v2.row_contract import REQUIRED_FIELDS
+
+    assert "model_version" not in REQUIRED_FIELDS["quality"]
+    assert "api_version" not in REQUIRED_FIELDS["quality"]
+
+
+def test_run_aborts_before_any_google_call_when_the_model_is_gone(
+    stubbed_run,
+) -> None:
+    quality_results_path, started = stubbed_run
+    _enable_google(started)
+    started["google_check_model"].side_effect = ModelUnavailableError("gone")
+
+    with pytest.raises(ModelUnavailableError):
+        quality_cli._run()
+
+    assert started["google_complete_prompt"].call_count == 0
+    rows = read_rows(quality_results_path)
+    # local + mistral already on disk, untouched by the google failure.
+    assert {row["provider"] for row in rows} == {"local", "mistral"}
+
+
+def test_google_max_tokens_under_the_cap_scores_truncated_max_tokens_not_context(
+    stubbed_run,
+) -> None:
+    quality_results_path, started = stubbed_run
+    _enable_google(started)
+    started["google_complete_prompt"].return_value = {
+        "content": "bi",
+        "endpoint": google_client.GENERATE_URL,
+        "finish_reason": "MAX_TOKENS",
+        "generated_tokens": 4,  # below the suite's cap
+        "prompt_tokens": 12,
+        "total_tokens": 16,
+        "model_version": GOOGLE_MODEL_INFO["version"],
+    }
+
+    quality_cli._run()
+
+    google_rows = [
+        r for r in read_rows(quality_results_path) if r["provider"] == "google"
+    ]
+    assert google_rows
+    for row in google_rows:
+        assert row["failure_reason"] == "truncated_max_tokens"
+
+
+def test_google_blocked_error_aborts_the_run_and_exits_1(stubbed_run, capsys) -> None:
+    _, started = stubbed_run
+    _enable_google(started)
+    started["google_complete_prompt"].side_effect = GoogleBlockedError(
+        "blocked: SAFETY"
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        quality_cli.main()
+
+    assert exit_info.value.code == 1
+    assert "SAFETY" in capsys.readouterr().err
+
+
+def test_google_context_refusal_scores_truncated_context_without_a_generate_call(
+    stubbed_run,
+) -> None:
+    quality_results_path, started = stubbed_run
+    _enable_google(started)
+    suite_ids = [item["item_id"] for item in CLASSIFICATION_TASK_SUITE]
+    refused_id = suite_ids[0]
+
+    def fits(prompt, api_key, input_token_limit, model=google_client.MODEL):
+        if prompt == next(
+            item["prompt"]
+            for item in CLASSIFICATION_TASK_SUITE
+            if item["item_id"] == refused_id
+        ):
+            raise ContextWindowExceededError("too long")
+
+    started["google_check_context_fits"].side_effect = fits
+
+    quality_cli._run()
+
+    google_rows = {
+        row["item_id"]: row
+        for row in read_rows(quality_results_path)
+        if row["provider"] == "google"
+    }
+    assert google_rows[refused_id]["failure_reason"] == "truncated_context"
+    assert google_rows[refused_id]["predicted_label"] is None
+    # The rest of the batch still generated normally.
+    other_rows = [row for iid, row in google_rows.items() if iid != refused_id]
+    assert other_rows
+    for row in other_rows:
+        assert row["failure_reason"] is None
+    assert (
+        started["google_complete_prompt"].call_count
+        == len(CLASSIFICATION_TASK_SUITE) - 1
+    )
 
 
 def test_local_rows_are_written_before_the_first_cloud_call(stubbed_run) -> None:
