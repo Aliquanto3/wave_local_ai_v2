@@ -6,6 +6,21 @@ status: done
 
 # Instruction: Google as the quality CLI's third batch
 
+> **Superseded in two places by a mid-phase scope change** (`feat(quality):
+> make the cloud provider set configuration`, recorded in phase-3's Evidence
+> section and in `CHANGELOG.md`). The cloud provider set became configuration
+> (`settings.QUALITY_PROVIDERS`) and both cloud providers moved to a uniform
+> optional-skip shape. What that changes below, and nothing else:
+>
+> - **User Journey, first node.** An unset `MISTRAL_API_KEY` no longer raises
+>   `SettingsError` before any network call: it skips the Mistral batch with
+>   one stderr line, exactly as an unset `GOOGLE_API_KEY` does.
+> - **Criterion 4.4.** A `GoogleBlockedError` raised mid-batch is no longer
+>   caught by `quality_cli.main` for an exit 1. It is caught by
+>   `_try_run_cloud_provider`, printed as one `google skipped: ...` stderr
+>   line, and the run exits 0 with the local and mistral rows intact. Same
+>   for every other cloud-provider failure, transport errors included.
+
 ## Architecture projection
 
 > Tree of the final files. ✅ create · ✏️ modify · ❌ delete

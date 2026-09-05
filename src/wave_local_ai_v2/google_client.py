@@ -36,27 +36,19 @@ REQUEST_TIMEOUT_S = 60
 # fast, before the quality CLI pays for a full run.
 CATALOG_TIMEOUT_S = 15
 
-# The full finishReason enum (21 values), from the decision file. MAX_TOKENS
-# is the caller's cap; the fifteen blocked/error values mean the provider
-# refused rather than answered. Every other non-STOP value has no honest
-# taxonomy home either, so it is treated the same as blocked for the purpose
-# of raising -- there is no third bucket to maintain.
-_TRUNCATING_FINISH_REASONS = frozenset({"MAX_TOKENS"})
-_BLOCKED_FINISH_REASONS = frozenset(
-    {
-        "SAFETY",
-        "RECITATION",
-        "LANGUAGE",
-        "BLOCKLIST",
-        "PROHIBITED_CONTENT",
-        "SPII",
-        "IMAGE_SAFETY",
-        "IMAGE_PROHIBITED_CONTENT",
-        "IMAGE_RECITATION",
-        "ESCALATION",
-    }
-)
-_OK_FINISH_REASONS = frozenset({"STOP"}) | _TRUNCATING_FINISH_REASONS
+# Two of the finishReason enum's 21 values (the full list is in the decision
+# file) are outcomes this project can score: STOP is an answer, MAX_TOKENS is
+# the caller's cap. Public like mistral_client.TRUNCATING_FINISH_REASONS, and
+# read by quality_cli for the same reason: a provider's protocol literals
+# belong to its own module.
+TRUNCATING_FINISH_REASONS = frozenset({"MAX_TOKENS"})
+# The other nineteen -- the fifteen blocked/error values (SAFETY, RECITATION,
+# BLOCKLIST, PROHIBITED_CONTENT, SPII, the IMAGE_* family, the tool-call
+# family, OTHER, ...) and every remaining non-STOP value -- all mean the
+# provider refused rather than answered, and none has an honest taxonomy home.
+# Membership is therefore decided by exclusion from the two below, not by a
+# second frozenset that would have to be kept in step with the enum.
+_OK_FINISH_REASONS = frozenset({"STOP"}) | TRUNCATING_FINISH_REASONS
 
 
 class GoogleRequestError(RuntimeError):
@@ -82,10 +74,10 @@ class ContextWindowExceededError(GoogleRequestError):
 class GoogleBlockedError(GoogleRequestError):
     """Raised when generation stopped for a reason the taxonomy has no value for.
 
-    Covers every `finishReason` in `_BLOCKED_FINISH_REASONS` and every value
-    outside `{"STOP", "MAX_TOKENS"}`. Publishing `empty` for these would claim
-    the model said nothing when the provider actually refused; this names the
-    `finishReason` verbatim instead.
+    Covers every `finishReason` outside `{"STOP", "MAX_TOKENS"}` -- the fifteen
+    blocked/error values and every other non-STOP value alike. Publishing
+    `empty` for these would claim the model said nothing when the provider
+    actually refused; this names the `finishReason` verbatim instead.
     """
 
 

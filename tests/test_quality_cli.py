@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import DEFAULT, MagicMock, patch
 
 import pytest
+import requests
 
 from wave_local_ai_v2 import (
     classification_suite,
@@ -1075,17 +1076,24 @@ def test_google_rows_carry_their_own_identity_sampling_and_cost(stubbed_run) -> 
     assert "api_version" not in REQUIRED_FIELDS["quality"]
 
 
-def test_run_aborts_before_any_google_call_when_the_model_is_gone(
-    stubbed_run,
+def test_run_skips_google_without_a_generate_call_when_the_model_is_gone(
+    stubbed_run, capsys
 ) -> None:
     quality_results_path, started = stubbed_run
     _enable_google(started)
-    started["google_check_model"].side_effect = ModelUnavailableError("gone")
+    # google_client's own subclass, never mistral_client's same-named one: the
+    # skip is what `except google_client.GoogleRequestError` catches, and
+    # mistral's would sail past it and abort the run instead.
+    started["google_check_model"].side_effect = google_client.ModelUnavailableError(
+        f"Google model {google_client.MODEL!r} is not on the catalog"
+    )
 
-    with pytest.raises(ModelUnavailableError):
-        quality_cli._run()
+    quality_cli._run()
 
     assert started["google_complete_prompt"].call_count == 0
+    stderr = capsys.readouterr().err
+    assert "google skipped" in stderr
+    assert google_client.MODEL in stderr
     rows = read_rows(quality_results_path)
     # local + mistral already on disk, untouched by the google failure.
     assert {row["provider"] for row in rows} == {"local", "mistral"}
@@ -1134,6 +1142,26 @@ def test_google_blocked_error_skips_google_without_aborting_the_run(
     stderr = capsys.readouterr().err
     assert "google skipped" in stderr
     assert "SAFETY" in stderr
+    rows = read_rows(quality_results_path)
+    assert {row["provider"] for row in rows} == {"local", "mistral"}
+
+
+def test_a_cloud_transport_failure_skips_that_provider_rather_than_aborting(
+    stubbed_run, capsys
+) -> None:
+    # A connection reset is this provider failing exactly as a 429 is; without
+    # requests.RequestException in the skip clause it reaches main's OSError
+    # handler and exits 1, contradicting the contract docs/setup.md states.
+    quality_results_path, started = stubbed_run
+    _enable_google(started)
+    started["google_complete_prompt"].side_effect = requests.ConnectionError(
+        "connection reset by peer"
+    )
+
+    quality_cli.main()
+
+    stderr = capsys.readouterr().err
+    assert "google skipped: connection reset by peer" in stderr
     rows = read_rows(quality_results_path)
     assert {row["provider"] for row in rows} == {"local", "mistral"}
 

@@ -301,9 +301,11 @@ def test_check_model_available_raises_when_the_probe_404s() -> None:
     ):
         check_model_available("fake-key")
 
-    assert "generateContent" in str(exc_info.value) or "countTokens" not in str(
-        exc_info.value
-    )
+    # Both endpoints, so the message says what was checked and what refused --
+    # asserting only the generate URL would pass on a message that never named
+    # the catalog the model was found on.
+    assert EXPECTED_CATALOG_URL in str(exc_info.value)
+    assert EXPECTED_GENERATE_URL in str(exc_info.value)
 
 
 def test_model_unavailable_is_caught_by_the_existing_handler() -> None:

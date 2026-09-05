@@ -370,7 +370,12 @@ def _try_run_cloud_provider(
             batch_fields,
             extra_row_fields,
         ) = spec["run_batch"](settings, api_key)
-    except spec["error_type"] as exc:
+    except (spec["error_type"], requests.RequestException) as exc:
+        # requests.RequestException alongside the provider's own error type: a
+        # connection reset or a read timeout is this provider failing exactly
+        # as a 429 or a retired id is, and it would otherwise reach main's
+        # OSError clause and abort the whole run -- the one thing this
+        # function exists to prevent.
         print(f"{provider} skipped: {exc}", file=sys.stderr)
         return
 
@@ -563,8 +568,10 @@ def _make_google_complete_item(
         # Read off finishReason directly, never generated_tokens versus the
         # cap: Google can report fewer generated tokens than the cap it
         # actually enforced, which would misclassify a cap-truncated item as
-        # context-truncated under score_item's default comparison.
-        truncated = response["finish_reason"] == "MAX_TOKENS"
+        # context-truncated under score_item's default comparison. The set
+        # comes from the provider module, the same way the mistral path above
+        # reads mistral_client.TRUNCATING_FINISH_REASONS.
+        truncated = response["finish_reason"] in google_client.TRUNCATING_FINISH_REASONS
         completion = _Completion(
             content=response["content"],
             truncated=truncated,
