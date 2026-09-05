@@ -1,6 +1,6 @@
 ---
 objective: "A paced, backing-off retry layer keeps the quality CLI's Mistral and Google batches from dying to a free-tier 429, and `--resume <run_id>` re-runs only the provider batches a prior invocation never finished, never re-paying for one that already completed."
-status: in-progress
+status: implemented
 ---
 
 <!-- Fill or omit these sections; never add, rename, or reorder one. -->
