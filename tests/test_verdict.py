@@ -228,6 +228,38 @@ def test_quality_one_differing_label_is_not_reproduced_and_names_the_item(
     assert "billing-01" in result["differing_fields"]
 
 
+def test_quality_reference_selection_never_crosses_task_suites() -> None:
+    # One store -- and so one reference file -- holds two suites, and the two
+    # version themselves independently, so a shared suite_version is not
+    # evidence that two rows describe the same batch. Without the task_suite
+    # filter the classification rows below join the comparison, the item_ids
+    # stop matching, and a batch that reproduced item for item reports
+    # not_comparable.
+    reference = [
+        _quality_row(task_suite="classification", item_id="billing-01"),
+        _quality_row(
+            task_suite="translation",
+            item_id="en-fr-01",
+            predicted_label=None,
+            item_score=0.8,
+        ),
+    ]
+    candidate = [
+        _quality_row(
+            run_id="run-candidate",
+            task_suite="translation",
+            item_id="en-fr-01",
+            predicted_label=None,
+            item_score=0.8,
+        )
+    ]
+
+    result = quality_verdict(candidate, reference)
+
+    assert result["verdict"] == VERDICT_REPRODUCED
+    assert result["compared_field"] == "item_score"
+
+
 def test_quality_no_matching_reference_is_not_comparable() -> None:
     reference = [_quality_row(model_id="Other Model")]
     candidate = [_quality_row(run_id="run-candidate")]

@@ -295,16 +295,19 @@ graded block instead — `item_score` and `suite_score` on `0..1`,
 `score_breakdown` per source language, `metric_id`/`metric_version`/
 `metric_params`, and both `reference_output` and `subject_output`. Reading a
 graded row means recomputing it if you want to: the two texts and the metric
-parameters are all on the row, and
-`sacrebleu --chrf-char-order 6 --chrf-beta 2` over them should give the same
-number `×100`. Select by `task_suite` before comparing any score column.
+parameters are all on the row, and `sacrebleu -m chrf` over them should give
+the same number `×100`. The `-m chrf` is load-bearing — sacreBLEU's CLI
+defaults to BLEU, and `--chrf-char-order 6 --chrf-beta 2` (the row's
+parameters, and sacreBLEU's own defaults) are ignored without it. Select by
+`task_suite` before comparing any score column.
 
 That chrF is measured against a *single* reference translation, so it
 penalises a valid alternative wording. It compares models against identical
 references; it is not an absolute measure of translation quality.
 
-Translation adds ~5 minutes of Google pacing over the classification suite's
-(21 items instead of 20, at two Google calls each).
+The translation batch costs ~3 minutes of Google pacing (21 items at two
+paced calls each, `GOOGLE_REQUEST_PACING_S` 4.1) — about 8 seconds more than
+the classification suite, which runs one item fewer at the same pacing.
 
 Both cloud providers behave the same way when something goes wrong: a
 missing `MISTRAL_API_KEY` or `GOOGLE_API_KEY`, a provider absent from

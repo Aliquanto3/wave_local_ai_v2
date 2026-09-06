@@ -203,7 +203,18 @@ def runtime_verdict(
 def select_quality_references(
     candidate_rows: list[dict[str, Any]], reference_rows: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
-    """Reference rows sharing `model_id`, `suite_version` and the candidate's seed."""
+    """Reference rows sharing the candidate's suite, model, suite version and seed.
+
+    `task_suite` is part of the key for the same reason it is part of
+    `results.resume_skip_reason`'s: one store -- and so one reference file --
+    now holds rows from more than one suite, and two suites version
+    themselves independently, so `model_id` + `suite_version` + seed is not
+    on its own evidence that two rows describe the same batch. Without it, a
+    reference file holding both suites for one model at a shared version
+    number pulls both suites' rows into the comparison, trips the
+    `unmatched_items` guard below, and reports `not_comparable` for a batch
+    that reproduced item for item.
+    """
     if not candidate_rows:
         return []
     first = candidate_rows[0]
@@ -211,7 +222,8 @@ def select_quality_references(
     return [
         row
         for row in reference_rows
-        if row.get("model_id") == first.get("model_id")
+        if row.get("task_suite") == first.get("task_suite")
+        and row.get("model_id") == first.get("model_id")
         and row.get("suite_version") == first.get("suite_version")
         and row.get("sampling", {}).get("seed") == seed
     ]
@@ -265,7 +277,8 @@ def quality_verdict(
             "reference_run_id": None,
             "differing_fields": [],
             "compared_field": None,
-            "reason": "no reference row shares this batch's model_id/suite_version/seed",
+            "reason": "no reference row shares this batch's "
+            "task_suite/model_id/suite_version/seed",
         }
 
     reference_by_item = {row["item_id"]: row for row in matching}

@@ -224,13 +224,19 @@ unreproducible from the code that wrote them.
 ### Reading these scores
 
 chrF here is measured against **one** reference translation, so it penalises a valid
-alternative wording. The lowest local scores are exactly that case rather than errors:
+alternative wording. The lowest local scores are exactly that case rather than errors.
+The completion column below is the row's `subject_output` **with the `<think>\n\n</think>`
+envelope trimmed for reading**, so the two score columns are both given: `item_score` is
+the number actually published on the row (scored on the full `subject_output`, envelope
+included), and the last column is what the trimmed text alone scores. The gap between
+them is the envelope's cost on that item, and it is why recomputing from the text printed
+here does not land on the published number.
 
-| Item | Reference | `Qwen3.6-35B-A3B` | `item_score` |
-| ---- | --------- | ----------------- | ------------ |
-| `fr-de-03` | "Der Kostenvoranschlag, den Sie uns übermittelt haben, übersteigt unser Jahresbudget." | "Das von Ihnen übermittelte Angebot übersteigt unser jährliches Budget." | 0.408 |
-| `fr-de-05` | "Das Auftaktgespräch findet um zehn Uhr in unseren Räumen statt." | "Der Kick-off-Meeting findet um 10 Uhr in unseren Räumlichkeiten statt." | 0.476 |
-| `en-fr-05` | "Nos bureaux seront fermés lundi prochain en raison d'un jour férié." | "Notre bureau sera fermé lundi prochain pour un jour férié." | 0.513 |
+| Item | Reference | `Qwen3.6-35B-A3B` (envelope trimmed) | `item_score` (as published) | trimmed text alone |
+| ---- | --------- | ------------------------------------ | --------------------------- | ------------------ |
+| `fr-de-03` | "Der Kostenvoranschlag, den Sie uns übermittelt haben, übersteigt unser Jahresbudget." | "Das von Ihnen übermittelte Angebot übersteigt unser jährliches Budget." | 0.4078 | 0.4205 |
+| `fr-de-05` | "Das Auftaktgespräch findet um zehn Uhr in unseren Räumen statt." | "Der Kick-off-Meeting findet um 10 Uhr in unseren Räumlichkeiten statt." | 0.4759 | 0.4997 |
+| `en-fr-05` | "Nos bureaux seront fermés lundi prochain en raison d'un jour férié." | "Notre bureau sera fermé lundi prochain pour un jour férié." | 0.5135 | 0.5333 |
 
 All three are defensible translations scored down for choosing different words than the
 reference on file. A published `suite_score` is defensible as a **comparison between
