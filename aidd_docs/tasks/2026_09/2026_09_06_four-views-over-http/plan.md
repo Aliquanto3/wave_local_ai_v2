@@ -1,6 +1,6 @@
 ---
 objective: "The four views the PRD names answer over HTTP from one read-only service, every field a row does not carry is reported as a named absence, and the API key is required at startup and enforced on every non-loopback `/api/*` request."
-status: in-progress
+status: implemented
 ---
 
 # Plan: The four views answer over HTTP, and every absence is named
