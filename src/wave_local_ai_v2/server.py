@@ -3,7 +3,9 @@
 Reproduces the validated baseline command from `context_input/baseline_qwen36.md`
 verbatim, but sources every model-intrinsic flag from a roster entry
 (`roster.py`) and the two host-fitted flags (`--n-cpu-moe`, `-t`) from host
-settings, instead of from module constants.
+settings, instead of from module constants. `--n-cpu-moe` falls back to the
+entry's own `validated_host` value when the host sets none, which is how a
+dense entry launches without the flag at all.
 """
 
 from __future__ import annotations
@@ -38,7 +40,7 @@ class ServerStartupError(RuntimeError):
 
 def build_flags(
     entry: roster.RosterEntry,
-    host_n_cpu_moe: int,
+    host_n_cpu_moe: int | None,
     host_threads: int,
     model_path: Path,
 ) -> list[str]:
@@ -51,8 +53,20 @@ def build_flags(
     `roster.validate_host_fit`: it runs before any flag is built, so a
     mismatched flag set refuses before `running_server` ever spawns a
     process.
+
+    `host_n_cpu_moe` of `None` means the operator set nothing, so the entry's
+    own `validated_host["n_cpu_moe"]` is used -- 37 on the MoE flagship,
+    `null` on a dense entry, which emits no `--n-cpu-moe` at all. The
+    resolution happens *before* `validate_host_fit`, so the check runs on the
+    value that will actually reach the command line. A dense entry handed an
+    explicit value still refuses there: this is a resolution change, not a
+    `kind == "dense"` special case that would quietly drop a flag the
+    operator asked for.
     """
-    roster.validate_host_fit(entry, host_n_cpu_moe)
+    resolved_n_cpu_moe = (
+        entry.validated_host["n_cpu_moe"] if host_n_cpu_moe is None else host_n_cpu_moe
+    )
+    roster.validate_host_fit(entry, resolved_n_cpu_moe)
 
     flags = entry.server_flags
     sampler = flags["sampler"]
@@ -61,8 +75,10 @@ def build_flags(
         str(model_path),
         "-ngl",
         str(flags["n_gpu_layers"]),
-        "--n-cpu-moe",
-        str(host_n_cpu_moe),
+    ]
+    if resolved_n_cpu_moe is not None:
+        result += ["--n-cpu-moe", str(resolved_n_cpu_moe)]
+    result += [
         "-c",
         str(flags["context_size"]),
         "-fa",

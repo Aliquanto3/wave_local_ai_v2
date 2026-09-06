@@ -291,15 +291,67 @@ Fill `SLM_MODELS_DIR` (the parent directory from step 3) and
 `LLAMA_SERVER_PATH` (the binary path from step 2).
 
 Two more env vars set the host-fitted launch flags that are not part of the
-roster's model data: `SERVER_N_CPU_MOE` (default `37`) and `SERVER_THREADS`
-(default `8`), matching `--n-cpu-moe` and `-t` on this project's own laptop
-fiche. They exist to be overridden on different hardware; leave them unset to
-reproduce the committed reference evidence on comparable hardware.
-`ROSTER_PATH` (default `aidd_docs/roster/models.json`) and
-`ROSTER_ENTRY_ID` (default `qwen3.6-35b-a3b-ud-iq4xs`) are not expected to
-be overridden by a reader following this walkthrough — the tracked roster
-file ships with exactly one entry — but exist so a future roster with more
-than one model can select among them without a code change.
+roster's model data: `SERVER_N_CPU_MOE` and `SERVER_THREADS` (default `8`),
+matching `--n-cpu-moe` and `-t` on this project's own laptop fiche. They
+exist to be overridden on different hardware; leave them unset to reproduce
+the committed reference evidence on comparable hardware.
+
+`SERVER_N_CPU_MOE` has two states, and the difference matters:
+
+- **Unset** — the selected entry decides. Its own `validated_host.n_cpu_moe`
+  is used: `37` for the MoE flagship (so its launch command is byte-identical
+  to the validated baseline), and `null` for a dense entry, which puts no
+  `--n-cpu-moe` on the command line at all. This is what a reader following
+  this walkthrough wants, whichever entry they select.
+- **Set** — the operator overrides the entry. A value above an MoE entry's
+  `expert_count` is refused, and **any** value on a dense entry is refused,
+  `SERVER_N_CPU_MOE=0` included: `0` says "offload no experts", which a model
+  with no experts cannot honour. Both refusals name the entry and happen
+  before any process is spawned.
+
+`ROSTER_PATH` (default `aidd_docs/roster/models.json`) and `ROSTER_ENTRY_ID`
+(default `qwen3.6-35b-a3b-ud-iq4xs`) select which of the roster's four
+entries runs: the MoE flagship, or one of the three dense models from step
+3.1.
+
+### Running one entry after another
+
+There is no runner script and no fleet orchestrator. `ROSTER_ENTRY_ID`
+already selects the entry, and the CLIs read it through
+`load_dotenv(override=False)`, so a value set in the shell wins over `.env`
+(which does not set `ROSTER_ENTRY_ID` at all). The whole multi-model recipe
+is a loop:
+
+```powershell
+foreach ($id in 'qwen3-0.6b-q8','qwen3-1.7b-q8','qwen3-4b-q4km') {
+  $env:ROSTER_ENTRY_ID = $id
+  uv run wave-local-ai-v2
+  uv run wave-local-ai-v2-quality --suite classification
+  uv run wave-local-ai-v2-quality --suite translation
+}
+```
+
+```sh
+for id in qwen3-0.6b-q8 qwen3-1.7b-q8 qwen3-4b-q4km; do
+  ROSTER_ENTRY_ID=$id uv run wave-local-ai-v2
+  ROSTER_ENTRY_ID=$id uv run wave-local-ai-v2-quality --suite classification
+  ROSTER_ENTRY_ID=$id uv run wave-local-ai-v2-quality --suite translation
+done
+```
+
+Each invocation is its own `run_id`, so the rows stay selectable per model
+and per suite afterwards. Each also launches and stops its own
+`llama-server`, so nothing has to be torn down between iterations — but port
+8080 must be free when the loop starts, or the first run refuses rather than
+measuring a process it did not spawn.
+
+On this project's own laptop (RTX 3060 Laptop, 6144 MiB) all three dense
+entries reached ready at `-ngl 99` — every layer resident — at 32768
+context: 4377 MiB for the 0.6B, 5537 MiB for the 1.7B and 5961 MiB for the
+4B. The 4B leaves under 200 MiB of headroom; a machine with less VRAM will
+need a lower `n_gpu_layers` in that entry. Lower `n_gpu_layers`, not
+`context_size`: both suites publish a 32768 context cap on every row, and an
+entry launched below it would make that published cap false.
 
 **4.1 — everything up to here runs on a GPU-less container.**
 
