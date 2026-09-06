@@ -347,11 +347,18 @@ measuring a process it did not spawn.
 
 On this project's own laptop (RTX 3060 Laptop, 6144 MiB) all three dense
 entries reached ready at `-ngl 99` — every layer resident — at 32768
-context: 4377 MiB for the 0.6B, 5537 MiB for the 1.7B and 5961 MiB for the
-4B. The 4B leaves under 200 MiB of headroom; a machine with less VRAM will
-need a lower `n_gpu_layers` in that entry. Lower `n_gpu_layers`, not
-`context_size`: both suites publish a 32768 context cap on every row, and an
-entry launched below it would make that published cap false.
+context, at 4377 MiB / 5537 MiB / 5961 MiB of card-wide `nvidia-smi` usage
+once loaded (the runtime rows report a little more, measured during
+generation rather than at load). The 4B leaves under 200 MiB of headroom; a
+machine with less VRAM will need a lower `n_gpu_layers` in that entry. Lower
+`n_gpu_layers`, not `context_size`: both suites publish a 32768 context cap
+on every row, and an entry launched below it would make that published cap
+false.
+
+Fitting is not the same as running well: the 4B's measured prompt throughput
+collapses to a tenth of the 1.7B's at that occupancy. See the side-by-side
+section in `aidd_docs/results/README.md` for what each entry actually
+produced — it is the reason the loop above exists.
 
 **4.1 — everything up to here runs on a GPU-less container.**
 

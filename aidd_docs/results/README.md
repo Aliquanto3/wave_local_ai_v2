@@ -270,6 +270,198 @@ aidd_docs/results/quality-reference.jsonl`:
 | One fiche field hand-edited (`gpu_name`) | exit **1**, `edited (82)` naming every row citing that fiche and `changed_fields: ['gpu_name']` -- all 82 rows share one fiche (same machine/flag configuration across all four runs) |
 | Edit reverted (`git checkout --`) | `checked 82 row(s)`, exit **0** again |
 
+## Dense versus MoE, side by side (2026-09-06)
+
+Not part of the committed bundle. These rows live in the untracked live stores
+(`aidd_docs/results/runtime.jsonl`, `aidd_docs/results/quality.jsonl`) at `schema_version`
+`"10"`; this section records what the runs produced so the numbers are citable. The
+committed reference bundle is frozen one schema behind for the reason its own section
+above gives, and is **not** touched. What *is* committed is the three fiches these rows
+cite -- `f804bee0...` (0.6B), `067530ef...` (1.7B), `dfd5a5ea...` (4B) -- so every number
+below resolves to a stored hardware-and-flags record and a roster entry.
+
+The model set is `roster_version` 2: the MoE flagship plus a dense Qwen3 size ladder. The
+dense/MoE distinction is what the section is for, so it is in the table rather than in a
+footnote:
+
+| Model | Entry id | Arch | Quant | `-ngl` | `--n-cpu-moe` | `--load-mode` |
+| ----- | -------- | ---- | ----- | ------ | ------------- | ------------- |
+| `Qwen3.6-35B-A3B` | `qwen3.6-35b-a3b-ud-iq4xs` | MoE, 40 experts, 3.1B active | `UD-IQ4_XS` | 99 | **37** | `none` |
+| `Qwen3-4B` | `qwen3-4b-q4km` | dense, 4.0B | `Q4_K_M` | 99 | *absent* | `auto` |
+| `Qwen3-1.7B` | `qwen3-1.7b-q8` | dense, 1.7B | `Q8_0` | 99 | *absent* | `auto` |
+| `Qwen3-0.6B` | `qwen3-0.6b-q8` | dense, 0.6B | `Q8_0` | 99 | *absent* | `auto` |
+
+All three dense entries held every layer on the GPU at 32768 context on a 6144 MiB
+RTX 3060 Laptop. The plan expected the 4B to need a step-down and it did not, with under
+200 MiB to spare -- a probe result, not an estimate.
+
+### Classification
+
+Suite `classification-support-routing`, `suite_version` `"2"`, 20 items, 32-token cap.
+The `gemini-3.5-flash-lite` row is cited from the run that already paid for it rather
+than re-run: same suite, same version, same items, already on disk.
+
+| Model | Provider | `run_id` | Accuracy | `empty` | `unparseable` | `truncated_max_tokens` | `en` (n=10) | `fr` (n=5) | `de` (n=5) |
+| ----- | -------- | -------- | -------- | ------- | ------------- | ---------------------- | ----------- | ---------- | ---------- |
+| `gemini-3.5-flash-lite` | google | `1f3c94b9...` | **1.00** | 0 | 0 | 0 | 1.00 | 1.00 * | 1.00 * |
+| `Qwen3.6-35B-A3B` | local | `1f3c94b9...` | **0.80** | 0 | 4 | 0 | 0.60 | 1.00 * | 1.00 * |
+| `Qwen3-4B` | local | `d7f08b1a...` | **0.45** | 0 | 9 | 0 | 0.50 | 0.40 * | 0.40 * |
+| `Qwen3-0.6B` | local | `c836bacc...` | **0.45** | 0 | 6 | 0 | 0.50 | 0.40 * | 0.40 * |
+| `Qwen3-1.7B` | local | `9dd45420...` | **0.25** | 0 | 14 | 0 | 0.30 | 0.20 * | 0.20 * |
+
+`*` = `indicative`: the cell holds 5 items against `MIN_PER_LANGUAGE_CELL_ITEMS` (10).
+The suite-level number is not indicative on any row.
+
+The ladder does not rank by size. The 1.7B is the worst of the four and the 4B ties the
+0.6B. Every dense row's `tokens_out_total` is 640 -- 20 items x the full 32-token cap --
+so all three ran the cap dry on every single item, while the MoE flagship spent 240 and
+`gemini-3.5-flash-lite` spent 20. That is the whole story of this table, and the next
+section is what it actually means.
+
+### Translation
+
+Suite `translation-business-short-form`, `suite_version` `"1"`, 21 items in three
+directions, 128-token cap, chrF against **one** reference on the `0..1` scale.
+
+| Model | Provider | `run_id` | `suite_score` | `en`->`fr` (n=7) | `fr`->`de` (n=7) | `de`->`en` (n=7) |
+| ----- | -------- | -------- | ------------- | ---------------- | ---------------- | ---------------- |
+| `gemini-3.5-flash-lite` | google | `80803767...` | **0.8400** | 0.8671 * | 0.7700 * | 0.8829 * |
+| `Qwen3.6-35B-A3B` | local | `808037675130` | **0.7691** | 0.7962 * | 0.6878 * | 0.8233 * |
+| `Qwen3-4B` | local | `350cac2f...` | **0.2005** | 0.2128 * | 0.1990 * | 0.1896 * |
+| `Qwen3-0.6B` | local | `c370c862...` | **0.1867** | 0.2096 * | 0.1909 * | 0.1595 * |
+| `Qwen3-1.7B` | local | `80eec0cd...` | **0.1742** | 0.1774 * | 0.2124 * | 0.1328 * |
+
+`*` = `indicative` on every cell: seven items per direction against the 10-item floor.
+`failure_counts` is all-zero on every translation row, on every model -- `unparseable` is
+structurally unreachable on this suite.
+
+The single-reference caveat applies here exactly as it does above: chrF against one
+reference compares models on identical references and is not an absolute measure of
+translation quality.
+
+### What the dense rows are actually measuring
+
+A ~0.19 chrF reads like "these models cannot translate". Read one completion and that is
+not what happened. `Qwen3-4B`, item `fr-de-03`, `item_score` 0.2157, verbatim from the
+row's `subject_output`:
+
+```
+ Nous ne pouvons donc pas vous aider à réaliser ce projet. Nous vous remercions de
+votre compréhension.
+Answer:
+
+Der von Ihnen übermittelte Angebot überschreitet unseren jährlichen Budget. Daher
+können wir Ihnen nicht helfen, dieses Projekt umzusetzen. Vielen Dank für Ihr
+Verständnis.  
+**Note:
+```
+
+The German in the middle is a good translation of the reference sentence. The model
+reached it only after first **continuing the French source text**, and chrF scores the
+full raw completion, so the continuation and the trailing `**Note:` drown the answer.
+The classification rows fail the same way -- `Qwen3-0.6B`, item `billing-02`, expected
+`billing`, running the 32-token cap dry:
+
+```
+ 
+
+The message is about the currency of the invoice. The message is about the amount owed.
+The message is about the payment method. The message is about the
+```
+
+The local quality path posts a **raw prompt to `/completion`**, with no chat template
+applied. These Qwen3 releases treat that as text to continue rather than as an
+instruction to follow. The MoE flagship, on the same endpoint with the same `--jinja`,
+opens with a `<think>` envelope and then obeys -- it costs that model ~15 characters of
+chrF precision (the finding recorded in the translation section above) and costs these
+three models the entire answer.
+
+So the honest reading of both tables is: they measure **instruction-following on a raw
+completion endpoint**, and on that axis the dense Qwen3 ladder loses badly to the MoE
+flagship and to the cloud comparator. They do not establish that a 4B dense model cannot
+classify or translate. Separating the two needs a chat-templated local path, which is a
+suite-level decision and is filed as tech debt, not patched between two measured runs.
+
+The plan's stated risk was the opposite failure -- that a thinking-by-default model would
+spend its cap on a reasoning block and land as `truncated_max_tokens`. It did not: no
+dense row reasons first. See the truncation-reporting defect below for why that field
+reads `0` regardless.
+
+### Runtime
+
+One `wave-local-ai-v2` invocation per entry at default protocol: 1 warm-up, 5 counted
+repetitions, 10 s cooldown, pinned seed, `cache_prompt: false`, 128-token cap.
+
+| Model | Quant | `-ngl` | `--n-cpu-moe` | `run_id` | `gen_tok_per_s` | `prompt_tok_per_s` | `ttft_ms` | gen / ttft / prompt spread | `unreliable` | RSS | VRAM | Energy (kWh) | Cost (EUR) | `verdict` |
+| ----- | ----- | ------ | ------------- | -------- | --------------- | ------------------ | --------- | -------------------------- | ------------ | --- | ---- | ------------ | ---------- | --------- |
+| `Qwen3-0.6B` | `Q8_0` | 99 | *absent* | `68a5e1df...` | **207.8** | **4117.8** | **360.6** | 0.005 / 0.078 / 0.093 | false | 1028 MB | 4527 MiB | 0.00078 | 0.000151 | `not_comparable` |
+| `Qwen3-1.7B` | `Q8_0` | 99 | *absent* | `e5714fcb...` | 116.0 | 3091.9 | 480.3 | 0.002 / 0.083 / 0.100 | false | 2172 MB | 5689 MiB | 0.00090 | 0.000174 | `not_comparable` |
+| `Qwen3-4B` | `Q4_K_M` | 99 | *absent* | `f8678fe0...` | 33.6 | 275.2 | 5396.4 | 0.001 / 0.003 / 0.003 | false | 4077 MB | **6115 MiB** | 0.00214 | 0.000414 | `not_comparable` |
+| `Qwen3.6-35B-A3B` | `UD-IQ4_XS` | 99 | **37** | `f7faeef7...` | 24.8 | 273.3 | 5451.9 | 0.005 / 0.004 / 0.004 | false | 14520 MB | 4549 MiB | 0.00264 | 0.000513 | `reproduced` |
+
+Every dense `verdict` is `not_comparable`, and that is the honest first-run state rather
+than a gap: the verdict blocks on `llama_cpp_build` / `quant` / `gpu_name` / `flags`, and
+no reference row shares a new quant and a flag set with no `--n-cpu-moe` in it. The
+flagship's `reproduced` is its own earlier pair, unaffected by this increment.
+
+Two things in that table are worth naming:
+
+- **The 4B's prompt throughput collapses to the flagship's.** 275 vs 3092 tok/s for the
+  1.7B, an 11x drop for a 2.4x model, and its TTFT (5396 ms) lands within about 1% of
+  the flagship's (5452 ms) despite the flagship offloading 37 expert layers to CPU. Its
+  `vram_used_mib` is 6115 of 6144 -- 99.5% of the card. Fitting at `-ngl 99` and running
+  well at `-ngl 99` are not the same thing, and this row is what the difference looks
+  like.
+- **The dense ladder's cost advantage is real and large.** The 0.6B does the same 640
+  output tokens for €0.000151 against the flagship's €0.000513, at 8.4x the generation
+  rate and 1/14th the host RAM.
+
+`machine_state`: no repetition on any of the three reported `sw_thermal_slowdown`. GPU
+temperatures stayed at 60-65 °C on the two small models and 71-75 °C on the 4B, and the
+throttle reason on all three counted sets is `sw_power_cap`, which is this laptop GPU's
+ordinary behaviour under load, not a thermal event. No run was repeated to improve a
+number.
+
+### The truncation-reporting defect, filed rather than fixed
+
+`failure_counts.truncated_max_tokens` reads `0` on every row in both tables above,
+including the rows whose `tokens_out_total` proves every item ran the cap dry. The rows
+are wrong, and the cause is not the models.
+
+On llama.cpp `b10537` the `/completion` response carries **no `stopped_limit` key**. It
+reports `stop_type: "limit"` instead. `quality_cli._run_local_suite` reads
+`response_json.get("stopped_limit", False)`, so a cap-exhausted completion is published
+as not-truncated and its failure is attributed to `unparseable`. Probed directly on this
+build against `Qwen3-0.6B` item `billing-02`: `tokens_predicted: 32` (the cap),
+`stop_type: "limit"`, and `stopped_limit` absent from the response entirely.
+
+Every local row this project has ever published is affected, the flagship's included.
+**The scores are not**: a truncated completion and an unparseable one both score the same,
+so accuracy, `suite_score` and every per-language cell stand exactly as published. Only
+the failure label moves. Filed in `aidd_docs/backlog/tech-debt.md`; not patched here,
+because changing the harness between the pilot and the matrix would have made these rows
+unreproducible from the code that wrote them.
+
+### The two caveats this comparison genuinely carries
+
+- **The architecture comparison spans a model generation.** The dense ladder is Qwen3
+  (May 2025); the flagship is Qwen3.6 (2026). Size is controlled *within* the ladder, so
+  the 0.6B/1.7B/4B rows compare cleanly against each other. Dense-vs-MoE across the two
+  is confounded by ~18 months of post-training, and the raw-completion behaviour above is
+  most likely a generation difference rather than an architecture one.
+- **The quants are not uniform.** `Q8_0` at 0.6B and 1.7B, `Q4_K_M` at 4B,
+  `UD-IQ4_XS` on the flagship. That is what each vendor repo publishes -- the 0.6B and
+  1.7B GGUF repos contain exactly one quant each -- and forcing uniformity would have
+  meant leaving the vendor's own artifact for a repackager.
+
+### Cost of reproducing this
+
+The whole live session -- pilot, three runtime runs, six quality batches -- ran
+12:04:13 to 12:13:07 UTC on 2026-09-06, **under 9 minutes of wall clock**, on one machine,
+with no cloud quota spent (the `google` comparator rows were cited, not re-run). The
+downloads are 4.63 GiB total. `wave-local-ai-v2-validate` exits `0` over both live stores,
+`checked 432 row(s)`, every `fiche_hash` resolving.
+
 ## Earlier increments' evidence (predates this regeneration)
 
 The sections below describe rows this regeneration **replaced**. They are kept as a

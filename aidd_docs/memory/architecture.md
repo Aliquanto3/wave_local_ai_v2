@@ -77,6 +77,20 @@ flowchart LR
   two host-fitted settings (`SERVER_N_CPU_MOE`, `SERVER_THREADS` — see
   `cli.md`) that are not roster data. `llama_cpp_build` is likewise a live
   probe of the running binary (`build_probe.py`), never a constant string.
+- A dense roster entry carries **no** `--n-cpu-moe` and **no** `--load-mode
+  none` — the two flags that exist only to make an MoE offload work. That is
+  enforced, not conventional: the entry's `architecture` block
+  (`kind: "dense"`, `expert_count: 0`) is what makes it checkable, and
+  `roster.validate_host_fit` *refuses* a dense entry handed any offload
+  value rather than dropping the flag quietly. So the seam that lets a dense
+  entry launch is a resolution change, not a `kind == "dense"` branch in
+  `server.build_flags`: `host_n_cpu_moe` of `None` (the unset state) is
+  resolved from the entry's own `validated_host.n_cpu_moe` *before*
+  `validate_host_fit` runs, so the check always sees the value that will
+  reach the command line. `0` is an explicit instruction to offload no
+  experts and still refuses; `None` is the absence of an instruction. The
+  committed fiche for each run records the launched flag list, so "this row
+  carried no MoE offload" is checkable after the fact and not just at launch.
 - `detect-secrets` opens files with the locale default encoding and silently skips any it cannot decode ("we flat out ignore binary files"), so on Windows (cp1252) a doc containing `✏️`, `‌` or `←` is never scanned at all — always invoke it in UTF-8 mode (`python -X utf8 -m detect_secrets...`), on every OS.
 - Runtime metrics are NOT reproducible across machines. Every result row must cite its hardware fiche by `fiche_hash` (CPU, RAM, GPU, driver, llama.cpp build, quant, roster entry + its sha256, and the raw flags as evidence); the fiche itself is stored write-once under `aidd_docs/results/fiches/<hash>.json` (`fiche_registry.py`) rather than flattened onto the row, and `wave-local-ai-v2-validate` proves a cited fiche was neither edited nor lost. A number without a fiche is meaningless.
 - llama.cpp has architecture-specific flags that are not optional: `--load-mode none` is required when `--n-cpu-moe` is set (otherwise mmap pages from disk), `--jinja` is required for `<think>` tag parsing, `-np 1` avoids the 4-slot default allocation.
