@@ -8,6 +8,7 @@ from wave_local_ai_v2.results import (
     captured_at,
     new_run_id,
     read_rows,
+    resume_skip_reason,
     rows_for_run,
 )
 from wave_local_ai_v2.row_contract import RowContractError
@@ -182,3 +183,62 @@ def test_rows_for_run_filters_to_the_matching_run_id_only(tmp_path: Path) -> Non
     append_row(path, "quality", row_b)
 
     assert rows_for_run(path, "run-a") == [row_a]
+
+
+def _write_items(path: Path, run_id: str, provider: str, item_ids: list[str]) -> None:
+    for item_id in item_ids:
+        append_row(
+            path,
+            "quality",
+            {
+                **COMPLETE_QUALITY_ROW,
+                "run_id": run_id,
+                "provider": provider,
+                "item_id": item_id,
+            },
+        )
+
+
+def test_resume_skip_reason_runs_a_batch_that_wrote_nothing(tmp_path: Path) -> None:
+    path = tmp_path / "quality.jsonl"
+    _write_items(path, "run-1", "local", ["a", "b", "c"])
+
+    # Another provider's completed batch says nothing about this one.
+    assert resume_skip_reason(path, "run-1", "mistral", 3) is None
+    # Nor does another run's.
+    assert resume_skip_reason(path, "run-2", "local", 3) is None
+    # Nor does an absent store.
+    assert resume_skip_reason(tmp_path / "absent.jsonl", "run-1", "local", 3) is None
+
+
+def test_resume_skip_reason_skips_a_complete_batch_by_name(tmp_path: Path) -> None:
+    path = tmp_path / "quality.jsonl"
+    _write_items(path, "run-1", "local", ["a", "b", "c"])
+
+    assert resume_skip_reason(path, "run-1", "local", 3) == "run run-1 already complete"
+
+
+def test_resume_skip_reason_refuses_a_partially_written_batch(tmp_path: Path) -> None:
+    path = tmp_path / "quality.jsonl"
+    _write_items(path, "run-1", "local", ["a", "b"])
+
+    assert resume_skip_reason(path, "run-1", "local", 5) == (
+        "run run-1 is partially written (2/5 items); re-running would duplicate them"
+    )
+
+
+def test_resume_skip_reason_decides_against_the_callers_own_item_count(
+    tmp_path: Path,
+) -> None:
+    # The same two rows are a complete batch for a two-item caller and a
+    # partial one for a five-item caller: the count is the caller's, not a
+    # suite length read from a module.
+    path = tmp_path / "probe.jsonl"
+    _write_items(path, "run-1", "google", ["a", "b"])
+
+    assert resume_skip_reason(path, "run-1", "google", 2) == (
+        "run run-1 already complete"
+    )
+    assert "partially written (2/5" in str(
+        resume_skip_reason(path, "run-1", "google", 5)
+    )

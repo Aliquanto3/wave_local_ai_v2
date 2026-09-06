@@ -8,9 +8,10 @@ hardware or runtime context, and vice versa (`aidd_docs/memory/architecture.md`:
 
 The two cloud providers share one dispatch shape (`_run_cloud_batch`, fed a
 provider-specific per-item completion function, call-path builder and price
-table) rather than two copy-pasted `_run_..._suite`/`_..._call_path`/
-`_..._batch_fields` triplets -- the cloud subject is selectable by provider,
-not hard-wired to Mistral.
+table) rather than two copy-pasted `_run_..._suite`/`_..._call_path`/batch-fields
+triplets -- the cloud subject is selectable by provider, not hard-wired to
+Mistral. The batch-fields builders themselves live in `quality_rows.py`, shared
+with the judge probe's own two batches.
 
 The provider *set* is itself configuration (`settings.QUALITY_PROVIDERS`).
 Both cloud providers are optional: a provider absent from that set, missing
@@ -38,12 +39,12 @@ from wave_local_ai_v2 import (
     build_probe,
     classification_suite,
     cost,
-    emissions,
     fiche_registry,
     google_client,
     mistral_client,
     prompt_provenance,
     provenance,
+    quality_rows,
     results,
     retry,
     roster,
@@ -56,11 +57,7 @@ from wave_local_ai_v2.classification_suite import (
     CLASSIFICATION_TASK_SUITE,
     ClassificationItem,
 )
-from wave_local_ai_v2.energy import (
-    ENERGY_METHOD_UNAVAILABLE,
-    EnergyResult,
-    measure_energy,
-)
+from wave_local_ai_v2.energy import measure_energy
 from wave_local_ai_v2.hardware import build_fiche, capture_fiche
 from wave_local_ai_v2.mistral_client import MistralCompletion, MistralRequestError
 from wave_local_ai_v2.results import append_row, captured_at, new_run_id
@@ -239,7 +236,14 @@ def _run(resume_run_id: str | None = None) -> None:
     # batches below cite the same fiche_hash regardless of whether local ran
     # this invocation.
     local_skip_reason = (
-        _resume_skip_reason(settings, run_id, "local") if is_resume else None
+        results.resume_skip_reason(
+            settings.quality_results_path,
+            run_id,
+            "local",
+            len(CLASSIFICATION_TASK_SUITE),
+        )
+        if is_resume
+        else None
     )
     if local_skip_reason is not None:
         print(f"local skipped: {local_skip_reason}", file=sys.stderr)
@@ -273,7 +277,9 @@ def _run(resume_run_id: str | None = None) -> None:
             roster_version=loaded_roster.roster_version,
             call_path_fields=_local_call_path(),
             fiche_hash=fiche_hash_value,
-            batch_fields=_local_batch_fields(settings, local_energy, local_completions),
+            batch_fields=quality_rows.local_batch_fields(
+                settings, local_energy, local_completions
+            ),
             resumed=is_resume,
         )
 
@@ -289,45 +295,6 @@ def _run(resume_run_id: str | None = None) -> None:
             roster_version=loaded_roster.roster_version,
             fiche_hash=fiche_hash_value,
         )
-
-
-def _resume_skip_reason(settings: Settings, run_id: str, provider: str) -> str | None:
-    """Why `--resume` must not re-run this `(run_id, provider)` batch, or None to run it.
-
-    Used only under `--resume`: a fresh run never has any prior rows for its
-    own (freshly minted) run_id, so this is never called there.
-
-    Distinct item_ids, not a row count: the question is which of the suite's
-    items this `(run_id, provider)` pair already owns. Three cases, because a
-    batch is skipped for two different reasons and re-run for one:
-
-    - none of them: nothing was ever written, re-run the batch from item 1.
-    - all of them: the batch already cost what it cost, never pay again.
-    - some of them: re-running would append a second row for every item
-      already on disk, and `append_row` only ever appends -- so the pair
-      `(run_id, provider, item_id)` would stop being unique and a reader
-      (`verdict.select_quality_references` included) would meet the same item
-      twice. `plan.md`'s Decision holds that a partial batch is unreachable
-      (a mid-batch failure never reaches `_score_and_write`), but nothing
-      enforces it: `_score_and_write` appends row by row, so an interrupt or
-      a disk failure part-way through leaves exactly this state. Refuse it
-      rather than duplicate; per-item resume is out of scope by that same
-      Decision.
-    """
-    written_items = {
-        row.get("item_id")
-        for row in results.rows_for_run(settings.quality_results_path, run_id)
-        if row.get("provider") == provider
-    }
-    if not written_items:
-        return None
-    if len(written_items) >= len(CLASSIFICATION_TASK_SUITE):
-        return f"run {run_id} already complete"
-    return (
-        f"run {run_id} is partially written "
-        f"({len(written_items)}/{len(CLASSIFICATION_TASK_SUITE)} items); "
-        f"re-running would duplicate them"
-    )
 
 
 def _mistral_batch(
@@ -440,7 +407,16 @@ def _try_run_cloud_provider(
         print(f"{provider} skipped: {spec['env_var']} is not set", file=sys.stderr)
         return
 
-    skip_reason = _resume_skip_reason(settings, run_id, provider) if is_resume else None
+    skip_reason = (
+        results.resume_skip_reason(
+            settings.quality_results_path,
+            run_id,
+            provider,
+            len(CLASSIFICATION_TASK_SUITE),
+        )
+        if is_resume
+        else None
+    )
     if skip_reason is not None:
         print(f"{provider} skipped: {skip_reason}", file=sys.stderr)
         return
@@ -792,140 +768,12 @@ def _run_cloud_batch(
         response["generated_tokens"] if response is not None else 0
         for response in responses
     )
-    batch_fields = _cloud_batch_fields(
+    batch_fields = quality_rows.cloud_batch_fields(
         settings, model, price_table, prompt_tokens, completion_tokens_total
     )
     call_path_fields = call_path_fields_fn(responses)
     extra_row_fields = [extra_row_fields_fn(response) for response in responses]
     return completions, call_path_fields, batch_fields, extra_row_fields
-
-
-def _local_batch_fields(
-    settings: Settings, energy: EnergyResult, completions: list[_Completion]
-) -> dict[str, Any]:
-    """The per-batch energy/emissions/cost fields shared by every local row.
-
-    tokens_in_total stays null: the local `/completion` path this suite calls
-    (`_run_local_suite`) never captures a prompt-token count, so publishing
-    one here would fabricate it (same honesty rule `__init__.py`'s runtime
-    tokens_in_total follows).
-    """
-    emissions_kg = emissions.local_emissions(
-        energy["energy_kwh"], settings.emission_factor_kg_per_kwh
-    )
-    cost_total = cost.local_cost(energy["energy_kwh"], settings.kwh_price_eur)
-    tokens_out_total = sum(completion["generated_tokens"] for completion in completions)
-    return {
-        **energy,
-        "emissions_kg": emissions_kg,
-        "emission_factor_kg_per_kwh": settings.emission_factor_kg_per_kwh,
-        "emission_region": settings.emission_region,
-        "emissions_scope": emissions.EMISSIONS_SCOPE_2,
-        "emissions_scope_formula_id": None,
-        "scope_comparability": None,
-        "tokens_in_total": None,
-        "tokens_out_total": tokens_out_total,
-        "cost_total": cost_total,
-        "cost_currency": "EUR",
-        # Derived, not hardcoded null: total_tokens is unknown while
-        # tokens_in_total is, so the rate is undefined today -- but it starts
-        # publishing on its own the day the local path captures prompt tokens.
-        "cost_per_million_tokens": cost.cost_per_million_tokens(cost_total, None),
-        "normalization_unit": cost.NORMALIZATION_UNIT,
-        "kwh_price_eur": settings.kwh_price_eur,
-        "kwh_price_currency": "EUR",
-        "kwh_price_recorded_at": settings.kwh_price_recorded_at,
-        "list_price_input_per_million": None,
-        "list_price_output_per_million": None,
-        "list_price_per_million_tokens": None,
-        "list_price_currency": None,
-        "list_price_retrieved_at": None,
-    }
-
-
-def _cloud_batch_fields(
-    settings: Settings,
-    model: str,
-    price_table: dict[str, cost.Price],
-    prompt_tokens: list[int | None],
-    completion_tokens_total: int,
-) -> dict[str, Any]:
-    """The per-batch energy/emissions/cost fields shared by every cloud row.
-
-    Generic over `model`/`price_table` so one function serves both Mistral
-    and Google rather than being copy-pasted per provider (plan.md's
-    Decisions). No on-machine energy exists to attribute to a network call:
-    the three CodeCarbon channels stay null/"unavailable", and
-    energy_kwh/emissions_kg instead come from the Scope-3 Wh-per-token
-    formula, keyed to this batch's total tokens.
-
-    A `None` entry in `prompt_tokens` (an absent count on a real response)
-    makes the batch's input token count unknown, not zero: every figure keyed
-    to a token total -- the Scope-3 energy and emissions estimate, the cost,
-    the normalized rate -- degrades to `None` rather than silently pricing
-    the prompts at nothing. The price snapshot itself still lands on the row:
-    it is what the provider charges, not something this batch derived.
-    """
-    prompt_tokens_total = cost.total_or_none(prompt_tokens)
-    total_tokens = (
-        prompt_tokens_total + completion_tokens_total
-        if prompt_tokens_total is not None
-        else None
-    )
-    price = price_table[model]
-    if total_tokens is None or prompt_tokens_total is None:
-        energy_kwh: float | None = None
-        emissions_kg: float | None = None
-        cost_total: float | None = None
-    else:
-        energy_kwh, emissions_kg = emissions.scope3_cloud_emissions(
-            total_tokens,
-            settings.scope3_wh_per_token,
-            settings.emission_factor_kg_per_kwh,
-        )
-        cost_total = cost.cloud_cost(
-            prompt_tokens_total, completion_tokens_total, price
-        )
-    # Three price figures, not one: the two rates the table actually charges,
-    # so a reader can recompute cost_total from tokens_in_total and
-    # tokens_out_total a year later, plus the blended rate this batch's own
-    # token mix worked out to. The blend alone is derived FROM cost_total, so
-    # publishing only it would be circular.
-    return {
-        "cpu_energy_kwh": None,
-        "cpu_energy_method": ENERGY_METHOD_UNAVAILABLE,
-        "gpu_energy_kwh": None,
-        "gpu_energy_method": ENERGY_METHOD_UNAVAILABLE,
-        "ram_energy_kwh": None,
-        "ram_energy_method": ENERGY_METHOD_UNAVAILABLE,
-        "energy_kwh": energy_kwh,
-        "emissions_kg": emissions_kg,
-        "emission_factor_kg_per_kwh": settings.emission_factor_kg_per_kwh,
-        "emission_region": settings.emission_region,
-        "emissions_scope": emissions.EMISSIONS_SCOPE_3,
-        "emissions_scope_formula_id": emissions.SCOPE3_FORMULA_ID,
-        "scope_comparability": emissions.SCOPE_COMPARABILITY_NOTE,
-        "tokens_in_total": prompt_tokens_total,
-        "tokens_out_total": completion_tokens_total,
-        "cost_total": cost_total,
-        # The currency the price table quotes, published even when cost_total
-        # is null: it names the unit the list-price fields beside it are in.
-        "cost_currency": price["currency"],
-        "cost_per_million_tokens": cost.cost_per_million_tokens(
-            cost_total, total_tokens
-        ),
-        "normalization_unit": cost.NORMALIZATION_UNIT,
-        "kwh_price_eur": None,
-        "kwh_price_currency": None,
-        "kwh_price_recorded_at": None,
-        "list_price_input_per_million": price["input_per_million"],
-        "list_price_output_per_million": price["output_per_million"],
-        "list_price_per_million_tokens": cost.cost_per_million_tokens(
-            cost_total, total_tokens
-        ),
-        "list_price_currency": price["currency"],
-        "list_price_retrieved_at": price["retrieved_at"],
-    }
 
 
 def _score_and_write(

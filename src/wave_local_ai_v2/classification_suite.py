@@ -15,8 +15,8 @@ see the identical instruction and the identical closed set to choose from.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Sequence
-from typing import Literal, TypedDict
+from collections.abc import Mapping, Sequence
+from typing import Any, Literal, TypedDict
 
 LABELS: frozenset[str] = frozenset({"billing", "technical", "account", "other"})
 
@@ -202,12 +202,19 @@ CLASSIFICATION_TASK_SUITE: list[ClassificationItem] = [
 ]
 
 
-def prompt_set_hash(items: Sequence[ClassificationItem]) -> str:
+def prompt_set_hash(items: Sequence[Mapping[str, Any]]) -> str:
     """SHA-256 hex digest over the items' prompts only, deterministically ordered.
 
     Deliberately not over the whole item dict: adding a non-prompt field later
     (a tag, a provenance note) must never move the hash. Only an edited prompt
     should.
+
+    Duck-typed against any mapping exposing `item_id` and `prompt`, not
+    `isinstance`-checked against `ClassificationItem` -- the same choice
+    `suite_gate.gate_suite` documents. `judge_probe.JUDGE_PROBE_ITEMS` hashes
+    through this one function, so a reader comparing a `prompt_set_hash`
+    across two published files is comparing like with like rather than two
+    suites' separate hashing rules.
     """
     sorted_items = sorted(items, key=lambda item: item["item_id"])
     serialized = "\n".join(

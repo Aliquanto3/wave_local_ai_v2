@@ -22,6 +22,14 @@ DEFAULT_HOST_THREADS = 8
 DEFAULT_FICHE_REGISTRY_DIR = "aidd_docs/results/fiches"
 DEFAULT_RUNTIME_REFERENCE_PATH = "aidd_docs/results/runtime-reference.jsonl"
 DEFAULT_QUALITY_REFERENCE_PATH = "aidd_docs/results/quality-reference.jsonl"
+# The judge probe's own store. Unlike its two neighbours above -- curated
+# snapshots no CLI ever writes to -- this reference-named file is written
+# directly by `wave-local-ai-v2-judge-probe`: the probe is a deliberate
+# one-off proof that the judged machinery runs end to end, not a per-machine
+# benchmark that reruns, so a curated hand-copy would add a step and no
+# evidence. A re-run under a fresh run_id appends a second generation of rows
+# beside the first; the operator's reset is `git checkout --` on this file.
+DEFAULT_JUDGE_PROBE_REFERENCE_PATH = "aidd_docs/results/judge-probe-reference.jsonl"
 # Distinct from runtime_spread_threshold (criterion 7) even though both
 # default to the same value: the spread threshold gates whether one run's own
 # repetitions agree with each other, this gates whether two separate runs'
@@ -126,6 +134,10 @@ class Settings:
     # `not_comparable`, not a load failure.
     runtime_reference_path: Path = Path(DEFAULT_RUNTIME_REFERENCE_PATH)
     quality_reference_path: Path = Path(DEFAULT_QUALITY_REFERENCE_PATH)
+    # Where the judge probe writes its own rows. Same no-existence-check rule
+    # as the two paths above; see the DEFAULT_* constant for why this one is
+    # written by a CLI and they are not.
+    judge_probe_reference_path: Path = Path(DEFAULT_JUDGE_PROBE_REFERENCE_PATH)
     runtime_reproduction_tolerance: float = DEFAULT_RUNTIME_REPRODUCTION_TOLERANCE
     # Emissions configuration (Story 15, plan.md's Resources): the offline
     # grid mix, the published region label, and the local Scope-2 factor. See
@@ -186,6 +198,9 @@ def load_settings() -> Settings:
     )
     quality_reference_path = Path(
         os.environ.get("QUALITY_REFERENCE_PATH", DEFAULT_QUALITY_REFERENCE_PATH)
+    )
+    judge_probe_reference_path = Path(
+        os.environ.get("JUDGE_PROBE_REFERENCE_PATH", DEFAULT_JUDGE_PROBE_REFERENCE_PATH)
     )
     roster_entry_id = os.environ.get("ROSTER_ENTRY_ID", DEFAULT_ROSTER_ENTRY_ID)
     mistral_api_key = os.environ.get("MISTRAL_API_KEY", "")
@@ -319,6 +334,7 @@ def load_settings() -> Settings:
         host_threads=host_threads,
         runtime_reference_path=runtime_reference_path,
         quality_reference_path=quality_reference_path,
+        judge_probe_reference_path=judge_probe_reference_path,
         runtime_reproduction_tolerance=runtime_reproduction_tolerance,
         emission_country_iso_code=emission_country_iso_code,
         emission_region=emission_region,
