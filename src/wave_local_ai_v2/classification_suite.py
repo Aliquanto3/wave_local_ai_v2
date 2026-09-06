@@ -18,6 +18,8 @@ import hashlib
 from collections.abc import Mapping, Sequence
 from typing import Any, Literal, TypedDict
 
+from wave_local_ai_v2 import row_contract
+
 LABELS: frozenset[str] = frozenset({"billing", "technical", "account", "other"})
 
 _LABEL_LIST = ", ".join(sorted(LABELS))
@@ -32,13 +34,29 @@ _INSTRUCTION = (
 # "2": +5 FR + 5 DE hand-written items (Story 20: the-classification-suite-
 # reaches-twenty-items-across-three-languages) -- adding items is the same
 # class of change as editing a prompt (Methodology 2).
+# "3": no item changed and `PROMPT_SET_HASH` does not move. What changed is
+# what the subject is sent: the local path now renders each item through the
+# model's own chat template under `THINKING_POLICY` below, where it used to
+# post the item text raw to `/completion` and get a continuation of it back
+# (the local-subject-prompts-are-never-chat-templated defect). A score under
+# "3" therefore measures something a score under "2" did not, which is what a
+# version is for -- the pair (`suite_version`, `prompt_template_id`)
+# separates the two generations, since the prompt-set hash alone cannot.
 SUITE_ID = "classification-support-routing"
-SUITE_VERSION = "2"
+SUITE_VERSION = "3"
 
 # The generation cap `quality_cli.py` sends for every local completion. Declared
 # here, on the suite, rather than in the CLI: the cap is a property of what the
 # suite asks a model to produce, not of the harness driving the request.
 MAX_OUTPUT_TOKENS = 32
+# What the model may spend that cap on -- the same class of declaration as the
+# cap itself (Methodology 3), and the one that makes the 32 above meaningful.
+# Probed on `b10537-bf0040e15`: asked through its own chat template with
+# thinking allowed, `Qwen3-0.6B` spends all 32 tokens in `reasoning_content`
+# and returns an empty answer, and so does `Qwen3.6-35B-A3B`. With thinking
+# disabled both answer in two tokens. A suite that wants deliberation declares
+# `allowed` and sizes its cap for it; this one asks for a single label word.
+THINKING_POLICY = row_contract.THINKING_POLICY_DISABLED
 # No stop sequence is sent to either provider today.
 STOP_SEQUENCES: list[str] = []
 # The context every compared model is assumed to run at. Phase 2 of the

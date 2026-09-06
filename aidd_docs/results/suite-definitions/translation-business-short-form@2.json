@@ -1,0 +1,221 @@
+{
+  "context_length": 32768,
+  "items": [
+    {
+      "contamination_risk": false,
+      "item_id": "en-fr-01",
+      "language": "en",
+      "prompt": "Translate the following English text into French. Reply with only the translation, nothing else.\n\nText: Could you confirm the delivery date for the order we placed last week?",
+      "provenance": "hand_written",
+      "reference": "Pourriez-vous confirmer la date de livraison de la commande que nous avons pass\u00e9e la semaine derni\u00e8re ?",
+      "source_text": "Could you confirm the delivery date for the order we placed last week?",
+      "target_language": "fr"
+    },
+    {
+      "contamination_risk": false,
+      "item_id": "en-fr-02",
+      "language": "en",
+      "prompt": "Translate the following English text into French. Reply with only the translation, nothing else.\n\nText: The invoice was sent to your accounting department this morning.",
+      "provenance": "hand_written",
+      "reference": "La facture a \u00e9t\u00e9 envoy\u00e9e \u00e0 votre service comptabilit\u00e9 ce matin.",
+      "source_text": "The invoice was sent to your accounting department this morning.",
+      "target_language": "fr"
+    },
+    {
+      "contamination_risk": false,
+      "item_id": "en-fr-03",
+      "language": "en",
+      "prompt": "Translate the following English text into French. Reply with only the translation, nothing else.\n\nText: I would like to move our meeting to Thursday afternoon if that suits you.",
+      "provenance": "hand_written",
+      "reference": "Je souhaiterais d\u00e9placer notre r\u00e9union \u00e0 jeudi apr\u00e8s-midi si cela vous convient.",
+      "source_text": "I would like to move our meeting to Thursday afternoon if that suits you.",
+      "target_language": "fr"
+    },
+    {
+      "contamination_risk": false,
+      "item_id": "en-fr-04",
+      "language": "en",
+      "prompt": "Translate the following English text into French. Reply with only the translation, nothing else.\n\nText: Please find attached the updated quotation for the maintenance contract.",
+      "provenance": "hand_written",
+      "reference": "Veuillez trouver ci-joint le devis actualis\u00e9 pour le contrat de maintenance.",
+      "source_text": "Please find attached the updated quotation for the maintenance contract.",
+      "target_language": "fr"
+    },
+    {
+      "contamination_risk": false,
+      "item_id": "en-fr-05",
+      "language": "en",
+      "prompt": "Translate the following English text into French. Reply with only the translation, nothing else.\n\nText: Our office will be closed next Monday for a public holiday.",
+      "provenance": "hand_written",
+      "reference": "Nos bureaux seront ferm\u00e9s lundi prochain en raison d'un jour f\u00e9ri\u00e9.",
+      "source_text": "Our office will be closed next Monday for a public holiday.",
+      "target_language": "fr"
+    },
+    {
+      "contamination_risk": false,
+      "item_id": "en-fr-06",
+      "language": "en",
+      "prompt": "Translate the following English text into French. Reply with only the translation, nothing else.\n\nText: The shipment left our warehouse yesterday and should arrive within three days.",
+      "provenance": "hand_written",
+      "reference": "L'exp\u00e9dition a quitt\u00e9 notre entrep\u00f4t hier et devrait arriver sous trois jours.",
+      "source_text": "The shipment left our warehouse yesterday and should arrive within three days.",
+      "target_language": "fr"
+    },
+    {
+      "contamination_risk": false,
+      "item_id": "en-fr-07",
+      "language": "en",
+      "prompt": "Translate the following English text into French. Reply with only the translation, nothing else.\n\nText: Thank you for your prompt reply; I have forwarded it to the project manager.",
+      "provenance": "hand_written",
+      "reference": "Merci pour votre r\u00e9ponse rapide ; je l'ai transmise au chef de projet.",
+      "source_text": "Thank you for your prompt reply; I have forwarded it to the project manager.",
+      "target_language": "fr"
+    },
+    {
+      "contamination_risk": false,
+      "item_id": "fr-de-01",
+      "language": "fr",
+      "prompt": "Translate the following French text into German. Reply with only the translation, nothing else.\n\nText: Le contrat arrive \u00e0 \u00e9ch\u00e9ance \u00e0 la fin du mois et doit \u00eatre renouvel\u00e9.",
+      "provenance": "hand_written",
+      "reference": "Der Vertrag l\u00e4uft Ende des Monats aus und muss verl\u00e4ngert werden.",
+      "source_text": "Le contrat arrive \u00e0 \u00e9ch\u00e9ance \u00e0 la fin du mois et doit \u00eatre renouvel\u00e9.",
+      "target_language": "de"
+    },
+    {
+      "contamination_risk": false,
+      "item_id": "fr-de-02",
+      "language": "fr",
+      "prompt": "Translate the following French text into German. Reply with only the translation, nothing else.\n\nText: Nous avons bien re\u00e7u votre paiement et nous vous en remercions.",
+      "provenance": "hand_written",
+      "reference": "Wir haben Ihre Zahlung erhalten und danken Ihnen daf\u00fcr.",
+      "source_text": "Nous avons bien re\u00e7u votre paiement et nous vous en remercions.",
+      "target_language": "de"
+    },
+    {
+      "contamination_risk": false,
+      "item_id": "fr-de-03",
+      "language": "fr",
+      "prompt": "Translate the following French text into German. Reply with only the translation, nothing else.\n\nText: Le devis que vous nous avez transmis d\u00e9passe notre budget annuel.",
+      "provenance": "hand_written",
+      "reference": "Der Kostenvoranschlag, den Sie uns \u00fcbermittelt haben, \u00fcbersteigt unser Jahresbudget.",
+      "source_text": "Le devis que vous nous avez transmis d\u00e9passe notre budget annuel.",
+      "target_language": "de"
+    },
+    {
+      "contamination_risk": false,
+      "item_id": "fr-de-04",
+      "language": "fr",
+      "prompt": "Translate the following French text into German. Reply with only the translation, nothing else.\n\nText: Merci de nous indiquer un cr\u00e9neau disponible la semaine prochaine.",
+      "provenance": "hand_written",
+      "reference": "Bitte teilen Sie uns einen freien Termin in der n\u00e4chsten Woche mit.",
+      "source_text": "Merci de nous indiquer un cr\u00e9neau disponible la semaine prochaine.",
+      "target_language": "de"
+    },
+    {
+      "contamination_risk": false,
+      "item_id": "fr-de-05",
+      "language": "fr",
+      "prompt": "Translate the following French text into German. Reply with only the translation, nothing else.\n\nText: La r\u00e9union de lancement se tiendra dans nos locaux \u00e0 dix heures.",
+      "provenance": "hand_written",
+      "reference": "Das Auftaktgespr\u00e4ch findet um zehn Uhr in unseren R\u00e4umen statt.",
+      "source_text": "La r\u00e9union de lancement se tiendra dans nos locaux \u00e0 dix heures.",
+      "target_language": "de"
+    },
+    {
+      "contamination_risk": false,
+      "item_id": "fr-de-06",
+      "language": "fr",
+      "prompt": "Translate the following French text into German. Reply with only the translation, nothing else.\n\nText: Notre \u00e9quipe technique examinera votre demande d\u00e8s demain matin.",
+      "provenance": "hand_written",
+      "reference": "Unser technisches Team wird Ihre Anfrage gleich morgen fr\u00fch pr\u00fcfen.",
+      "source_text": "Notre \u00e9quipe technique examinera votre demande d\u00e8s demain matin.",
+      "target_language": "de"
+    },
+    {
+      "contamination_risk": false,
+      "item_id": "fr-de-07",
+      "language": "fr",
+      "prompt": "Translate the following French text into German. Reply with only the translation, nothing else.\n\nText: Veuillez nous retourner le document sign\u00e9 avant vendredi.",
+      "provenance": "hand_written",
+      "reference": "Bitte senden Sie uns das unterschriebene Dokument vor Freitag zur\u00fcck.",
+      "source_text": "Veuillez nous retourner le document sign\u00e9 avant vendredi.",
+      "target_language": "de"
+    },
+    {
+      "contamination_risk": false,
+      "item_id": "de-en-01",
+      "language": "de",
+      "prompt": "Translate the following German text into English. Reply with only the translation, nothing else.\n\nText: Die Rechnung f\u00fcr das dritte Quartal wurde gestern versendet.",
+      "provenance": "hand_written",
+      "reference": "The invoice for the third quarter was sent yesterday.",
+      "source_text": "Die Rechnung f\u00fcr das dritte Quartal wurde gestern versendet.",
+      "target_language": "en"
+    },
+    {
+      "contamination_risk": false,
+      "item_id": "de-en-02",
+      "language": "de",
+      "prompt": "Translate the following German text into English. Reply with only the translation, nothing else.\n\nText: Wir bitten Sie, die beigef\u00fcgten Unterlagen bis Montag zu pr\u00fcfen.",
+      "provenance": "hand_written",
+      "reference": "We ask you to review the attached documents by Monday.",
+      "source_text": "Wir bitten Sie, die beigef\u00fcgten Unterlagen bis Montag zu pr\u00fcfen.",
+      "target_language": "en"
+    },
+    {
+      "contamination_risk": false,
+      "item_id": "de-en-03",
+      "language": "de",
+      "prompt": "Translate the following German text into English. Reply with only the translation, nothing else.\n\nText: Der Liefertermin verschiebt sich um zwei Wochen nach hinten.",
+      "provenance": "hand_written",
+      "reference": "The delivery date is being pushed back by two weeks.",
+      "source_text": "Der Liefertermin verschiebt sich um zwei Wochen nach hinten.",
+      "target_language": "en"
+    },
+    {
+      "contamination_risk": false,
+      "item_id": "de-en-04",
+      "language": "de",
+      "prompt": "Translate the following German text into English. Reply with only the translation, nothing else.\n\nText: Unser Angebot gilt bis zum Ende des laufenden Monats.",
+      "provenance": "hand_written",
+      "reference": "Our offer is valid until the end of the current month.",
+      "source_text": "Unser Angebot gilt bis zum Ende des laufenden Monats.",
+      "target_language": "en"
+    },
+    {
+      "contamination_risk": false,
+      "item_id": "de-en-05",
+      "language": "de",
+      "prompt": "Translate the following German text into English. Reply with only the translation, nothing else.\n\nText: Bitte richten Sie Ihre Fragen k\u00fcnftig an unsere Serviceabteilung.",
+      "provenance": "hand_written",
+      "reference": "Please direct your questions to our service department from now on.",
+      "source_text": "Bitte richten Sie Ihre Fragen k\u00fcnftig an unsere Serviceabteilung.",
+      "target_language": "en"
+    },
+    {
+      "contamination_risk": false,
+      "item_id": "de-en-06",
+      "language": "de",
+      "prompt": "Translate the following German text into English. Reply with only the translation, nothing else.\n\nText: Die Schulung f\u00fcr die neuen Mitarbeiter beginnt am Dienstagmorgen.",
+      "provenance": "hand_written",
+      "reference": "The training for the new employees starts on Tuesday morning.",
+      "source_text": "Die Schulung f\u00fcr die neuen Mitarbeiter beginnt am Dienstagmorgen.",
+      "target_language": "en"
+    },
+    {
+      "contamination_risk": false,
+      "item_id": "de-en-07",
+      "language": "de",
+      "prompt": "Translate the following German text into English. Reply with only the translation, nothing else.\n\nText: Wir haben Ihre Adress\u00e4nderung im System hinterlegt.",
+      "provenance": "hand_written",
+      "reference": "We have recorded your change of address in the system.",
+      "source_text": "Wir haben Ihre Adress\u00e4nderung im System hinterlegt.",
+      "target_language": "en"
+    }
+  ],
+  "max_output_tokens": 128,
+  "prompt_set_hash": "16150e4406042a8940093740640627b7ce4ce9e80ae64bc080b7b4d80f6f7574",
+  "stop_sequences": [],
+  "suite_id": "translation-business-short-form",
+  "suite_version": "2",
+  "thinking_policy": "disabled"
+}

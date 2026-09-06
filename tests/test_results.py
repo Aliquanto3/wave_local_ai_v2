@@ -72,6 +72,7 @@ COMPLETE_QUALITY_ROW = {
     "sampling": {"seed": 1},
     "max_output_tokens": 32,
     "stop_sequences": [],
+    "thinking_policy": "disabled",
     "context_length": 32768,
     "suite_id": "classification-support-routing",
     "suite_version": "1",

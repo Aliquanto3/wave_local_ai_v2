@@ -131,7 +131,7 @@ schema note above refers to).
 
 Suite: `translation-business-short-form`, `suite_version` `"1"`, `prompt_set_hash`
 `16150e4406042a89...`, exported item-for-item to
-`suite-definitions/translation-business-short-form.json`. 21 hand-written items in three
+`suite-definitions/translation-business-short-form@1.json`. 21 hand-written items in three
 directions, seven each: `en->fr`, `fr->de`, `de->en`. Caps: 128 output tokens, no stop
 sequence, 32768 context.
 
@@ -271,6 +271,16 @@ aidd_docs/results/quality-reference.jsonl`:
 | Edit reverted (`git checkout --`) | `checked 82 row(s)`, exit **0** again |
 
 ## Dense versus MoE, side by side (2026-09-06)
+
+> **Superseded, and kept.** Every local number in this section was produced by
+> posting the item text raw to `/completion`, so a chat-tuned model was asked to
+> continue it rather than answer it. These are real measurements of the wrong
+> thing, and the subsection below, "What the dense rows are actually measuring",
+> is where that was first written down. They are **not edited**: the rows exist
+> on disk and still say what they said. Read them beside "The same eight
+> batches, chat-templated" further down, which re-runs all four models under
+> bumped suite versions. The defect is
+> `aidd_docs/backlog/defects/local-subject-prompts-are-never-chat-templated.md`.
 
 The three dense models' rows were produced today and are not part of the committed
 bundle: they live in the untracked live stores (`aidd_docs/results/runtime.jsonl`,
@@ -493,6 +503,141 @@ The whole live session -- pilot, three runtime runs, six quality batches -- ran
 with no cloud quota spent (the `google` comparator rows were cited, not re-run). The
 downloads are 4.63 GiB total. `wave-local-ai-v2-validate` exits `0` over both live stores,
 `checked 432 row(s)`, every `fiche_hash` resolving.
+
+## The same eight batches, chat-templated (2026-09-06, later the same day)
+
+The four models above, re-run on both suites after the local subject path moved
+to llama-server's `/v1/chat/completions`. Same machine, same four committed
+fiches, same items, same caps, same pinned sampler. What changed is what the
+model was sent: each item is now rendered through the loaded model's own chat
+template and answered on the chat endpoint, under a suite-declared
+`thinking_policy` of `disabled`.
+
+These rows live in the untracked live store at `schema_version` `"11"`, under
+`suite_version` `"3"` (classification) and `"2"` (translation). Their
+predecessors above are `"2"` and `"1"`, and `verdict.select_quality_references`
+keys on `suite_version`, so every new batch reports `not_comparable` against
+them by construction. Nothing was edited to achieve that. Both suites'
+`prompt_set_hash` is **unchanged** -- no item text moved -- and each version's
+definition is committed beside its predecessor at
+`suite-definitions/<suite_id>@<suite_version>.json`.
+
+### Classification
+
+Suite `classification-support-routing`, `suite_version` `"3"`, 20 items,
+32-token cap, `thinking_policy: disabled`.
+
+| Model | `run_id` | Accuracy | was | `tokens_out_total` | was | failures | `en` (n=10) | `fr` (n=5) | `de` (n=5) |
+| ----- | -------- | -------- | --- | ------------------ | --- | -------- | ----------- | ---------- | ---------- |
+| `gemini-3.5-flash-lite` | `1f3c94b9...` | **1.00** | 1.00 | 20 | 20 | 0 | 1.00 | 1.00 * | 1.00 * |
+| `Qwen3.6-35B-A3B` | `d4d2e0d5...` | **1.00** | 0.80 | 40 | 240 | 0 | 1.00 | 1.00 * | 1.00 * |
+| `Qwen3-4B` | `ebce4da6...` | **0.70** | 0.45 | 40 | 640 | 0 | 0.80 | 0.60 * | 0.60 * |
+| `Qwen3-1.7B` | `91ee67b1...` | **0.60** | 0.25 | 40 | 640 | 0 | 0.70 | 0.40 * | 0.60 * |
+| `Qwen3-0.6B` | `e716ce86...` | **0.45** | 0.45 | 40 | 640 | 0 | 0.50 | 0.40 * | 0.40 * |
+
+`*` = `indicative`: the cell holds 5 items against `MIN_PER_LANGUAGE_CELL_ITEMS`
+(10). The suite-level number is not indicative on any row. The `gemini` row is
+the same cited row as above, restated for comparison; see the version caveat
+below.
+
+### Translation
+
+Suite `translation-business-short-form`, `suite_version` `"2"`, 21 items,
+128-token cap, chrF against **one** reference on the `0..1` scale,
+`thinking_policy: disabled`.
+
+| Model | `run_id` | `suite_score` | was | `en`->`fr` (n=7) | `fr`->`de` (n=7) | `de`->`en` (n=7) |
+| ----- | -------- | ------------- | --- | ---------------- | ---------------- | ---------------- |
+| `gemini-3.5-flash-lite` | `80803767...` | **0.8400** | 0.8400 | 0.8671 * | 0.7700 * | 0.8829 * |
+| `Qwen3.6-35B-A3B` | `79e95271...` | **0.8002** | 0.7691 | 0.8226 * | 0.7004 * | 0.8775 * |
+| `Qwen3-4B` | `42bd9d8b...` | **0.7252** | 0.2005 | 0.7169 * | 0.6184 * | 0.8405 * |
+| `Qwen3-1.7B` | `41ac932a...` | **0.7107** | 0.1742 | 0.6409 * | 0.6399 * | 0.8513 * |
+| `Qwen3-0.6B` | `108fc07e...` | **0.5121** | 0.1867 | 0.4846 * | 0.3852 * | 0.6664 * |
+
+`*` = `indicative` on every cell: seven items per direction against the 10-item
+floor. `failure_counts` is all-zero on every row of both tables.
+
+### What moved, and what did not
+
+**The ladder ranks by size now, on both suites.** 0.45 < 0.60 < 0.70 < 1.00 on
+classification and 0.5121 < 0.7107 < 0.7252 < 0.8002 on translation, monotonic
+in parameter count. The untemplated tables rank it differently and
+inconsistently -- the 1.7B was the worst of the four on classification and the
+4B only tied the 0.6B -- which is the clearest single sign that those numbers
+were not measuring model capability.
+
+**The models stop on their own.** Every dense classification batch above spent
+`tokens_out_total` 640, twenty items times the full 32-token cap, never
+finishing an answer. All three now spend **40**: two tokens per item, the label
+and its stop. The flagship went 240 -> 40. `failure_counts` is all-zero
+everywhere, and the six `unparseable` items the 0.6B published and the fourteen
+the 1.7B published are gone, because there is now an answer to parse.
+
+**The 0.6B did not improve on classification.** 0.45 before and 0.45 after. It
+is the one number in these tables that did not move, and it deserves saying
+plainly: this model answers the routing task cleanly and gets it wrong, 15 of
+its 20 answers being `technical`. That is a capability result, and it is exactly
+what the untemplated run could not have told anyone. Its translation score moved
+0.1867 -> 0.5121 in the same session, so the flat classification figure is about
+this model on this task, not about this model.
+
+**The flagship reaches the cloud comparator on classification.** 0.80 -> 1.00,
+level with `gemini-3.5-flash-lite` on all twenty items. On translation it closes
+roughly a third of the gap (0.7691 -> 0.8002 against 0.8400) and does not close
+it.
+
+**The `<think>` envelope left the completions.** No `subject_output` in any of
+the 84 new translation rows contains `<think>`: with thinking disabled the
+template prefills an empty block into the *prompt*, where it costs no score. The
+earlier finding said the local-versus-google gap was "an upper bound on the real
+one" because the envelope added ~15 characters of non-reference n-grams to every
+local hypothesis. That is now measured rather than argued. The flagship's
+`fr-de-03` translation is **byte-identical** across the two runs -- "Das von Ihnen
+übermittelte Angebot übersteigt unser jährliches Budget." -- and the envelope is
+the whole difference between the two stored completions: the superseded row's
+`subject_output` carries `\n\n<think>\n\n</think>\n\n` in front of that sentence
+and the new one does not. It scores 0.4078 on the old row and **0.4205** here.
+0.4205 is exactly the "trimmed text alone" figure the "Reading these scores"
+table above predicted for that item, so the prediction and the measurement
+agree. The tech-debt row that recorded the envelope stays open for the raw
+`/completion` path, which still emits it into the completion.
+
+### The three caveats these numbers carry
+
+- **The cloud comparator sits at the previous suite versions.** The
+  `gemini-3.5-flash-lite` rows are cited, not re-run: classification at
+  `suite_version` `"2"` and translation at `"1"`, against the new local rows'
+  `"3"` and `"2"`. The items, the caps and both `prompt_set_hash` values are
+  identical across the bump -- nothing about what the cloud model was asked
+  changed -- so the scores stay comparable, and a side-by-side table will
+  nevertheless show two different version numbers in one column. Re-running
+  Google would pay cloud quota to regenerate identical answers to identical
+  prompts. Stated here rather than left for a reader to discover.
+- **`thinking_policy: disabled` measures a narrower model than the vendor
+  ships.** These are Qwen3 models with reasoning switched off at the request
+  level, which is what makes a 32-token label task and a 128-token sentence task
+  answerable at all: probed on this build, every one of these models with
+  thinking allowed spends its entire cap in `reasoning_content` and returns an
+  empty string. A thinking-allowed run with caps sized for deliberation is a
+  different measurement, and this project has not made it. Read a routing score
+  as a routing score, never as the model's ceiling. Publishing both policies
+  side by side is recorded on the defect as deferred on run cost.
+- **Everything the untemplated tables say about the comparison's shape still
+  holds.** The dense ladder is Qwen3 (May 2025) and the flagship is Qwen3.6
+  (2026), so dense-versus-MoE across the two stays confounded by a model
+  generation; the quants are still not uniform; and chrF against one reference
+  still compares models on identical references rather than measuring
+  translation quality absolutely.
+
+### Cost of reproducing this
+
+Eight local batches, one `wave-local-ai-v2-quality` invocation per (model,
+suite) at `QUALITY_PROVIDERS=local`, on 2026-09-06. No cloud quota spent. Every
+row cites one of the four fiches already committed for the untemplated runs
+(`f804bee0...`, `067530ef...`, `dfd5a5ea...`, `b9d1af56...`): same machine, same
+flags, so no new hardware record was created and every number here resolves
+against the bundle as it already stands. `uv run wave-local-ai-v2-validate` over
+both live stores exits `0`, `checked 596 row(s)`.
 
 ## Earlier increments' evidence (predates this regeneration)
 

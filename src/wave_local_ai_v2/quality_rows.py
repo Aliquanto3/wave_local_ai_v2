@@ -30,16 +30,25 @@ def local_batch_fields(
 ) -> dict[str, Any]:
     """The per-batch energy/emissions/cost fields shared by every local row.
 
-    tokens_in_total stays null: the local `/completion` path these suites call
-    never captures a prompt-token count, so publishing one here would
-    fabricate it (same honesty rule `__init__.py`'s runtime tokens_in_total
-    follows).
+    `tokens_in_total` is the batch's prompt-token total when the completions
+    carry one and `None` when they do not. The local chat endpoint reports it
+    in `usage`; the raw `/completion` path never did, which is why this field
+    was hardcoded null until the subject path moved. A completion missing the
+    count makes the total unknown rather than zero, the same
+    `cost.total_or_none` rule the cloud batch follows -- a batch is never
+    priced as if its prompts were free.
     """
     emissions_kg = emissions.local_emissions(
         energy["energy_kwh"], settings.emission_factor_kg_per_kwh
     )
     cost_total = cost.local_cost(energy["energy_kwh"], settings.kwh_price_eur)
     tokens_out_total = sum(completion["generated_tokens"] for completion in completions)
+    tokens_in_total = cost.total_or_none(
+        completion.get("prompt_tokens") for completion in completions
+    )
+    total_tokens = (
+        tokens_in_total + tokens_out_total if tokens_in_total is not None else None
+    )
     return {
         **energy,
         "emissions_kg": emissions_kg,
@@ -48,14 +57,16 @@ def local_batch_fields(
         "emissions_scope": emissions.EMISSIONS_SCOPE_2,
         "emissions_scope_formula_id": None,
         "scope_comparability": None,
-        "tokens_in_total": None,
+        "tokens_in_total": tokens_in_total,
         "tokens_out_total": tokens_out_total,
         "cost_total": cost_total,
         "cost_currency": "EUR",
-        # Derived, not hardcoded null: total_tokens is unknown while
-        # tokens_in_total is, so the rate is undefined today -- but it starts
-        # publishing on its own the day the local path captures prompt tokens.
-        "cost_per_million_tokens": cost.cost_per_million_tokens(cost_total, None),
+        # Derived, never hardcoded: this stayed null for as long as
+        # tokens_in_total did, and started publishing on its own the day the
+        # local path began capturing prompt tokens.
+        "cost_per_million_tokens": cost.cost_per_million_tokens(
+            cost_total, total_tokens
+        ),
         "normalization_unit": cost.NORMALIZATION_UNIT,
         "kwh_price_eur": settings.kwh_price_eur,
         "kwh_price_currency": "EUR",

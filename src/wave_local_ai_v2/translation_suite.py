@@ -32,18 +32,33 @@ from __future__ import annotations
 
 from typing import Literal, TypedDict
 
+from wave_local_ai_v2 import row_contract
 from wave_local_ai_v2.classification_suite import prompt_set_hash
 
 # This suite's stable identity, versioned independently from the row schema
 # (Methodology 19): the id names the suite, the version tracks its item set.
+# "2": no item changed and `PROMPT_SET_HASH` does not move -- the same bump,
+# for the same reason, as `classification_suite`'s "3": the local subject is
+# now rendered through the model's own chat template under `THINKING_POLICY`
+# below instead of being posted raw to `/completion`. A chrF score under "2"
+# is not comparable to one under "1".
 SUITE_ID = "translation-business-short-form"
-SUITE_VERSION = "1"
+SUITE_VERSION = "2"
 
 # The generation cap `quality_cli.py` sends for every completion. Larger than
 # the classification suite's 32 because a sentence translation truncates
 # there; declared on the suite for the same reason that one is -- the cap is
 # a property of what the suite asks a model to produce.
 MAX_OUTPUT_TOKENS = 128
+# What the model may spend that cap on (Methodology 3), declared on evidence
+# rather than by symmetry with the classification suite: probed on
+# `b10537-bf0040e15`, `Qwen3-0.6B` asked through its own chat template with
+# thinking allowed spends all 128 tokens reasoning and returns an empty answer
+# even at four times the other suite's cap, while the same call with thinking
+# disabled returns a complete French sentence in 30. A cap this suite sized so
+# that "the 128-token cap is never the reason a model fails" only holds under
+# `disabled`.
+THINKING_POLICY = row_contract.THINKING_POLICY_DISABLED
 # No stop sequence is sent to any provider today.
 STOP_SEQUENCES: list[str] = []
 # The context every compared model is assumed to run at -- the same literal

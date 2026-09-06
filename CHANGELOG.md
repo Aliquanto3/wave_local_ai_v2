@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`thinking_policy` on every quality row**, declared by the suite, values
+  `disabled` or `allowed`, with `row_contract.SCHEMA_VERSION` moving `"10"` →
+  `"11"` (quality rows only; the runtime row runs no suite and renders no
+  template). Both shipped suites declare `disabled`, and so does the judge
+  probe. The field exists because the endpoint move made it decisive rather
+  than cosmetic: probed live on `b10537-bf0040e15`, `Qwen3-0.6B` **and**
+  `Qwen3.6-35B-A3B` asked through their own chat template spend their entire
+  generation cap in `reasoning_content` and return an empty answer — a suite
+  score of 0.00 — while the same call with
+  `chat_template_kwargs: {"enable_thinking": false}` answers in two tokens,
+  the flagship correctly. The same model, at the same cap, on the same
+  endpoint, produces a score or no score depending on one request argument,
+  so a row that does not name the policy cannot be compared to anything. It
+  sits with `max_output_tokens`, `stop_sequences` and `context_length` under
+  Methodology 3 — what a model may spend its cap on is the same class of
+  constraint as how much cap it has — and it is published on cloud rows too,
+  in the same status `stop_sequences` already has: it states what the suite
+  asked for, while the call-path fields state how each provider was
+  addressed. A future suite that wants deliberation declares `allowed` and
+  sizes its cap for it.
 - A dense Qwen3 size ladder in the roster beside the MoE flagship, at
   `roster_version` `2`: `qwen3-0.6b-q8`, `qwen3-1.7b-q8` and
   `qwen3-4b-q4km`, each a vendor-official GGUF pinned by **commit sha**
@@ -385,6 +405,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The local quality subject answers through its own model's chat template.**
+  `quality_cli._run_local_suite` and `judge_probe._generate_local_outputs`
+  post to llama-server's `/v1/chat/completions` instead of `/completion`,
+  through a new shared `local_client` module beside `mistral_client` and
+  `google_client`. The raw endpoint sends a prompt byte-for-byte, so a
+  chat-tuned model was asked to *continue* the item text rather than answer
+  it — the defect recorded in
+  `aidd_docs/backlog/defects/local-subject-prompts-are-never-chat-templated.md`.
+  The runtime benchmark still posts to `/completion` and is untouched: its
+  number is raw generation throughput against a fixed prompt, and templating
+  it would change the token count it measures and break its reproduction
+  verdict against every published runtime row.
+- **A local quality row now carries the prompt as rendered, not the item
+  text.** `prompt` holds the `/apply-template` output, `prompt_template_id`
+  reads `llamacpp-model-chat-template` instead of `none`,
+  `prompt_template_hash` is the sha256 of the model's own Jinja template as
+  `/props` reports it, and `prompt_capture` reads `reconstructed` — the chat
+  endpoint echoes the rendered prompt nowhere, so the stored string comes
+  from a second call with the same arguments rather than from the request
+  that produced the answer. This is Methodology 2's "as rendered for that
+  provider" holding on the local path for the first time, and it is the
+  producer `prompt_provenance.is_consistent` had been waiting for: a
+  templated endpoint declaring `none` has always been refused, and until now
+  nothing could produce the accepted pair.
+- **A local quality row publishes `tokens_in_total`.** The chat endpoint
+  reports prompt tokens in `usage`, so the field stops being hardcoded null
+  and `cost_per_million_tokens` starts publishing — exactly what
+  `quality_rows.local_batch_fields` said it would do "the day the local path
+  captures prompt tokens". A completion missing the count still makes the
+  total unknown rather than zero.
+- **The local chat path reports truncation from `finish_reason`**, as both
+  cloud paths already do, instead of reading `stopped_limit` — a key
+  llama.cpp `b10537` does not return. The open tech-debt row on that misread
+  stays open for the paths that still read it; this increment fixes it only
+  where it migrated, and does not close someone else's row.
+- **Both suite versions bumped**, `classification-support-routing` `"2"` →
+  `"3"` and `translation-business-short-form` `"1"` → `"2"`, with neither
+  `PROMPT_SET_HASH` moving: no item text was edited, and what changed is what
+  the subject was sent. `verdict.select_quality_references` keys on
+  `suite_version`, so every row produced on the templated path reports
+  `not_comparable` against the untemplated ones by construction — supersession
+  is structural here, and no published row was edited to achieve it. The pair
+  (`suite_version`, `prompt_template_id`) is what separates the two
+  generations, since the prompt-set hash alone cannot.
+- **A suite definition snapshot is addressed by suite id *and* version**:
+  `suite_snapshot` now writes `aidd_docs/results/suite-definitions/
+  <suite_id>@<suite_version>.json`, so a bump adds a file beside its
+  predecessor instead of overwriting it and a published row keeps resolving to
+  the definition it was produced against. The two existing snapshots were
+  `git mv`-renamed to `...@2.json` and `...@1.json`, bytes unchanged, and
+  `tests/test_reference_bundle.py` resolves a row through the pair it cites.
+  The snapshot also carries the suite's `thinking_policy`, so a bundle reader
+  sees the policy behind a score without importing the suite module.
 - `SERVER_N_CPU_MOE` unset no longer means `37`. It means "the selected
   entry's `validated_host` decides": `37` for the MoE flagship, and no
   `--n-cpu-moe` at all for a dense entry. Set, it overrides the entry exactly

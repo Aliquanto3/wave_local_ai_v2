@@ -37,9 +37,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, TypedDict
-
-import requests
+from typing import Any, Literal, NotRequired, TypedDict
 
 from wave_local_ai_v2 import (
     agreement,
@@ -51,6 +49,7 @@ from wave_local_ai_v2 import (
     judge,
     judge_backends,
     judge_protocol,
+    local_client,
     mistral_client,
     prompt_provenance,
     provenance,
@@ -264,6 +263,13 @@ PROMPT_SET_HASH = classification_suite.prompt_set_hash(JUDGE_PROBE_ITEMS)
 # suite's cap) would truncate every single answer.
 MAX_OUTPUT_TOKENS = 256
 STOP_SEQUENCES: list[str] = []
+# What the subject may spend that cap on (Methodology 3), the same declaration
+# both shipped suites carry. `disabled` here too: this probe measures whether
+# the judged machinery works end to end, and a subject that spends 256 tokens
+# reasoning and answers nothing would test the judges against empty strings. A
+# rewriting suite that wants deliberation declares `allowed` and sizes its own
+# cap for it -- that is the suite's call, not this probe's.
+THINKING_POLICY = row_contract.THINKING_POLICY_DISABLED
 # The context every compared model is assumed to run at -- the shipped roster
 # entry's own `server_flags.context_size`, written out as a literal for the
 # same reason `classification_suite.CONTEXT_LENGTH` is: `server.py` exposes no
@@ -309,10 +315,6 @@ _VERDICT_NOT_COMPARABLE_REASON = (
 )
 
 
-class LocalCompletionError(RuntimeError):
-    """Raised when a local llama-server /completion response has no usable content."""
-
-
 class JudgeCallError(RuntimeError):
     """Raised when a judge call fails, naming the item and the provider.
 
@@ -332,6 +334,9 @@ class _ProbeCompletion(TypedDict):
     truncated: bool
     generated_tokens: int
     retries: int
+    # Reported by the local chat endpoint's `usage` block; absent on the cloud
+    # shape, which totals its own prompt tokens separately.
+    prompt_tokens: NotRequired[int]
 
 
 @dataclass(frozen=True)
@@ -376,7 +381,7 @@ def main() -> None:
         # and every disk failure append_row can raise lands here as one line.
         OSError,
         roster.RosterError,
-        LocalCompletionError,
+        local_client.LocalRequestError,
         JudgeCallError,
         suite_gate.SuiteGateError,
         # Both providers' request errors and an exhausted retry budget abort
@@ -547,45 +552,52 @@ def _item_by_id(item_id: str) -> ProbeItem:
 
 def _generate_local_outputs(
     settings: Settings, flags: list[str]
-) -> list[_ProbeCompletion]:
-    """One llama-server launch, one `/completion` per probe item."""
+) -> tuple[list[_ProbeCompletion], list[str], str]:
+    """One llama-server launch, one chat completion per probe item.
+
+    The same path `quality_cli` takes and for the same reason: `/completion`
+    sends the prompt byte-for-byte, so a chat-tuned model continues the item
+    text rather than answering it. Returns the completions, the string each
+    item was rendered to, and the template that rendered them -- the row
+    publishes the first two and the hash of the third.
+    """
     completions: list[_ProbeCompletion] = []
+    rendered_prompts: list[str] = []
+    base_url = f"http://{server.HOST}:{server.PORT}"
 
     with server.running_server(settings.llama_server_path, flags):
+        template = local_client.chat_template(base_url, timeout=REQUEST_TIMEOUT_S)
         for item in JUDGE_PROBE_ITEMS:
-            response = requests.post(
-                f"http://{server.HOST}:{server.PORT}/completion",
-                json={
-                    "prompt": item["prompt"],
-                    "n_predict": MAX_OUTPUT_TOKENS,
-                    **LOCAL_SAMPLING,
-                },
+            rendered_prompts.append(
+                local_client.render_prompt(
+                    base_url,
+                    item["prompt"],
+                    thinking_policy=THINKING_POLICY,
+                    timeout=REQUEST_TIMEOUT_S,
+                )
+            )
+            response = local_client.complete_chat(
+                base_url,
+                item["prompt"],
+                max_tokens=MAX_OUTPUT_TOKENS,
+                sampling=LOCAL_SAMPLING,
+                thinking_policy=THINKING_POLICY,
                 timeout=REQUEST_TIMEOUT_S,
             )
-            response.raise_for_status()
-            response_json: dict[str, Any] = response.json()
-            try:
-                content = response_json["content"]
-            except (KeyError, TypeError) as exc:
-                raise LocalCompletionError(
-                    f"unexpected /completion response shape: {response_json!r}"
-                ) from exc
-            if not isinstance(content, str):
-                raise LocalCompletionError(
-                    f"unexpected /completion content type: {content!r}"
-                )
             completions.append(
                 _ProbeCompletion(
-                    content=content,
-                    truncated=bool(response_json.get("stopped_limit", False)),
-                    generated_tokens=response_json.get("tokens_predicted", 0),
-                    # The local `/completion` path has no retryable error type
-                    # and never retries.
+                    content=response["content"],
+                    truncated=response["finish_reason"]
+                    in local_client.TRUNCATING_FINISH_REASONS,
+                    generated_tokens=response["generated_tokens"],
+                    # The local path has no retryable error type and never
+                    # retries.
                     retries=0,
+                    prompt_tokens=response["prompt_tokens"],
                 )
             )
 
-    return completions
+    return completions, rendered_prompts, template
 
 
 def _judge_failure_provider(exc: BaseException) -> str:
@@ -666,6 +678,10 @@ def _build_row(
     failure_reason: str | None,
     failure_counts: dict[str, int],
     retries: int,
+    # What the row publishes as `prompt`. The local chat path renders the item
+    # into something else and passes it here (Methodology 2); the cloud path
+    # sends the item text and declares its wrapper, so it passes nothing.
+    prompt: str | None = None,
 ) -> dict[str, Any]:
     """One probe row: the quality contract's key set, the judge block, the output.
 
@@ -698,7 +714,7 @@ def _build_row(
         **batch_fields,
         "task_suite": TASK_SUITE,
         "item_id": item["item_id"],
-        "prompt": item["prompt"],
+        "prompt": prompt if prompt is not None else item["prompt"],
         "expected_label": None,
         "predicted_label": None,
         "correct": None,
@@ -707,6 +723,7 @@ def _build_row(
         "sampling": dict(sampling),
         "max_output_tokens": MAX_OUTPUT_TOKENS,
         "stop_sequences": list(STOP_SEQUENCES),
+        "thinking_policy": THINKING_POLICY,
         "context_length": CONTEXT_LENGTH,
         "suite_id": SUITE_ID,
         "suite_version": SUITE_VERSION,
@@ -756,10 +773,11 @@ def _run_local_batch(
         print(f"local skipped: {skip_reason}", file=sys.stderr)
         return None
 
-    completions, energy = measure_energy(
+    local_batch, energy = measure_energy(
         lambda: _generate_local_outputs(settings, flags),
         country_iso_code=settings.emission_country_iso_code,
     )
+    completions, rendered_prompts, chat_template = local_batch
 
     # Judging happens after the measured block closed: a judge call is network
     # time on someone else's machine, and letting it land inside the tracker's
@@ -816,8 +834,13 @@ def _run_local_batch(
     batch_fields = quality_rows.local_batch_fields(settings, energy, completions)
     model_id = context.roster_entry.display_id
 
-    for item, completion, block, failure_reason in zip(
-        JUDGE_PROBE_ITEMS, completions, blocks, failure_reasons, strict=True
+    for item, completion, block, failure_reason, rendered_prompt in zip(
+        JUDGE_PROBE_ITEMS,
+        completions,
+        blocks,
+        failure_reasons,
+        rendered_prompts,
+        strict=True,
     ):
         row = _build_row(
             context,
@@ -826,7 +849,8 @@ def _run_local_batch(
             model_id=model_id,
             provider=PROVIDER_LOCAL,
             sampling=LOCAL_SAMPLING,
-            call_path_fields=_local_call_path(),
+            call_path_fields=_local_call_path(chat_template),
+            prompt=rendered_prompt,
             batch_fields=batch_fields,
             judge_block=block,
             failure_reason=failure_reason,
@@ -982,13 +1006,19 @@ def _google_retry_hint_s(exc: Exception) -> float | None:
     )
 
 
-def _local_call_path() -> dict[str, Any]:
-    """The four call-path fields of the raw local `/completion` path."""
+def _local_call_path(chat_template: str) -> dict[str, Any]:
+    """The four call-path fields of the local chat path.
+
+    Same shape and same reasoning as `quality_cli._local_call_path`: the id
+    names the mechanism, the hash names which model's template rendered the
+    row, and `reconstructed` says the stored string came from
+    `/apply-template` rather than from the answering request.
+    """
     return {
-        "endpoint": prompt_provenance.LOCAL_COMPLETION_ENDPOINT,
-        "prompt_template_id": prompt_provenance.TEMPLATE_ID_NONE,
-        "prompt_template_hash": None,
-        "prompt_capture": prompt_provenance.PROMPT_CAPTURE_CAPTURED,
+        "endpoint": prompt_provenance.LOCAL_CHAT_ENDPOINT,
+        "prompt_template_id": prompt_provenance.TEMPLATE_ID_LLAMACPP_MODEL_CHAT,
+        "prompt_template_hash": prompt_provenance.template_hash(chat_template),
+        "prompt_capture": prompt_provenance.PROMPT_CAPTURE_RECONSTRUCTED,
     }
 
 

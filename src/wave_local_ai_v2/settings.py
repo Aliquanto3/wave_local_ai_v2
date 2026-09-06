@@ -24,6 +24,11 @@ DEFAULT_HOST_N_CPU_MOE = 37
 # same thread count on a given machine, so this one keeps a plain default.
 DEFAULT_HOST_THREADS = 8
 DEFAULT_FICHE_REGISTRY_DIR = "aidd_docs/results/fiches"
+# Where `suite_snapshot` exports each suite definition a published row cites.
+# A constant here rather than a literal in that module, for the reason
+# `fiche_registry.py` states about its own directory: an artifact path is
+# configuration, never hardcoded in the module that writes it.
+DEFAULT_SUITE_DEFINITIONS_DIR = "aidd_docs/results/suite-definitions"
 DEFAULT_RUNTIME_REFERENCE_PATH = "aidd_docs/results/runtime-reference.jsonl"
 DEFAULT_QUALITY_REFERENCE_PATH = "aidd_docs/results/quality-reference.jsonl"
 # The judge probe's own store. Unlike its two neighbours above -- curated

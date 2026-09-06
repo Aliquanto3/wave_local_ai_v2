@@ -10,12 +10,21 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from wave_local_ai_v2 import fiche_registry, results, roster, row_contract, settings
+from wave_local_ai_v2 import (
+    fiche_registry,
+    results,
+    roster,
+    row_contract,
+    settings,
+    suite_snapshot,
+)
 
 RESULTS_DIR = Path("aidd_docs/results")
-RUNTIME_REFERENCE_PATH = RESULTS_DIR / "runtime-reference.jsonl"
-QUALITY_REFERENCE_PATH = RESULTS_DIR / "quality-reference.jsonl"
-SUITE_DEFINITIONS_DIR = RESULTS_DIR / "suite-definitions"
+# Read from settings rather than rebuilt here, like the fiche and roster
+# pointers this file already resolves that way.
+RUNTIME_REFERENCE_PATH = Path(settings.DEFAULT_RUNTIME_REFERENCE_PATH)
+QUALITY_REFERENCE_PATH = Path(settings.DEFAULT_QUALITY_REFERENCE_PATH)
+SUITE_DEFINITIONS_DIR = Path(settings.DEFAULT_SUITE_DEFINITIONS_DIR)
 SUPERSEDED_PATHS = (
     RESULTS_DIR / "runtime-reference.schema-1.jsonl",
     RESULTS_DIR / "quality-reference.schema-1.jsonl",
@@ -61,9 +70,17 @@ def test_every_quality_row_resolves_its_suite_definition() -> None:
     quality_rows = results.read_rows(QUALITY_REFERENCE_PATH)
     for row in quality_rows:
         suite_id = row["suite_id"]
-        snapshot_path = SUITE_DEFINITIONS_DIR / f"{suite_id}.json"
+        suite_version = row["suite_version"]
+        # Resolved by the pair the row cites, not by the id alone: a bumped
+        # suite adds a definition file beside its predecessor, so a published
+        # row keeps resolving to the definition it was actually produced
+        # against rather than to whatever now wears its suite's name.
+        snapshot_path = SUITE_DEFINITIONS_DIR / suite_snapshot.snapshot_filename(
+            suite_id, suite_version
+        )
         assert snapshot_path.exists(), (
-            f"row {row['run_id']!r} cites unresolved suite_id {suite_id!r}"
+            f"row {row['run_id']!r} cites unresolved suite "
+            f"{suite_id!r}@{suite_version!r}"
         )
         snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
         assert snapshot["suite_id"] == suite_id
