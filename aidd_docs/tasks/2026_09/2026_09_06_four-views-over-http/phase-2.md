@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Instruction: The read model — four views, three named absence reasons, derived from the contract
