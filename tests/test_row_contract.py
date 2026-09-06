@@ -542,3 +542,85 @@ def test_aggregation_map_naming_a_field_the_row_does_not_carry_is_refused() -> N
 
     with pytest.raises(RowContractError, match="made_up_metric"):
         validate_row("runtime", row)
+
+
+def test_a_judged_row_with_neither_agreement_nor_the_flag_is_refused() -> None:
+    row = {
+        **COMPLETE_JUDGED_QUALITY_ROW,
+        "agreement": None,
+        "single_judge": False,
+    }
+
+    with pytest.raises(RowContractError) as excinfo:
+        validate_row("quality", row)
+
+    assert "agreement" in str(excinfo.value)
+    assert "single_judge" in str(excinfo.value)
+
+
+def test_a_row_claiming_one_judge_and_an_agreement_is_refused() -> None:
+    row = {**COMPLETE_JUDGED_QUALITY_ROW, "single_judge": True}
+
+    with pytest.raises(RowContractError, match="single_judge=True"):
+        validate_row("quality", row)
+
+
+def test_a_single_judge_row_with_no_agreement_validates() -> None:
+    row = {
+        **COMPLETE_JUDGED_QUALITY_ROW,
+        "judges": COMPLETE_JUDGED_QUALITY_ROW["judges"][:1],
+        "single_judge": True,
+        "single_judge_reason": "cloud_subject_other_family_only",
+        "agreement": None,
+        "agreement_statistic": None,
+        "judge_egress": {
+            **COMPLETE_JUDGED_QUALITY_ROW["judge_egress"],
+            "providers": ["mistral"],
+            "judge_call_count": 1,
+        },
+    }
+
+    validate_row("quality", row)
+
+
+def test_an_egress_count_disagreeing_with_the_calls_is_refused() -> None:
+    row = {
+        **COMPLETE_JUDGED_QUALITY_ROW,
+        "judges": COMPLETE_JUDGED_QUALITY_ROW["judges"][:1],
+        "single_judge": True,
+        "single_judge_reason": "cloud_subject_other_family_only",
+        "agreement": None,
+        "agreement_statistic": None,
+    }
+
+    with pytest.raises(RowContractError, match="judge_call_count"):
+        validate_row("quality", row)
+
+
+def test_an_empty_egress_provider_list_is_refused() -> None:
+    row = {
+        **COMPLETE_JUDGED_QUALITY_ROW,
+        "judge_egress": {
+            **COMPLETE_JUDGED_QUALITY_ROW["judge_egress"],
+            "providers": [],
+        },
+    }
+
+    with pytest.raises(RowContractError, match="providers"):
+        validate_row("quality", row)
+
+
+def test_no_judge_field_can_collide_with_a_required_quality_field() -> None:
+    # What makes "cost_total stays the subject generation's" structural rather
+    # than a convention: the judge block's cost lives under its own
+    # `judge_cost` key, so no judge field can overwrite a row-level one.
+    assert JUDGED_FIELDS & REQUIRED_FIELDS["quality"] == frozenset()
+    assert (
+        COMPLETE_JUDGED_QUALITY_ROW["cost_total"] == COMPLETE_QUALITY_ROW["cost_total"]
+    )
+
+
+def test_the_schema_version_did_not_move_again_for_the_judged_rules() -> None:
+    # Phase 3 adds rules over fields phase 1 already declared: no field is
+    # added or removed, so the version stays where the bump left it.
+    assert SCHEMA_VERSION == "9"

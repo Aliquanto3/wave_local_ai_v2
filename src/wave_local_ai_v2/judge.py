@@ -12,14 +12,20 @@ reproducible: `aidd_docs/results/README.md` records Mistral at temperature 0
 with a pinned `random_seed` failing to reproduce one item across two runs, so
 the text the judge actually returned is the row's evidence, not a score that
 could be re-derived on demand.
+
+Independence is enforced on model family (`roster.family_of`): a judge of the
+subject's own family is refused by name, never skipped and never quietly
+substituted.
 """
 
 from __future__ import annotations
 
 import re
-from typing import Protocol, TypedDict
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Any, Protocol, TypedDict
 
-from wave_local_ai_v2 import judge_protocol, scoring
+from wave_local_ai_v2 import agreement, cost, judge_protocol, scoring
 from wave_local_ai_v2.judge_protocol import Rubric
 
 # Any run of digits, sign included, so "-1" and "7" both reach the scale check
@@ -35,6 +41,15 @@ JUDGE_FAILURE_REASONS = (
     FAILURE_REASON_JUDGE_UNPARSEABLE,
     FAILURE_REASON_JUDGE_OUT_OF_SCALE,
 )
+
+# The only reason this project has for one judge instead of two: the subject
+# is itself a cloud model, so the judge of its own family is excluded and only
+# the other-family judge is left.
+SINGLE_JUDGE_REASON_CLOUD_SUBJECT = "cloud_subject_other_family_only"
+
+# One generation per judged item, whatever the judge count. Recorded on the
+# egress block so a reader can add up what left the machine.
+_GENERATIONS_PER_ITEM = 1
 
 
 class JudgeResponse(TypedDict):
@@ -154,3 +169,136 @@ def run_judge_call(
         tokens_out=response["tokens_out"],
         retries=response["retries"],
     )
+
+
+@dataclass(frozen=True)
+class Judge:
+    """One candidate judge: who it is, which family it belongs to, how to call it."""
+
+    model_id: str
+    provider: str
+    family: str
+    backend: JudgeBackend
+
+
+class JudgeFamilyCollisionError(ValueError):
+    """Raised when a candidate judge belongs to the subject's own model family."""
+
+
+def select_judges(subject_family: str, judges: Sequence[Judge]) -> list[Judge]:
+    """Return `judges` unchanged, or refuse the one that shares the subject's family.
+
+    A refusal, not a filter: the colliding judge is never quietly dropped and
+    another is never substituted for it, because either would publish a
+    two-judge row that silently became something else. Raises before any
+    backend is invoked, so a refused call costs nothing.
+    """
+    for candidate in judges:
+        if candidate.family == subject_family:
+            raise JudgeFamilyCollisionError(
+                f"judge {candidate.model_id!r} is of family "
+                f"{candidate.family!r}, the subject's own family: a judge "
+                "never scores output from its own family. This is a refusal, "
+                "not a skip -- name a judge of another family instead."
+            )
+    return list(judges)
+
+
+def judge_item(
+    *,
+    subject_family: str,
+    subject_provider: str,
+    subject_output: str,
+    item_prompt: str,
+    item_language: judge_protocol.JudgeLanguage,
+    rubric: Rubric,
+    judges: Sequence[Judge],
+    threshold: agreement.ContestedThreshold,
+) -> dict[str, Any]:
+    """Judge one subject output and return the row's whole judge block.
+
+    The returned key set is exactly `row_contract.JUDGED_FIELDS`. Two surviving
+    judges produce an agreement figure and `single_judge=False`; one produces
+    the flag and its reason with `agreement=None`. It is the number of judges
+    left after the independence rule that decides this, never a
+    `provider == "local"` test -- that keeps the rule true for a roster this
+    increment has not seen.
+
+    Both judges' own scores stay on the block whatever the suite-level
+    statistic says, so another agreement statistic can be recomputed from the
+    published rows alone.
+    """
+    selected = select_judges(subject_family, judges)
+    if not selected:
+        raise ValueError(
+            f"no judge is available for a subject of family {subject_family!r} "
+            f"from provider {subject_provider!r}: a judged row carries at "
+            "least one judge call"
+        )
+    if len(selected) > 2:
+        raise ValueError(
+            f"{len(selected)} judges given for one item: the agreement "
+            "statistic is defined over exactly two, and publishing one over a "
+            "subset would name a figure the row cannot back"
+        )
+
+    rendered = judge_protocol.render_judge_prompt(
+        rubric=rubric,
+        language=item_language,
+        item_prompt=item_prompt,
+        subject_output=subject_output,
+    )
+    records = [run_judge_call(one.backend, rendered, rubric) for one in selected]
+    scores = [record["score"] for record in records]
+
+    if len(records) == 2:
+        single_judge = False
+        single_judge_reason: str | None = None
+        computed = agreement.agreement_for_rubric(rubric, [(scores[0], scores[1])])
+        item_agreement: agreement.Agreement | None = computed
+        # The row names the statistic it published, read off the Agreement
+        # rather than re-derived from the rubric kind at this call site.
+        agreement_statistic: str | None = computed["statistic"]
+        contested, contested_reason = agreement.is_contested(
+            rubric.kind, scores[0], scores[1], threshold
+        )
+    else:
+        single_judge = True
+        single_judge_reason = SINGLE_JUDGE_REASON_CLOUD_SUBJECT
+        item_agreement = None
+        agreement_statistic = None
+        # One score is not a disagreement: there is nothing for the second
+        # judge to have contested.
+        contested, contested_reason = False, None
+
+    headline = agreement.headline_score([scores], [contested])
+
+    return {
+        "judge_prompt_id": rendered["template_id"],
+        "judge_prompt_template_hash": rendered["template_hash"],
+        "judge_prompt_language": rendered["language"],
+        "rubric_id": rendered["rubric_id"],
+        "rubric_version": rendered["rubric_version"],
+        "rubric_kind": rendered["rubric_kind"],
+        "judges": records,
+        "single_judge": single_judge,
+        "single_judge_reason": single_judge_reason,
+        "agreement": item_agreement,
+        "agreement_statistic": agreement_statistic,
+        "contested": contested,
+        "contested_reason": contested_reason,
+        # The threshold's values, not a reference to it: a row must state the
+        # rule it was judged under without resolving today's configuration.
+        "contested_threshold": {"max_ordinal_delta": threshold.max_ordinal_delta},
+        "judged_headline_score": headline["score"],
+        "judged_headline_excluded_n": headline["n_excluded"],
+        # Recorded from the calls that were made, not asserted as constants.
+        "judge_egress": {
+            "item_left_machine": True,
+            "subject_output_left_machine": True,
+            "providers": sorted({record["provider"] for record in records}),
+            "generation_count": _GENERATIONS_PER_ITEM,
+            "judge_call_count": len(records),
+        },
+        "judge_cost": cost.judge_cost_fields(records),
+    }

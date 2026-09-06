@@ -415,8 +415,41 @@ def _validate_judged_structure(row: dict[str, Any]) -> None:
             f"one of {', '.join(judge_protocol.RUBRIC_KINDS)}"
         )
 
+    # A judged score states how it was reached: either two judges agreed to
+    # some measured degree, or one judged and the row says so. Neither is an
+    # unattributed number.
+    row_agreement = row["agreement"]
+    single_judge = row["single_judge"]
+    if row_agreement is None and single_judge is not True:
+        raise RowContractError(
+            "row of kind 'quality' carries agreement=None and "
+            f"single_judge={single_judge!r}: a judged score must carry either "
+            "an agreement figure or the single_judge flag, and this row "
+            "carries neither"
+        )
+    if single_judge is True and row_agreement is not None:
+        raise RowContractError(
+            "row of kind 'quality' carries single_judge=True alongside a "
+            f"non-null agreement ({row_agreement!r}): one judge produces no "
+            "agreement figure, so the row cannot be both"
+        )
+
     _require_block_fields(row, "judge_egress", JUDGE_EGRESS_FIELDS)
     _require_block_fields(row, "judge_cost", JUDGE_COST_FIELDS)
+
+    egress = row["judge_egress"]
+    if not egress["providers"]:
+        raise RowContractError(
+            "row of kind 'quality' has an empty judge_egress providers list: "
+            "a judged row was scored by someone"
+        )
+    if egress["judge_call_count"] != len(judges):
+        raise RowContractError(
+            f"row of kind 'quality' has judge_egress judge_call_count="
+            f"{egress['judge_call_count']!r} but carries {len(judges)} judge "
+            "call record(s): an egress record that disagrees with the calls "
+            "on the row is worse than no record"
+        )
 
 
 def _require_block_fields(
