@@ -272,12 +272,39 @@ is `not_comparable`, not a failure.
 **4.3 — second run, set `MISTRAL_API_KEY` and `GOOGLE_API_KEY` first:**
 
 ```sh
-uv run wave-local-ai-v2-quality
+uv run wave-local-ai-v2-quality                      # --suite classification
+uv run wave-local-ai-v2-quality --suite translation
 ```
 
 One row per (item, model) lands in `QUALITY_RESULTS_PATH` (default
 `aidd_docs/results/quality.jsonl`) for each of three providers: `local`,
 `mistral`, `google`.
+
+`--suite` picks what is scored. It defaults to `classification`, so an
+invocation written before the flag existed behaves exactly as it did.
+
+| `--suite` | Items | Caps | How it is scored | The headline it prints |
+| --------- | ----- | ---- | ---------------- | ---------------------- |
+| `classification` (default) | 20 support messages, one of four routing labels each | 32 output tokens | exact label match | `accuracy=` |
+| `translation` | 21 short business sentences, `en→fr` / `fr→de` / `de→en`, seven each | 128 output tokens | chrF against a hand-written reference (`chrf.py`) | `suite_score=` |
+
+The two suites write two different score shapes into the same store, and a
+row is never both. A classification row carries `correct`, `suite_accuracy`
+and `language_breakdown`; a translation row nulls all three and carries the
+graded block instead — `item_score` and `suite_score` on `0..1`,
+`score_breakdown` per source language, `metric_id`/`metric_version`/
+`metric_params`, and both `reference_output` and `subject_output`. Reading a
+graded row means recomputing it if you want to: the two texts and the metric
+parameters are all on the row, and
+`sacrebleu --chrf-char-order 6 --chrf-beta 2` over them should give the same
+number `×100`. Select by `task_suite` before comparing any score column.
+
+That chrF is measured against a *single* reference translation, so it
+penalises a valid alternative wording. It compares models against identical
+references; it is not an absolute measure of translation quality.
+
+Translation adds ~5 minutes of Google pacing over the classification suite's
+(21 items instead of 20, at two Google calls each).
 
 Both cloud providers behave the same way when something goes wrong: a
 missing `MISTRAL_API_KEY` or `GOOGLE_API_KEY`, a provider absent from

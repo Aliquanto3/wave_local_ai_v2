@@ -43,6 +43,19 @@ flowchart LR
 
 ## Gotchas
 
+- One quality store now holds **two score shapes**. A classification row is
+  an exact-match row (`correct`, `suite_accuracy`, `language_breakdown`); a
+  translation row is a graded row (`item_score`, `suite_score`,
+  `score_breakdown`, `metric_id`/`metric_version`/`metric_params`,
+  `reference_output` beside `subject_output`) and nulls all three exact-match
+  fields. `row_contract` refuses a row carrying both, so `task_suite` — or
+  the presence of the graded block — is the discriminator, and a reader must
+  select by suite before comparing any score column. Averaging a chrF mean
+  and an exact-match rate into one number is the mistake the two shapes exist
+  to make impossible. chrF itself is in-repo (`chrf.py`, sacreBLEU's
+  defaults, published on `0..1` where sacreBLEU prints `0..100`), and a
+  single-reference chrF compares models against identical references rather
+  than measuring translation quality absolutely.
 - The published reference bundle is five parts handed to an auditor together,
   not any one file alone: `runtime-reference.jsonl` + `quality-reference.jsonl`
   (curated snapshots, no CLI writes to them) + `fiches/` (cited by
