@@ -1,6 +1,6 @@
 ---
 objective: "Three tiny dense Qwen3 models are pinned in the roster, launch on this host without any MoE-offload flag, and produce classification, translation and runtime rows that sit beside the MoE flagship's own in a published side-by-side record."
-status: in-progress
+status: implemented
 ---
 
 # Plan: Tiny dense models compared alongside the MoE flagship
