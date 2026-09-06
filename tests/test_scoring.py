@@ -3,10 +3,14 @@ import pytest
 from wave_local_ai_v2.classification_suite import LABELS, ClassificationItem
 from wave_local_ai_v2.scoring import (
     normalize_label,
+    score_graded_suite,
+    score_graded_suite_by_language,
     score_item,
     score_suite,
     score_suite_by_language,
+    score_translation_item,
 )
+from wave_local_ai_v2.translation_suite import TranslationItem
 
 MAX_OUTPUT_TOKENS = 32
 
@@ -261,3 +265,202 @@ def test_score_suite_by_language_zero_n_gives_zero_accuracy() -> None:
 
     assert breakdown["fr"] == {"accuracy": 0.0, "n": 0, "indicative": True}
     assert breakdown["de"] == {"accuracy": 0.0, "n": 0, "indicative": True}
+
+
+# --- the graded scorer -------------------------------------------------------
+
+TRANSLATION_MAX_OUTPUT_TOKENS = 128
+
+
+def _translation_item(
+    item_id: str = "t-0",
+    *,
+    reference: str = "Bonjour",
+    language: str = "en",
+    target_language: str = "fr",
+) -> TranslationItem:
+    return TranslationItem(
+        item_id=item_id,
+        prompt="p",
+        source_text="Hello",
+        reference=reference,
+        language=language,
+        target_language=target_language,
+        provenance="hand_written",
+        contamination_risk=False,
+    )
+
+
+def _graded(
+    raw_completion: str,
+    *,
+    truncated: bool = False,
+    generated_tokens: int = 12,
+    max_output_tokens: int = TRANSLATION_MAX_OUTPUT_TOKENS,
+    reference: str = "Bonjour",
+    item_id: str = "t-0",
+    language: str = "en",
+    truncation_reason: str | None = None,
+):
+    return score_translation_item(
+        _translation_item(item_id, reference=reference, language=language),
+        raw_completion,
+        truncated=truncated,
+        generated_tokens=generated_tokens,
+        max_output_tokens=max_output_tokens,
+        truncation_reason=truncation_reason,
+    )
+
+
+def test_a_completion_equal_to_its_reference_scores_one() -> None:
+    graded = _graded("Bonjour")
+
+    assert graded["item_score"] == 1.0
+    assert graded["failure_reason"] is None
+    assert graded["item_id"] == "t-0"
+
+
+def test_a_completion_differing_only_in_spacing_still_scores_one() -> None:
+    # chrF collapses whitespace, so a stray leading space is not an error.
+    assert _graded("  Bonjour  ")["item_score"] == 1.0
+
+
+def test_a_wrong_translation_scores_between_zero_and_one() -> None:
+    graded = _graded("Guten Tag")
+
+    assert 0.0 <= graded["item_score"] < 1.0
+    assert graded["failure_reason"] is None
+
+
+def test_a_whitespace_only_completion_scores_zero_and_names_empty() -> None:
+    graded = _graded("   \n\t ")
+
+    assert graded["item_score"] == 0.0
+    assert graded["failure_reason"] == "empty"
+
+
+def test_a_truncation_at_the_cap_is_named_by_token_comparison() -> None:
+    graded = _graded(
+        "Bonjour",
+        truncated=True,
+        generated_tokens=TRANSLATION_MAX_OUTPUT_TOKENS,
+    )
+
+    assert graded["item_score"] == 0.0
+    assert graded["failure_reason"] == "truncated_max_tokens"
+
+
+def test_a_truncation_below_the_cap_is_named_a_context_truncation() -> None:
+    graded = _graded("Bonjour", truncated=True, generated_tokens=3)
+
+    assert graded["failure_reason"] == "truncated_context"
+
+
+def test_a_caller_supplied_truncation_reason_overrides_the_comparison() -> None:
+    # Google reports fewer generated tokens than the cap it enforced, so a
+    # caller that knows the cause from its own response shape passes it.
+    graded = _graded(
+        "Bonjour",
+        truncated=True,
+        generated_tokens=3,
+        truncation_reason="truncated_max_tokens",
+    )
+
+    assert graded["failure_reason"] == "truncated_max_tokens"
+
+
+def test_an_invalid_truncation_reason_raises() -> None:
+    with pytest.raises(ValueError, match="truncation_reason must be"):
+        _graded(
+            "Bonjour",
+            truncated=True,
+            generated_tokens=3,
+            truncation_reason="something_else",
+        )
+
+
+def test_an_empty_completion_is_empty_even_when_truncated() -> None:
+    # The empty check runs first, exactly as it does on `score_item`.
+    graded = _graded("", truncated=True, generated_tokens=3)
+
+    assert graded["failure_reason"] == "empty"
+
+
+def test_graded_suite_score_is_the_mean_including_the_zeros() -> None:
+    graded_items = [
+        _graded("Bonjour"),  # 1.0
+        _graded("Bonjour"),  # 1.0
+        _graded(""),  # 0.0, empty
+        _graded("Bonjour", truncated=True, generated_tokens=3),  # 0.0
+    ]
+
+    suite_score = score_graded_suite(graded_items)
+
+    # Hand-computed: (1.0 + 1.0 + 0.0 + 0.0) / 4. The two failures stay in
+    # the denominator, so failing to answer cannot raise a published score.
+    assert suite_score["suite_score"] == 0.5
+
+
+def test_graded_suite_score_carries_all_four_taxonomy_keys() -> None:
+    graded_items = [
+        _graded("Bonjour"),
+        _graded(""),
+        _graded(
+            "Bonjour",
+            truncated=True,
+            generated_tokens=TRANSLATION_MAX_OUTPUT_TOKENS,
+        ),
+        _graded("Bonjour", truncated=True, generated_tokens=3),
+    ]
+
+    suite_score = score_graded_suite(graded_items)
+
+    assert suite_score["failure_counts"] == {
+        "empty": 1,
+        # Structurally unreachable on a reference-scored suite: there is no
+        # closed set to parse into, so the key stays 0 rather than absent.
+        "unparseable": 0,
+        "truncated_max_tokens": 1,
+        "truncated_context": 1,
+    }
+
+
+def test_graded_suite_score_is_zero_for_an_empty_list() -> None:
+    suite_score = score_graded_suite([])
+
+    assert suite_score["suite_score"] == 0.0
+    assert suite_score["failure_counts"] == {
+        "empty": 0,
+        "unparseable": 0,
+        "truncated_max_tokens": 0,
+        "truncated_context": 0,
+    }
+
+
+def test_graded_breakdown_reports_score_n_and_the_indicative_mark() -> None:
+    # en: 7 items (below the 10-item cell threshold), 4 of them perfect;
+    # fr: 10 items, all perfect (at the threshold, so not indicative);
+    # de: absent.
+    items = [_translation_item(f"en-{i}", language="en") for i in range(7)] + [
+        _translation_item(f"fr-{i}", language="fr") for i in range(10)
+    ]
+    graded_items = (
+        [_graded("Bonjour") for _ in range(4)]
+        + [_graded("") for _ in range(3)]
+        + [_graded("Bonjour") for _ in range(10)]
+    )
+
+    breakdown = score_graded_suite_by_language(items, graded_items)
+
+    # Hand-computed: en is (1.0 * 4 + 0.0 * 3) / 7 = 4/7.
+    assert breakdown["en"] == {"score": 4 / 7, "n": 7, "indicative": True}
+    assert breakdown["fr"] == {"score": 1.0, "n": 10, "indicative": False}
+    assert breakdown["de"] == {"score": 0.0, "n": 0, "indicative": True}
+
+
+def test_graded_breakdown_refuses_a_length_mismatch() -> None:
+    items = [_translation_item("en-0", language="en")]
+    graded_items = [_graded("Bonjour"), _graded("Bonjour")]
+
+    with pytest.raises(ValueError):
+        score_graded_suite_by_language(items, graded_items)
