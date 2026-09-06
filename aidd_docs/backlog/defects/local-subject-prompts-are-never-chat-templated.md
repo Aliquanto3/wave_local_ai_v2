@@ -1,6 +1,6 @@
 ---
 type: defect
-status: ready
+status: done
 source: aidd_docs/results/README.md
 related_to:
   - aidd_docs/backlog/epics/every-published-row-explains-and-reproduces-itself.md
@@ -109,12 +109,32 @@ recommendation turns on it.
 
 ## Verification
 
-A local quality row carries a `prompt_template_id` other than `none`, a non-null
-`prompt_template_hash`, and a `prompt` holding the chat-rendered string rather than the bare
-item text. That row's suite and template version are above the version carried by the rows
-listed under Evidence, and those rows still read at their own version — superseded, not edited.
-On the re-run, a dense entry's `tokens_out_total` falls below item count times cap, showing the
-model stopped on its own.
+Satisfied on 2026-09-06 by the eight local batches recorded in
+`aidd_docs/results/README.md`, "The same eight batches, chat-templated". Taking
+`Qwen3-0.6B` classification, `run_id` `e716ce86...`, as the witness row:
+
+| Fact required | Observed |
+| ------------- | -------- |
+| `prompt_template_id` other than `none` | `llamacpp-model-chat-template` |
+| non-null `prompt_template_hash` | `57f1fd00f0013a2b...`, the sha256 of the template `/props` reported |
+| `prompt` holds the rendered string, not the item text | ends `<\|im_start\|>assistant\n<think>\n\n</think>\n\n` |
+| suite version above the superseded rows' | `"3"` against `"2"` (translation `"2"` against `"1"`) |
+| the model stops on its own | `tokens_out_total` **40** against 20 items × the 32-token cap; `failure_counts` all zero, where the superseded batch published 6 `unparseable` |
+
+Nothing was edited: the superseded rows are still on disk at their own suite
+version, `verdict.select_quality_references` keys on `suite_version` so the new
+batches report `not_comparable` against them by construction, and each version's
+suite definition is committed beside its predecessor.
+
+The impact claim held. Across the four models the scores moved 0.80 → 1.00
+(flagship, classification), 0.25 → 0.60 and 0.45 → 0.70 (the 1.7B and 4B), and
+0.1742 → 0.7107 / 0.1867 → 0.5121 / 0.2005 → 0.7252 on translation. The ladder
+now ranks by parameter count on both suites, which the superseded tables did not.
+The one number that did not move is the 0.6B's classification accuracy, 0.45
+both times — now a clean wrong answer rather than a continuation, which is the
+capability result the untemplated rows could not have shown.
+
+Delivered by `aidd_docs/tasks/2026_09/2026_09_06_local-chat-templated-quality-path/`.
 
 ## Cancellation
 

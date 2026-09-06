@@ -1,6 +1,6 @@
 ---
 objective: "The local quality subject answers through its own model's chat template under a suite-declared thinking policy, every local row carries the rendered prompt and the template that produced it, and the untemplated numbers are superseded by a live re-run under bumped suite versions rather than edited."
-status: in-progress
+status: implemented
 ---
 
 # Plan: The local quality path answers through the model's own chat template
