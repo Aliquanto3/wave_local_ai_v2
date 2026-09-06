@@ -440,6 +440,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   llama.cpp `b10537` does not return. The open tech-debt row on that misread
   stays open for the paths that still read it; this increment fixes it only
   where it migrated, and does not close someone else's row.
+- **Both suite versions bumped**, `classification-support-routing` `"2"` →
+  `"3"` and `translation-business-short-form` `"1"` → `"2"`, with neither
+  `PROMPT_SET_HASH` moving: no item text was edited, and what changed is what
+  the subject was sent. `verdict.select_quality_references` keys on
+  `suite_version`, so every row produced on the templated path reports
+  `not_comparable` against the untemplated ones by construction — supersession
+  is structural here, and no published row was edited to achieve it. The pair
+  (`suite_version`, `prompt_template_id`) is what separates the two
+  generations, since the prompt-set hash alone cannot.
+- **A suite definition snapshot is addressed by suite id *and* version**:
+  `suite_snapshot` now writes `aidd_docs/results/suite-definitions/
+  <suite_id>@<suite_version>.json`, so a bump adds a file beside its
+  predecessor instead of overwriting it and a published row keeps resolving to
+  the definition it was produced against. The two existing snapshots were
+  `git mv`-renamed to `...@2.json` and `...@1.json`, bytes unchanged, and
+  `tests/test_reference_bundle.py` resolves a row through the pair it cites.
+  The snapshot also carries the suite's `thinking_policy`, so a bundle reader
+  sees the policy behind a score without importing the suite module.
 - `SERVER_N_CPU_MOE` unset no longer means `37`. It means "the selected
   entry's `validated_host` decides": `37` for the MoE flagship, and no
   `--n-cpu-moe` at all for a dense entry. Set, it overrides the entry exactly

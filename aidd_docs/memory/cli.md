@@ -66,8 +66,12 @@ The command-line interface for running benchmarks.
     never used before (behaves like a fresh run, honestly marked resumed
     anyway).
 - `uv run python -m wave_local_ai_v2.suite_snapshot` — exports **both**
-  suites' identity (id, version, prompt-set hash), caps and every item to
-  `aidd_docs/results/suite-definitions/<suite_id>.json`, one file each. A
+  suites' identity (id, version, prompt-set hash), caps, thinking policy and
+  every item to
+  `aidd_docs/results/suite-definitions/<suite_id>@<suite_version>.json`, one
+  file per (suite, version): a version bump adds a file beside its
+  predecessor rather than overwriting it, so a published row keeps resolving
+  to the definition it was produced against. A
   snapshot of each suite as the code holds it at export time, not a live
   registry a row resolves through at read time; re-run after any suite edit.
   No `pyproject.toml` entry point — invoked as a module, not a CLI command.

@@ -131,7 +131,7 @@ schema note above refers to).
 
 Suite: `translation-business-short-form`, `suite_version` `"1"`, `prompt_set_hash`
 `16150e4406042a89...`, exported item-for-item to
-`suite-definitions/translation-business-short-form.json`. 21 hand-written items in three
+`suite-definitions/translation-business-short-form@1.json`. 21 hand-written items in three
 directions, seven each: `en->fr`, `fr->de`, `de->en`. Caps: 128 output tokens, no stop
 sequence, 32768 context.
 
@@ -592,8 +592,11 @@ template prefills an empty block into the *prompt*, where it costs no score. The
 earlier finding said the local-versus-google gap was "an upper bound on the real
 one" because the envelope added ~15 characters of non-reference n-grams to every
 local hypothesis. That is now measured rather than argued. The flagship's
-`fr-de-03` completion is **byte-identical** across the two runs -- "Das von Ihnen
-übermittelte Angebot übersteigt unser jährliches Budget." -- and it scores 0.4078 on the old row and **0.4205** here.
+`fr-de-03` translation is **byte-identical** across the two runs -- "Das von Ihnen
+übermittelte Angebot übersteigt unser jährliches Budget." -- and the envelope is
+the whole difference between the two stored completions: the superseded row's
+`subject_output` carries `\n\n<think>\n\n</think>\n\n` in front of that sentence
+and the new one does not. It scores 0.4078 on the old row and **0.4205** here.
 0.4205 is exactly the "trimmed text alone" figure the "Reading these scores"
 table above predicted for that item, so the prediction and the measurement
 agree. The tech-debt row that recorded the envelope stays open for the raw

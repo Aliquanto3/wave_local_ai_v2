@@ -514,6 +514,33 @@ def test_the_local_and_cloud_rows_record_their_own_call_paths(stubbed_probe) -> 
         assert row["prompt_template_hash"] is not None
 
 
+def test_the_local_probe_row_publishes_the_rendered_prompt_and_the_policy(
+    stubbed_probe,
+) -> None:
+    """The defect's own fact, on the second writer.
+
+    The call-path fields above say the row was produced through a template;
+    this says the string it published is the rendered one and not the item
+    text `_build_row` falls back to when no prompt is passed. The policy is
+    on every row of the batch, the cloud one included, because it is what the
+    probe suite declared rather than what a provider did.
+    """
+    probe_path, _, _, _ = stubbed_probe
+
+    judge_probe._run()
+
+    prompts_by_item = {item["item_id"]: item["prompt"] for item in JUDGE_PROBE_ITEMS}
+    rows = read_rows(probe_path)
+    local_rows = [row for row in rows if row["provider"] == "local"]
+    assert local_rows
+    for row in local_rows:
+        item_prompt = prompts_by_item[row["item_id"]]
+        assert row["prompt"] == _fake_render(item_prompt)
+        assert row["prompt"] != item_prompt
+    for row in rows:
+        assert row["thinking_policy"] == "disabled"
+
+
 def test_every_generation_asks_for_open_ended_prose_not_a_label(
     stubbed_probe,
 ) -> None:

@@ -102,6 +102,9 @@ QUALITY_ONLY_FIELDS = {
     "provider",
     "max_output_tokens",
     "stop_sequences",
+    # The fourth generation constraint a suite declares. A runtime row runs no
+    # suite and renders no chat template, so it never carries one.
+    "thinking_policy",
     "context_length",
     "suite_id",
     "suite_version",
