@@ -204,6 +204,82 @@ Get-FileHash -Algorithm SHA256 "<SLM_MODELS_DIR>\Qwen3.6-35B-A3B\Qwen3.6-35B-A3B
 
 The output must match `649d7508507b84638732c4f52c24c8b15843c6dca2f3ff793ae07c14a67ebbb3`.
 
+### 3.1 The three dense models
+
+The roster also holds a dense size ladder — Qwen3 at 0.6B, 1.7B and 4B — so
+the same suites can be scored on a dense architecture and on the MoE
+flagship, and the difference read off rows rather than assumed. **The ladder
+is cheap.** All three files together are 4.63 GiB, and the largest single one
+is 2.33 GiB, against the flagship's 17.7 GiB. A machine that cannot host the
+flagship can still run every suite in this project on these three.
+
+The same rule as above applies to every value below: the roster file
+(`aidd_docs/roster/models.json`) is the source of truth the running code
+reads, and this section exists so a human downloading the weights doesn't
+have to parse JSON to find the same values. A mismatch between the two is a
+bug, not a choice.
+
+Each entry pins a **commit sha**, not `main`, so the file a reader downloads
+is the file the published rows were measured on. (The flagship entry above
+pins `main` with its sha recorded in prose; that inconsistency is filed as
+tech debt, not fixed here.)
+
+| Entry id | Repo | Revision | File in the repo | Under `SLM_MODELS_DIR` | Quant | Size |
+| -------- | ---- | -------- | ---------------- | ---------------------- | ----- | ---- |
+| `qwen3-0.6b-q8` | `Qwen/Qwen3-0.6B-GGUF` | `23749fefcc72300e3a2ad315e1317431b06b590a` | `Qwen3-0.6B-Q8_0.gguf` | `Qwen3-0.6B/Qwen3-0.6B-Q8_0.gguf` | `Q8_0` | 639,446,688 B (0.60 GiB) |
+| `qwen3-1.7b-q8` | `Qwen/Qwen3-1.7B-GGUF` | `90862c4b9d2787eaed51d12237eafdfe7c5f6077` | `Qwen3-1.7B-Q8_0.gguf` | `Qwen3-1.7B/Qwen3-1.7B-Q8_0.gguf` | `Q8_0` | 1,834,426,016 B (1.71 GiB) |
+| `qwen3-4b-q4km` | `Qwen/Qwen3-4B-GGUF` | `bc640142c66e1fdd12af0bd68f40445458f3869b` | `Qwen3-4B/Qwen3-4B-Q4_K_M.gguf` | `Qwen3-4B/Qwen3-4B-Q4_K_M.gguf` | `Q4_K_M` | 2,497,280,256 B (2.33 GiB) |
+
+The quants are not uniform because that is what the vendor publishes: the
+0.6B and 1.7B GGUF repos each contain exactly one quant (`Q8_0`), while the
+4B repo publishes a range and `Q4_K_M` is the one taken. Read the ladder as
+a size ladder, not as a quant-controlled one.
+
+sha256, per file:
+
+```
+qwen3-0.6b-q8   9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+qwen3-1.7b-q8   061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a
+qwen3-4b-q4km   7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5
+```
+
+Download each at its pinned revision:
+
+```powershell
+# Windows
+hf download Qwen/Qwen3-0.6B-GGUF Qwen3-0.6B-Q8_0.gguf `
+  --revision 23749fefcc72300e3a2ad315e1317431b06b590a `
+  --local-dir <SLM_MODELS_DIR>\Qwen3-0.6B
+
+hf download Qwen/Qwen3-1.7B-GGUF Qwen3-1.7B-Q8_0.gguf `
+  --revision 90862c4b9d2787eaed51d12237eafdfe7c5f6077 `
+  --local-dir <SLM_MODELS_DIR>\Qwen3-1.7B
+
+hf download Qwen/Qwen3-4B-GGUF Qwen3-4B-Q4_K_M.gguf `
+  --revision bc640142c66e1fdd12af0bd68f40445458f3869b `
+  --local-dir <SLM_MODELS_DIR>\Qwen3-4B
+```
+
+```sh
+# POSIX
+hf download Qwen/Qwen3-0.6B-GGUF Qwen3-0.6B-Q8_0.gguf \
+  --revision 23749fefcc72300e3a2ad315e1317431b06b590a \
+  --local-dir <SLM_MODELS_DIR>/Qwen3-0.6B
+# ...and the same two lines for Qwen3-1.7B and Qwen3-4B.
+```
+
+Verify each checksum:
+
+```powershell
+# Windows -- .ToLower() matters: the roster stores lowercase hex.
+(Get-FileHash -Algorithm SHA256 "<SLM_MODELS_DIR>\Qwen3-0.6B\Qwen3-0.6B-Q8_0.gguf").Hash.ToLower()
+```
+
+```sh
+# POSIX
+sha256sum <SLM_MODELS_DIR>/Qwen3-0.6B/Qwen3-0.6B-Q8_0.gguf
+```
+
 ## 4. Configure `.env` and run
 
 ```sh
