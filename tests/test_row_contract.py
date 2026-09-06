@@ -2,6 +2,7 @@ import pytest
 
 from wave_local_ai_v2 import aggregation
 from wave_local_ai_v2.row_contract import (
+    GRADED_FIELDS,
     JUDGED_FIELDS,
     REQUIRED_FIELDS,
     SCHEMA_VERSION,
@@ -242,6 +243,40 @@ JUDGE_BLOCK = {
 
 COMPLETE_JUDGED_QUALITY_ROW = {**COMPLETE_QUALITY_ROW, **JUDGE_BLOCK}
 
+GRADED_BLOCK = {
+    "metric_id": "chrf",
+    "metric_version": "1",
+    "metric_params": {
+        "char_order": 6,
+        "beta": 2,
+        "whitespace": False,
+        "scale": "0..1",
+    },
+    "item_score": 0.87,
+    "suite_score": 0.61,
+    "score_breakdown": {
+        "en": {"score": 0.87, "n": 7, "indicative": True},
+        "fr": {"score": 0.55, "n": 7, "indicative": True},
+        "de": {"score": 0.41, "n": 7, "indicative": True},
+    },
+    "reference_output": "Bonjour, la livraison arrive demain.",
+    "subject_output": "Bonjour, la livraison arrive demain.",
+}
+
+# A graded row nulls every exact-match field: the two score shapes never
+# appear on one row.
+COMPLETE_GRADED_QUALITY_ROW = {
+    **COMPLETE_QUALITY_ROW,
+    **GRADED_BLOCK,
+    "task_suite": "translation",
+    "item_id": "en-fr-01",
+    "expected_label": None,
+    "predicted_label": None,
+    "correct": None,
+    "suite_accuracy": None,
+    "language_breakdown": None,
+}
+
 
 def test_complete_runtime_row_passes() -> None:
     validate_row("runtime", COMPLETE_RUNTIME_ROW)
@@ -456,7 +491,6 @@ def test_runtime_row_does_not_require_retries_or_resumed() -> None:
 def test_a_deterministic_quality_row_carries_no_judge_field_and_still_validates() -> (
     None
 ):
-    assert SCHEMA_VERSION == "9"
     assert JUDGED_FIELDS & COMPLETE_QUALITY_ROW.keys() == set()
 
     validate_row("quality", COMPLETE_QUALITY_ROW)
@@ -620,7 +654,163 @@ def test_no_judge_field_can_collide_with_a_required_quality_field() -> None:
     )
 
 
-def test_the_schema_version_did_not_move_again_for_the_judged_rules() -> None:
-    # Phase 3 adds rules over fields phase 1 already declared: no field is
-    # added or removed, so the version stays where the bump left it.
-    assert SCHEMA_VERSION == "9"
+def test_a_complete_graded_quality_row_passes() -> None:
+    validate_row("quality", COMPLETE_GRADED_QUALITY_ROW)
+
+
+def test_an_exact_match_row_carries_no_graded_field_and_still_validates() -> None:
+    assert GRADED_FIELDS & COMPLETE_QUALITY_ROW.keys() == set()
+
+    validate_row("quality", COMPLETE_QUALITY_ROW)
+
+
+@pytest.mark.parametrize("field", sorted(GRADED_FIELDS))
+def test_a_graded_row_missing_one_graded_field_is_refused_by_name(field: str) -> None:
+    incomplete = {k: v for k, v in COMPLETE_GRADED_QUALITY_ROW.items() if k != field}
+
+    with pytest.raises(RowContractError, match=field):
+        validate_row("quality", incomplete)
+
+
+def test_subject_output_alone_does_not_declare_a_row_graded() -> None:
+    # `judge_probe.py` writes `subject_output` on every probe row as a
+    # non-required extra key. Putting it in GRADED_FIELDS would make each of
+    # those rows declare itself graded and then fail for seven metric fields
+    # it never carries.
+    assert "subject_output" not in GRADED_FIELDS
+
+    judged_with_output = {
+        **COMPLETE_JUDGED_QUALITY_ROW,
+        "subject_output": "the answer the subject produced",
+    }
+
+    validate_row("quality", judged_with_output)
+
+
+def test_a_graded_row_with_no_subject_output_is_refused() -> None:
+    row = {
+        k: v for k, v in COMPLETE_GRADED_QUALITY_ROW.items() if k != "subject_output"
+    }
+
+    with pytest.raises(RowContractError, match="subject_output"):
+        validate_row("quality", row)
+
+
+@pytest.mark.parametrize("field", ["item_score", "suite_score"])
+@pytest.mark.parametrize("value", [-0.01, 1.01, 42])
+def test_a_graded_score_outside_zero_to_one_is_refused(
+    field: str, value: float
+) -> None:
+    row = {**COMPLETE_GRADED_QUALITY_ROW, field: value}
+
+    with pytest.raises(RowContractError, match=field):
+        validate_row("quality", row)
+
+
+@pytest.mark.parametrize("field", ["item_score", "suite_score"])
+@pytest.mark.parametrize("value", ["0.5", None, True])
+def test_a_non_numeric_graded_score_is_refused(field: str, value: object) -> None:
+    row = {**COMPLETE_GRADED_QUALITY_ROW, field: value}
+
+    with pytest.raises(RowContractError, match=field):
+        validate_row("quality", row)
+
+
+def test_a_named_failure_with_a_non_zero_score_is_refused() -> None:
+    # Methodology 9 checked at the writer: a failed generation scores 0.0.
+    row = {
+        **COMPLETE_GRADED_QUALITY_ROW,
+        "failure_reason": "truncated_max_tokens",
+        "item_score": 0.4,
+    }
+
+    with pytest.raises(RowContractError, match="failure_reason"):
+        validate_row("quality", row)
+
+
+def test_a_named_failure_scoring_zero_is_accepted() -> None:
+    validate_row(
+        "quality",
+        {
+            **COMPLETE_GRADED_QUALITY_ROW,
+            "failure_reason": "empty",
+            "item_score": 0.0,
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"), [("correct", True), ("correct", False), ("suite_accuracy", 0.9)]
+)
+def test_a_graded_row_claiming_an_exact_match_score_is_refused(
+    field: str, value: object
+) -> None:
+    row = {**COMPLETE_GRADED_QUALITY_ROW, field: value}
+
+    with pytest.raises(RowContractError, match=field):
+        validate_row("quality", row)
+
+
+def test_a_graded_row_still_requires_language_breakdown_as_a_key() -> None:
+    # `language_breakdown` stays in REQUIRED_FIELDS and is None on a graded
+    # row, the way judge_probe.py already nulls it -- present, not absent.
+    assert "language_breakdown" in REQUIRED_FIELDS["quality"]
+    row = {
+        k: v
+        for k, v in COMPLETE_GRADED_QUALITY_ROW.items()
+        if k != "language_breakdown"
+    }
+
+    with pytest.raises(RowContractError, match="language_breakdown"):
+        validate_row("quality", row)
+
+
+def test_a_score_breakdown_missing_a_language_is_refused() -> None:
+    row = {
+        **COMPLETE_GRADED_QUALITY_ROW,
+        "score_breakdown": {"en": {"score": 1.0, "n": 7, "indicative": True}},
+    }
+
+    with pytest.raises(RowContractError, match="score_breakdown"):
+        validate_row("quality", row)
+
+
+def test_a_score_breakdown_cell_missing_a_key_is_refused() -> None:
+    row = {
+        **COMPLETE_GRADED_QUALITY_ROW,
+        "score_breakdown": {
+            **COMPLETE_GRADED_QUALITY_ROW["score_breakdown"],
+            "de": {"score": 0.41, "n": 7},
+        },
+    }
+
+    with pytest.raises(RowContractError, match="indicative"):
+        validate_row("quality", row)
+
+
+@pytest.mark.parametrize("breakdown", ["not-an-object", 3, ["en", "fr", "de"]])
+def test_a_non_object_score_breakdown_is_refused(breakdown: object) -> None:
+    row = {**COMPLETE_GRADED_QUALITY_ROW, "score_breakdown": breakdown}
+
+    with pytest.raises(RowContractError, match="score_breakdown"):
+        validate_row("quality", row)
+
+
+def test_a_non_object_score_breakdown_cell_is_refused() -> None:
+    row = {
+        **COMPLETE_GRADED_QUALITY_ROW,
+        "score_breakdown": {
+            **COMPLETE_GRADED_QUALITY_ROW["score_breakdown"],
+            "fr": 0.55,
+        },
+    }
+
+    with pytest.raises(RowContractError, match="score_breakdown"):
+        validate_row("quality", row)
+
+
+def test_the_schema_version_moved_once_for_the_graded_block() -> None:
+    # "9" declared the judge block, "10" declares the graded one. Both are
+    # conditional on a row carrying any of their fields, which is what lets
+    # an exact-match classification row validate unchanged across the bump.
+    assert SCHEMA_VERSION == "10"

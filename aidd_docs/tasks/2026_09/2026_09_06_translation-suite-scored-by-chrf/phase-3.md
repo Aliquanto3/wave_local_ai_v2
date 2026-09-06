@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Instruction: The graded row, the verdict, and the `--suite` seam
