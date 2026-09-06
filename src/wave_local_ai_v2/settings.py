@@ -94,6 +94,23 @@ DEFAULT_CLOUD_RETRY_MAX_ATTEMPTS = 4
 # this default; until one exists, this is the only value in play.
 DEFAULT_CONTESTED_ORDINAL_MAX_DELTA = 1
 
+# The read-only results service (`service.py`). Loopback by default: this
+# story ships plain HTTP, and a default that binds every interface would put
+# an unencrypted service on the network the moment someone runs it.
+DEFAULT_SERVICE_HOST = "127.0.0.1"
+DEFAULT_SERVICE_PORT = 8000
+# The schema version at or above which a stored row is rendered rather than
+# counted. "7" is the published bundle's own version
+# (`tests/test_reference_bundle.PUBLISHED_BUNDLE_SCHEMA_VERSION`), so one
+# unchanged service serves the committed bundle at "7" and the live stores at
+# "11" with no code change, while the superseded `*.schema-1.jsonl` rows fall
+# below it and are counted rather than rendered. Compared as an integer, never
+# as a string -- see `results.read_rows_from_floor`.
+DEFAULT_SERVICE_SCHEMA_FLOOR = "7"
+# No TLS certificate setting lives here, deliberately. TLS is a later story in
+# this epic; a knob read but never used is configuration that lies about what
+# the process does, so the omission is a decision rather than an oversight.
+
 
 class SettingsError(RuntimeError):
     """Raised when required configuration is missing or invalid."""
@@ -169,6 +186,87 @@ class Settings:
     # Judge agreement (a judged score carries two judges or an honest flag):
     # the ordinal delta above which one item's two judge scores are contested.
     contested_ordinal_max_delta: int = DEFAULT_CONTESTED_ORDINAL_MAX_DELTA
+
+
+@dataclass(frozen=True)
+class ServiceSettings:
+    """Resolved configuration for one run of the read-only results service.
+
+    Everything the service needs to read published artifacts and nothing that
+    would require a local model install: `Settings` refuses to load without
+    `SLM_MODELS_DIR` and `LLAMA_SERVER_PATH` on disk, which a reader of
+    committed results has no reason to have.
+    """
+
+    # repr=False for the same reason `Settings.mistral_api_key` carries it: a
+    # traceback frame, a pytest assertion diff or a logged settings object
+    # must not carry the credential. Attribute access is unaffected.
+    api_key: str = field(repr=False)
+    host: str
+    port: int
+    schema_floor: str
+    runtime_results_path: Path
+    quality_results_path: Path
+    fiche_registry_dir: Path
+    roster_path: Path
+    suite_definitions_dir: Path
+
+
+def load_service_settings() -> ServiceSettings:
+    """Load the service's settings from the environment (`.env` included).
+
+    Refuses an unset or empty `SERVICE_API_KEY` unconditionally: the PRD's
+    criterion ("the service refuses to start without one") is stated without
+    exception, and it is taken literally rather than relaxed for a loopback
+    bind. A development default would be the key that ships to production.
+
+    The store, roster and registry paths are read from the *same* environment
+    variables and `DEFAULT_*` constants `load_settings` uses -- the registry
+    through `fiche_registry_dir_from_env()` itself -- so the two forms can
+    never resolve a path differently. None of them is checked for existence:
+    a missing store is zero rows to a reader, exactly as a missing roster file
+    is `roster.py`'s failure to raise rather than this module's.
+    """
+    load_dotenv()
+
+    api_key = os.environ.get("SERVICE_API_KEY", "")
+    if not api_key:
+        raise SettingsError("SERVICE_API_KEY is not set")
+
+    host = os.environ.get("SERVICE_HOST", DEFAULT_SERVICE_HOST)
+    port = _require_numeric(
+        "SERVICE_PORT",
+        DEFAULT_SERVICE_PORT,
+        int,
+        minimum=1,
+        minimum_reason="port 0 asks the OS to pick, which no client could find",
+    )
+    schema_floor = os.environ.get("SERVICE_SCHEMA_FLOOR", DEFAULT_SERVICE_SCHEMA_FLOOR)
+    try:
+        int(schema_floor)
+    except ValueError as exc:
+        raise SettingsError(
+            f"SERVICE_SCHEMA_FLOOR={schema_floor!r} is not an integer: schema "
+            "versions are compared numerically, never as strings"
+        ) from exc
+
+    return ServiceSettings(
+        api_key=api_key,
+        host=host,
+        port=port,
+        schema_floor=schema_floor,
+        runtime_results_path=Path(
+            os.environ.get("RUNTIME_RESULTS_PATH", DEFAULT_RESULTS_PATH)
+        ),
+        quality_results_path=Path(
+            os.environ.get("QUALITY_RESULTS_PATH", DEFAULT_QUALITY_RESULTS_PATH)
+        ),
+        fiche_registry_dir=fiche_registry_dir_from_env(),
+        roster_path=Path(os.environ.get("ROSTER_PATH", DEFAULT_ROSTER_PATH)),
+        suite_definitions_dir=Path(
+            os.environ.get("SUITE_DEFINITIONS_DIR", DEFAULT_SUITE_DEFINITIONS_DIR)
+        ),
+    )
 
 
 def fiche_registry_dir_from_env() -> Path:
