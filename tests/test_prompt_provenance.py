@@ -1,8 +1,10 @@
 import pytest
 
 from wave_local_ai_v2.prompt_provenance import (
+    LOCAL_CHAT_ENDPOINT,
     LOCAL_COMPLETION_ENDPOINT,
     PROMPT_CAPTURE_CAPTURED,
+    TEMPLATE_ID_LLAMACPP_MODEL_CHAT,
     TEMPLATE_ID_MISTRAL_CHAT_MESSAGE,
     TEMPLATE_ID_NONE,
     is_consistent,
@@ -67,6 +69,16 @@ def test_none_is_inconsistent_with_a_non_raw_endpoint() -> None:
 
 def test_a_named_template_is_consistent_with_a_non_raw_endpoint() -> None:
     assert is_consistent(_OTHER_ENDPOINT, TEMPLATE_ID_MISTRAL_CHAT_MESSAGE) is True
+
+
+def test_none_is_inconsistent_with_the_local_chat_endpoint() -> None:
+    # The rule the chat-template defect is the missing producer of: this
+    # endpoint applies the model's own template, so it can never declare 'none'.
+    assert is_consistent(LOCAL_CHAT_ENDPOINT, TEMPLATE_ID_NONE) is False
+
+
+def test_the_llamacpp_template_id_is_consistent_with_the_local_chat_endpoint() -> None:
+    assert is_consistent(LOCAL_CHAT_ENDPOINT, TEMPLATE_ID_LLAMACPP_MODEL_CHAT) is True
 
 
 def test_template_hash_of_none_is_none() -> None:

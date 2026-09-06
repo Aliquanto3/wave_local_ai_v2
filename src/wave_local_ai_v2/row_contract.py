@@ -59,6 +59,23 @@ from wave_local_ai_v2 import (
 # unchanged and no reference bundle is regenerated.
 SCHEMA_VERSION = "10"
 
+# The two values `thinking_policy` may take. This is the **suite's** declared
+# policy, not a report of what each provider did with it: it is published on
+# every quality row of a batch, cloud rows included, exactly as
+# `stop_sequences` already is, and only the local path can currently enforce
+# it (llama-server's `chat_template_kwargs`). What each provider was actually
+# sent is the call-path fields' business. Recording it only where it is
+# enforceable would make one field mean two things depending on which row you
+# read it from.
+#
+# It sits with `max_output_tokens`, `stop_sequences` and `context_length`
+# under Methodology 3 -- what a model is permitted to spend its cap on is the
+# same class of constraint as how much cap it has, it belongs to the suite
+# definition, and it is recorded per row.
+THINKING_POLICY_DISABLED = "disabled"
+THINKING_POLICY_ALLOWED = "allowed"
+THINKING_POLICIES = frozenset({THINKING_POLICY_DISABLED, THINKING_POLICY_ALLOWED})
+
 # The schema version at which `fiche_hash` (and `verdict`) became required.
 # Fixed at "3" regardless of future `SCHEMA_VERSION` bumps: a stored row whose
 # own `schema_version` is below this predates the fiche-hash contract
