@@ -1,13 +1,19 @@
+import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from wave_local_ai_v2.results import (
+    UNREADABLE_BELOW_FLOOR,
+    UNREADABLE_NO_SCHEMA_VERSION,
+    UNREADABLE_UNPARSABLE_LINE,
+    UnreadableRows,
     append_row,
     captured_at,
     new_run_id,
     read_rows,
+    read_rows_from_floor,
     resume_skip_reason,
     rows_for_run,
 )
@@ -281,5 +287,176 @@ def test_resume_never_skips_a_batch_on_the_strength_of_another_suites_rows(
     )
     assert (
         resume_skip_reason(path, "run-1", "local", 3, task_suite="classification")
+        == "run run-1 already complete"
+    )
+
+
+def _write_lines(path: Path, lines: list[str]) -> None:
+    path.write_text("".join(f"{line}\n" for line in lines), encoding="utf-8")
+
+
+def _row_at(schema_version: str | None, run_id: str = "run-1") -> dict[str, object]:
+    row: dict[str, object] = {"run_id": run_id}
+    if schema_version is not None:
+        row["schema_version"] = schema_version
+    return row
+
+
+def test_read_rows_from_floor_returns_an_empty_read_for_an_absent_store(
+    tmp_path: Path,
+) -> None:
+    store = read_rows_from_floor(tmp_path / "absent.jsonl", "7")
+
+    assert store.rows == []
+    assert store.unreadable == []
+
+
+def test_read_rows_from_floor_selects_at_or_above_and_names_what_it_cannot_read(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "runtime.jsonl"
+    _write_lines(
+        path,
+        [
+            json.dumps(_row_at("11")),
+            json.dumps(_row_at("7")),
+            json.dumps(_row_at("2")),
+            json.dumps(_row_at(None)),
+            "{not json at all",
+            # A blank line is whitespace in an append-only file, not a row:
+            # `read_rows` already skips it, and it must not be counted as an
+            # unparsable line here either.
+            "   ",
+        ],
+    )
+
+    store = read_rows_from_floor(path, "7")
+
+    assert store.rows == [_row_at("11"), _row_at("7")]
+    assert store.unreadable == [
+        UnreadableRows(schema_version="2", count=1, reason=UNREADABLE_BELOW_FLOOR),
+        UnreadableRows(
+            schema_version=None, count=1, reason=UNREADABLE_NO_SCHEMA_VERSION
+        ),
+        UnreadableRows(schema_version=None, count=1, reason=UNREADABLE_UNPARSABLE_LINE),
+    ]
+    assert sum(entry.count for entry in store.unreadable) == 3
+
+
+def test_read_rows_from_floor_compares_versions_as_numbers_not_strings(
+    tmp_path: Path,
+) -> None:
+    # "10" sorts before "7" lexically. The bundle-vs-live gap this service
+    # spans ("7" against "11") crosses exactly that boundary, so a string
+    # comparison would class every live row as below the bundle's floor.
+    path = tmp_path / "runtime.jsonl"
+    _write_lines(path, [json.dumps(_row_at("10"))])
+
+    store = read_rows_from_floor(path, "7")
+
+    assert store.rows == [_row_at("10")]
+    assert store.unreadable == []
+
+
+def test_read_rows_from_floor_keeps_valid_rows_around_a_malformed_line(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "runtime.jsonl"
+    _write_lines(
+        path,
+        [json.dumps(_row_at("11")), "]]not json[[", json.dumps(_row_at("11", "run-2"))],
+    )
+
+    store = read_rows_from_floor(path, "7")
+
+    assert store.rows == [_row_at("11"), _row_at("11", "run-2")]
+    assert store.unreadable == [
+        UnreadableRows(schema_version=None, count=1, reason=UNREADABLE_UNPARSABLE_LINE)
+    ]
+
+
+def test_read_rows_from_floor_counts_a_json_line_that_is_not_an_object(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "runtime.jsonl"
+    _write_lines(path, ["[1, 2, 3]", json.dumps(_row_at("11"))])
+
+    store = read_rows_from_floor(path, "7")
+
+    assert store.rows == [_row_at("11")]
+    assert store.unreadable == [
+        UnreadableRows(schema_version=None, count=1, reason=UNREADABLE_UNPARSABLE_LINE)
+    ]
+
+
+def test_read_rows_from_floor_names_a_version_it_cannot_compare(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "runtime.jsonl"
+    _write_lines(path, [json.dumps(_row_at("draft"))])
+
+    store = read_rows_from_floor(path, "7")
+
+    assert store.rows == []
+    assert store.unreadable == [
+        UnreadableRows(
+            schema_version="draft", count=1, reason=UNREADABLE_NO_SCHEMA_VERSION
+        )
+    ]
+
+
+def test_read_rows_from_floor_aggregates_and_orders_deterministically(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "runtime.jsonl"
+    _write_lines(
+        path,
+        [
+            json.dumps(_row_at("2")),
+            json.dumps(_row_at(None)),
+            json.dumps(_row_at("1")),
+            json.dumps(_row_at("2")),
+        ],
+    )
+
+    first = read_rows_from_floor(path, "7")
+    second = read_rows_from_floor(path, "7")
+
+    # Numeric version ascending, `None` last -- so two reads of one store can
+    # be compared byte for byte.
+    assert first.unreadable == [
+        UnreadableRows(schema_version="1", count=1, reason=UNREADABLE_BELOW_FLOOR),
+        UnreadableRows(schema_version="2", count=2, reason=UNREADABLE_BELOW_FLOOR),
+        UnreadableRows(
+            schema_version=None, count=1, reason=UNREADABLE_NO_SCHEMA_VERSION
+        ),
+    ]
+    assert first == second
+
+
+def test_read_rows_from_floor_refuses_a_non_numeric_floor(tmp_path: Path) -> None:
+    path = tmp_path / "runtime.jsonl"
+    _write_lines(path, [json.dumps(_row_at("11"))])
+
+    with pytest.raises(ValueError, match="SEVEN"):
+        read_rows_from_floor(path, "SEVEN")
+
+
+def test_the_existing_readers_are_untouched_by_the_floor_aware_path(
+    tmp_path: Path,
+) -> None:
+    # The floor-aware read is additive: every existing caller keeps its
+    # exact-match `schema_version` behaviour over the same store.
+    path = tmp_path / "quality.jsonl"
+    row_v7 = {**COMPLETE_QUALITY_ROW, "schema_version": "7"}
+    row_v11 = {**COMPLETE_QUALITY_ROW, "schema_version": "11", "run_id": "run-2"}
+    append_row(path, "quality", row_v7)
+    append_row(path, "quality", row_v11)
+
+    assert read_rows(path) == [row_v7, row_v11]
+    assert read_rows(path, schema_version="7") == [row_v7]
+    assert rows_for_run(path, "run-2") == [row_v11]
+    assert (
+        resume_skip_reason(path, "run-1", "local", 1, task_suite="classification")
         == "run run-1 already complete"
     )

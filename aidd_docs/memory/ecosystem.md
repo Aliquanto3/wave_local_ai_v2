@@ -4,6 +4,7 @@
 flowchart LR
   Agent([Agent])
   App([App])
+  Browser([Browser])
 
   GitHub["GitHub · vcs.md"]
   HF["Hugging Face"]
@@ -11,6 +12,7 @@ flowchart LR
   Mistral["Mistral API\nbenchmark subject · judge"]
   Google["Google AI API\nbenchmark subject · judge"]
   CC["CodeCarbon\nin-process"]
+  Serve["Results service · ours\nSERVICE_HOST:SERVICE_PORT"]
 
   Agent -- cli --> GitHub
   Agent -- cli --> HF
@@ -18,7 +20,14 @@ flowchart LR
   App -- http --> Mistral
   App -- http --> Google
   App -- in-process --> CC
+  Browser -- "http · X-API-Key off loopback" --> Serve
 ```
+
+`wave-local-ai-v2-serve` is the first process of this project's own that a
+second machine can reach: every other edge above is this project acting as a
+client of someone else's service. That inversion is why the key is required at
+startup rather than configured later, and why the default bind is loopback —
+the story that puts a browser in front of it, over TLS, comes after this one.
 
 Google AI Studio (`gemini-3.5-flash-lite`, pinned) is the quality CLI's second
 cloud subject, alongside Mistral (`mistral-small-2603`). Its Scope-3

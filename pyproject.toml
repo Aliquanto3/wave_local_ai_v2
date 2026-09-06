@@ -9,10 +9,12 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "codecarbon>=3.3.0",
+    "fastapi>=0.141.1",
     "nvidia-ml-py>=13.610.43",
     "psutil>=7.2.2",
     "python-dotenv>=1.2.3",
     "requests>=2.34.2",
+    "uvicorn>=0.52.4",
 ]
 
 [[tool.mypy.overrides]]
@@ -30,6 +32,7 @@ wave-local-ai-v2 = "wave_local_ai_v2:main"
 wave-local-ai-v2-quality = "wave_local_ai_v2.quality_cli:main"
 wave-local-ai-v2-validate = "wave_local_ai_v2.fiche_validator:main"
 wave-local-ai-v2-judge-probe = "wave_local_ai_v2.judge_probe:main"
+wave-local-ai-v2-serve = "wave_local_ai_v2.service:main"
 
 [build-system]
 requires = ["uv_build>=0.11.7,<0.12.0"]
@@ -38,6 +41,7 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "detect-secrets>=1.5.0",
+    "httpx>=0.28.1",
     "mypy>=2.3.1",
     "pip-audit>=2.10.1",
     "pre-commit>=4.6.2",

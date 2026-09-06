@@ -4,12 +4,61 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections import Counter
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from wave_local_ai_v2 import row_contract
 from wave_local_ai_v2.row_contract import RowKind
+
+# The three reasons a stored line is reported rather than rendered. Finite and
+# named, like `row_contract`'s own reason strings: a reader meeting an
+# `unreadable` entry never has to guess which of several conditions produced
+# it, and no fourth reason can be invented at a call site.
+UNREADABLE_BELOW_FLOOR = "below_schema_floor"
+# The line cannot be *placed* relative to the floor: it carries no
+# `schema_version` key at all, or carries one that is not a decimal integer.
+# Both are the same fact to a reader -- there is no version to compare -- and
+# the entry keeps whatever the line actually held, so "no comparable version"
+# never has to be taken on trust.
+UNREADABLE_NO_SCHEMA_VERSION = "no_comparable_schema_version"
+UNREADABLE_UNPARSABLE_LINE = "unparsable_line"
+UNREADABLE_REASONS: frozenset[str] = frozenset(
+    {
+        UNREADABLE_BELOW_FLOOR,
+        UNREADABLE_NO_SCHEMA_VERSION,
+        UNREADABLE_UNPARSABLE_LINE,
+    }
+)
+
+
+@dataclass(frozen=True)
+class UnreadableRows:
+    """How many stored lines one `(schema_version, reason)` pair accounts for.
+
+    `schema_version` is `None` when the line carries none -- never coerced to
+    a version it does not claim.
+    """
+
+    schema_version: str | None
+    count: int
+    reason: str
+
+
+@dataclass(frozen=True)
+class StoreRead:
+    """One read of a store: the rows a reader may render, and what it may not.
+
+    The two halves are the whole point: a line below the floor, carrying no
+    version, or not parsable as JSON is *reported*, not filtered away, so a
+    view built on this can name an absence instead of showing a shorter table
+    than the file holds.
+    """
+
+    rows: list[dict[str, Any]]
+    unreadable: list[UnreadableRows]
 
 
 def new_run_id() -> str:
@@ -57,6 +106,90 @@ def read_rows(path: Path, schema_version: str | None = None) -> list[dict[str, A
     if schema_version is None:
         return rows
     return [row for row in rows if row.get("schema_version") == schema_version]
+
+
+def read_rows_from_floor(path: Path, minimum_schema_version: str) -> StoreRead:
+    """Read a store, selecting rows at or above `minimum_schema_version`.
+
+    Unlike `read_rows`, nothing is silently dropped: a row below the floor, a
+    row carrying no comparable `schema_version`, and a line that is not JSON
+    at all each land in `unreadable`, aggregated into one entry per
+    `(schema_version, reason)` pair. An absent file is an empty `StoreRead`,
+    matching `read_rows`'s "an absent store is not an error" contract.
+
+    Versions are compared as **integers**, never as strings: `"10"` sorts
+    before `"7"` lexically, and the gap this service actually spans -- the
+    published bundle at `"7"` against the live stores at `"11"` -- crosses
+    exactly that boundary, so a string comparison would class every live row
+    as below the bundle's floor. `tests/test_reference_bundle.py` carries the
+    same trap in a comment on its own version check.
+
+    Never raises on stored content: a `json.JSONDecodeError` escaping here
+    would take down a read-only service on one hand-edited line.
+    """
+    if not path.exists():
+        return StoreRead(rows=[], unreadable=[])
+
+    floor = _as_schema_int(minimum_schema_version)
+    if floor is None:
+        raise ValueError(
+            f"minimum_schema_version={minimum_schema_version!r} is not an integer"
+        )
+
+    rows: list[dict[str, Any]] = []
+    counts: Counter[tuple[str | None, str]] = Counter()
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            try:
+                parsed = json.loads(line)
+            except json.JSONDecodeError:
+                counts[(None, UNREADABLE_UNPARSABLE_LINE)] += 1
+                continue
+            if not isinstance(parsed, dict):
+                counts[(None, UNREADABLE_UNPARSABLE_LINE)] += 1
+                continue
+            raw_version = parsed.get("schema_version")
+            version = None if raw_version is None else str(raw_version)
+            numeric = None if version is None else _as_schema_int(version)
+            if numeric is None:
+                counts[(version, UNREADABLE_NO_SCHEMA_VERSION)] += 1
+            elif numeric < floor:
+                counts[(version, UNREADABLE_BELOW_FLOOR)] += 1
+            else:
+                rows.append(parsed)
+
+    unreadable = [
+        UnreadableRows(schema_version=version, count=count, reason=reason)
+        for (version, reason), count in sorted(counts.items(), key=_unreadable_sort_key)
+    ]
+    return StoreRead(rows=rows, unreadable=unreadable)
+
+
+def _as_schema_int(version: str) -> int | None:
+    """`version` as an integer, or `None` when it is not a decimal integer."""
+    try:
+        return int(version)
+    except ValueError:
+        return None
+
+
+def _unreadable_sort_key(
+    item: tuple[tuple[str | None, str], int],
+) -> tuple[int, int, str, str]:
+    """Order unreadable entries: numeric version ascending, `None` last.
+
+    Deterministic on purpose -- two reads of one store must produce
+    byte-identical output, so a response can be diffed across runs.
+    """
+    (version, reason), _count = item
+    if version is None:
+        return (2, 0, "", reason)
+    numeric = _as_schema_int(version)
+    if numeric is None:
+        return (1, 0, version, reason)
+    return (0, numeric, "", reason)
 
 
 def rows_for_run(path: Path, run_id: str) -> list[dict[str, Any]]:

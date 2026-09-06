@@ -87,6 +87,52 @@ The command-line interface for running benchmarks.
   (a row predating that schema version — its absent `fiche_hash` is
   expected, not an integrity failure). Exits `1` on any `edited`/`missing`
   row, `0` otherwise, printing the checked count.
+- `wave-local-ai-v2-serve` — read-only results service: four `GET` routes over
+  the two stores, answering the views a pitch screen needs without a terminal.
+  Writes nothing: every store file is opened for reading, and every non-`GET`
+  method on every route answers `405` with `Allow: GET`.
+  - `GET /api/runs` — the run index, as **two separately named collections**
+    (`runtime_runs`, `quality_runs`), each with its own `unreadable` count and
+    the schema floor in force. The one route that reads both files, and it
+    joins nothing.
+  - `GET /api/runs/{run_id}/quality` — one entry per quality row, each
+    declaring its `score_shape` (`exact_match` or `graded`) and carrying only
+    that shape's fields.
+  - `GET /api/runs/{run_id}/runtime` — the runtime fields with the row's fiche
+    resolved beside it.
+  - `GET /api/runs/{run_id}/energy?store=runtime|quality` — the three energy
+    channels each beside its own method label, plus the emissions/scope
+    fields. `store` is **required**: both row kinds carry the same energy
+    fields, so an unnamed or unrecognised store is a `422` naming the
+    parameter, never a probe of both. A `run_id` the named store does not
+    carry is a `404` naming the run and the store, never an empty list.
+  - Every field a row does not carry comes back as a marked absence —
+    `{"absent": true, "reason": ..., "detail": {...}}` — over three finite
+    reasons: `predates_schema`, `null_in_row`, `pointer_unresolved`. Nothing
+    is defaulted, zero-filled or inferred, and the service computes no
+    verdict, score, agreement or aggregate.
+  - `SERVICE_API_KEY` is **required to start**, unconditionally — a loopback
+    bind is not an exemption, and no key value ships in this repo. A loopback
+    client is then answered with no header; every other client must send a
+    matching `X-API-Key` or gets a `401`. An unparsable peer address counts as
+    non-loopback, and no proxy header is read: `main()` passes
+    `proxy_headers=False` to uvicorn, whose own default (`True`) would
+    otherwise let `X-Forwarded-For` rewrite the peer address the gate reads.
+    Serving this behind a reverse proxy is therefore a decision to make
+    deliberately, not a default to inherit.
+    There is no `/openapi.json`, `/docs` or `/redoc`: FastAPI mounts those
+    outside the gated `/api` router, so they are disabled rather than left to
+    answer a keyless client with the route list.
+  - `SERVICE_HOST` (default `127.0.0.1`), `SERVICE_PORT` (default `8000`) and
+    `SERVICE_SCHEMA_FLOOR` (default `7`) are the rest of its configuration; the
+    store, roster, fiche-registry and suite-definition paths come from the same
+    env vars the benchmark CLIs use. A row below the floor is counted in
+    `unreadable` naming its version, never rendered half-populated and never
+    dropped. Pointing `RUNTIME_RESULTS_PATH`/`QUALITY_RESULTS_PATH` at
+    `aidd_docs/results/*-reference.jsonl` serves the committed bundle with no
+    code change.
+  - Plain HTTP. TLS and the browser's own side of the key are a later story in
+    this epic — this is not the finished posture.
 
 Both benchmark commands stamp every row they write with a `run_id` and a UTC `captured_at`, so the
 rows of one invocation are selectable back out of the append-only store. The two
