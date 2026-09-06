@@ -272,13 +272,25 @@ aidd_docs/results/quality-reference.jsonl`:
 
 ## Dense versus MoE, side by side (2026-09-06)
 
-Not part of the committed bundle. These rows live in the untracked live stores
-(`aidd_docs/results/runtime.jsonl`, `aidd_docs/results/quality.jsonl`) at `schema_version`
-`"10"`; this section records what the runs produced so the numbers are citable. The
-committed reference bundle is frozen one schema behind for the reason its own section
-above gives, and is **not** touched. What *is* committed is the three fiches these rows
-cite -- `f804bee0...` (0.6B), `067530ef...` (1.7B), `dfd5a5ea...` (4B) -- so every number
-below resolves to a stored hardware-and-flags record and a roster entry.
+The three dense models' rows were produced today and are not part of the committed
+bundle: they live in the untracked live stores (`aidd_docs/results/runtime.jsonl`,
+`aidd_docs/results/quality.jsonl`) at `schema_version` `"10"`. This section records what
+they produced so the numbers are citable. The committed reference bundle is frozen one
+schema behind for the reason its own section above gives, and is **not** touched. What
+*is* committed is the three fiches the dense rows cite -- `f804bee0...` (0.6B),
+`067530ef...` (1.7B), `dfd5a5ea...` (4B) -- so every dense number below resolves to a
+stored hardware-and-flags record and a roster entry.
+
+The comparator rows in the tables below are older and are cited, not re-run, so they do
+not all share that provenance. Where each one lives:
+
+| Cited row | `run_id` | Where it lives | `schema_version` |
+| --------- | -------- | -------------- | ---------------- |
+| `Qwen3.6-35B-A3B` runtime | `f7faeef7...` | committed `runtime-reference.jsonl` (also in the live store) | `"7"` |
+| `Qwen3.6-35B-A3B` + `gemini-3.5-flash-lite` classification | `1f3c94b9...` | untracked `quality.jsonl` only | `"8"` |
+| `Qwen3.6-35B-A3B` + `gemini-3.5-flash-lite` translation | `80803767...` | untracked `quality.jsonl` only | `"10"` |
+
+All four cite fiche `b9d1af56...`, which is committed, so those numbers resolve too.
 
 The model set is `roster_version` 2: the MoE flagship plus a dense Qwen3 size ladder. The
 dense/MoE distinction is what the section is for, so it is in the table rather than in a
@@ -342,8 +354,9 @@ translation quality.
 ### What the dense rows are actually measuring
 
 A ~0.19 chrF reads like "these models cannot translate". Read one completion and that is
-not what happened. `Qwen3-4B`, item `fr-de-03`, `item_score` 0.2157, verbatim from the
-row's `subject_output`:
+not what happened. `Qwen3-4B`, item `fr-de-03`, `item_score` 0.2157, the row's
+`subject_output` in full -- it ran the 128-token cap dry, so it ends mid-sentence where
+the row itself ends:
 
 ```
  Nous ne pouvons donc pas vous aider à réaliser ce projet. Nous vous remercions de
@@ -353,13 +366,18 @@ Answer:
 Der von Ihnen übermittelte Angebot überschreitet unseren jährlichen Budget. Daher
 können wir Ihnen nicht helfen, dieses Projekt umzusetzen. Vielen Dank für Ihr
 Verständnis.  
-**Note:
+**Note:** The translation provided is accurate and maintains the formal tone of the
+original French text. The key terms like "dévis" (offer), "budget annuel" (annual
+budget), and "projet" (project) are correctly translated. The sentence structure is
+adapted
 ```
 
 The German in the middle is a good translation of the reference sentence. The model
-reached it only after first **continuing the French source text**, and chrF scores the
-full raw completion, so the continuation and the trailing `**Note:` drown the answer.
-The classification rows fail the same way -- `Qwen3-0.6B`, item `billing-02`, expected
+reached it only after first **continuing the French source text**, and then spent the
+rest of its cap reviewing its own work in English. chrF scores the full raw completion,
+so the continuation and the `**Note:` commentary together drown the answer.
+
+The classification rows fail the same way. `Qwen3-0.6B`, item `billing-02`, expected
 `billing`, running the 32-token cap dry:
 
 ```
@@ -368,6 +386,15 @@ The classification rows fail the same way -- `Qwen3-0.6B`, item `billing-02`, ex
 The message is about the currency of the invoice. The message is about the amount owed.
 The message is about the payment method. The message is about the
 ```
+
+That completion is **not** quoted from a row: a classification row carries
+`predicted_label` and `failure_reason`, never the raw text (`subject_output` is `null` on
+every classification row this project has written, these three included). It comes from
+the direct `/completion` probe against `qwen3-0.6b-q8` described in the truncation-
+reporting section below, replaying the same item at the same cap. What the rows
+themselves carry for this batch is `failure_reason: "unparseable"` on 6 of 20 items and
+`tokens_out_total` 640 -- 20 × the full cap -- which is the evidence for the paragraph
+that follows; the text above only shows what running the cap dry looks like.
 
 The local quality path posts a **raw prompt to `/completion`**, with no chat template
 applied. These Qwen3 releases treat that as text to continue rather than as an
@@ -394,10 +421,15 @@ repetitions, 10 s cooldown, pinned seed, `cache_prompt: false`, 128-token cap.
 
 | Model | Quant | `-ngl` | `--n-cpu-moe` | `run_id` | `gen_tok_per_s` | `prompt_tok_per_s` | `ttft_ms` | gen / ttft / prompt spread | `unreliable` | RSS | VRAM | Energy (kWh) | Cost (EUR) | `verdict` |
 | ----- | ----- | ------ | ------------- | -------- | --------------- | ------------------ | --------- | -------------------------- | ------------ | --- | ---- | ------------ | ---------- | --------- |
-| `Qwen3-0.6B` | `Q8_0` | 99 | *absent* | `68a5e1df...` | **207.8** | **4117.8** | **360.6** | 0.005 / 0.078 / 0.093 | false | 1028 MB | 4527 MiB | 0.00078 | 0.000151 | `not_comparable` |
-| `Qwen3-1.7B` | `Q8_0` | 99 | *absent* | `e5714fcb...` | 116.0 | 3091.9 | 480.3 | 0.002 / 0.083 / 0.100 | false | 2172 MB | 5689 MiB | 0.00090 | 0.000174 | `not_comparable` |
-| `Qwen3-4B` | `Q4_K_M` | 99 | *absent* | `f8678fe0...` | 33.6 | 275.2 | 5396.4 | 0.001 / 0.003 / 0.003 | false | 4077 MB | **6115 MiB** | 0.00214 | 0.000414 | `not_comparable` |
-| `Qwen3.6-35B-A3B` | `UD-IQ4_XS` | 99 | **37** | `f7faeef7...` | 24.8 | 273.3 | 5451.9 | 0.005 / 0.004 / 0.004 | false | 14520 MB | 4549 MiB | 0.00264 | 0.000513 | `reproduced` |
+| `Qwen3-0.6B` | `Q8_0` | 99 | *absent* | `68a5e1df...` | **207.8** | **4117.8** | **360.6** | 0.005 / 0.078 / 0.093 | false | 1078 MB | 4527 MiB | 0.00078 | 0.000151 | `not_comparable` |
+| `Qwen3-1.7B` | `Q8_0` | 99 | *absent* | `e5714fcb...` | 116.0 | 3091.9 | 480.3 | 0.002 / 0.083 / 0.100 | false | 2277 MB | 5689 MiB | 0.00090 | 0.000174 | `not_comparable` |
+| `Qwen3-4B` | `Q4_K_M` | 99 | *absent* | `f8678fe0...` | 33.6 | 275.2 | 5396.4 | 0.001 / 0.003 / 0.003 | false | 4275 MB | **6115 MiB** | 0.00214 | 0.000414 | `not_comparable` |
+| `Qwen3.6-35B-A3B` | `UD-IQ4_XS` | 99 | **37** | `f7faeef7...` | 24.8 | 273.3 | 5451.9 | 0.005 / 0.004 / 0.004 | false | 15226 MB | 4549 MiB | 0.00264 | 0.000513 | `reproduced` |
+
+The two memory columns are not in the same unit, because the two fields are not: `RSS` is
+`process_rss_bytes` in decimal MB (10^6 B, the unit this project's earlier records use for
+that field), `VRAM` is `vram_used_mib` in MiB (2^20 B, the unit NVML reports). Both are
+peaks over the counted repetitions, not point samples.
 
 Every dense `verdict` is `not_comparable`, and that is the honest first-run state rather
 than a gap: the verdict blocks on `llama_cpp_build` / `quant` / `gpu_name` / `flags`, and

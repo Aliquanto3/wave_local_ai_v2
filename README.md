@@ -48,7 +48,7 @@ The flagship, `Qwen3.6-35B-A3B-UD-IQ4_XS` (17.7 GB GGUF), needs:
 The dense ladder — `Qwen3-0.6B`, `Qwen3-1.7B` and `Qwen3-4B` — is **4.63 GB
 for all three**, the largest single file 2.33 GB, and carries no MoE-offload
 flag at all: on the same 6 GB laptop GPU each held every layer in VRAM, and
-the 0.6B peaked at 1.0 GB of system RAM against the flagship's 14.5 GB. A
+the 0.6B peaked at 1.1 GB of system RAM against the flagship's 15.2 GB. A
 machine that cannot host the flagship can still run every suite in this
 project. What each of the four actually scored, and what it cost, is the
 side-by-side section of
