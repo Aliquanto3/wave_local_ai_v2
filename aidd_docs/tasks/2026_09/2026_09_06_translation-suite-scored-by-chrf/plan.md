@@ -1,6 +1,6 @@
 ---
 objective: "A 21-item hand-written translation suite is scored deterministically by an in-repo chrF against the same local SLM and cloud subjects as classification, publishing a graded score the row itself lets an auditor recompute."
-status: in-progress
+status: implemented
 ---
 
 # Plan: Translation scoring extends deterministic coverage, scored by chrF
