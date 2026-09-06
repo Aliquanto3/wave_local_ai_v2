@@ -66,3 +66,48 @@ def rows_for_run(path: Path, run_id: str) -> list[dict[str, Any]]:
     both mean "nothing to skip" to a `--resume` caller, never an error.
     """
     return [row for row in read_rows(path) if row.get("run_id") == run_id]
+
+
+def resume_skip_reason(
+    path: Path, run_id: str, provider: str, item_count: int
+) -> str | None:
+    """Why `--resume` must not re-run this `(run_id, provider)` batch, or None to run it.
+
+    Used only under `--resume`: a fresh run never has any prior rows for its
+    own (freshly minted) run_id, so this is never called there.
+
+    Distinct item_ids, not a row count: the question is which of the batch's
+    `item_count` items this `(run_id, provider)` pair already owns. Three
+    cases, because a batch is skipped for two different reasons and re-run for
+    one:
+
+    - none of them: nothing was ever written, re-run the batch from item 1.
+    - all of them: the batch already cost what it cost, never pay again.
+    - some of them: re-running would append a second row for every item
+      already on disk, and `append_row` only ever appends -- so the pair
+      `(run_id, provider, item_id)` would stop being unique and a reader
+      (`verdict.select_quality_references` included) would meet the same item
+      twice. `plan.md`'s Decision holds that a partial batch is unreachable
+      (a mid-batch failure never reaches the row writer), but nothing
+      enforces it: rows are appended one by one, so an interrupt or a disk
+      failure part-way through leaves exactly this state. Refuse it rather
+      than duplicate; per-item resume is out of scope by that same Decision.
+
+    `path` and `item_count` are the caller's: the two CLIs that write quality
+    rows keep their own store and their own batch size, and the "never
+    re-pay, never duplicate" rule is one rule over both.
+    """
+    written_items = {
+        row.get("item_id")
+        for row in rows_for_run(path, run_id)
+        if row.get("provider") == provider
+    }
+    if not written_items:
+        return None
+    if len(written_items) >= item_count:
+        return f"run {run_id} already complete"
+    return (
+        f"run {run_id} is partially written "
+        f"({len(written_items)}/{item_count} items); "
+        f"re-running would duplicate them"
+    )

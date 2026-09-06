@@ -10,6 +10,7 @@ from wave_local_ai_v2.settings import (
     DEFAULT_EMISSION_REGION,
     DEFAULT_FICHE_REGISTRY_DIR,
     DEFAULT_GOOGLE_REQUEST_PACING_S,
+    DEFAULT_JUDGE_PROBE_REFERENCE_PATH,
     DEFAULT_KWH_PRICE_EUR,
     DEFAULT_KWH_PRICE_RECORDED_AT,
     DEFAULT_MISTRAL_REQUEST_PACING_S,
@@ -541,6 +542,43 @@ def test_load_settings_refuses_an_invalid_contested_threshold(
 
     with pytest.raises(SettingsError, match="CONTESTED_ORDINAL_MAX_DELTA"):
         load_settings()
+
+
+def test_load_settings_defaults_the_judge_probe_reference_path_when_unset(
+    monkeypatch, tmp_path: Path
+) -> None:
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    server_path = tmp_path / "llama-server.exe"
+    server_path.write_text("")
+
+    monkeypatch.setenv("SLM_MODELS_DIR", str(models_dir))
+    monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
+    monkeypatch.delenv("JUDGE_PROBE_REFERENCE_PATH", raising=False)
+
+    settings = load_settings()
+
+    assert settings.judge_probe_reference_path == Path(
+        DEFAULT_JUDGE_PROBE_REFERENCE_PATH
+    )
+    assert settings.judge_probe_reference_path != settings.quality_results_path
+
+
+def test_load_settings_reads_the_judge_probe_reference_path_override(
+    monkeypatch, tmp_path: Path
+) -> None:
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    server_path = tmp_path / "llama-server.exe"
+    server_path.write_text("")
+
+    monkeypatch.setenv("SLM_MODELS_DIR", str(models_dir))
+    monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
+    monkeypatch.setenv("JUDGE_PROBE_REFERENCE_PATH", str(tmp_path / "probe.jsonl"))
+
+    settings = load_settings()
+
+    assert settings.judge_probe_reference_path == tmp_path / "probe.jsonl"
 
 
 def test_repr_omits_the_google_api_key_but_attribute_access_keeps_it(
