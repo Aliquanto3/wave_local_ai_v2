@@ -115,7 +115,14 @@ The command-line interface for running benchmarks.
     bind is not an exemption, and no key value ships in this repo. A loopback
     client is then answered with no header; every other client must send a
     matching `X-API-Key` or gets a `401`. An unparsable peer address counts as
-    non-loopback, and no proxy header is read.
+    non-loopback, and no proxy header is read: `main()` passes
+    `proxy_headers=False` to uvicorn, whose own default (`True`) would
+    otherwise let `X-Forwarded-For` rewrite the peer address the gate reads.
+    Serving this behind a reverse proxy is therefore a decision to make
+    deliberately, not a default to inherit.
+    There is no `/openapi.json`, `/docs` or `/redoc`: FastAPI mounts those
+    outside the gated `/api` router, so they are disabled rather than left to
+    answer a keyless client with the route list.
   - `SERVICE_HOST` (default `127.0.0.1`), `SERVICE_PORT` (default `8000`) and
     `SERVICE_SCHEMA_FLOOR` (default `7`) are the rest of its configuration; the
     store, roster, fiche-registry and suite-definition paths come from the same

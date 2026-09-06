@@ -40,7 +40,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   header; every other client must present a matching `X-API-Key`, compared
   with `hmac.compare_digest`, or gets a `401` that names the reason and
   echoes nothing. An unparsable peer address counts as non-loopback and no
-  proxy header is read. `SERVICE_HOST`, `SERVICE_PORT` and
+  proxy header is read — uvicorn's `proxy_headers` default is turned off, so
+  `X-Forwarded-For` cannot rewrite the peer address the gate reads. There is
+  no `/openapi.json`, `/docs` or `/redoc`: FastAPI mounts those outside the
+  gated `/api` router, so they are disabled rather than left answering a
+  keyless client with the route list. `SERVICE_HOST`, `SERVICE_PORT` and
   `SERVICE_SCHEMA_FLOOR` are the rest of its configuration; pointing the two
   store paths at `aidd_docs/results/*-reference.jsonl` serves the committed
   bundle with no code change. TLS and the browser's side of the key are a

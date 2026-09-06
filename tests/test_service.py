@@ -228,6 +228,27 @@ def test_an_unparsable_client_host_is_refused(settings: ServiceSettings) -> None
         assert client.get("/api/runs").status_code == 401
 
 
+def test_a_non_ascii_key_header_is_refused_not_a_500(remote: TestClient) -> None:
+    # `hmac.compare_digest` raises `TypeError` on a `str` carrying a non-ASCII
+    # character, and starlette decodes header values as latin-1 -- so one byte
+    # from any remote client used to take the refusal path out through a 500
+    # with a traceback. The comparison is on bytes, so this is a plain 401.
+    response = remote.get("/api/runs", headers={b"x-api-key": b"cl\xe9-invalide"})
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "invalid X-API-Key"
+
+
+@pytest.mark.parametrize("path", ["/openapi.json", "/docs", "/redoc"])
+def test_the_schema_and_docs_surfaces_are_not_mounted_at_all(
+    remote: TestClient, path: str
+) -> None:
+    # FastAPI mounts these at the root, outside the gated `/api` router, so
+    # leaving them on would answer a keyless non-loopback client with the whole
+    # route list and its parameters -- not "route absence and nothing else".
+    assert remote.get(path).status_code == 404
+
+
 def test_the_same_request_with_the_key_gets_the_loopback_body(
     local: TestClient, remote: TestClient
 ) -> None:
@@ -285,21 +306,41 @@ def test_the_serve_entry_refuses_to_start_without_a_key(
 def test_the_serve_entry_prints_the_address_and_floor_and_never_the_key(
     monkeypatch, settings: ServiceSettings, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    served: list[tuple[str, int]] = []
+    served: list[dict[str, Any]] = []
     monkeypatch.setattr(service, "load_service_settings", lambda: settings)
     monkeypatch.setattr(
-        service.uvicorn,
-        "run",
-        lambda app, host, port: served.append((host, port)),
+        service.uvicorn, "run", lambda app, **kwargs: served.append(kwargs)
     )
 
     assert service.main() == 0
 
     printed = capsys.readouterr().out
-    assert served == [("127.0.0.1", 8000)]
+    assert served == [{"host": "127.0.0.1", "port": 8000, "proxy_headers": False}]
     assert "http://127.0.0.1:8000" in printed
     assert "schema floor 7" in printed
     assert API_KEY not in printed
+
+
+def test_the_serve_entry_disables_uvicorns_proxy_header_middleware(
+    monkeypatch, settings: ServiceSettings
+) -> None:
+    # The gate reads `scope["client"]` and nothing else, which is only true of
+    # the running process while this stays off: uvicorn defaults it to `True`,
+    # and `ProxyHeadersMiddleware` then rewrites `scope["client"]` from
+    # `X-Forwarded-For` before any route or dependency sees it. A loopback
+    # client sending the header would be refused, and a remote one forging
+    # `127.0.0.1` would need only a widened `FORWARDED_ALLOW_IPS` -- which
+    # uvicorn reads from the same environment `load_dotenv()` populates -- to
+    # be handed the keyless path.
+    served: list[dict[str, Any]] = []
+    monkeypatch.setattr(service, "load_service_settings", lambda: settings)
+    monkeypatch.setattr(
+        service.uvicorn, "run", lambda app, **kwargs: served.append(kwargs)
+    )
+
+    service.main()
+
+    assert served[0]["proxy_headers"] is False
 
 
 # --------------------------------------------------------------------------

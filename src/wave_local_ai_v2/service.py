@@ -52,7 +52,10 @@ def is_loopback_client(host: str | None) -> bool:
 
     Reads no proxy header. `X-Forwarded-For` and its relatives are
     attacker-controlled, and this epic excludes any reverse-proxy posture, so
-    the peer address is the only input.
+    the peer address is the only input. That property is *owned* by `main()`,
+    not assumed: uvicorn wraps an app in `ProxyHeadersMiddleware` by default
+    and would overwrite `scope["client"]` from `X-Forwarded-For` before this
+    function ever sees it, so `main()` turns it off explicitly.
     """
     if host is None:
         return False
@@ -80,7 +83,16 @@ def _require_key(
         raise HTTPException(status_code=401, detail=f"missing {API_KEY_HEADER}")
     # `compare_digest`, never `==`: a byte-by-byte comparison that short
     # circuits leaks the key's prefix to anyone who can time the response.
-    if not hmac.compare_digest(presented_key, settings.api_key):
+    #
+    # Compared as *bytes*, never as the decoded strings: `compare_digest`
+    # raises `TypeError` on a `str` carrying a non-ASCII character, and
+    # starlette decodes header values as latin-1 -- so one non-ASCII byte in
+    # the header would take the refusal path out through a 500 with a
+    # traceback instead of the named 401 below. Re-encoding latin-1 recovers
+    # exactly the bytes the client sent.
+    if not hmac.compare_digest(
+        presented_key.encode("latin-1"), settings.api_key.encode("utf-8")
+    ):
         raise HTTPException(status_code=401, detail=f"invalid {API_KEY_HEADER}")
 
 
@@ -116,6 +128,15 @@ def create_app(settings: ServiceSettings) -> FastAPI:
             "Read-only views over the runtime and quality stores. Every field "
             "a row does not carry is reported as a named absence."
         ),
+        # No schema and no interactive docs. FastAPI mounts `/openapi.json`,
+        # `/docs` and `/redoc` at the root, *outside* the gated `/api` router,
+        # so leaving them on would answer any keyless non-loopback client with
+        # the whole route list and its parameters. The four routes are
+        # documented in `aidd_docs/memory/cli.md` and nothing consumes the
+        # schema, so the surface is removed rather than gated.
+        openapi_url=None,
+        docs_url=None,
+        redoc_url=None,
     )
 
     def key_gate(
@@ -227,7 +248,15 @@ def main() -> int:
         f"serving http://{settings.host}:{settings.port} "
         f"at schema floor {settings.schema_floor}"
     )
-    uvicorn.run(app, host=settings.host, port=settings.port)
+    # `proxy_headers=False` is what makes `is_loopback_client`'s "the peer
+    # address is the only input" true of the running process. uvicorn's own
+    # default is `True`, which wraps the app in `ProxyHeadersMiddleware` and
+    # rewrites `scope["client"]` from `X-Forwarded-For` -- turning a loopback
+    # client that happens to send the header into a refused one, and putting
+    # the key gate's only input one `FORWARDED_ALLOW_IPS` value away from
+    # being client-supplied. This epic has no reverse-proxy posture, so the
+    # middleware has nothing to do here but weaken the gate.
+    uvicorn.run(app, host=settings.host, port=settings.port, proxy_headers=False)
     return 0
 
 

@@ -331,6 +331,23 @@ def test_an_unstored_fiche_hash_is_a_named_pointer_absence_not_an_empty_object(
     assert fiche != {}
 
 
+def test_a_corrupt_fiche_file_is_the_same_named_absence_not_a_raise(
+    bundle: dict[str, Path],
+) -> None:
+    # A stored file that cannot be parsed is the same fact to a reader as one
+    # that is not there -- the pointer did not resolve -- and `read_fiche`
+    # parses JSON without catching. One hand-edited file in the registry must
+    # not take a whole view down, exactly as `resolve_suite_definition` and
+    # `load_roster_file` already refuse to let their own files do.
+    (bundle["fiches"] / f"{'c' * 64}.json").write_text("{not json", encoding="utf-8")
+
+    view = build_runtime(bundle, [make_row("runtime", fiche_hash="c" * 64)])
+
+    assert view["entries"][0]["fiche"] == Absent(
+        ABSENT_POINTER_UNRESOLVED, {"pointer": "fiche_hash", "value": "c" * 64}
+    )
+
+
 def test_a_roster_entry_id_absent_from_the_roster_is_a_named_pointer_absence(
     bundle: dict[str, Path],
 ) -> None:

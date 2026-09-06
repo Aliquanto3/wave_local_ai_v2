@@ -358,11 +358,20 @@ def resolve_fiche(row: dict[str, Any], fiche_registry_dir: Path) -> Any | Absent
     A hash with no file behind it is `pointer_unresolved` naming the hash --
     never `{}`, which a caller would render as a fiche with no fields rather
     than as a fiche that is not there.
+
+    A stored file that cannot be read or parsed is the same fact to a reader
+    -- the pointer did not resolve -- and is reported the same way, exactly as
+    `resolve_suite_definition` reports an unreadable snapshot. `read_fiche`
+    parses JSON without catching, and one corrupt file in the registry must
+    not take a whole view down with a 500.
     """
     fiche_hash = resolve_field(row, POINTER_FICHE_HASH)
     if isinstance(fiche_hash, Absent):
         return fiche_hash
-    fiche = read_fiche(str(fiche_hash), fiche_registry_dir)
+    try:
+        fiche = read_fiche(str(fiche_hash), fiche_registry_dir)
+    except (OSError, json.JSONDecodeError):
+        return _unresolved(POINTER_FICHE_HASH, fiche_hash)
     if fiche is None:
         return _unresolved(POINTER_FICHE_HASH, fiche_hash)
     return fiche
