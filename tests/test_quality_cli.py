@@ -8,10 +8,12 @@ import pytest
 import requests
 
 from wave_local_ai_v2 import (
+    chrf,
     classification_suite,
     google_client,
     mistral_client,
     quality_cli,
+    translation_suite,
 )
 from wave_local_ai_v2.classification_suite import CLASSIFICATION_TASK_SUITE
 from wave_local_ai_v2.cost import GOOGLE_PRICE_TABLE, MISTRAL_PRICE_TABLE
@@ -22,9 +24,10 @@ from wave_local_ai_v2.google_client import (
 )
 from wave_local_ai_v2.mistral_client import MistralRequestError, ModelUnavailableError
 from wave_local_ai_v2.results import read_rows
-from wave_local_ai_v2.row_contract import SCHEMA_VERSION
+from wave_local_ai_v2.row_contract import GRADED_FIELDS, SCHEMA_VERSION
 from wave_local_ai_v2.settings import DEFAULT_ROSTER_ENTRY_ID, Settings
 from wave_local_ai_v2.suite_gate import SuiteGateError
+from wave_local_ai_v2.translation_suite import TRANSLATION_TASK_SUITE
 
 RUNTIME_ONLY_FIELDS = {
     "cpu",
@@ -1404,6 +1407,189 @@ def test_parse_args_defaults_resume_to_none() -> None:
 
 def test_parse_args_reads_the_resume_flag() -> None:
     assert quality_cli._parse_args(["--resume", "run-123"]).resume == "run-123"
+
+
+# --- the --suite seam --------------------------------------------------------
+
+
+def test_parse_args_defaults_the_suite_to_classification() -> None:
+    # Every invocation written before this flag existed keeps behaving
+    # identically.
+    assert quality_cli._parse_args([]).suite == "classification"
+
+
+def test_parse_args_reads_the_suite_flag() -> None:
+    assert quality_cli._parse_args(["--suite", "translation"]).suite == "translation"
+
+
+def test_parse_args_refuses_an_unknown_suite_and_names_the_valid_ones(capsys) -> None:
+    with pytest.raises(SystemExit) as exc:
+        quality_cli._parse_args(["--suite", "rewriting"])
+
+    assert exc.value.code != 0
+    stderr = capsys.readouterr().err
+    assert "classification" in stderr
+    assert "translation" in stderr
+
+
+def test_the_dispatch_table_holds_exactly_the_two_shipped_suites() -> None:
+    assert set(quality_cli._SUITES) == {"classification", "translation"}
+
+
+def test_translation_run_writes_one_graded_row_per_item_per_provider(
+    stubbed_run,
+) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run(suite="translation")
+
+    rows = read_rows(quality_results_path)
+    assert len(rows) == 2 * len(TRANSLATION_TASK_SUITE)
+    for row in rows:
+        assert row["task_suite"] == "translation"
+        assert row["suite_id"] == translation_suite.SUITE_ID
+        assert row["suite_version"] == translation_suite.SUITE_VERSION
+        assert row["prompt_set_hash"] == translation_suite.PROMPT_SET_HASH
+        assert row["max_output_tokens"] == translation_suite.MAX_OUTPUT_TOKENS
+        assert row["context_length"] == translation_suite.CONTEXT_LENGTH
+        # The whole graded block, on every row.
+        assert GRADED_FIELDS <= row.keys()
+        assert row["metric_id"] == chrf.METRIC_ID
+        assert row["metric_version"] == chrf.METRIC_VERSION
+        assert row["metric_params"] == dict(chrf.METRIC_PARAMS)
+        # And none of the exact-match shape.
+        assert row["expected_label"] is None
+        assert row["predicted_label"] is None
+        assert row["correct"] is None
+        assert row["suite_accuracy"] is None
+        assert row["language_breakdown"] is None
+
+
+def test_a_translation_row_carries_both_texts_the_score_was_computed_from(
+    stubbed_run,
+) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run(suite="translation")
+
+    rows = [
+        row for row in read_rows(quality_results_path) if row["provider"] == "local"
+    ]
+    by_item = {row["item_id"]: row for row in rows}
+    for item in TRANSLATION_TASK_SUITE:
+        row = by_item[item["item_id"]]
+        assert row["reference_output"] == item["reference"]
+        # The stub answers "billing" to every prompt, translation included.
+        assert row["subject_output"] == "billing"
+        # Recomputable from the row alone, which is the point of carrying both.
+        assert row["item_score"] == chrf.chrf(
+            row["reference_output"], row["subject_output"]
+        )
+
+
+def test_a_translation_row_carries_the_per_language_score_breakdown(
+    stubbed_run,
+) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run(suite="translation")
+
+    breakdown = read_rows(quality_results_path)[0]["score_breakdown"]
+    assert set(breakdown) == {"en", "fr", "de"}
+    for cell in breakdown.values():
+        # Seven items per source language, below the 10-item cell threshold.
+        assert cell["n"] == 7
+        assert cell["indicative"] is True
+        assert 0.0 <= cell["score"] <= 1.0
+
+
+def test_an_empty_translation_completion_scores_zero_and_stays_in_the_mean(
+    stubbed_run,
+) -> None:
+    quality_results_path, started = stubbed_run
+    contents = iter([""] + ["Bonjour"] * (len(TRANSLATION_TASK_SUITE) - 1))
+    started["post"].return_value = MagicMock(
+        status_code=200,
+        json=lambda: {
+            "content": next(contents),
+            "stopped_limit": False,
+            "tokens_predicted": 3,
+        },
+        raise_for_status=lambda: None,
+    )
+
+    quality_cli._run(suite="translation")
+
+    local_rows = [
+        row for row in read_rows(quality_results_path) if row["provider"] == "local"
+    ]
+    failed = local_rows[0]
+    assert failed["item_score"] == 0.0
+    assert failed["failure_reason"] == "empty"
+    assert failed["failure_counts"]["empty"] == 1
+    # Still in the denominator: the mean is over every item, not the answered
+    # ones, so failing to answer cannot raise a published score.
+    expected = sum(row["item_score"] for row in local_rows) / len(local_rows)
+    assert failed["suite_score"] == pytest.approx(expected)
+
+
+def test_the_classification_run_writes_no_graded_field(stubbed_run) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    for row in read_rows(quality_results_path):
+        assert row["task_suite"] == "classification"
+        assert GRADED_FIELDS & row.keys() == set()
+        assert row["suite_accuracy"] is not None
+        assert row["language_breakdown"] is not None
+
+
+def test_the_translation_run_prints_a_suite_score_not_an_accuracy(
+    stubbed_run, capsys
+) -> None:
+    quality_cli._run(suite="translation")
+
+    stdout = capsys.readouterr().out
+    assert "suite_score=" in stdout
+    # A chrF mean published under the word "accuracy" is the same mistake on
+    # stdout that the row contract refuses on disk.
+    assert "accuracy=" not in stdout
+
+
+def test_the_translation_run_sends_the_suites_own_cap_to_every_provider(
+    stubbed_run,
+) -> None:
+    _, started = stubbed_run
+
+    quality_cli._run(suite="translation")
+
+    local_body = started["post"].call_args.kwargs["json"]
+    assert local_body["n_predict"] == translation_suite.MAX_OUTPUT_TOKENS
+    cloud_kwargs = started["complete_prompt"].call_args.kwargs
+    assert cloud_kwargs["max_tokens"] == translation_suite.MAX_OUTPUT_TOKENS
+
+
+def test_a_resume_under_one_suite_never_skips_on_another_suites_rows(
+    stubbed_run, monkeypatch, capsys
+) -> None:
+    quality_results_path, _ = stubbed_run
+    quality_cli._run()
+    run_id = read_rows(quality_results_path)[0]["run_id"]
+    rows_before = len(read_rows(quality_results_path))
+
+    monkeypatch.setattr("sys.argv", ["wave-local-ai-v2-quality"])
+    quality_cli._run(resume_run_id=run_id, suite="translation")
+
+    rows = read_rows(quality_results_path)
+    translation_rows = [row for row in rows if row["task_suite"] == "translation"]
+    # The classification batch under this run_id is no evidence about the
+    # translation one: it ran rather than being skipped.
+    assert len(translation_rows) == 2 * len(TRANSLATION_TASK_SUITE)
+    assert len(rows) == rows_before + len(translation_rows)
+    # Google is skipped for its missing key on both runs; nothing is skipped
+    # for being "already complete".
+    assert "already complete" not in capsys.readouterr().err
 
 
 def test_local_rows_are_written_before_the_first_cloud_call(stubbed_run) -> None:

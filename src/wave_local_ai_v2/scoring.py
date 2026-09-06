@@ -1,12 +1,21 @@
-"""Deterministic label normalization and exact-match scoring.
+"""Deterministic scoring: exact label match, and a graded reference score.
+
+Two scorers live here, both deterministic and both sharing one failure
+taxonomy. The exact-match one is the classification suite's: a completion is
+normalized to a label and either matches the expected one or does not. The
+graded one is any reference-scored suite's -- today the translation suite's
+-- where a completion is scored against a written reference by `chrf.py` and
+lands anywhere on `0..1`. They are kept apart deliberately: a chrF mean is
+not an accuracy, and one function returning either would publish a graded
+score under an exact-match name (plan.md's D4).
 
 No network, no randomness: given the same raw completion and the same caller-
-supplied truncation facts, `normalize_label` and `score_item` always return
-the same result. This is what makes the quality scores this module produces
-reproducible (same model + same prompt + same completion => same score),
-unlike the runtime metrics in `timings.py`, which are hardware-bound and
-never claimed to be reproducible across machines. `score_item` decides the
-four-way failure taxonomy itself, but stays provider-agnostic: it takes only
+supplied truncation facts, both scorers always return the same result. This
+is what makes the quality scores this module produces reproducible (same
+model + same prompt + same completion => same score), unlike the runtime
+metrics in `timings.py`, which are hardware-bound and never claimed to be
+reproducible across machines. Both decide the four-way failure taxonomy
+themselves, but stay provider-agnostic: they take only
 `truncated`/`generated_tokens`/`max_output_tokens` as plain facts, never a
 provider's raw response shape -- that mapping belongs to each provider's own
 caller (`quality_cli.py`).
@@ -18,8 +27,10 @@ import re
 from collections.abc import Sequence
 from typing import TypedDict
 
+from wave_local_ai_v2.chrf import chrf
 from wave_local_ai_v2.classification_suite import LABELS, ClassificationItem
 from wave_local_ai_v2.suite_gate import LANGUAGES, MIN_PER_LANGUAGE_CELL_ITEMS
+from wave_local_ai_v2.translation_suite import TranslationItem
 
 _TOKEN_RE = re.compile(r"[a-z]+")
 
@@ -74,6 +85,37 @@ class LanguageCell(TypedDict):
     indicative: bool
 
 
+def _truncation_reason(
+    *,
+    truncation_reason: str | None,
+    generated_tokens: int,
+    max_output_tokens: int,
+) -> str:
+    """Which truncation the caller is reporting, validated.
+
+    Shared by both scorers so the two never drift on which reason a set of
+    facts maps to. A caller-supplied reason is used as-is and must be one of
+    the two truncation members of the taxonomy; anything else is a caller
+    bug and raises rather than being silently coerced.
+    """
+    if truncation_reason is None:
+        return (
+            FAILURE_REASON_TRUNCATED_MAX_TOKENS
+            if generated_tokens >= max_output_tokens
+            else FAILURE_REASON_TRUNCATED_CONTEXT
+        )
+    if truncation_reason not in (
+        FAILURE_REASON_TRUNCATED_MAX_TOKENS,
+        FAILURE_REASON_TRUNCATED_CONTEXT,
+    ):
+        raise ValueError(
+            f"truncation_reason must be "
+            f"{FAILURE_REASON_TRUNCATED_MAX_TOKENS!r} or "
+            f"{FAILURE_REASON_TRUNCATED_CONTEXT!r}, got {truncation_reason!r}"
+        )
+    return truncation_reason
+
+
 def score_item(
     item: ClassificationItem,
     raw_completion: str,
@@ -113,23 +155,11 @@ def score_item(
         )
 
     if truncated:
-        if truncation_reason is not None:
-            if truncation_reason not in (
-                FAILURE_REASON_TRUNCATED_MAX_TOKENS,
-                FAILURE_REASON_TRUNCATED_CONTEXT,
-            ):
-                raise ValueError(
-                    f"truncation_reason must be "
-                    f"{FAILURE_REASON_TRUNCATED_MAX_TOKENS!r} or "
-                    f"{FAILURE_REASON_TRUNCATED_CONTEXT!r}, got {truncation_reason!r}"
-                )
-            reason = truncation_reason
-        else:
-            reason = (
-                FAILURE_REASON_TRUNCATED_MAX_TOKENS
-                if generated_tokens >= max_output_tokens
-                else FAILURE_REASON_TRUNCATED_CONTEXT
-            )
+        reason = _truncation_reason(
+            truncation_reason=truncation_reason,
+            generated_tokens=generated_tokens,
+            max_output_tokens=max_output_tokens,
+        )
         return ScoredItem(
             item_id=item["item_id"],
             expected_label=item["expected_label"],
@@ -204,5 +234,149 @@ def score_suite_by_language(
             accuracy = correct_count / n
         cells[lang] = LanguageCell(
             accuracy=accuracy, n=n, indicative=n < MIN_PER_LANGUAGE_CELL_ITEMS
+        )
+    return cells
+
+
+class GradedItem(TypedDict):
+    """One reference-scored item's outcome for one model.
+
+    Deliberately carries no `correct` and no `predicted_label`: `correct` is
+    a boolean and a chrF is not, and there is no label to predict on a
+    reference-scored suite (plan.md's D4). A row built from this nulls both.
+    """
+
+    item_id: str
+    item_score: float
+    failure_reason: str | None
+
+
+class GradedSuiteScore(TypedDict):
+    """A suite's mean score plus the failure counts it was aggregated over."""
+
+    suite_score: float
+    failure_counts: dict[str, int]
+
+
+class GradedLanguageCell(TypedDict):
+    """One language's slice of a graded suite score: score, sample size, mark.
+
+    The key is `score`, not `accuracy`. A chrF mean and an exact-match rate
+    are different statistics, and one key that held either would be
+    unnameable in a store that publishes both.
+    """
+
+    score: float
+    n: int
+    indicative: bool
+
+
+def score_translation_item(
+    item: TranslationItem,
+    raw_completion: str,
+    *,
+    truncated: bool,
+    generated_tokens: int,
+    max_output_tokens: int,
+    truncation_reason: str | None = None,
+) -> GradedItem:
+    """Score one completion against its reference translation, on `0..1`.
+
+    The same checks in the same order as `score_item`: empty output first,
+    then truncation (at the suite's own cap when `generated_tokens` reached
+    `max_output_tokens`, otherwise at the model's own context limit, with the
+    same caller-supplied-reason override), then the score itself. A failed
+    generation is `item_score=0.0` with its named reason and stays in the
+    suite's denominator -- it is scored, not dropped.
+
+    There is no `unparseable` branch, and the absence is deliberate: that
+    reason names a completion no member of a closed label set could be found
+    in, and a translation has no closed set. The raw completion is handed to
+    `chrf` after whitespace normalisation only, with no preamble stripped and
+    no paragraph selected (plan.md's Decisions) -- any such extraction rule
+    would be a scoring choice invented here that sacreBLEU would not
+    reproduce, so a model that answers "Sure! Here it is: ..." is genuinely
+    worse at the instruction and its score says so.
+    """
+    if raw_completion.strip() == "":
+        return GradedItem(
+            item_id=item["item_id"],
+            item_score=0.0,
+            failure_reason=FAILURE_REASON_EMPTY,
+        )
+
+    if truncated:
+        return GradedItem(
+            item_id=item["item_id"],
+            item_score=0.0,
+            failure_reason=_truncation_reason(
+                truncation_reason=truncation_reason,
+                generated_tokens=generated_tokens,
+                max_output_tokens=max_output_tokens,
+            ),
+        )
+
+    return GradedItem(
+        item_id=item["item_id"],
+        item_score=chrf(item["reference"], raw_completion),
+        failure_reason=None,
+    )
+
+
+def score_graded_suite(graded_items: list[GradedItem]) -> GradedSuiteScore:
+    """Return the mean item score and the failure-reason counts over a batch.
+
+    The mean is arithmetic over *every* item, failures included as their
+    0.0 -- dropping them would let a model raise its published score by
+    failing to answer. `suite_score` is 0.0 for an empty list rather than
+    dividing by zero, and `failure_counts` always carries all four taxonomy
+    keys, 0 when absent, mirroring `score_suite`.
+    """
+    failure_counts: dict[str, int] = dict.fromkeys(_FAILURE_REASONS, 0)
+    for graded in graded_items:
+        reason = graded["failure_reason"]
+        if reason is not None:
+            failure_counts[reason] += 1
+
+    if not graded_items:
+        suite_score = 0.0
+    else:
+        suite_score = sum(graded["item_score"] for graded in graded_items) / len(
+            graded_items
+        )
+
+    return GradedSuiteScore(suite_score=suite_score, failure_counts=failure_counts)
+
+
+def score_graded_suite_by_language(
+    items: Sequence[TranslationItem], graded_items: list[GradedItem]
+) -> dict[str, GradedLanguageCell]:
+    """Score, n and the indicative mark per language, one cell per language.
+
+    How Methodology 4's per-language requirement is met on a graded suite:
+    the headline number is broken down by the item's source `language`, and a
+    cell too small to trust says so rather than being dropped or silently
+    reported as if it were the same evidence as a full one.
+
+    `items` and `graded_items` are zipped by position with `strict=True` --
+    the same convention `score_suite_by_language` uses -- and `indicative`
+    reuses `suite_gate.MIN_PER_LANGUAGE_CELL_ITEMS` rather than redeclaring
+    the threshold, so the gate and the per-language score agree on what
+    counts as too small a sample.
+    """
+    by_language: dict[str, list[GradedItem]] = {lang: [] for lang in LANGUAGES}
+    for item, graded in zip(items, graded_items, strict=True):
+        by_language[item["language"]].append(graded)
+
+    cells: dict[str, GradedLanguageCell] = {}
+    for lang in LANGUAGES:
+        lang_items = by_language[lang]
+        n = len(lang_items)
+        if n == 0:
+            score = 0.0
+        else:
+            score = sum(graded["item_score"] for graded in lang_items) / n
+        cells[lang] = GradedLanguageCell(
+            score=score, n=n, indicative=n < MIN_PER_LANGUAGE_CELL_ITEMS
         )
     return cells

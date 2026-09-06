@@ -1,37 +1,37 @@
-"""Suite definition snapshot: the classification suite as the code holds it
-at export time.
+"""Suite definition snapshots: each task suite as the code holds it at
+export time.
 
-This is a snapshot, not a live registry: a bundle reader resolving a
+These are snapshots, not a live registry: a bundle reader resolving a
 published row's `suite_id`/`suite_version` reads the exported JSON file
-directly, without importing `classification_suite.py` or checking out the
-commit that produced it. It captures what the suite looked like at export
-time; it is not consulted at read time by anything the suite itself runs
-through (that would make it a registry, out of this module's scope per
-plan.md's Decisions -- one small module, one suite, no new CLI entry point).
+directly, without importing the suite module or checking out the commit that
+produced it. Each file captures what its suite looked like at export time; it
+is not consulted at read time by anything the suite itself runs through (that
+would make it a registry, out of this module's scope per plan.md's
+Decisions).
+
+Two suites are exported now, classification and translation, under one
+snapshot rule: identity, caps, and every item reduced to the fields a bundle
+reader needs. Only the per-item field tuple differs, because the two suites
+carry different item shapes -- an expected label on one, a reference
+translation and a target language on the other. The rule did not change to
+accommodate the second suite; it was parameterised.
 """
 
 from __future__ import annotations
 
 import json
 import sys
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from wave_local_ai_v2.classification_suite import (
-    CLASSIFICATION_TASK_SUITE,
-    CONTEXT_LENGTH,
-    MAX_OUTPUT_TOKENS,
-    PROMPT_SET_HASH,
-    STOP_SEQUENCES,
-    SUITE_ID,
-    SUITE_VERSION,
-)
+from wave_local_ai_v2 import classification_suite, translation_suite
 
 SUITE_DEFINITIONS_DIR = Path("aidd_docs/results/suite-definitions")
 
-# The six fields a bundle reader needs per item -- no derived or transient
-# field (nothing `_item()` computes at import time beyond these).
-_ITEM_FIELDS = (
+# The fields a bundle reader needs per item -- no derived or transient field
+# (nothing `_item()` computes at import time beyond these).
+CLASSIFICATION_ITEM_FIELDS = (
     "item_id",
     "prompt",
     "expected_label",
@@ -39,32 +39,81 @@ _ITEM_FIELDS = (
     "provenance",
     "contamination_risk",
 )
+TRANSLATION_ITEM_FIELDS = (
+    "item_id",
+    "prompt",
+    "source_text",
+    "reference",
+    "language",
+    "target_language",
+    "provenance",
+    "contamination_risk",
+)
 
 
-def build_snapshot() -> dict[str, Any]:
-    """Return the suite's identity, caps and every item, plain-dict shaped."""
+def build_snapshot(
+    *,
+    suite_id: str,
+    suite_version: str,
+    prompt_set_hash: str,
+    max_output_tokens: int,
+    stop_sequences: Sequence[str],
+    context_length: int,
+    items: Sequence[Mapping[str, Any]],
+    item_fields: Sequence[str],
+) -> dict[str, Any]:
+    """Return one suite's identity, caps and every item, plain-dict shaped."""
     return {
-        "suite_id": SUITE_ID,
-        "suite_version": SUITE_VERSION,
-        "prompt_set_hash": PROMPT_SET_HASH,
-        "max_output_tokens": MAX_OUTPUT_TOKENS,
-        "stop_sequences": list(STOP_SEQUENCES),
-        "context_length": CONTEXT_LENGTH,
-        "items": [
-            {field: item[field] for field in _ITEM_FIELDS}  # type: ignore[literal-required]
-            for item in CLASSIFICATION_TASK_SUITE
-        ],
+        "suite_id": suite_id,
+        "suite_version": suite_version,
+        "prompt_set_hash": prompt_set_hash,
+        "max_output_tokens": max_output_tokens,
+        "stop_sequences": list(stop_sequences),
+        "context_length": context_length,
+        "items": [{field: item[field] for field in item_fields} for item in items],
     }
 
 
-def main() -> None:
-    snapshot = build_snapshot()
-    SUITE_DEFINITIONS_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = SUITE_DEFINITIONS_DIR / f"{snapshot['suite_id']}.json"
-    out_path.write_text(
-        json.dumps(snapshot, indent=2, sort_keys=True), encoding="utf-8"
+def classification_snapshot() -> dict[str, Any]:
+    """The classification suite, snapshot-shaped."""
+    return build_snapshot(
+        suite_id=classification_suite.SUITE_ID,
+        suite_version=classification_suite.SUITE_VERSION,
+        prompt_set_hash=classification_suite.PROMPT_SET_HASH,
+        max_output_tokens=classification_suite.MAX_OUTPUT_TOKENS,
+        stop_sequences=classification_suite.STOP_SEQUENCES,
+        context_length=classification_suite.CONTEXT_LENGTH,
+        items=classification_suite.CLASSIFICATION_TASK_SUITE,
+        item_fields=CLASSIFICATION_ITEM_FIELDS,
     )
-    print(out_path)
+
+
+def translation_snapshot() -> dict[str, Any]:
+    """The translation suite, snapshot-shaped."""
+    return build_snapshot(
+        suite_id=translation_suite.SUITE_ID,
+        suite_version=translation_suite.SUITE_VERSION,
+        prompt_set_hash=translation_suite.PROMPT_SET_HASH,
+        max_output_tokens=translation_suite.MAX_OUTPUT_TOKENS,
+        stop_sequences=translation_suite.STOP_SEQUENCES,
+        context_length=translation_suite.CONTEXT_LENGTH,
+        items=translation_suite.TRANSLATION_TASK_SUITE,
+        item_fields=TRANSLATION_ITEM_FIELDS,
+    )
+
+
+SNAPSHOT_BUILDERS = (classification_snapshot, translation_snapshot)
+
+
+def main() -> None:
+    SUITE_DEFINITIONS_DIR.mkdir(parents=True, exist_ok=True)
+    for builder in SNAPSHOT_BUILDERS:
+        snapshot = builder()
+        out_path = SUITE_DEFINITIONS_DIR / f"{snapshot['suite_id']}.json"
+        out_path.write_text(
+            json.dumps(snapshot, indent=2, sort_keys=True), encoding="utf-8"
+        )
+        print(out_path)
 
 
 if __name__ == "__main__":

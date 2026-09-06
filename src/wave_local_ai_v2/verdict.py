@@ -23,6 +23,12 @@ VERDICT_NOT_COMPARABLE = "not_comparable"
 
 _RUNTIME_BLOCKING_FIELDS = ("llama_cpp_build", "quant", "gpu_name", "flags")
 
+# The two per-item values a quality batch can be compared on, in the order
+# they are tried. Methodology 8's "identical per-item predicted labels or
+# scores": an exact-match suite publishes the first, a graded one the second.
+QUALITY_COMPARED_LABEL = "predicted_label"
+QUALITY_COMPARED_SCORE = "item_score"
+
 
 class ReferenceMatch(TypedDict):
     reference_row: dict[str, Any]
@@ -197,7 +203,18 @@ def runtime_verdict(
 def select_quality_references(
     candidate_rows: list[dict[str, Any]], reference_rows: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
-    """Reference rows sharing `model_id`, `suite_version` and the candidate's seed."""
+    """Reference rows sharing the candidate's suite, model, suite version and seed.
+
+    `task_suite` is part of the key for the same reason it is part of
+    `results.resume_skip_reason`'s: one store -- and so one reference file --
+    now holds rows from more than one suite, and two suites version
+    themselves independently, so `model_id` + `suite_version` + seed is not
+    on its own evidence that two rows describe the same batch. Without it, a
+    reference file holding both suites for one model at a shared version
+    number pulls both suites' rows into the comparison, trips the
+    `unmatched_items` guard below, and reports `not_comparable` for a batch
+    that reproduced item for item.
+    """
     if not candidate_rows:
         return []
     first = candidate_rows[0]
@@ -205,23 +222,63 @@ def select_quality_references(
     return [
         row
         for row in reference_rows
-        if row.get("model_id") == first.get("model_id")
+        if row.get("task_suite") == first.get("task_suite")
+        and row.get("model_id") == first.get("model_id")
         and row.get("suite_version") == first.get("suite_version")
         and row.get("sampling", {}).get("seed") == seed
     ]
 
 
+def _comparable_field(
+    candidate_by_item: dict[str, dict[str, Any]],
+    reference_by_item: dict[str, dict[str, Any]],
+) -> str | None:
+    """Which per-item value this batch can be compared on, or `None`.
+
+    `predicted_label` when any item carries one on either side, otherwise
+    `item_score` when any item carries one. Resolved once for the whole batch
+    rather than per item, so the returned block can name a single
+    `compared_field` a reader can act on.
+
+    A field is "carried" only when it is non-null somewhere: a batch whose
+    every `predicted_label` is null on both sides is not reproducible on
+    labels, it is unlabelled, and comparing two sets of nulls would publish
+    `reproduced` off no evidence at all -- the exact failure `judge_probe.py`
+    documents and writes around by hand.
+    """
+    for field in (QUALITY_COMPARED_LABEL, QUALITY_COMPARED_SCORE):
+        for by_item in (candidate_by_item, reference_by_item):
+            if any(row.get(field) is not None for row in by_item.values()):
+                return field
+    return None
+
+
 def quality_verdict(
     candidate_rows: list[dict[str, Any]], reference_rows: list[dict[str, Any]]
 ) -> dict[str, Any]:
-    """Compute the quality verdict block, shared by every row of one suite batch."""
+    """Compute the quality verdict block, shared by every row of one suite batch.
+
+    Methodology 8 asks for "identical per-item predicted labels **or
+    scores**", and both halves are honoured here: an exact-match batch is
+    decided on `predicted_label`, a graded one on `item_score`, and the
+    returned block names which under `compared_field` so a reader can tell a
+    label reproduction from a score reproduction without inspecting the rows.
+
+    Deciding a graded batch on scores rather than on the generated text is
+    deliberate: two different translations can coincidentally score the same
+    and would be called reproduced. That is accepted, because the published
+    rule is about scores, and pinning reproduction to output text instead
+    would hold a re-run to a stricter standard than the one the PRD states.
+    """
     matching = select_quality_references(candidate_rows, reference_rows)
     if not matching:
         return {
             "verdict": VERDICT_NOT_COMPARABLE,
             "reference_run_id": None,
             "differing_fields": [],
-            "reason": "no reference row shares this batch's model_id/suite_version/seed",
+            "compared_field": None,
+            "reason": "no reference row shares this batch's "
+            "task_suite/model_id/suite_version/seed",
         }
 
     reference_by_item = {row["item_id"]: row for row in matching}
@@ -236,14 +293,26 @@ def quality_verdict(
             "verdict": VERDICT_NOT_COMPARABLE,
             "reference_run_id": matching[0].get("run_id"),
             "differing_fields": unmatched_items,
+            "compared_field": None,
             "reason": "these item_ids are on one side only, so the two batches "
             "do not cover the same suite",
+        }
+
+    compared_field = _comparable_field(candidate_by_item, reference_by_item)
+    if compared_field is None:
+        return {
+            "verdict": VERDICT_NOT_COMPARABLE,
+            "reference_run_id": matching[0].get("run_id"),
+            "differing_fields": [],
+            "compared_field": None,
+            "reason": "the two batches carry no comparable per-item value: "
+            "every predicted_label and every item_score is null on both sides",
         }
 
     differing_items = sorted(
         item_id
         for item_id, row in candidate_by_item.items()
-        if row["predicted_label"] != reference_by_item[item_id]["predicted_label"]
+        if row.get(compared_field) != reference_by_item[item_id].get(compared_field)
     )
     verdict = VERDICT_NOT_REPRODUCED if differing_items else VERDICT_REPRODUCED
 
@@ -251,5 +320,6 @@ def quality_verdict(
         "verdict": verdict,
         "reference_run_id": matching[0].get("run_id"),
         "differing_fields": differing_items,
+        "compared_field": compared_field,
         "reason": None,
     }

@@ -228,6 +228,38 @@ def test_quality_one_differing_label_is_not_reproduced_and_names_the_item(
     assert "billing-01" in result["differing_fields"]
 
 
+def test_quality_reference_selection_never_crosses_task_suites() -> None:
+    # One store -- and so one reference file -- holds two suites, and the two
+    # version themselves independently, so a shared suite_version is not
+    # evidence that two rows describe the same batch. Without the task_suite
+    # filter the classification rows below join the comparison, the item_ids
+    # stop matching, and a batch that reproduced item for item reports
+    # not_comparable.
+    reference = [
+        _quality_row(task_suite="classification", item_id="billing-01"),
+        _quality_row(
+            task_suite="translation",
+            item_id="en-fr-01",
+            predicted_label=None,
+            item_score=0.8,
+        ),
+    ]
+    candidate = [
+        _quality_row(
+            run_id="run-candidate",
+            task_suite="translation",
+            item_id="en-fr-01",
+            predicted_label=None,
+            item_score=0.8,
+        )
+    ]
+
+    result = quality_verdict(candidate, reference)
+
+    assert result["verdict"] == VERDICT_REPRODUCED
+    assert result["compared_field"] == "item_score"
+
+
 def test_quality_no_matching_reference_is_not_comparable() -> None:
     reference = [_quality_row(model_id="Other Model")]
     candidate = [_quality_row(run_id="run-candidate")]
@@ -259,3 +291,101 @@ def test_quality_a_reference_missing_one_item_is_not_comparable() -> None:
 
     assert result["verdict"] == VERDICT_NOT_COMPARABLE
     assert result["differing_fields"] == ["refund-09"]
+
+
+def test_quality_a_label_decided_verdict_names_the_field_it_decided_on() -> None:
+    result = quality_verdict([_quality_row(run_id="run-candidate")], [_quality_row()])
+
+    assert result["compared_field"] == "predicted_label"
+
+
+def _graded_row(item_id="en-fr-01", item_score=0.83, **overrides) -> dict:
+    """A translation row: no label on either side, a chrF score instead."""
+    row = {
+        "run_id": "run-ref",
+        "model_id": "Fake Model",
+        "suite_version": "1",
+        "sampling": {"seed": 1},
+        "item_id": item_id,
+        "predicted_label": None,
+        "item_score": item_score,
+    }
+    row.update(overrides)
+    return row
+
+
+def test_quality_identical_item_scores_are_reproduced_on_the_score() -> None:
+    reference = [_graded_row()]
+    candidate = [_graded_row(run_id="run-candidate")]
+
+    result = quality_verdict(candidate, reference)
+
+    assert result["verdict"] == VERDICT_REPRODUCED
+    # Named, so a reader can tell a score reproduction from a label one
+    # without going back to the rows.
+    assert result["compared_field"] == "item_score"
+
+
+def test_quality_one_differing_item_score_is_not_reproduced_and_names_the_item() -> (
+    None
+):
+    reference = [_graded_row(item_id="fr-de-03", item_score=0.71)]
+    candidate = [
+        _graded_row(run_id="run-candidate", item_id="fr-de-03", item_score=0.68)
+    ]
+
+    result = quality_verdict(candidate, reference)
+
+    assert result["verdict"] == VERDICT_NOT_REPRODUCED
+    assert result["differing_fields"] == ["fr-de-03"]
+    assert result["compared_field"] == "item_score"
+
+
+def test_quality_two_batches_with_nothing_comparable_are_not_comparable() -> None:
+    # Every predicted_label and every item_score null on both sides: two runs
+    # of a suite that publishes neither. Comparing two sets of nulls would
+    # report `reproduced` off no evidence at all.
+    reference = [_quality_row(predicted_label=None, item_score=None)]
+    candidate = [
+        _quality_row(run_id="run-candidate", predicted_label=None, item_score=None)
+    ]
+
+    result = quality_verdict(candidate, reference)
+
+    assert result["verdict"] == VERDICT_NOT_COMPARABLE
+    assert result["compared_field"] is None
+    assert "no comparable per-item value" in result["reason"]
+
+
+def test_quality_a_row_carrying_no_score_key_at_all_is_not_comparable() -> None:
+    # An older row predating the graded block carries no `item_score` key.
+    reference = [_quality_row(predicted_label=None)]
+    candidate = [_quality_row(run_id="run-candidate", predicted_label=None)]
+
+    result = quality_verdict(candidate, reference)
+
+    assert result["verdict"] == VERDICT_NOT_COMPARABLE
+
+
+def test_quality_a_label_on_one_side_alone_still_decides_on_the_label() -> None:
+    # The candidate answered nothing on this item and the reference answered
+    # "billing": that is a real difference, not an absence of evidence.
+    reference = [_quality_row()]
+    candidate = [_quality_row(run_id="run-candidate", predicted_label=None)]
+
+    result = quality_verdict(candidate, reference)
+
+    assert result["compared_field"] == "predicted_label"
+    assert result["verdict"] == VERDICT_NOT_REPRODUCED
+
+
+def test_quality_a_label_anywhere_in_the_batch_outranks_a_score() -> None:
+    # A batch carrying both is an exact-match batch that also happens to
+    # publish a score: the label is the value the suite is scored on.
+    reference = [_quality_row(item_score=0.4)]
+    candidate = [_quality_row(run_id="run-candidate", item_score=0.9)]
+
+    result = quality_verdict(candidate, reference)
+
+    assert result["compared_field"] == "predicted_label"
+    assert result["verdict"] == VERDICT_REPRODUCED

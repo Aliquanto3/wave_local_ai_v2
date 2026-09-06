@@ -9,6 +9,95 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Translation as a second deterministically-scored use case, selectable with
+  `wave-local-ai-v2-quality --suite translation`. `chrf.py` is the character
+  n-gram F-score (Popović 2015) reproducing sacreBLEU's default
+  parameterisation — `char_order 6`, `beta 2`, whitespace collapsed — in
+  sixty lines of `Counter` arithmetic with no I/O and no randomness. It is
+  in-repo rather than a `sacrebleu` dependency deliberately: the package
+  pulls `numpy`, `regex`, `portalocker`, `tabulate`, `colorama` and `lxml`
+  into a project whose CI audits every transitive dependency and whose
+  reproduction story asks a client engineer to install the tree, and six
+  packages for sixty lines fails that trade. sacreBLEU's source stays the
+  specification, cited by URL in the module docstring, so the implementation
+  is checkable against it rather than being a private variant; scores are
+  published on `0..1` rather than sacreBLEU's `0..100`, because the store
+  already reports `suite_accuracy` on `0..1` and two scales in one file is a
+  reading trap. `translation_suite.py` holds 21 hand-written short business
+  sentences in three directions arranged as a cycle — `en→fr`, `fr→de`,
+  `de→en`, seven each — so every language appears once as a source and once
+  as a target and each *source* language is 33% of the suite; every source
+  text is authored natively in its own language, no item is a translation of
+  another item's source, and the suite passes `suite_gate.gate_suite` with no
+  indicative reason at 21 items. All three per-language cells are marked
+  indicative (seven items against the 10-item cell threshold), which is the
+  honest report of a real limitation rather than a set inflated to hide it.
+  `scoring.py` gains the graded scorer beside the exact-match one —
+  `score_translation_item`, `score_graded_suite`,
+  `score_graded_suite_by_language` — sharing the same four-key failure
+  taxonomy and the same ordering (empty, then truncation, then the score), a
+  failed generation scoring `0.0` under its named reason and staying in the
+  denominator. There is no `unparseable` branch and the count stays 0: that
+  reason names a completion no member of a closed label set could be found
+  in, and a translation has no closed set. Nothing is extracted from a
+  completion before scoring — no preamble stripped, no paragraph selected —
+  because any such rule would be a scoring choice sacreBLEU would not
+  reproduce, so a model that answers "Sure! Here it is:" is genuinely worse
+  at the instruction and its score says so. The per-language cell key is
+  `score`, not `accuracy`: a chrF mean and an exact-match rate are different
+  statistics and one key holding either would be unnameable.
+  `SCHEMA_VERSION` `"9"` → `"10"`: a deterministic graded row carries the
+  graded block (`row_contract.GRADED_FIELDS` — `metric_id`,
+  `metric_version`, `metric_params`, `item_score`, `suite_score`,
+  `score_breakdown`, `reference_output`), required only on a row carrying any
+  of it, so every existing classification row and every judged probe row
+  validates unchanged and no reference bundle is regenerated. `subject_output`
+  is deliberately outside that trigger set — `judge_probe.py` already writes
+  it as a non-required extra key, and including it would make every probe row
+  declare itself graded — and is required inside the structural check
+  instead, which also refuses a score outside `0..1`, a named failure
+  carrying a non-zero score, and a row publishing a graded score alongside a
+  non-null `correct` or `suite_accuracy`. A row carrying both texts and its
+  metric parameters is Methodology 16 applied to a score: an auditor
+  recomputes the number with sacreBLEU and catches us.
+  `verdict.quality_verdict` now decides on `item_score` when neither side of
+  a batch carries a `predicted_label`, and returns `not_comparable` with a
+  reason when neither value is available — Methodology 8 says "identical
+  per-item predicted labels **or scores**" and only the first half was
+  implemented, so two translation runs would have come back `reproduced` off
+  two sets of nulls, the exact failure `judge_probe.py` documents and routes
+  around by hand. The block names the deciding field (`compared_field`). Two
+  different translations can coincidentally score the same and be called
+  reproduced; that is accepted, because the published rule is about scores
+  and pinning reproduction to output text would be stricter than the rule the
+  PRD states. `results.resume_skip_reason` filters on `task_suite` as well as
+  provider: the pair a resume reasons about is now the triple
+  `(run_id, provider, task_suite)`, because one store holds two suites and a
+  classification `run_id` was silently evidence about a translation batch
+  that never ran. `--suite` resolves one frozen `SuiteSpec` — items,
+  identity, caps and a batch scorer — threaded through the local loop, both
+  cloud batches and the row builder; `_SUITES` is a literal two-entry
+  dispatch table and deliberately **not** a registry, which belongs to the
+  use-case epic, the same discipline `_CLOUD_PROVIDERS` follows for
+  providers. The flag defaults to `classification`, so every invocation
+  written before it existed behaves identically and its rows are unchanged
+  apart from `schema_version`. `suite_snapshot.py` now exports both suites
+  under one parameterised rule and the classification JSON is byte-identical
+  to the tracked copy. Four divergences from the story that asked for this,
+  recorded on the story file and in the plan: every provider in
+  `QUALITY_PROVIDERS` is a subject rather than the single "cloud model" the
+  story names; the result appears alongside classification only, because the
+  rewriting suite is a later story and nothing fabricates a row for it; the
+  graded score is a conditional row block rather than an overload of
+  `correct`/`suite_accuracy`, which would publish a character-n-gram F-score
+  under the name "accuracy"; and the suite carries the identity, prompt-set
+  hash and generation caps Methodology 2-5 requires and the story, written
+  before that methodology, does not mention. Caveat stated on the suite, in
+  `chrf.py`, in `docs/setup.md` and in the results README: chrF against a
+  *single* reference penalises a valid alternative translation, the German
+  references were not reviewed by a native speaker in-project, and a score is
+  defensible as a comparison between models measured against identical
+  references — never as an absolute translation-quality figure.
 - The judge machinery, as four modules. `judge_protocol.py` holds one prompt
   shell per language (`en`/`fr`/`de`), each written in that language, each
   carrying its own id and a `prompt_provenance.template_hash` content hash

@@ -16,6 +16,7 @@ from wave_local_ai_v2 import (
     judge,
     judge_protocol,
     prompt_provenance,
+    suite_gate,
     timings,
 )
 
@@ -49,7 +50,14 @@ from wave_local_ai_v2 import (
 # state, and the judge calls' egress and cost (`JUDGED_FIELDS`). Required only
 # on a row that carries any of it, so a deterministic quality row -- today's
 # classification rows, which declare no rubric -- validates unchanged.
-SCHEMA_VERSION = "9"
+# "10": a deterministic *graded* quality row carries a graded block -- the
+# metric that produced the score and the parameters it ran under, the item's
+# own score, the suite mean, the per-language breakdown, and the reference
+# text the score was computed against (`GRADED_FIELDS`). Required only on a
+# row that carries any of it, the same conditional shape "9" established, so
+# an exact-match classification row and a judged probe row both validate
+# unchanged and no reference bundle is regenerated.
+SCHEMA_VERSION = "10"
 
 # The schema version at which `fiche_hash` (and `verdict`) became required.
 # Fixed at "3" regardless of future `SCHEMA_VERSION` bumps: a stored row whose
@@ -300,6 +308,43 @@ JUDGE_COST_FIELDS: frozenset[str] = frozenset(
 )
 
 
+# The complete graded block, the same conditional shape as `JUDGED_FIELDS`: a
+# quality row carrying none of these is an exact-match row and validates
+# exactly as it did under "9"; a row carrying any of them owes all of them.
+#
+# `subject_output` is deliberately NOT a member. `judge_probe.py` already
+# writes it as a non-required extra key on every probe row, so including it
+# here would make each of those rows declare itself graded and then fail for
+# the seven metric fields it does not carry. It is required *inside* the
+# structural check below instead, where it applies only to a row that really
+# is graded.
+GRADED_FIELDS: frozenset[str] = frozenset(
+    {
+        # chrf.METRIC_ID / METRIC_VERSION / METRIC_PARAMS: which metric, at
+        # which revision, under which parameters.
+        "metric_id",
+        "metric_version",
+        "metric_params",
+        # scoring.score_translation_item / score_graded_suite: this item's
+        # score and the batch mean it contributes to.
+        "item_score",
+        "suite_score",
+        # scoring.score_graded_suite_by_language: score, n and the indicative
+        # mark per language.
+        "score_breakdown",
+        # The text the score was computed against. A derived value carries
+        # what it was derived from (Methodology 16): with this, the row's own
+        # `subject_output` and the metric parameters above, an auditor
+        # recomputes the score with sacreBLEU and catches us.
+        "reference_output",
+    }
+)
+
+# The three keys every `score_breakdown` cell carries. Declared here, on the
+# contract, for the same reason the judge block's inner key sets are.
+GRADED_LANGUAGE_CELL_FIELDS: frozenset[str] = frozenset({"score", "n", "indicative"})
+
+
 class RowContractError(ValueError):
     """Raised when a row is missing one or more of its kind's required fields."""
 
@@ -357,6 +402,7 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
 
     if kind == "quality":
         _validate_judged_fields(row)
+        _validate_graded_fields(row)
 
 
 def _validate_judged_fields(row: dict[str, Any]) -> None:
@@ -450,6 +496,100 @@ def _validate_judged_structure(row: dict[str, Any]) -> None:
             "call record(s): an egress record that disagrees with the calls "
             "on the row is worse than no record"
         )
+
+
+def _validate_graded_fields(row: dict[str, Any]) -> None:
+    """Hold a row that declares itself graded to the whole graded block.
+
+    A quality row carrying none of `GRADED_FIELDS` is an exact-match row and
+    returns untouched. Carrying any of them is the declaration: the row
+    publishes a graded score, and every remaining graded field is named as
+    missing -- the same message shape `_validate_judged_fields` uses.
+    """
+    present = GRADED_FIELDS & row.keys()
+    if not present:
+        return
+
+    missing = GRADED_FIELDS - row.keys()
+    if missing:
+        raise RowContractError(
+            f"row of kind 'quality' declares itself graded by carrying "
+            f"{', '.join(sorted(present))} but is missing graded field(s): "
+            f"{', '.join(sorted(missing))}"
+        )
+
+    _validate_graded_structure(row)
+
+
+def _validate_graded_structure(row: dict[str, Any]) -> None:
+    """Raise on a graded block that cannot back the score it publishes."""
+    for field in ("item_score", "suite_score"):
+        value = row[field]
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            raise RowContractError(
+                f"row of kind 'quality' has a non-numeric {field}: {value!r}"
+            )
+        if not 0.0 <= value <= 1.0:
+            raise RowContractError(
+                f"row of kind 'quality' has {field}={value!r}, outside the "
+                "published 0..1 scale"
+            )
+
+    # A score nobody can recompute is not evidence: the row carries the text
+    # that was scored beside the reference it was scored against.
+    if "subject_output" not in row:
+        raise RowContractError(
+            "row of kind 'quality' declares itself graded but carries no "
+            "subject_output: a score with no scored text cannot be recomputed"
+        )
+
+    # Methodology 9 made checkable at the writer instead of trusted at the
+    # scorer: a named failure is a zero, always.
+    failure_reason = row["failure_reason"]
+    if failure_reason is not None and row["item_score"] != 0.0:
+        raise RowContractError(
+            f"row of kind 'quality' names failure_reason {failure_reason!r} "
+            f"but carries item_score={row['item_score']!r}: a failed "
+            "generation scores 0.0"
+        )
+
+    # One row cannot publish an exact-match rate and a graded score at once:
+    # whichever a reader picked up would be the wrong one half the time.
+    for field in ("correct", "suite_accuracy"):
+        if row[field] is not None:
+            raise RowContractError(
+                f"row of kind 'quality' carries a graded block alongside a "
+                f"non-null {field} ({row[field]!r}): a graded score and an "
+                "exact-match score cannot both be published on one row"
+            )
+
+    _validate_graded_breakdown(row["score_breakdown"])
+
+
+def _validate_graded_breakdown(breakdown: Any) -> None:
+    """Raise unless `breakdown` is one complete cell per published language."""
+    if not isinstance(breakdown, dict):
+        raise RowContractError(
+            f"row of kind 'quality' has a non-object score_breakdown: {breakdown!r}"
+        )
+    expected = set(suite_gate.LANGUAGES)
+    if set(breakdown) != expected:
+        raise RowContractError(
+            f"row of kind 'quality' has a score_breakdown over {sorted(breakdown)!r}, "
+            f"expected one cell per language: {sorted(expected)!r}"
+        )
+    for language, cell in breakdown.items():
+        if not isinstance(cell, dict):
+            raise RowContractError(
+                f"row of kind 'quality' has a non-object score_breakdown "
+                f"cell for {language!r}: {cell!r}"
+            )
+        missing = GRADED_LANGUAGE_CELL_FIELDS - cell.keys()
+        if missing:
+            raise RowContractError(
+                f"row of kind 'quality' has a score_breakdown cell for "
+                f"{language!r} missing field(s): {', '.join(sorted(missing))}"
+            )
 
 
 def _require_block_fields(

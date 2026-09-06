@@ -69,9 +69,9 @@ def rows_for_run(path: Path, run_id: str) -> list[dict[str, Any]]:
 
 
 def resume_skip_reason(
-    path: Path, run_id: str, provider: str, item_count: int
+    path: Path, run_id: str, provider: str, item_count: int, *, task_suite: str
 ) -> str | None:
-    """Why `--resume` must not re-run this `(run_id, provider)` batch, or None to run it.
+    """Why `--resume` must not re-run this batch, or None to run it.
 
     Used only under `--resume`: a fresh run never has any prior rows for its
     own (freshly minted) run_id, so this is never called there.
@@ -93,14 +93,22 @@ def resume_skip_reason(
       failure part-way through leaves exactly this state. Refuse it rather
       than duplicate; per-item resume is out of scope by that same Decision.
 
-    `path` and `item_count` are the caller's: the two CLIs that write quality
-    rows keep their own store and their own batch size, and the "never
-    re-pay, never duplicate" rule is one rule over both.
+    The triple a resume reasons about is `(run_id, provider, task_suite)`,
+    not the pair it used to be: one store now holds rows from more than one
+    suite, so a `run_id` is not evidence about a suite it was never run
+    under. Without the third element, `--resume <classification-run-id>
+    --suite translation` would find a complete classification batch and skip
+    a translation batch that never ran.
+
+    `path`, `item_count` and `task_suite` are the caller's: the two CLIs that
+    write quality rows keep their own store, their own batch size and their
+    own suite name, and the "never re-pay, never duplicate" rule is one rule
+    over all of them.
     """
     written_items = {
         row.get("item_id")
         for row in rows_for_run(path, run_id)
-        if row.get("provider") == provider
+        if row.get("provider") == provider and row.get("task_suite") == task_suite
     }
     if not written_items:
         return None

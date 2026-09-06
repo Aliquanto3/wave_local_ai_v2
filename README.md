@@ -79,7 +79,20 @@ energy figure.) `wave-local-ai-v2-quality` is the only command that needs
 | Command | Produces |
 | ------- | -------- |
 | `wave-local-ai-v2` | One runtime row, with its hardware fiche, appended to `runtime.jsonl` |
-| `wave-local-ai-v2-quality` | One row per (item, model) appended to `quality.jsonl` |
+| `wave-local-ai-v2-quality` | One row per (item, model) appended to `quality.jsonl`, for the suite `--suite` names |
+
+`--suite` selects what is scored, defaulting to `classification`:
+`classification` routes 20 support messages into one of four labels and
+publishes an exact-match `suite_accuracy`; `translation` translates 21 short
+business sentences in three directions (`en→fr`, `fr→de`, `de→en`) and
+publishes a chrF `suite_score` against a hand-written reference. The two
+write different score shapes into the same store — a graded row nulls
+`correct`/`suite_accuracy`/`language_breakdown` and carries `item_score`,
+`score_breakdown`, the metric parameters and both texts the score was
+computed from — so select on `task_suite` before comparing any score column.
+A single-reference chrF compares models against identical references; it is
+not an absolute measure of translation quality. See
+[`docs/setup.md`](docs/setup.md) for how to read a graded row.
 
 ### Results layout
 

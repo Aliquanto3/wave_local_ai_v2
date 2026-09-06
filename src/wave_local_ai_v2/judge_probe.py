@@ -747,6 +747,7 @@ def _run_local_batch(
             context.run_id,
             PROVIDER_LOCAL,
             len(JUDGE_PROBE_ITEMS),
+            task_suite=TASK_SUITE,
         )
         if context.resumed
         else None
@@ -863,6 +864,7 @@ def _run_cloud_subject_item(
             context.run_id,
             judge_backends.PROVIDER_GOOGLE,
             1,
+            task_suite=TASK_SUITE,
         )
         if context.resumed
         else None

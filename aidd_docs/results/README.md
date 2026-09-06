@@ -3,8 +3,9 @@
 The reference bundle is five parts, handed to an auditor together: `runtime-reference.jsonl`,
 `quality-reference.jsonl`, `fiches/` (the hardware/run fiches those rows cite by hash),
 `aidd_docs/roster/models.json` (the models those rows cite by `roster_entry_id`), and
-`suite-definitions/` (the classification suite's item set, cited by `suite_id`/`suite_version`
-on every quality row). No one file in this set is self-sufficient.
+`suite-definitions/` (each suite's item set, cited by `suite_id`/`suite_version`
+on every quality row -- `classification-support-routing.json` and, since 2026-09-06,
+`translation-business-short-form.json`). No one file in this set is self-sufficient.
 
 A row alone names its model, sampling, machine (by `fiche_hash`) and code `commit_sha` --
 but resolving any of those to an actual artifact needs the rest of the bundle sitting
@@ -118,6 +119,129 @@ consequence of the 25%-share split at 20 total items (plan.md's Decisions), not 
 The suite-level gate (`gate_suite`) is not indicative -- item count and every language's
 25% share both pass -- but the per-language cells for `fr`/`de` are, and every row says so
 via `language_breakdown[lang].indicative`.
+
+## The translation suite's first live run (2026-09-06)
+
+Not part of the committed bundle. These rows live in the untracked live store
+(`aidd_docs/results/quality.jsonl`) at `schema_version` `"10"`; this section records
+what the run produced so the numbers are citable and the absences are named. The
+committed `quality-reference.jsonl` is still classification-only and is not touched --
+regenerating the bundle is a separate, protocol-bound job (see the tech-debt entry the
+schema note above refers to).
+
+Suite: `translation-business-short-form`, `suite_version` `"1"`, `prompt_set_hash`
+`16150e4406042a89...`, exported item-for-item to
+`suite-definitions/translation-business-short-form.json`. 21 hand-written items in three
+directions, seven each: `en->fr`, `fr->de`, `de->en`. Caps: 128 output tokens, no stop
+sequence, 32768 context.
+
+Metric: `chrf` version `"1"` (`chrf.py`), parameters as published on every row --
+`char_order` 6, `beta` 2, `whitespace` false, `scale` `"0..1"`. Every row carries
+`reference_output` beside `subject_output`, so any number below can be recomputed from
+the row alone with `sacrebleu` (multiply by 100 to compare against its printout).
+
+Two runs, the second scored against the first (run 1's rows copied to a scratch file and
+handed to the second run as `QUALITY_REFERENCE_PATH`):
+
+| Model | Provider | `run_id` | `suite_score` | `verdict` |
+| ----- | -------- | -------- | ------------- | --------- |
+| `Qwen3.6-35B-A3B` | local | `80803767...` | 0.7691 | `not_comparable` (run 1: no reference) |
+| `gemini-3.5-flash-lite` | google | `80803767...` | 0.8400 | `not_comparable` (run 1: no reference) |
+| `mistral-small-2603` | mistral | `80803767...` | — | absent, see below |
+| `Qwen3.6-35B-A3B` | local | `696b5376...` | 0.7691 | `reproduced` against run 1, on `item_score` |
+| `gemini-3.5-flash-lite` | google | `696b5376...` | 0.8400 | `reproduced` against run 1, on `item_score` |
+
+Both reproduced item for item: `differing_fields` empty on both, and every verdict block
+names `compared_field: "item_score"` -- the field the batch was actually decided on,
+since a translation row carries no `predicted_label` for the old comparison to read.
+Google honouring its seed here is worth recording beside the classification bundle's
+opposite finding above, where `mistral-small-2603` moved 0.95 -> 0.90 across two runs at
+`temperature=0`: cloud reproducibility is a per-provider observation, not a property of
+the harness.
+
+`wave-local-ai-v2-validate` exits `0` over the live store (306 rows at the time of
+writing); every row's `fiche_hash` resolves against `fiches/`.
+
+Full-run cost: the local batch produced 422 output tokens for €0.000272 (kWh-derived,
+Scope 2); the google batch 714 in / 295 out for $0.000952 (list-price-derived, Scope 3).
+The two are not directly comparable and every Scope-3 row says so in
+`scope_comparability`. Wall clock: ~1 minute local, ~3 minutes google (21 items x two
+paced calls at `GOOGLE_REQUEST_PACING_S` 4.1).
+
+Per-language breakdown (`score_breakdown`, by **source** language -- score / n /
+indicative):
+
+| Source language | n | local | google | indicative |
+| --------------- | - | ----- | ------ | ---------- |
+| `en` (-> `fr`) | 7 | 0.7962 | 0.8671 | **true** (n < 10) |
+| `fr` (-> `de`) | 7 | 0.6878 | 0.7700 | **true** (n < 10) |
+| `de` (-> `en`) | 7 | 0.8233 | 0.8829 | **true** (n < 10) |
+
+All three cells are marked indicative: seven items per direction against
+`MIN_PER_LANGUAGE_CELL_ITEMS` (10). The suite-level gate is *not* indicative -- 21 items
+and each source language at 33% both pass -- and the mark is on the cells, where it
+belongs. Clearing it needs nine more hand-authored reference translations, including
+German ones nobody in-project can natively verify; the mark is the honest report of that
+limitation rather than a set inflated to hide it.
+
+No item failed on either provider: `failure_counts` is all-zero on every row.
+`unparseable` is structurally unreachable on this suite (no closed set to parse into, and
+nothing is extracted from a completion before scoring), which is stated on
+`translation_suite.py` rather than left to look like a suite that never fails to parse.
+
+### What was absent, and why
+
+`mistral-small-2603` produced no rows in either run. The batch was attempted three times
+under run 1 -- once in the first invocation, twice more under `--resume 80803767...` so
+the batches already on disk were never re-paid for -- and each ended with `mistral
+skipped: retry budget exhausted after 4 retries`. A single hand-issued request confirms
+the cause is not a burst:
+
+```
+Mistral request failed with status 429: {"object":"error","message":"Rate limit
+exceeded","type":"rate_limited","param":null,"code":"1300","raw_status_code":429}
+```
+
+The model catalog answered `200` on the same key at the same moment, so this is the
+workspace's Free-tier rate floor rather than a credential, a DNS or a retired-model
+problem. A documented absence, not a blocked run: the local and google batches persisted
+and the CLI exited `0`, which is the skip-not-abort contract behaving as designed.
+
+### The `<think>` block, a finding rather than a fix
+
+Every local completion opens with an empty `<think>\n\n</think>` envelope (the server runs
+with `--jinja` and this roster entry emits reasoning tags). Exact-match scoring never saw
+it -- `normalize_label` finds the first label token past it -- but chrF scores the raw
+completion, so the envelope adds ~15 characters of non-reference n-grams to every local
+hypothesis and costs the local subject precision that google does not pay. The
+local-vs-google gap above is therefore an upper bound on the real one. This is filed in
+`aidd_docs/backlog/tech-debt.md` rather than patched here: stripping it would need either
+a "remove a provider's reasoning envelope" scoring rule (a choice sacreBLEU would not
+reproduce, which the plan rejected on purpose) or a server/roster flag change. Either is
+a decision, not a patch, and inventing one mid-run would have made these numbers
+unreproducible from the code that wrote them.
+
+### Reading these scores
+
+chrF here is measured against **one** reference translation, so it penalises a valid
+alternative wording. The lowest local scores are exactly that case rather than errors.
+The completion column below is the row's `subject_output` **with the `<think>\n\n</think>`
+envelope trimmed for reading**, so the two score columns are both given: `item_score` is
+the number actually published on the row (scored on the full `subject_output`, envelope
+included), and the last column is what the trimmed text alone scores. The gap between
+them is the envelope's cost on that item, and it is why recomputing from the text printed
+here does not land on the published number.
+
+| Item | Reference | `Qwen3.6-35B-A3B` (envelope trimmed) | `item_score` (as published) | trimmed text alone |
+| ---- | --------- | ------------------------------------ | --------------------------- | ------------------ |
+| `fr-de-03` | "Der Kostenvoranschlag, den Sie uns übermittelt haben, übersteigt unser Jahresbudget." | "Das von Ihnen übermittelte Angebot übersteigt unser jährliches Budget." | 0.4078 | 0.4205 |
+| `fr-de-05` | "Das Auftaktgespräch findet um zehn Uhr in unseren Räumen statt." | "Der Kick-off-Meeting findet um 10 Uhr in unseren Räumlichkeiten statt." | 0.4759 | 0.4997 |
+| `en-fr-05` | "Nos bureaux seront fermés lundi prochain en raison d'un jour férié." | "Notre bureau sera fermé lundi prochain pour un jour férié." | 0.5135 | 0.5333 |
+
+All three are defensible translations scored down for choosing different words than the
+reference on file. A published `suite_score` is defensible as a **comparison between
+models measured against identical references**. It is not an absolute measure of
+translation quality, and no claim of that kind should be built on it.
 
 ### Superseded files: kept, not deleted
 

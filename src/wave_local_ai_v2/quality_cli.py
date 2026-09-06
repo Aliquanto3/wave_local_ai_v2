@@ -1,5 +1,19 @@
-"""CLI entry point: score the classification task suite against one local SLM
-and two cloud models, writing one quality row per (task, model).
+"""CLI entry point: score one selectable task suite against one local SLM and
+two cloud models, writing one quality row per (task, model).
+
+`--suite` picks the suite; the provider set stays configuration
+(`settings.QUALITY_PROVIDERS`). The two suites publish two different score
+shapes on purpose: classification is scored by exact label match and
+publishes `suite_accuracy`, translation is scored against a written
+reference by chrF and publishes a graded block. One row never carries both
+(`row_contract._validate_graded_structure`), because a reader picking up
+"the score column" would otherwise be reading an accuracy half the time and
+a character-n-gram F-score the other half.
+
+`_SUITES` is a two-entry dispatch table, not a registry: the full suite
+registry belongs to the `no-use-case-is-silently-absent` story, and this is
+the minimum that stops the CLI being hard-wired to one suite -- the same
+discipline `_CLOUD_PROVIDERS` follows for providers.
 
 Deliberately collects none of the runtime harness's fields (fiche, timings,
 GPU stats, energy): a quality row must be readable on its own, without any
@@ -29,7 +43,8 @@ from __future__ import annotations
 import argparse
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TypedDict
 
@@ -37,6 +52,7 @@ import requests
 
 from wave_local_ai_v2 import (
     build_probe,
+    chrf,
     classification_suite,
     cost,
     fiche_registry,
@@ -51,12 +67,10 @@ from wave_local_ai_v2 import (
     row_contract,
     server,
     suite_gate,
+    translation_suite,
     verdict,
 )
-from wave_local_ai_v2.classification_suite import (
-    CLASSIFICATION_TASK_SUITE,
-    ClassificationItem,
-)
+from wave_local_ai_v2.classification_suite import CLASSIFICATION_TASK_SUITE
 from wave_local_ai_v2.energy import measure_energy
 from wave_local_ai_v2.hardware import build_fiche, capture_fiche
 from wave_local_ai_v2.mistral_client import MistralCompletion, MistralRequestError
@@ -64,12 +78,16 @@ from wave_local_ai_v2.results import append_row, captured_at, new_run_id
 from wave_local_ai_v2.scoring import (
     FAILURE_REASON_TRUNCATED_CONTEXT,
     FAILURE_REASON_TRUNCATED_MAX_TOKENS,
+    score_graded_suite,
+    score_graded_suite_by_language,
     score_item,
     score_suite,
     score_suite_by_language,
+    score_translation_item,
 )
 from wave_local_ai_v2.settings import Settings, SettingsError, load_settings
 from wave_local_ai_v2.suite_gate import SuiteGateError, SuiteGateResult
+from wave_local_ai_v2.translation_suite import TRANSLATION_TASK_SUITE
 
 REQUEST_TIMEOUT_S = 300
 
@@ -142,6 +160,157 @@ class _Completion(TypedDict):
     retries: int
 
 
+# A suite item, as everything downstream of the suite module needs it: a
+# mapping exposing `item_id`, `prompt` and the gate's tags. Duck-typed rather
+# than one suite's TypedDict, the same choice `suite_gate.gate_suite` and
+# `classification_suite.prompt_set_hash` already document -- the two suites
+# carry different item shapes and neither is the CLI's business.
+SuiteItem = Mapping[str, Any]
+
+# One batch's scoring, as a suite supplies it: the items and their
+# completions in, one dict of row fields per item plus one dict shared by the
+# whole batch out. Everything suite-specific about a score lives behind this
+# one callable, which is why the row builder below reads the same for an
+# exact-match row and a graded one.
+ScoreBatch = Callable[
+    [Sequence[SuiteItem], list[_Completion]],
+    tuple[list[dict[str, Any]], dict[str, Any]],
+]
+
+
+@dataclass(frozen=True)
+class SuiteSpec:
+    """One selectable suite: its identity, its caps, its items, its scorer."""
+
+    task_suite: str
+    items: Sequence[SuiteItem]
+    suite_id: str
+    suite_version: str
+    prompt_set_hash: str
+    max_output_tokens: int
+    stop_sequences: list[str]
+    context_length: int
+    score_batch: ScoreBatch
+
+
+def _score_classification_batch(
+    items: Sequence[Any], completions: list[_Completion]
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Exact-label-match scoring: today's fields, and no graded block."""
+    scored_items = [
+        score_item(
+            item,
+            completion["content"],
+            truncated=completion["truncated"],
+            generated_tokens=completion["generated_tokens"],
+            max_output_tokens=classification_suite.MAX_OUTPUT_TOKENS,
+            truncation_reason=completion["truncation_reason"],
+        )
+        for item, completion in zip(items, completions, strict=True)
+    ]
+    suite_score = score_suite(scored_items)
+    per_item = [
+        {
+            "expected_label": scored["expected_label"],
+            "predicted_label": scored["predicted_label"],
+            "correct": scored["correct"],
+            "failure_reason": scored["failure_reason"],
+        }
+        for scored in scored_items
+    ]
+    batch = {
+        "suite_accuracy": suite_score["accuracy"],
+        "language_breakdown": score_suite_by_language(items, scored_items),
+        "failure_counts": dict(suite_score["failure_counts"]),
+    }
+    return per_item, batch
+
+
+def _score_translation_batch(
+    items: Sequence[Any], completions: list[_Completion]
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """chrF scoring against each item's written reference.
+
+    Every row carries `reference_output` beside its `subject_output` and the
+    metric parameters the score ran under, so a reader who disputes a number
+    can recompute it with sacreBLEU rather than take it on trust. The
+    exact-match fields are explicitly nulled: `correct` is a boolean, a chrF
+    is not, and `suite_accuracy` names an exact-match rate this suite never
+    computed.
+    """
+    graded_items = [
+        score_translation_item(
+            item,
+            completion["content"],
+            truncated=completion["truncated"],
+            generated_tokens=completion["generated_tokens"],
+            max_output_tokens=translation_suite.MAX_OUTPUT_TOKENS,
+            truncation_reason=completion["truncation_reason"],
+        )
+        for item, completion in zip(items, completions, strict=True)
+    ]
+    suite_score = score_graded_suite(graded_items)
+    per_item = [
+        {
+            "expected_label": None,
+            "predicted_label": None,
+            "correct": None,
+            "failure_reason": graded["failure_reason"],
+            "item_score": graded["item_score"],
+            "subject_output": completion["content"],
+            "reference_output": item["reference"],
+            "metric_id": chrf.METRIC_ID,
+            "metric_version": chrf.METRIC_VERSION,
+            # Copied, never shared: `chrf.METRIC_PARAMS` is one frozen object
+            # and each row owns its own plain dict of it.
+            "metric_params": dict(chrf.METRIC_PARAMS),
+        }
+        for item, completion, graded in zip(
+            items, completions, graded_items, strict=True
+        )
+    ]
+    batch = {
+        "suite_accuracy": None,
+        "language_breakdown": None,
+        "suite_score": suite_score["suite_score"],
+        "score_breakdown": score_graded_suite_by_language(items, graded_items),
+        "failure_counts": dict(suite_score["failure_counts"]),
+    }
+    return per_item, batch
+
+
+# Exactly two entries, built from the two suite modules. The boundary is
+# deliberate: a suite registry -- discovery, per-suite config, a manifest --
+# belongs to `no-use-case-is-silently-absent.md`. This is a literal dict, and
+# adding a third suite here is meant to feel like the moment to build that.
+_SUITES: dict[str, SuiteSpec] = {
+    "classification": SuiteSpec(
+        task_suite="classification",
+        items=CLASSIFICATION_TASK_SUITE,
+        suite_id=classification_suite.SUITE_ID,
+        suite_version=classification_suite.SUITE_VERSION,
+        prompt_set_hash=classification_suite.PROMPT_SET_HASH,
+        max_output_tokens=classification_suite.MAX_OUTPUT_TOKENS,
+        stop_sequences=classification_suite.STOP_SEQUENCES,
+        context_length=classification_suite.CONTEXT_LENGTH,
+        score_batch=_score_classification_batch,
+    ),
+    "translation": SuiteSpec(
+        task_suite="translation",
+        items=TRANSLATION_TASK_SUITE,
+        suite_id=translation_suite.SUITE_ID,
+        suite_version=translation_suite.SUITE_VERSION,
+        prompt_set_hash=translation_suite.PROMPT_SET_HASH,
+        max_output_tokens=translation_suite.MAX_OUTPUT_TOKENS,
+        stop_sequences=translation_suite.STOP_SEQUENCES,
+        context_length=translation_suite.CONTEXT_LENGTH,
+        score_batch=_score_translation_batch,
+    ),
+}
+
+DEFAULT_SUITE = "classification"
+
+
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="wave-local-ai-v2-quality")
     parser.add_argument(
@@ -150,10 +319,22 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help=(
             "Resume a prior invocation's run_id: a provider whose rows for "
-            "that run_id are already complete is skipped, never re-paid for; "
-            "an incomplete one is re-run from item 1. Every row this "
-            "invocation writes is marked resumed=true, including a provider "
-            "resume re-ran from scratch."
+            "that run_id and this suite are already complete is skipped, "
+            "never re-paid for; an incomplete one is re-run from item 1. "
+            "Every row this invocation writes is marked resumed=true, "
+            "including a provider resume re-ran from scratch."
+        ),
+    )
+    parser.add_argument(
+        "--suite",
+        choices=list(_SUITES),
+        default=DEFAULT_SUITE,
+        help=(
+            "Which task suite to score. 'classification' routes support "
+            "messages to one of four labels and publishes an exact-match "
+            "accuracy; 'translation' translates short business sentences in "
+            "three directions and publishes a chrF score against a written "
+            "reference. Default: %(default)s."
         ),
     )
     return parser.parse_args(argv)
@@ -162,7 +343,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main() -> None:
     args = _parse_args()
     try:
-        _run(resume_run_id=args.resume)
+        _run(resume_run_id=args.resume, suite=args.suite)
     except (
         SettingsError,
         server.ServerStartupError,
@@ -185,7 +366,8 @@ def main() -> None:
         sys.exit(1)
 
 
-def _run(resume_run_id: str | None = None) -> None:
+def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
+    spec = _SUITES[suite]
     settings = load_settings()
     # One id for the whole invocation: the local and cloud batches are two
     # halves of one comparison, and a reader must be able to tell which local
@@ -201,7 +383,7 @@ def _run(resume_run_id: str | None = None) -> None:
     model_path = _local_model_path(settings, roster_entry)
     # Offline, cheap: a refused suite (missing/inconsistent tags) must abort
     # before the multi-minute local run, let alone any network call.
-    gate_result = suite_gate.gate_suite(CLASSIFICATION_TASK_SUITE)
+    gate_result = suite_gate.gate_suite(spec.items)
 
     # Refuses (roster.RosterError) before any process spawns when
     # settings.host_n_cpu_moe cannot be applied to roster_entry -- the check
@@ -240,7 +422,8 @@ def _run(resume_run_id: str | None = None) -> None:
             settings.quality_results_path,
             run_id,
             "local",
-            len(CLASSIFICATION_TASK_SUITE),
+            len(spec.items),
+            task_suite=spec.task_suite,
         )
         if is_resume
         else None
@@ -254,7 +437,7 @@ def _run(resume_run_id: str | None = None) -> None:
         # over, and the same repeated-batch-value pattern `suite_accuracy`
         # already uses.
         local_completions, local_energy = measure_energy(
-            lambda: _run_local_suite(settings, flags),
+            lambda: _run_local_suite(settings, flags, spec),
             country_iso_code=settings.emission_country_iso_code,
         )
         # Persisted before the cloud suite starts: a 429, a dropped connection
@@ -263,6 +446,7 @@ def _run(resume_run_id: str | None = None) -> None:
         # partial run is still recognizable as one session.
         _score_and_write(
             settings,
+            spec=spec,
             run_id=run_id,
             # The entry the local half actually launched names itself: a row
             # can never report one model while its `roster_entry_id` cites
@@ -287,6 +471,7 @@ def _run(resume_run_id: str | None = None) -> None:
         _try_run_cloud_provider(
             provider,
             settings,
+            spec=spec,
             run_id=run_id,
             is_resume=is_resume,
             gate_result=gate_result,
@@ -298,22 +483,23 @@ def _run(resume_run_id: str | None = None) -> None:
 
 
 def _mistral_batch(
-    settings: Settings, api_key: str
+    settings: Settings, api_key: str, spec: SuiteSpec
 ) -> tuple[
     str, dict[str, Any], list[_Completion], dict[str, Any], dict[str, Any], None
 ]:
     deprecation_notice = mistral_client.check_model_available(api_key)
     if deprecation_notice:
         # A retirement date is news, not a failure: the model still answers
-        # until then. stderr keeps stdout to the accuracy lines the operator
+        # until then. stderr keeps stdout to the score lines the operator
         # parses.
         print(deprecation_notice, file=sys.stderr)
     completions, call_path_fields, batch_fields, _ = _run_cloud_batch(
         settings,
         api_key,
+        spec,
         mistral_client.MODEL,
         cost.PRICE_TABLES["mistral"],
-        _make_mistral_complete_item(settings),
+        _make_mistral_complete_item(settings, spec.max_output_tokens),
         _mistral_call_path,
     )
     return (
@@ -327,7 +513,7 @@ def _mistral_batch(
 
 
 def _google_batch(
-    settings: Settings, api_key: str
+    settings: Settings, api_key: str, spec: SuiteSpec
 ) -> tuple[
     str,
     dict[str, Any],
@@ -340,9 +526,10 @@ def _google_batch(
     completions, call_path_fields, batch_fields, extra_row_fields = _run_cloud_batch(
         settings,
         api_key,
+        spec,
         google_client.MODEL,
         cost.PRICE_TABLES["google"],
-        _make_google_complete_item(model_info, settings),
+        _make_google_complete_item(model_info, settings, spec.max_output_tokens),
         _google_call_path,
         extra_row_fields_fn=lambda response: _google_extra_fields(response, model_info),
     )
@@ -382,6 +569,7 @@ def _try_run_cloud_provider(
     provider: str,
     settings: Settings,
     *,
+    spec: SuiteSpec,
     run_id: str,
     is_resume: bool,
     gate_result: SuiteGateResult,
@@ -397,14 +585,17 @@ def _try_run_cloud_provider(
     CLI's cloud provider set configuration rather than two hard-wired,
     all-or-nothing calls. Nothing about a skipped provider lands in the rows.
     """
-    spec = _CLOUD_PROVIDERS[provider]
+    provider_spec = _CLOUD_PROVIDERS[provider]
     if provider not in settings.quality_providers:
         print(f"{provider} skipped: not enabled in QUALITY_PROVIDERS", file=sys.stderr)
         return
 
-    api_key = spec["api_key"](settings)
+    api_key = provider_spec["api_key"](settings)
     if not api_key:
-        print(f"{provider} skipped: {spec['env_var']} is not set", file=sys.stderr)
+        print(
+            f"{provider} skipped: {provider_spec['env_var']} is not set",
+            file=sys.stderr,
+        )
         return
 
     skip_reason = (
@@ -412,7 +603,8 @@ def _try_run_cloud_provider(
             settings.quality_results_path,
             run_id,
             provider,
-            len(CLASSIFICATION_TASK_SUITE),
+            len(spec.items),
+            task_suite=spec.task_suite,
         )
         if is_resume
         else None
@@ -429,9 +621,9 @@ def _try_run_cloud_provider(
             call_path_fields,
             batch_fields,
             extra_row_fields,
-        ) = spec["run_batch"](settings, api_key)
+        ) = provider_spec["run_batch"](settings, api_key, spec)
     except (
-        spec["error_type"],
+        provider_spec["error_type"],
         requests.RequestException,
         # A retry-budget exhaustion is this provider still failing, the same
         # way a 429 that outlives its own retries always was -- caught
@@ -444,6 +636,7 @@ def _try_run_cloud_provider(
 
     _score_and_write(
         settings,
+        spec=spec,
         run_id=run_id,
         model_id=model_id,
         provider=provider,
@@ -512,16 +705,18 @@ def _local_model_path(settings: Settings, roster_entry: roster.RosterEntry) -> P
     return model_path
 
 
-def _run_local_suite(settings: Settings, flags: list[str]) -> list[_Completion]:
+def _run_local_suite(
+    settings: Settings, flags: list[str], spec: SuiteSpec
+) -> list[_Completion]:
     completions: list[_Completion] = []
 
     with server.running_server(settings.llama_server_path, flags):
-        for item in CLASSIFICATION_TASK_SUITE:
+        for item in spec.items:
             response = requests.post(
                 f"http://{server.HOST}:{server.PORT}/completion",
                 json={
                     "prompt": item["prompt"],
-                    "n_predict": classification_suite.MAX_OUTPUT_TOKENS,
+                    "n_predict": spec.max_output_tokens,
                     **LOCAL_SAMPLING,
                 },
                 timeout=REQUEST_TIMEOUT_S,
@@ -554,8 +749,8 @@ def _run_local_suite(settings: Settings, flags: list[str]) -> list[_Completion]:
 
 
 def _make_mistral_complete_item(
-    settings: Settings,
-) -> Callable[[ClassificationItem, str], tuple[_Completion, MistralCompletion]]:
+    settings: Settings, max_output_tokens: int
+) -> Callable[[SuiteItem, str], tuple[_Completion, MistralCompletion]]:
     """Build this batch's per-item completion function, closed over one Pacer/RetryBudget pair.
 
     A closure, not a plain function: a `Pacer` and a `RetryBudget` are built
@@ -577,7 +772,7 @@ def _make_mistral_complete_item(
         )
 
     def complete_item(
-        item: ClassificationItem, api_key: str
+        item: SuiteItem, api_key: str
     ) -> tuple[_Completion, MistralCompletion]:
         pacer.wait()
         # The same cap the local half runs under (`n_predict` above): the
@@ -591,7 +786,7 @@ def _make_mistral_complete_item(
                 api_key,
                 temperature=CLOUD_SAMPLING["temperature"],
                 random_seed=CLOUD_SAMPLING["random_seed"],
-                max_tokens=classification_suite.MAX_OUTPUT_TOKENS,
+                max_tokens=max_output_tokens,
             ),
             is_retryable=_is_retryable,
             retry_hint_s=_retry_hint_s,
@@ -616,9 +811,11 @@ def _make_mistral_complete_item(
 
 
 def _make_google_complete_item(
-    model_info: google_client.GoogleModelInfo, settings: Settings
+    model_info: google_client.GoogleModelInfo,
+    settings: Settings,
+    max_output_tokens: int,
 ) -> Callable[
-    [ClassificationItem, str], tuple[_Completion, google_client.GoogleCompletion | None]
+    [SuiteItem, str], tuple[_Completion, google_client.GoogleCompletion | None]
 ]:
     """Build this batch's per-item completion function, closed over `model_info`.
 
@@ -643,7 +840,7 @@ def _make_google_complete_item(
         )
 
     def complete_item(
-        item: ClassificationItem, api_key: str
+        item: SuiteItem, api_key: str
     ) -> tuple[_Completion, google_client.GoogleCompletion | None]:
         pacer.wait()
         context_retries = 0
@@ -663,11 +860,11 @@ def _make_google_complete_item(
             # only place `truncated_context` can honestly originate from on
             # this provider (free-tier context overflow never surfaces as a
             # finishReason -- the input-token quota's 429 always fires first).
-            # Non-blank placeholder content: score_item checks blankness
+            # Non-blank placeholder content: both scorers check blankness
             # before truncation, so an empty string here would score `empty`
-            # instead of the truncation_reason override below. Never
-            # published on the row -- score_item only reads it to decide the
-            # failure taxonomy.
+            # instead of the truncation_reason override below. On a graded
+            # suite it is also what the row's `subject_output` would carry,
+            # which is the honest record of what came back from the batch.
             return (
                 _Completion(
                     content="[context window exceeded, no generateContent call made]",
@@ -688,7 +885,7 @@ def _make_google_complete_item(
                 top_p=GOOGLE_SAMPLING["top_p"],
                 top_k=GOOGLE_SAMPLING["top_k"],
                 seed=GOOGLE_SAMPLING["seed"],
-                max_tokens=classification_suite.MAX_OUTPUT_TOKENS,
+                max_tokens=max_output_tokens,
             ),
             is_retryable=_is_retryable,
             retry_hint_s=_retry_hint_s,
@@ -738,9 +935,10 @@ def _google_extra_fields(
 def _run_cloud_batch(
     settings: Settings,
     api_key: str,
+    spec: SuiteSpec,
     model: str,
     price_table: dict[str, cost.Price],
-    complete_item: Callable[[ClassificationItem, str], tuple[_Completion, Any]],
+    complete_item: Callable[[SuiteItem, str], tuple[_Completion, Any]],
     call_path_fields_fn: Callable[[list[Any]], dict[str, Any]],
     extra_row_fields_fn: Callable[[Any], dict[str, Any]] = lambda _response: {},
 ) -> tuple[list[_Completion], dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
@@ -755,7 +953,7 @@ def _run_cloud_batch(
     """
     completions: list[_Completion] = []
     responses: list[Any] = []
-    for item in CLASSIFICATION_TASK_SUITE:
+    for item in spec.items:
         completion, response = complete_item(item, api_key)
         completions.append(completion)
         responses.append(response)
@@ -779,6 +977,7 @@ def _run_cloud_batch(
 def _score_and_write(
     settings: Settings,
     *,
+    spec: SuiteSpec,
     run_id: str,
     model_id: str,
     provider: str,
@@ -794,27 +993,11 @@ def _score_and_write(
     resumed: bool,
     extra_row_fields: list[dict[str, Any]] | None = None,
 ) -> None:
-    scored_items = [
-        score_item(
-            item,
-            completion["content"],
-            truncated=completion["truncated"],
-            generated_tokens=completion["generated_tokens"],
-            max_output_tokens=classification_suite.MAX_OUTPUT_TOKENS,
-            truncation_reason=completion["truncation_reason"],
-        )
-        for item, completion in zip(CLASSIFICATION_TASK_SUITE, completions, strict=True)
-    ]
-    suite_score = score_suite(scored_items)
-    suite_accuracy = suite_score["accuracy"]
-    failure_counts = suite_score["failure_counts"]
-    language_breakdown = score_suite_by_language(
-        CLASSIFICATION_TASK_SUITE, scored_items
-    )
+    per_item_fields, batch_score_fields = spec.score_batch(spec.items, completions)
 
     rows: list[dict[str, Any]] = []
-    for index, (item, scored) in enumerate(
-        zip(CLASSIFICATION_TASK_SUITE, scored_items, strict=True)
+    for index, (item, item_score_fields) in enumerate(
+        zip(spec.items, per_item_fields, strict=True)
     ):
         row = {
             "schema_version": row_contract.SCHEMA_VERSION,
@@ -828,33 +1011,32 @@ def _score_and_write(
             "provider": provider,
             "fiche_hash": fiche_hash,
             **batch_fields,
-            "task_suite": "classification",
-            "item_id": scored["item_id"],
+            "task_suite": spec.task_suite,
+            "item_id": item["item_id"],
             "prompt": item["prompt"],
-            "expected_label": scored["expected_label"],
-            "predicted_label": scored["predicted_label"],
-            "correct": scored["correct"],
-            "suite_accuracy": suite_accuracy,
-            "language_breakdown": language_breakdown,
+            # Everything the suite's own scorer decided: the exact-match
+            # fields on one suite, the graded block on the other, each
+            # nulling the shape it does not publish so a reader never meets
+            # two score columns on one row.
+            **item_score_fields,
+            **batch_score_fields,
             # Nested so a row is self-describing: a greedy row and a future
             # sampled row can share `quality.jsonl` and stay distinguishable
             # without consulting git history, and adding a sampler key can never
             # collide with a scoring field. Each row records the parameters sent
             # to its own provider, never a merged union of both.
             "sampling": dict(sampling),
-            "max_output_tokens": classification_suite.MAX_OUTPUT_TOKENS,
-            "stop_sequences": list(classification_suite.STOP_SEQUENCES),
-            "context_length": classification_suite.CONTEXT_LENGTH,
-            "suite_id": classification_suite.SUITE_ID,
-            "suite_version": classification_suite.SUITE_VERSION,
-            "prompt_set_hash": classification_suite.PROMPT_SET_HASH,
+            "max_output_tokens": spec.max_output_tokens,
+            "stop_sequences": list(spec.stop_sequences),
+            "context_length": spec.context_length,
+            "suite_id": spec.suite_id,
+            "suite_version": spec.suite_version,
+            "prompt_set_hash": spec.prompt_set_hash,
             "language": item["language"],
             "provenance": item["provenance"],
             "contamination_risk": item["contamination_risk"],
             "indicative": gate_result["indicative"],
             "indicative_reasons": list(gate_result["indicative_reasons"]),
-            "failure_reason": scored["failure_reason"],
-            "failure_counts": dict(failure_counts),
             "retries": completions[index]["retries"],
             "resumed": resumed,
         }
@@ -877,4 +1059,18 @@ def _score_and_write(
         row["verdict"] = batch_verdict
         append_row(settings.quality_results_path, "quality", row)
 
-    print(f"model={model_id} provider={provider} accuracy={suite_accuracy:.2f}")
+    print(f"model={model_id} provider={provider} {_headline(batch_score_fields)}")
+
+
+def _headline(batch_score_fields: dict[str, Any]) -> str:
+    """The one score an operator reads off stdout, named by what it measures.
+
+    `accuracy=` on an exact-match suite and `suite_score=` on a graded one:
+    the two are different statistics, and printing a chrF mean under the word
+    "accuracy" would be the same mistake on stdout that the row contract
+    refuses on disk.
+    """
+    accuracy = batch_score_fields.get("suite_accuracy")
+    if accuracy is not None:
+        return f"accuracy={accuracy:.2f}"
+    return f"suite_score={batch_score_fields['suite_score']:.2f}"

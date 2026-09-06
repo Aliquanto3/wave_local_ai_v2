@@ -185,7 +185,13 @@ def test_rows_for_run_filters_to_the_matching_run_id_only(tmp_path: Path) -> Non
     assert rows_for_run(path, "run-a") == [row_a]
 
 
-def _write_items(path: Path, run_id: str, provider: str, item_ids: list[str]) -> None:
+def _write_items(
+    path: Path,
+    run_id: str,
+    provider: str,
+    item_ids: list[str],
+    task_suite: str = "classification",
+) -> None:
     for item_id in item_ids:
         append_row(
             path,
@@ -195,6 +201,7 @@ def _write_items(path: Path, run_id: str, provider: str, item_ids: list[str]) ->
                 "run_id": run_id,
                 "provider": provider,
                 "item_id": item_id,
+                "task_suite": task_suite,
             },
         )
 
@@ -204,27 +211,41 @@ def test_resume_skip_reason_runs_a_batch_that_wrote_nothing(tmp_path: Path) -> N
     _write_items(path, "run-1", "local", ["a", "b", "c"])
 
     # Another provider's completed batch says nothing about this one.
-    assert resume_skip_reason(path, "run-1", "mistral", 3) is None
+    assert (
+        resume_skip_reason(path, "run-1", "mistral", 3, task_suite="classification")
+        is None
+    )
     # Nor does another run's.
-    assert resume_skip_reason(path, "run-2", "local", 3) is None
+    assert (
+        resume_skip_reason(path, "run-2", "local", 3, task_suite="classification")
+        is None
+    )
     # Nor does an absent store.
-    assert resume_skip_reason(tmp_path / "absent.jsonl", "run-1", "local", 3) is None
+    assert (
+        resume_skip_reason(
+            tmp_path / "absent.jsonl", "run-1", "local", 3, task_suite="classification"
+        )
+        is None
+    )
 
 
 def test_resume_skip_reason_skips_a_complete_batch_by_name(tmp_path: Path) -> None:
     path = tmp_path / "quality.jsonl"
     _write_items(path, "run-1", "local", ["a", "b", "c"])
 
-    assert resume_skip_reason(path, "run-1", "local", 3) == "run run-1 already complete"
+    assert (
+        resume_skip_reason(path, "run-1", "local", 3, task_suite="classification")
+        == "run run-1 already complete"
+    )
 
 
 def test_resume_skip_reason_refuses_a_partially_written_batch(tmp_path: Path) -> None:
     path = tmp_path / "quality.jsonl"
     _write_items(path, "run-1", "local", ["a", "b"])
 
-    assert resume_skip_reason(path, "run-1", "local", 5) == (
-        "run run-1 is partially written (2/5 items); re-running would duplicate them"
-    )
+    assert resume_skip_reason(
+        path, "run-1", "local", 5, task_suite="classification"
+    ) == ("run run-1 is partially written (2/5 items); re-running would duplicate them")
 
 
 def test_resume_skip_reason_decides_against_the_callers_own_item_count(
@@ -236,9 +257,28 @@ def test_resume_skip_reason_decides_against_the_callers_own_item_count(
     path = tmp_path / "probe.jsonl"
     _write_items(path, "run-1", "google", ["a", "b"])
 
-    assert resume_skip_reason(path, "run-1", "google", 2) == (
-        "run run-1 already complete"
-    )
+    assert resume_skip_reason(
+        path, "run-1", "google", 2, task_suite="classification"
+    ) == ("run run-1 already complete")
     assert "partially written (2/5" in str(
-        resume_skip_reason(path, "run-1", "google", 5)
+        resume_skip_reason(path, "run-1", "google", 5, task_suite="classification")
+    )
+
+
+def test_resume_never_skips_a_batch_on_the_strength_of_another_suites_rows(
+    tmp_path: Path,
+) -> None:
+    # One store now holds two suites. A run_id complete under classification
+    # says nothing about the same run_id under translation: without the
+    # task_suite filter, `--resume <id> --suite translation` would skip a
+    # batch that was never run and publish nothing for it.
+    path = tmp_path / "quality.jsonl"
+    _write_items(path, "run-1", "local", ["a", "b", "c"], task_suite="classification")
+
+    assert (
+        resume_skip_reason(path, "run-1", "local", 3, task_suite="translation") is None
+    )
+    assert (
+        resume_skip_reason(path, "run-1", "local", 3, task_suite="classification")
+        == "run run-1 already complete"
     )
