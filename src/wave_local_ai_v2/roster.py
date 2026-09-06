@@ -62,6 +62,27 @@ REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
 
 _SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 
+# Model family: the attribute judge independence is enforced on (a judge never
+# scores output from its own family). Declared here rather than in `judge.py`
+# because it is an identity fact about a model, the same class of fact as the
+# rest of this module.
+FAMILY_QWEN = "qwen"
+FAMILY_MISTRAL = "mistral"
+FAMILY_GOOGLE = "google"
+KNOWN_FAMILIES: frozenset[str] = frozenset({FAMILY_QWEN, FAMILY_MISTRAL, FAMILY_GOOGLE})
+
+# Keyed by the literal dated model id, never by `mistral_client.MODEL` /
+# `google_client.MODEL` -- same rule and same reason as
+# `cost.MISTRAL_PRICE_TABLE`'s own comment: keying by the variable would make
+# this mapping unfalsifiable and let a model rotation inherit the retired
+# model's family, silently disabling the independence guard. This module does
+# not import the client modules; the ids are written out.
+MODEL_FAMILIES: dict[str, str] = {
+    "Qwen3.6-35B-A3B": FAMILY_QWEN,
+    "mistral-small-2603": FAMILY_MISTRAL,
+    "gemini-3.5-flash-lite": FAMILY_GOOGLE,
+}
+
 
 class RosterError(ValueError):
     """Raised when the roster file, an entry, or a host-fit check is invalid."""
@@ -94,6 +115,14 @@ class RosterEntry:
     architecture: Architecture
     server_flags: dict[str, Any]
     validated_host: dict[str, Any]
+    # The model's family, when the roster file carries one. Optional and
+    # deliberately absent from REQUIRED_FIELDS: the shipped roster is not
+    # edited by the increment that introduced this, so every existing entry
+    # must still load and `roster_version` must not move -- published rows and
+    # the reference-bundle test compare against it. `family_of` prefers this
+    # value when it is there and falls back to `MODEL_FAMILIES` until
+    # Methodology 13's roster carries one.
+    family: str | None = None
 
 
 @dataclass(frozen=True)
@@ -211,6 +240,7 @@ def _parse_entry(entry_id: str, raw_entry: Any) -> RosterEntry:
         ),
         server_flags=raw_entry["server_flags"],
         validated_host=raw_entry["validated_host"],
+        family=raw_entry.get("family"),
     )
 
 
@@ -223,6 +253,36 @@ def resolve_entry(roster: RosterFile, entry_id: str) -> RosterEntry:
             f"unknown roster entry id: {entry_id!r} "
             f"(known ids: {', '.join(sorted(roster.entries)) or '<none>'})"
         ) from None
+
+
+def family_of(model_id: str, entry: RosterEntry | None = None) -> str:
+    """Resolve `model_id`'s family, preferring `entry`'s own declaration.
+
+    The roster entry is the seam: when Methodology 13's roster file carries a
+    `family`, that is what a row reads; until it does, `MODEL_FAMILIES` is the
+    in-code fallback. An unknown model is a refusal, never a default -- a
+    wrong default silently disables the independence guard a judged row
+    depends on, and a silently disabled guard is worse than a failed run.
+    """
+    if entry is not None and entry.family is not None:
+        family = entry.family
+        source = f"roster entry {entry.entry_id!r}"
+    else:
+        family = MODEL_FAMILIES.get(model_id, "")
+        source = "the in-code MODEL_FAMILIES declaration"
+        if not family:
+            raise RosterError(
+                f"unknown model family for model id {model_id!r} "
+                f"(declared ids: {', '.join(sorted(MODEL_FAMILIES))})"
+            )
+
+    if family not in KNOWN_FAMILIES:
+        raise RosterError(
+            f"model id {model_id!r} resolves to family {family!r} through "
+            f"{source}, which is not a known family "
+            f"({', '.join(sorted(KNOWN_FAMILIES))})"
+        )
+    return family
 
 
 def validate_host_fit(entry: RosterEntry, n_cpu_moe: int | None) -> None:

@@ -70,6 +70,12 @@ KNOWN_QUALITY_PROVIDERS = frozenset({"local", "mistral", "google"})
 DEFAULT_MISTRAL_REQUEST_PACING_S = 1.1
 DEFAULT_GOOGLE_REQUEST_PACING_S = 4.1
 DEFAULT_CLOUD_RETRY_MAX_ATTEMPTS = 4
+# When two judges' scores on one item count as a disagreement worth marking
+# (this increment's decision): more than 1 point apart on a 1-5 ordinal
+# rubric, or any category mismatch on a categorical one. A per-suite override
+# is the named seam -- a judged suite that declares its own threshold beats
+# this default; until one exists, this is the only value in play.
+DEFAULT_CONTESTED_ORDINAL_MAX_DELTA = 1
 
 
 class SettingsError(RuntimeError):
@@ -137,6 +143,9 @@ class Settings:
     mistral_request_pacing_s: float = DEFAULT_MISTRAL_REQUEST_PACING_S
     google_request_pacing_s: float = DEFAULT_GOOGLE_REQUEST_PACING_S
     cloud_retry_max_attempts: int = DEFAULT_CLOUD_RETRY_MAX_ATTEMPTS
+    # Judge agreement (a judged score carries two judges or an honest flag):
+    # the ordinal delta above which one item's two judge scores are contested.
+    contested_ordinal_max_delta: int = DEFAULT_CONTESTED_ORDINAL_MAX_DELTA
 
 
 def fiche_registry_dir_from_env() -> Path:
@@ -283,6 +292,13 @@ def load_settings() -> Settings:
         minimum=1,
         minimum_reason="at least one attempt must be allowed",
     )
+    contested_ordinal_max_delta = _require_numeric(
+        "CONTESTED_ORDINAL_MAX_DELTA",
+        DEFAULT_CONTESTED_ORDINAL_MAX_DELTA,
+        int,
+        minimum=0,
+        minimum_reason="a contested threshold cannot be negative",
+    )
 
     return Settings(
         slm_models_dir=slm_models_dir,
@@ -313,6 +329,7 @@ def load_settings() -> Settings:
         mistral_request_pacing_s=mistral_request_pacing_s,
         google_request_pacing_s=google_request_pacing_s,
         cloud_retry_max_attempts=cloud_retry_max_attempts,
+        contested_ordinal_max_delta=contested_ordinal_max_delta,
     )
 
 

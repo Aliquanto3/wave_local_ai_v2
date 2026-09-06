@@ -11,7 +11,13 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from wave_local_ai_v2 import aggregation, prompt_provenance, timings
+from wave_local_ai_v2 import (
+    aggregation,
+    judge,
+    judge_protocol,
+    prompt_provenance,
+    timings,
+)
 
 # "2": the runtime row's shape changed incompatibly (a scalar `gen_tok_per_s`
 # became a median over a repetition set). Quality rows move to "2" with it
@@ -37,7 +43,13 @@ from wave_local_ai_v2 import aggregation, prompt_provenance, timings
 # "8": `retries` and `resumed` became required on quality rows only (a
 # rate-limited run persists, resumes and never re-pays) -- the runtime row is
 # untouched, since resume and retry are quality-CLI-only in this story's scope.
-SCHEMA_VERSION = "8"
+# "9": a judged quality row carries a judge block -- each judge's own call
+# record, the prompt/rubric provenance the score was produced under, either an
+# agreement figure over two judges or the single-judge flag, the contested
+# state, and the judge calls' egress and cost (`JUDGED_FIELDS`). Required only
+# on a row that carries any of it, so a deterministic quality row -- today's
+# classification rows, which declare no rubric -- validates unchanged.
+SCHEMA_VERSION = "9"
 
 # The schema version at which `fiche_hash` (and `verdict`) became required.
 # Fixed at "3" regardless of future `SCHEMA_VERSION` bumps: a stored row whose
@@ -224,6 +236,70 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
 }
 
 
+# The complete judge block. Not a member of REQUIRED_FIELDS["quality"]: a
+# quality row carrying none of these validates exactly as it did under "8",
+# and a row carrying any of them owes all of them. That conditional shape is
+# what lets a deterministic classification row stay unchanged while a judged
+# row is held to the whole set -- an unconditional list would force every
+# deterministic row to write a dozen null judge keys.
+JUDGED_FIELDS: frozenset[str] = frozenset(
+    {
+        # judge_protocol.render_judge_prompt: which prompt was issued, in
+        # which language, against which rubric revision.
+        "judge_prompt_id",
+        "judge_prompt_template_hash",
+        "judge_prompt_language",
+        "rubric_id",
+        "rubric_version",
+        "rubric_kind",
+        # judge.run_judge_call: one JudgeCallRecord per judge that ran.
+        "judges",
+        # Independence and agreement: either a named statistic over two judges
+        # of different families, or the flag saying only one judged.
+        "single_judge",
+        "single_judge_reason",
+        "agreement",
+        "agreement_statistic",
+        # agreement.is_contested / agreement.headline_score: the disagreement
+        # stays visible, only the headline excludes it and says how many.
+        "contested",
+        "contested_reason",
+        "contested_threshold",
+        "judged_headline_score",
+        "judged_headline_excluded_n",
+        # Where the item and the subject output went, and how many calls it took.
+        "judge_egress",
+        # cost.judge_cost_fields: the judge calls' own tokens and cost, priced
+        # per judge provider. Deliberately not summed into `cost_total`, which
+        # stays the subject generation's.
+        "judge_cost",
+    }
+)
+
+# The inner key sets a judged row's three records carry. Declared here, on the
+# contract, rather than in the modules that build them: this is the module a
+# reader checks a published row against.
+JUDGE_EGRESS_FIELDS: frozenset[str] = frozenset(
+    {
+        "item_left_machine",
+        "subject_output_left_machine",
+        "providers",
+        "generation_count",
+        "judge_call_count",
+    }
+)
+
+JUDGE_COST_FIELDS: frozenset[str] = frozenset(
+    {
+        "tokens_in_total",
+        "tokens_out_total",
+        "cost_total",
+        "cost_currency",
+        "per_provider",
+    }
+)
+
+
 class RowContractError(ValueError):
     """Raised when a row is missing one or more of its kind's required fields."""
 
@@ -278,6 +354,119 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
                 f"row of kind 'runtime' has an unrecognised ttft_source: {ttft_source!r}"
             )
         _validate_runtime_repetition_structure(row)
+
+    if kind == "quality":
+        _validate_judged_fields(row)
+
+
+def _validate_judged_fields(row: dict[str, Any]) -> None:
+    """Hold a row that declares itself judged to the whole judge block.
+
+    A quality row carrying none of `JUDGED_FIELDS` is deterministic and
+    returns untouched. Carrying any of them is the declaration: the row is a
+    judged score, and every remaining judge field is named as missing.
+    """
+    present = JUDGED_FIELDS & row.keys()
+    if not present:
+        return
+
+    missing = JUDGED_FIELDS - row.keys()
+    if missing:
+        raise RowContractError(
+            f"row of kind 'quality' declares itself judged by carrying "
+            f"{', '.join(sorted(present))} but is missing judge field(s): "
+            f"{', '.join(sorted(missing))}"
+        )
+
+    _validate_judged_structure(row)
+
+
+def _validate_judged_structure(row: dict[str, Any]) -> None:
+    """Raise on a judge block that cannot back the judgement it publishes."""
+    judges = row["judges"]
+    if not isinstance(judges, list) or not judges:
+        raise RowContractError(
+            f"row of kind 'quality' has judges={judges!r}: a judged row "
+            "carries at least one judge call record"
+        )
+    for index, record in enumerate(judges):
+        if not isinstance(record, dict):
+            raise RowContractError(
+                f"row of kind 'quality' has a non-object judges[{index}]: {record!r}"
+            )
+        missing_keys = judge.JUDGE_CALL_RECORD_FIELDS - record.keys()
+        if missing_keys:
+            raise RowContractError(
+                f"row of kind 'quality' has judges[{index}] missing "
+                f"field(s): {', '.join(sorted(missing_keys))}"
+            )
+
+    language = row["judge_prompt_language"]
+    if language not in judge_protocol.JUDGE_LANGUAGES:
+        raise RowContractError(
+            f"row of kind 'quality' has judge_prompt_language {language!r}: "
+            f"must be one of {', '.join(judge_protocol.JUDGE_LANGUAGES)}"
+        )
+
+    rubric_kind = row["rubric_kind"]
+    if rubric_kind not in judge_protocol.RUBRIC_KINDS:
+        raise RowContractError(
+            f"row of kind 'quality' has rubric_kind {rubric_kind!r}: must be "
+            f"one of {', '.join(judge_protocol.RUBRIC_KINDS)}"
+        )
+
+    # A judged score states how it was reached: either two judges agreed to
+    # some measured degree, or one judged and the row says so. Neither is an
+    # unattributed number.
+    row_agreement = row["agreement"]
+    single_judge = row["single_judge"]
+    if row_agreement is None and single_judge is not True:
+        raise RowContractError(
+            "row of kind 'quality' carries agreement=None and "
+            f"single_judge={single_judge!r}: a judged score must carry either "
+            "an agreement figure or the single_judge flag, and this row "
+            "carries neither"
+        )
+    if single_judge is True and row_agreement is not None:
+        raise RowContractError(
+            "row of kind 'quality' carries single_judge=True alongside a "
+            f"non-null agreement ({row_agreement!r}): one judge produces no "
+            "agreement figure, so the row cannot be both"
+        )
+
+    _require_block_fields(row, "judge_egress", JUDGE_EGRESS_FIELDS)
+    _require_block_fields(row, "judge_cost", JUDGE_COST_FIELDS)
+
+    egress = row["judge_egress"]
+    if not egress["providers"]:
+        raise RowContractError(
+            "row of kind 'quality' has an empty judge_egress providers list: "
+            "a judged row was scored by someone"
+        )
+    if egress["judge_call_count"] != len(judges):
+        raise RowContractError(
+            f"row of kind 'quality' has judge_egress judge_call_count="
+            f"{egress['judge_call_count']!r} but carries {len(judges)} judge "
+            "call record(s): an egress record that disagrees with the calls "
+            "on the row is worse than no record"
+        )
+
+
+def _require_block_fields(
+    row: dict[str, Any], field: str, required: frozenset[str]
+) -> None:
+    """Raise unless `row[field]` is an object carrying every key in `required`."""
+    block = row[field]
+    if not isinstance(block, dict):
+        raise RowContractError(
+            f"row of kind 'quality' has a non-object {field}: {block!r}"
+        )
+    missing = required - block.keys()
+    if missing:
+        raise RowContractError(
+            f"row of kind 'quality' has {field} missing field(s): "
+            f"{', '.join(sorted(missing))}"
+        )
 
 
 def _validate_runtime_repetition_structure(row: dict[str, Any]) -> None:

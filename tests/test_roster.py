@@ -329,3 +329,53 @@ def test_shipped_roster_entry_matches_docs_setup_step_3() -> None:
         "threads": 8,
         "fiche_summary": entry.validated_host["fiche_summary"],
     }
+
+
+def test_family_of_resolves_every_model_this_project_names() -> None:
+    assert roster.family_of("mistral-small-2603") == "mistral"
+    assert roster.family_of("gemini-3.5-flash-lite") == "google"
+    assert roster.family_of("Qwen3.6-35B-A3B") == "qwen"
+
+
+def test_family_of_prefers_the_roster_entrys_own_declaration(tmp_path) -> None:
+    path = _write_roster(
+        tmp_path / "roster.json", {MOE_ENTRY_ID: {**MOE_ENTRY, "family": "qwen"}}
+    )
+    entry = roster.resolve_entry(roster.load_roster(path), MOE_ENTRY_ID)
+
+    assert entry.family == "qwen"
+    assert roster.family_of("some-unknown-model", entry) == "qwen"
+
+
+def test_family_of_falls_back_to_the_declaration_when_the_entry_carries_none(
+    tmp_path,
+) -> None:
+    path = _write_roster(tmp_path / "roster.json", {MOE_ENTRY_ID: MOE_ENTRY})
+    entry = roster.resolve_entry(roster.load_roster(path), MOE_ENTRY_ID)
+
+    assert entry.family is None
+    assert roster.family_of("Qwen3.6-35B-A3B", entry) == "qwen"
+
+
+def test_family_of_refuses_an_unknown_model_rather_than_defaulting() -> None:
+    with pytest.raises(RosterError, match="some-unknown-model"):
+        roster.family_of("some-unknown-model")
+
+
+def test_family_of_refuses_an_entry_declaring_an_unknown_family(tmp_path) -> None:
+    path = _write_roster(
+        tmp_path / "roster.json", {MOE_ENTRY_ID: {**MOE_ENTRY, "family": "acme"}}
+    )
+    entry = roster.resolve_entry(roster.load_roster(path), MOE_ENTRY_ID)
+
+    with pytest.raises(RosterError, match="acme"):
+        roster.family_of("Qwen3.6-35B-A3B", entry)
+
+
+def test_the_shipped_roster_still_loads_with_no_family_and_no_version_move() -> None:
+    loaded = roster.load_roster(REAL_ROSTER_PATH)
+    entry = roster.resolve_entry(loaded, "qwen3.6-35b-a3b-ud-iq4xs")
+
+    assert loaded.roster_version == 1
+    assert entry.family is None
+    assert roster.family_of(entry.display_id, entry) == "qwen"

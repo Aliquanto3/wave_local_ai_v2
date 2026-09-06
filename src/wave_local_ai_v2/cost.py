@@ -7,8 +7,8 @@ manually retrieved snapshots, dated.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from typing import TypedDict
+from collections.abc import Iterable, Mapping, Sequence
+from typing import Any, TypedDict
 
 from wave_local_ai_v2 import google_client, mistral_client
 
@@ -134,3 +134,91 @@ def cost_per_million_tokens(
     if cost_total is None or not total_tokens:
         return None
     return cost_total / total_tokens * 1_000_000
+
+
+def judge_cost_fields(records: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Cost a row's judge calls at each judge provider's own table rates.
+
+    Takes `judge.JudgeCallRecord`s structurally rather than by type, so this
+    module keeps importing no judge module and the judge path keeps importing
+    this one. Returns the row's `judge_cost` record: the aggregate token
+    counts and cost, plus one `per_provider` entry carrying that provider's
+    tokens, its cost, and the two rates and retrieval date it was charged at
+    -- everything a reader needs to recompute the figure.
+
+    The row's own `cost_total` is untouched by this: it stays the subject
+    generation's cost, priced at the subject provider's rates. Summing a
+    Google judge's tokens into a Mistral subject's `cost_total` would break
+    the contract rule that a non-null `cost_total` is recomputable from the
+    row's own `list_price_*` rates.
+
+    A model id absent from its provider's price table raises `CostTableError`
+    naming it -- never a default-costed zero, the same rule the import-time
+    guards above already enforce. One missing token count makes that
+    provider's total, and therefore the aggregate `cost_total`, `None` rather
+    than smaller (`total_or_none`). Two price tables in different currencies
+    are refused rather than summed; both are USD today, so this guards a
+    future table rather than anything shipped.
+    """
+    grouped: dict[tuple[str, str], list[Mapping[str, Any]]] = {}
+    for record in records:
+        grouped.setdefault((record["provider"], record["model_id"]), []).append(record)
+
+    per_provider: list[dict[str, Any]] = []
+    currencies: set[str] = set()
+    for (provider, model_id), group in sorted(grouped.items()):
+        table = PRICE_TABLES.get(provider)
+        if table is None:
+            raise CostTableError(
+                f"no price table for judge provider {provider!r} "
+                f"(known: {', '.join(sorted(PRICE_TABLES))})"
+            )
+        price = table.get(model_id)
+        if price is None:
+            raise CostTableError(
+                f"{provider} price table has no entry for judge model "
+                f"{model_id!r} -- add one before costing a judged row"
+            )
+
+        tokens_in = total_or_none(record["tokens_in"] for record in group)
+        tokens_out = total_or_none(record["tokens_out"] for record in group)
+        provider_cost = (
+            None
+            if tokens_in is None or tokens_out is None
+            else cloud_cost(tokens_in, tokens_out, price)
+        )
+        currencies.add(price["currency"])
+        per_provider.append(
+            {
+                "provider": provider,
+                "model_id": model_id,
+                "tokens_in": tokens_in,
+                "tokens_out": tokens_out,
+                "cost_total": provider_cost,
+                "list_price_input_per_million": price["input_per_million"],
+                "list_price_output_per_million": price["output_per_million"],
+                "list_price_retrieved_at": price["retrieved_at"],
+            }
+        )
+
+    if len(currencies) > 1:
+        raise CostTableError(
+            f"judge calls priced in more than one currency "
+            f"({', '.join(sorted(currencies))}): a single cost_total across "
+            "two currencies would be a number with no unit"
+        )
+
+    provider_costs = [entry["cost_total"] for entry in per_provider]
+    return {
+        "tokens_in_total": total_or_none(record["tokens_in"] for record in records),
+        "tokens_out_total": total_or_none(record["tokens_out"] for record in records),
+        # `not provider_costs` first: no judge call is an unknown cost, not a
+        # free one, and `sum([])` would publish it as 0.0.
+        "cost_total": (
+            None
+            if not provider_costs or any(value is None for value in provider_costs)
+            else sum(provider_costs)
+        ),
+        "cost_currency": next(iter(currencies), None),
+        "per_provider": per_provider,
+    }
