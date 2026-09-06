@@ -313,6 +313,18 @@ class LocalCompletionError(RuntimeError):
     """Raised when a local llama-server /completion response has no usable content."""
 
 
+class JudgeCallError(RuntimeError):
+    """Raised when a judge call fails, naming the item and the provider.
+
+    A live-run finding. `retry.RetryBudgetExhausted` says only "retry budget
+    exhausted after N retries" and the clients' own errors name a status code
+    but not the call that produced it, so a probe that died mid-judging left
+    the operator with nothing to act on -- and "which provider gave up, and on
+    which item" is exactly the evidence the free-tier question is answered
+    from. `__cause__` keeps the original error inspectable.
+    """
+
+
 class _ProbeCompletion(TypedDict):
     """One subject generation, unified across the local and cloud shapes."""
 
@@ -365,6 +377,7 @@ def main() -> None:
         OSError,
         roster.RosterError,
         LocalCompletionError,
+        JudgeCallError,
         suite_gate.SuiteGateError,
         # Both providers' request errors and an exhausted retry budget abort
         # the probe rather than being skipped, unlike the quality CLI: the
@@ -385,6 +398,11 @@ def _run(resume_run_id: str | None = None) -> None:
 
     run_id = resume_run_id or new_run_id()
     is_resume = resume_run_id is not None
+    # Printed before anything can fail. A live-run finding: the probe writes
+    # no row until a whole batch is judged, so a run that dies mid-judging
+    # leaves nothing on disk to read its own id back off -- and `--resume`
+    # needs that id. It costs one stdout line to make the failure recoverable.
+    print(f"run_id={run_id}")
     provenance_fields = provenance.capture_provenance()
     loaded_roster = roster.load_roster(settings.roster_path)
     roster_entry = roster.resolve_entry(loaded_roster, settings.roster_entry_id)
@@ -570,6 +588,35 @@ def _generate_local_outputs(
     return completions
 
 
+def _judge_failure_provider(exc: BaseException) -> str:
+    """Which provider a judge failure came from, read off the exception itself.
+
+    `RetryBudgetExhausted` is always raised `from` the provider error that
+    spent the last retry, so the cause is where the provider's identity lives.
+    """
+    cause = exc.__cause__ if isinstance(exc, retry.RetryBudgetExhausted) else exc
+    if isinstance(cause, mistral_client.MistralRequestError):
+        return judge_backends.PROVIDER_MISTRAL
+    if isinstance(cause, google_client.GoogleRequestError):
+        return judge_backends.PROVIDER_GOOGLE
+    return "unknown"
+
+
+def _judge_item_naming_failures(item_id: str, **kwargs: Any) -> dict[str, Any]:
+    """`judge.judge_item`, with a failure re-raised naming the item and provider."""
+    try:
+        return judge.judge_item(**kwargs)
+    except (
+        mistral_client.MistralRequestError,
+        google_client.GoogleRequestError,
+        retry.RetryBudgetExhausted,
+    ) as exc:
+        raise JudgeCallError(
+            f"judge call failed on item {item_id!r} at provider "
+            f"{_judge_failure_provider(exc)}: {exc}"
+        ) from exc
+
+
 def _judge_score(block: dict[str, Any], provider: str) -> agreement.JudgeScore | None:
     """That provider's own score off a judged block, or raise if it never ran."""
     for record in block["judges"]:
@@ -721,7 +768,8 @@ def _run_local_batch(
     )
     threshold = agreement.ContestedThreshold(settings.contested_ordinal_max_delta)
     blocks = [
-        judge.judge_item(
+        _judge_item_naming_failures(
+            item["item_id"],
             subject_family=subject_family,
             subject_provider=PROVIDER_LOCAL,
             subject_output=completion["content"],
@@ -855,7 +903,8 @@ def _run_cloud_subject_item(
         sleep=time.sleep,
     )
 
-    block = judge.judge_item(
+    block = _judge_item_naming_failures(
+        item["item_id"],
         subject_family=roster.family_of(google_client.MODEL),
         subject_provider=judge_backends.PROVIDER_GOOGLE,
         subject_output=response["content"],

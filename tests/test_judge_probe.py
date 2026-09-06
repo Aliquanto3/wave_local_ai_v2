@@ -585,6 +585,50 @@ def test_an_unparseable_judge_reply_is_a_missing_judgement_not_a_zero(
     assert affected["contested"] is False
 
 
+def test_a_judge_that_runs_out_of_retries_names_the_item_and_the_provider(
+    stubbed_probe, capsys
+) -> None:
+    # A live-run finding: `retry budget exhausted after 4 retries` alone told
+    # the operator neither which provider gave up nor where, and the probe
+    # writes no row until a whole batch is judged, so nothing on disk carried
+    # the run_id either.
+    probe_path, _, started, _ = stubbed_probe
+
+    def rate_limited_judge(prompt, api_key, **kwargs):
+        if kwargs["max_tokens"] == judge_probe.JUDGE_MAX_TOKENS:
+            raise google_client.RetryableRequestError(
+                "rate limited", status_code=429, retry_after_s=0
+            )
+        return _google_reply("ok", generated_tokens=12)
+
+    started["google_complete"].side_effect = rate_limited_judge
+
+    with pytest.raises(SystemExit) as exit_info:
+        judge_probe.main()
+
+    assert exit_info.value.code == 1
+    captured = capsys.readouterr()
+    first_item_id = JUDGE_PROBE_ITEMS[0]["item_id"]
+    assert (
+        f"judge call failed on item {first_item_id!r} at provider google"
+        in captured.err
+    )
+    assert "retry budget exhausted" in captured.err
+    assert not probe_path.exists()
+    # Printed before anything could fail, so --resume has an id to be given.
+    assert captured.out.splitlines()[0].startswith("run_id=")
+
+
+def test_the_run_id_is_printed_before_the_batches(stubbed_probe, capsys) -> None:
+    probe_path, _, _, _ = stubbed_probe
+
+    judge_probe._run()
+
+    lines = capsys.readouterr().out.splitlines()
+    run_id = read_rows(probe_path)[0]["run_id"]
+    assert lines[0] == f"run_id={run_id}"
+
+
 # --------------------------------------------------------------------------
 # The refusals
 # --------------------------------------------------------------------------

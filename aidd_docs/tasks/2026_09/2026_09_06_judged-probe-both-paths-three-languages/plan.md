@@ -1,6 +1,6 @@
 ---
 objective: "Ten hand-written open-ended items in EN, FR and DE run end to end through the judged machinery on this machine and publish eleven contract-valid judged rows into `aidd_docs/results/judge-probe-reference.jsonl` — ten local-subject rows scored by both judges and carrying a real agreement figure, one Google-subject row scored by Mistral alone and flagged single-judge — with the results README answering the epic's three closing questions off those rows."
-status: in-progress
+status: blocked
 ---
 
 <!-- Fill or omit these sections; never add, rename, or reorder one. -->
