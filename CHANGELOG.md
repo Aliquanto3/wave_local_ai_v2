@@ -22,7 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   leaves the score `None`, never `0`, with the raw text kept as the row's
   evidence — and judge selection by model family, where a judge of the
   subject's own family raises `JudgeFamilyCollisionError` before any call is
-  made, never a silent skip and never a substitution. `judge_backends.py` is
+  made, never a silent skip and never a substitution; a single-judge block
+  must be given the reason only one judge scored the item, since the collision
+  is a refusal rather than a filter and the judge call itself cannot know. `judge_backends.py` is
   the only judge-path module importing `mistral_client`/`google_client`,
   binding each to the protocol through `retry.py`'s pacer and run-scoped
   budget. `agreement.py` computes quadratic-weighted Cohen's kappa for an
@@ -30,8 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exact-match and within-one rates beside the value, returns kappa as an
   explicit null with its own reason when either judge's scores are constant
   (`zero_variance`, deliberately stricter than the mathematically undefined
-  `zero_expected_disagreement`, which is kept as its own separate reason), and
-  owns the contested rule and the judged headline. `roster.py` gains the
+  `zero_expected_disagreement`, which is kept as its own separate reason) and
+  when fewer than two items were scored (`insufficient_items`, which is what a
+  single row's own block carries, kappa being a suite-level figure), and owns
+  the contested rule and the judged headline. `roster.py` gains the
   family constants, an in-code `MODEL_FAMILIES` declaration keyed by literal
   dated model ids, an optional `family` field on a roster entry, and
   `family_of`, which prefers the entry's own value and refuses an unknown

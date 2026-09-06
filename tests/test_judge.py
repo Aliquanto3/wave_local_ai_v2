@@ -209,7 +209,12 @@ def _google_judge(score: int = 4) -> judge.Judge:
     )
 
 
-def _judge_item(subject_family: str, subject_provider: str, judges: list[judge.Judge]):
+def _judge_item(
+    subject_family: str,
+    subject_provider: str,
+    judges: list[judge.Judge],
+    single_judge_reason: str | None = None,
+):
     return judge.judge_item(
         subject_family=subject_family,
         subject_provider=subject_provider,
@@ -219,6 +224,7 @@ def _judge_item(subject_family: str, subject_provider: str, judges: list[judge.J
         rubric=OPEN_ENDED_QUALITY_1_TO_5,
         judges=judges,
         threshold=DEFAULT_CONTESTED_THRESHOLD,
+        single_judge_reason=single_judge_reason,
     )
 
 
@@ -328,7 +334,12 @@ def test_a_local_subject_is_judged_by_both_families_with_an_agreement() -> None:
 
 
 def test_a_cloud_subject_is_judged_once_and_flagged() -> None:
-    block = _judge_item("mistral", "mistral", [_google_judge(4)])
+    block = _judge_item(
+        "mistral",
+        "mistral",
+        [_google_judge(4)],
+        judge.SINGLE_JUDGE_REASON_CLOUD_SUBJECT,
+    )
 
     assert len(block["judges"]) == 1
     assert block["agreement"] is None
@@ -364,6 +375,37 @@ def test_a_contested_item_is_excluded_from_the_headline() -> None:
 def test_no_judge_at_all_is_refused_naming_the_subject() -> None:
     with pytest.raises(ValueError, match="mistral"):
         _judge_item("mistral", "mistral", [])
+
+
+def test_a_single_judge_call_must_state_why_only_one_judged() -> None:
+    # The reason is the caller's: `select_judges` refuses a collision rather
+    # than filtering it, so `judge_item` cannot tell a cloud subject's
+    # excluded family from a run with one judge configured, and a defaulted
+    # reason would put a claim on the row that nothing backs.
+    with pytest.raises(ValueError, match="must state why"):
+        _judge_item("qwen", "local", [_google_judge(4)])
+
+
+def test_a_local_subject_judged_once_names_its_own_reason() -> None:
+    block = _judge_item(
+        "qwen",
+        "local",
+        [_google_judge(4)],
+        judge.SINGLE_JUDGE_REASON_ONE_JUDGE_AVAILABLE,
+    )
+
+    assert block["single_judge"] is True
+    assert block["single_judge_reason"] == "only_one_independent_judge_available"
+
+
+def test_a_single_judge_reason_alongside_two_judges_is_refused() -> None:
+    with pytest.raises(ValueError, match="two judges"):
+        _judge_item(
+            "qwen",
+            "local",
+            [_mistral_judge(4), _google_judge(4)],
+            judge.SINGLE_JUDGE_REASON_CLOUD_SUBJECT,
+        )
 
 
 def test_more_than_two_judges_is_refused() -> None:

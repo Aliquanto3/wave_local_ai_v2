@@ -134,8 +134,33 @@ def test_an_empty_pair_list_is_null_with_a_reason_and_raises_nothing() -> None:
     result = agreement_for_rubric(OPEN_ENDED_QUALITY_1_TO_5, [])
 
     assert result["value"] is None
-    assert result["value_null_reason"] == "zero_variance"
+    # Not "zero_variance": no judge was observed being constant, there was
+    # simply nothing to compute a suite statistic over.
+    assert result["value_null_reason"] == "insufficient_items"
     assert result["n_items"] == 0
+
+
+def test_a_single_pair_is_insufficient_rather_than_zero_variance() -> None:
+    # Every one-item score set is constant, so the variance rule would fire
+    # here and name a judge behaviour nobody observed. Kappa over one item is
+    # missing evidence, not a degenerate judge.
+    result = agreement_for_rubric(OPEN_ENDED_QUALITY_1_TO_5, [(4, 4)])
+
+    assert result["value"] is None
+    assert result["value_null_reason"] == "insufficient_items"
+    assert result["n_items"] == 1
+    assert result["exact_match_rate"] == pytest.approx(1.0)
+
+
+def test_two_items_with_a_constant_judge_still_report_zero_variance() -> None:
+    # The stricter rule is untouched above two items: this is the case
+    # `zero_variance` was written for.
+    value, null_reason = cohens_kappa(
+        [3, 3], [1, 2], categories=ORDINAL_POINTS, weighted=False
+    )
+
+    assert value is None
+    assert null_reason == "zero_variance"
 
 
 def test_exact_match_rate_over_an_empty_input_is_zero() -> None:

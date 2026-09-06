@@ -212,7 +212,7 @@ JUDGE_BLOCK = {
     "agreement": {
         "statistic": "cohens_kappa_quadratic_weighted",
         "value": None,
-        "value_null_reason": "zero_variance",
+        "value_null_reason": "insufficient_items",
         "exact_match_rate": 1.0,
         "within_one_rate": 1.0,
         "n_items": 1,

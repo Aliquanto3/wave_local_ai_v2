@@ -33,6 +33,10 @@ AGREEMENT_STATISTIC_KAPPA_UNWEIGHTED = "cohens_kappa_unweighted"
 
 KAPPA_NULL_ZERO_VARIANCE = "zero_variance"
 KAPPA_NULL_ZERO_EXPECTED_DISAGREEMENT = "zero_expected_disagreement"
+# Kappa is a statistic over a set of items. Fewer than two of them is not a
+# degenerate judge, it is not enough evidence, and saying `zero_variance`
+# there would name a judge behaviour that was never observed.
+KAPPA_NULL_INSUFFICIENT_ITEMS = "insufficient_items"
 
 CONTESTED_REASON_ORDINAL_DELTA = "ordinal_delta_above_threshold"
 CONTESTED_REASON_CATEGORY_MISMATCH = "category_mismatch"
@@ -72,15 +76,19 @@ def cohens_kappa(
     unobserved category still occupies a row and a column and the quadratic
     weights read the rubric's own ordering.
 
-    Two null cases, checked in this order. `zero_variance` when either judge
-    scored every item the same: mathematically a constant judge against a
-    varying one yields a defined `κ = 0`, and publishing that `0` would read
-    as chance-level disagreement when the two may have agreed on every single
-    item. That is the fabricated-figure failure `cost.total_or_none` and
-    `aggregation.spread` already refuse, so it is refused here too, stricter
-    than the mathematics requires and named as its own reason.
-    `zero_expected_disagreement` is the textbook undefined case, a zero
-    denominator, kept separate so the two are never confused for each other.
+    Three null cases, checked in this order. `insufficient_items` when fewer
+    than two items were scored: every one-item score set is constant, so
+    reporting `zero_variance` there would publish a judge behaviour nobody
+    observed -- kappa is a statistic over a set of items, and one item is not
+    a set. `zero_variance` when either judge scored every item the same:
+    mathematically a constant judge against a varying one yields a defined
+    `κ = 0`, and publishing that `0` would read as chance-level disagreement
+    when the two may have agreed on every single item. That is the
+    fabricated-figure failure `cost.total_or_none` and `aggregation.spread`
+    already refuse, so it is refused here too, stricter than the mathematics
+    requires and named as its own reason. `zero_expected_disagreement` is the
+    textbook undefined case, a zero denominator, kept separate so the three
+    are never confused for each other.
     """
     if len(scores_a) != len(scores_b):
         raise ValueError(
@@ -88,8 +96,9 @@ def cohens_kappa(
             f"{len(scores_a)} and {len(scores_b)}"
         )
 
-    # `< 2` rather than `== 1`: an empty score set has no variance to speak
-    # of either, and returning a kappa over nothing would be the same lie.
+    if len(scores_a) < 2:
+        return None, KAPPA_NULL_INSUFFICIENT_ITEMS
+
     if len(set(scores_a)) < 2 or len(set(scores_b)) < 2:
         return None, KAPPA_NULL_ZERO_VARIANCE
 
@@ -182,6 +191,12 @@ def agreement_for_rubric(
     (`judge.run_judge_call`): it is dropped from the statistic and counted in
     `n_items_excluded`, never coerced to a score. `n_items` is what the
     statistic was actually computed over, not what was handed in.
+
+    Kappa is a suite-level figure: called over one item (`judge.judge_item`,
+    which publishes the block on a single row) it returns null with
+    `insufficient_items`, and the raw rates beside it are what that row
+    actually carries. The suite-level value comes from calling this over the
+    whole judged set.
     """
     usable = [(a, b) for a, b in pairs if a is not None and b is not None]
     scores_a = [a for a, _ in usable]

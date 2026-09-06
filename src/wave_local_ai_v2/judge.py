@@ -42,10 +42,18 @@ JUDGE_FAILURE_REASONS = (
     FAILURE_REASON_JUDGE_OUT_OF_SCALE,
 )
 
-# The only reason this project has for one judge instead of two: the subject
-# is itself a cloud model, so the judge of its own family is excluded and only
-# the other-family judge is left.
+# Why a row carries one judge instead of two. The caller states which applies:
+# `select_judges` refuses a collision rather than filtering it out, so by the
+# time `judge_item` sees one judge it cannot tell whether the subject's own
+# family was left out or whether only one judge was configured, and guessing
+# would publish a reason the row cannot back.
 SINGLE_JUDGE_REASON_CLOUD_SUBJECT = "cloud_subject_other_family_only"
+SINGLE_JUDGE_REASON_ONE_JUDGE_AVAILABLE = "only_one_independent_judge_available"
+
+SINGLE_JUDGE_REASONS = (
+    SINGLE_JUDGE_REASON_CLOUD_SUBJECT,
+    SINGLE_JUDGE_REASON_ONE_JUDGE_AVAILABLE,
+)
 
 # One generation per judged item, whatever the judge count. Recorded on the
 # egress block so a reader can add up what left the machine.
@@ -214,15 +222,22 @@ def judge_item(
     rubric: Rubric,
     judges: Sequence[Judge],
     threshold: agreement.ContestedThreshold,
+    single_judge_reason: str | None = None,
 ) -> dict[str, Any]:
     """Judge one subject output and return the row's whole judge block.
 
     The returned key set is exactly `row_contract.JUDGED_FIELDS`. Two surviving
     judges produce an agreement figure and `single_judge=False`; one produces
-    the flag and its reason with `agreement=None`. It is the number of judges
-    left after the independence rule that decides this, never a
-    `provider == "local"` test -- that keeps the rule true for a roster this
-    increment has not seen.
+    the flag and the `single_judge_reason` the caller states, with
+    `agreement=None`. It is the number of judges left after the independence
+    rule that decides this, never a `provider == "local"` test -- that keeps
+    the rule true for a roster this increment has not seen.
+
+    `single_judge_reason` is the caller's to supply and is refused when a
+    single-judge call omits it, or when a two-judge call carries it: only the
+    caller knows whether the subject's own family was excluded or whether one
+    judge was all that was configured, and a defaulted reason would put a
+    claim on the row that nothing backs.
 
     Both judges' own scores stay on the block whatever the suite-level
     statistic says, so another agreement statistic can be recomputed from the
@@ -242,6 +257,20 @@ def judge_item(
             "subset would name a figure the row cannot back"
         )
 
+    # Checked before any backend runs, so a row that could not have stated its
+    # own independence never costs a judge call.
+    if len(selected) == 1 and single_judge_reason is None:
+        raise ValueError(
+            "a single-judge row must state why only one judge scored it: pass "
+            f"single_judge_reason (one of {', '.join(SINGLE_JUDGE_REASONS)})"
+        )
+    if len(selected) == 2 and single_judge_reason is not None:
+        raise ValueError(
+            f"single_judge_reason={single_judge_reason!r} was given for two "
+            "judges: a two-judge row carries an agreement figure, not a "
+            "single-judge flag"
+        )
+
     rendered = judge_protocol.render_judge_prompt(
         rubric=rubric,
         language=item_language,
@@ -253,7 +282,6 @@ def judge_item(
 
     if len(records) == 2:
         single_judge = False
-        single_judge_reason: str | None = None
         computed = agreement.agreement_for_rubric(rubric, [(scores[0], scores[1])])
         item_agreement: agreement.Agreement | None = computed
         # The row names the statistic it published, read off the Agreement
@@ -264,7 +292,6 @@ def judge_item(
         )
     else:
         single_judge = True
-        single_judge_reason = SINGLE_JUDGE_REASON_CLOUD_SUBJECT
         item_agreement = None
         agreement_statistic = None
         # One score is not a disagreement: there is nothing for the second
