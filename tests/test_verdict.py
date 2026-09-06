@@ -389,3 +389,21 @@ def test_quality_a_label_anywhere_in_the_batch_outranks_a_score() -> None:
 
     assert result["compared_field"] == "predicted_label"
     assert result["verdict"] == VERDICT_REPRODUCED
+
+
+def test_a_suite_version_bump_supersedes_rather_than_reproduces() -> None:
+    """Supersession is structural here, not editorial.
+
+    The chat-template increment bumped both suites precisely so its rows
+    cannot be compared against the untemplated ones: a batch that scored the
+    same items with the subject sent a different string is not a reproduction
+    of the old batch, and nothing in the store had to be edited to say so.
+    """
+    untemplated = [_quality_row(suite_version="2")]
+    templated = [_quality_row(suite_version="3", run_id="run-candidate")]
+
+    result = quality_verdict(templated, untemplated)
+
+    assert result["verdict"] == "not_comparable"
+    assert "suite_version" in result["reason"]
+    assert result["reference_run_id"] is None

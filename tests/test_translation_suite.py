@@ -102,8 +102,12 @@ def test_editing_a_prompt_moves_the_hash() -> None:
 
 def test_suite_declares_its_identity_and_its_generation_caps() -> None:
     assert translation_suite.SUITE_ID == "translation-business-short-form"
-    assert translation_suite.SUITE_VERSION == "1"
+    assert translation_suite.SUITE_VERSION == "2"
     # 128, not the classification suite's 32: a sentence truncates there.
     assert translation_suite.MAX_OUTPUT_TOKENS == 128
     assert translation_suite.STOP_SEQUENCES == []
+    # The cap above only holds under this policy: probed live, a
+    # thinking-by-default model spends all 128 tokens reasoning and answers
+    # nothing, which would make the cap the reason it failed.
+    assert translation_suite.THINKING_POLICY == "disabled"
     assert translation_suite.CONTEXT_LENGTH == 32768

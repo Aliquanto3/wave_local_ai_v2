@@ -25,9 +25,23 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from wave_local_ai_v2 import classification_suite, translation_suite
+from wave_local_ai_v2 import classification_suite, settings, translation_suite
 
-SUITE_DEFINITIONS_DIR = Path("aidd_docs/results/suite-definitions")
+SUITE_DEFINITIONS_DIR = Path(settings.DEFAULT_SUITE_DEFINITIONS_DIR)
+
+
+def snapshot_filename(suite_id: str, suite_version: str) -> str:
+    """The file a row citing `suite_id`/`suite_version` resolves to.
+
+    Addressed by the pair, not by the id alone: a version bump adds a file
+    beside its predecessor instead of overwriting it, so a row published under
+    an older version still finds the definition it was produced against. This
+    is the discipline `runtime-reference.schema-1.jsonl` already follows for
+    superseded row files -- a reader chasing an old citation must not land on
+    a newer artifact wearing the same name.
+    """
+    return f"{suite_id}@{suite_version}.json"
+
 
 # The fields a bundle reader needs per item -- no derived or transient field
 # (nothing `_item()` computes at import time beyond these).
@@ -58,6 +72,7 @@ def build_snapshot(
     prompt_set_hash: str,
     max_output_tokens: int,
     stop_sequences: Sequence[str],
+    thinking_policy: str,
     context_length: int,
     items: Sequence[Mapping[str, Any]],
     item_fields: Sequence[str],
@@ -69,6 +84,7 @@ def build_snapshot(
         "prompt_set_hash": prompt_set_hash,
         "max_output_tokens": max_output_tokens,
         "stop_sequences": list(stop_sequences),
+        "thinking_policy": thinking_policy,
         "context_length": context_length,
         "items": [{field: item[field] for field in item_fields} for item in items],
     }
@@ -82,6 +98,7 @@ def classification_snapshot() -> dict[str, Any]:
         prompt_set_hash=classification_suite.PROMPT_SET_HASH,
         max_output_tokens=classification_suite.MAX_OUTPUT_TOKENS,
         stop_sequences=classification_suite.STOP_SEQUENCES,
+        thinking_policy=classification_suite.THINKING_POLICY,
         context_length=classification_suite.CONTEXT_LENGTH,
         items=classification_suite.CLASSIFICATION_TASK_SUITE,
         item_fields=CLASSIFICATION_ITEM_FIELDS,
@@ -96,6 +113,7 @@ def translation_snapshot() -> dict[str, Any]:
         prompt_set_hash=translation_suite.PROMPT_SET_HASH,
         max_output_tokens=translation_suite.MAX_OUTPUT_TOKENS,
         stop_sequences=translation_suite.STOP_SEQUENCES,
+        thinking_policy=translation_suite.THINKING_POLICY,
         context_length=translation_suite.CONTEXT_LENGTH,
         items=translation_suite.TRANSLATION_TASK_SUITE,
         item_fields=TRANSLATION_ITEM_FIELDS,
@@ -109,7 +127,9 @@ def main() -> None:
     SUITE_DEFINITIONS_DIR.mkdir(parents=True, exist_ok=True)
     for builder in SNAPSHOT_BUILDERS:
         snapshot = builder()
-        out_path = SUITE_DEFINITIONS_DIR / f"{snapshot['suite_id']}.json"
+        out_path = SUITE_DEFINITIONS_DIR / snapshot_filename(
+            snapshot["suite_id"], snapshot["suite_version"]
+        )
         out_path.write_text(
             json.dumps(snapshot, indent=2, sort_keys=True), encoding="utf-8"
         )

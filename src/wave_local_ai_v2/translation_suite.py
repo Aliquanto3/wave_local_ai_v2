@@ -37,8 +37,13 @@ from wave_local_ai_v2.classification_suite import prompt_set_hash
 
 # This suite's stable identity, versioned independently from the row schema
 # (Methodology 19): the id names the suite, the version tracks its item set.
+# "2": no item changed and `PROMPT_SET_HASH` does not move -- the same bump,
+# for the same reason, as `classification_suite`'s "3": the local subject is
+# now rendered through the model's own chat template under `THINKING_POLICY`
+# below instead of being posted raw to `/completion`. A chrF score under "2"
+# is not comparable to one under "1".
 SUITE_ID = "translation-business-short-form"
-SUITE_VERSION = "1"
+SUITE_VERSION = "2"
 
 # The generation cap `quality_cli.py` sends for every completion. Larger than
 # the classification suite's 32 because a sentence translation truncates

@@ -34,8 +34,16 @@ _INSTRUCTION = (
 # "2": +5 FR + 5 DE hand-written items (Story 20: the-classification-suite-
 # reaches-twenty-items-across-three-languages) -- adding items is the same
 # class of change as editing a prompt (Methodology 2).
+# "3": no item changed and `PROMPT_SET_HASH` does not move. What changed is
+# what the subject is sent: the local path now renders each item through the
+# model's own chat template under `THINKING_POLICY` below, where it used to
+# post the item text raw to `/completion` and get a continuation of it back
+# (the local-subject-prompts-are-never-chat-templated defect). A score under
+# "3" therefore measures something a score under "2" did not, which is what a
+# version is for -- the pair (`suite_version`, `prompt_template_id`)
+# separates the two generations, since the prompt-set hash alone cannot.
 SUITE_ID = "classification-support-routing"
-SUITE_VERSION = "2"
+SUITE_VERSION = "3"
 
 # The generation cap `quality_cli.py` sends for every local completion. Declared
 # here, on the suite, rather than in the CLI: the cap is a property of what the
