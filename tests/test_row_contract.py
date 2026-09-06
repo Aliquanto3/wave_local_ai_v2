@@ -2,6 +2,7 @@ import pytest
 
 from wave_local_ai_v2 import aggregation
 from wave_local_ai_v2.row_contract import (
+    JUDGED_FIELDS,
     REQUIRED_FIELDS,
     SCHEMA_VERSION,
     RowContractError,
@@ -179,6 +180,67 @@ COMPLETE_QUALITY_ROW = {
     "retries": 0,
     "resumed": False,
 }
+
+
+def _judge_record(provider: str, family: str, model_id: str, score: int) -> dict:
+    return {
+        "model_id": model_id,
+        "provider": provider,
+        "family": family,
+        "score": score,
+        "raw_text": str(score),
+        "failure_reason": None,
+        "tokens_in": 120,
+        "tokens_out": 2,
+        "retries": 0,
+    }
+
+
+JUDGE_BLOCK = {
+    "judge_prompt_id": "judge-prompt-en",
+    "judge_prompt_template_hash": "b" * 64,
+    "judge_prompt_language": "en",
+    "rubric_id": "open-ended-quality-1to5",
+    "rubric_version": "1",
+    "rubric_kind": "ordinal_1_5",
+    "judges": [
+        _judge_record("mistral", "mistral", "mistral-small-2603", 4),
+        _judge_record("google", "google", "gemini-3.5-flash-lite", 4),
+    ],
+    "single_judge": False,
+    "single_judge_reason": None,
+    "agreement": {
+        "statistic": "cohens_kappa_quadratic_weighted",
+        "value": None,
+        "value_null_reason": "zero_variance",
+        "exact_match_rate": 1.0,
+        "within_one_rate": 1.0,
+        "n_items": 1,
+        "n_items_excluded": 0,
+    },
+    "agreement_statistic": "cohens_kappa_quadratic_weighted",
+    "contested": False,
+    "contested_reason": None,
+    "contested_threshold": {"max_ordinal_delta": 1},
+    "judged_headline_score": 4.0,
+    "judged_headline_excluded_n": 0,
+    "judge_egress": {
+        "item_left_machine": True,
+        "subject_output_left_machine": True,
+        "providers": ["google", "mistral"],
+        "generation_count": 1,
+        "judge_call_count": 2,
+    },
+    "judge_cost": {
+        "tokens_in_total": 240,
+        "tokens_out_total": 4,
+        "cost_total": 0.0001,
+        "cost_currency": "USD",
+        "per_provider": [],
+    },
+}
+
+COMPLETE_JUDGED_QUALITY_ROW = {**COMPLETE_QUALITY_ROW, **JUDGE_BLOCK}
 
 
 def test_complete_runtime_row_passes() -> None:
@@ -389,6 +451,89 @@ def test_runtime_row_does_not_require_retries_or_resumed() -> None:
     assert "retries" not in REQUIRED_FIELDS["runtime"]
     assert "resumed" not in REQUIRED_FIELDS["runtime"]
     validate_row("runtime", COMPLETE_RUNTIME_ROW)
+
+
+def test_a_deterministic_quality_row_carries_no_judge_field_and_still_validates() -> (
+    None
+):
+    assert SCHEMA_VERSION == "9"
+    assert JUDGED_FIELDS & COMPLETE_QUALITY_ROW.keys() == set()
+
+    validate_row("quality", COMPLETE_QUALITY_ROW)
+
+
+def test_a_complete_judged_quality_row_passes() -> None:
+    validate_row("quality", COMPLETE_JUDGED_QUALITY_ROW)
+
+
+@pytest.mark.parametrize("field", sorted(JUDGED_FIELDS))
+def test_a_judged_row_missing_one_judge_field_is_refused_by_name(field: str) -> None:
+    incomplete = {k: v for k, v in COMPLETE_JUDGED_QUALITY_ROW.items() if k != field}
+
+    with pytest.raises(RowContractError, match=field):
+        validate_row("quality", incomplete)
+
+
+def test_a_judged_row_with_an_empty_judges_list_is_refused() -> None:
+    row = {**COMPLETE_JUDGED_QUALITY_ROW, "judges": []}
+
+    with pytest.raises(RowContractError, match="judges"):
+        validate_row("quality", row)
+
+
+def test_a_judge_record_missing_raw_text_is_refused_by_name() -> None:
+    first, second = COMPLETE_JUDGED_QUALITY_ROW["judges"]
+    stripped = {k: v for k, v in first.items() if k != "raw_text"}
+    row = {**COMPLETE_JUDGED_QUALITY_ROW, "judges": [stripped, second]}
+
+    with pytest.raises(RowContractError, match="raw_text"):
+        validate_row("quality", row)
+
+
+def test_a_judged_row_in_an_unsupported_language_is_refused_by_value() -> None:
+    row = {**COMPLETE_JUDGED_QUALITY_ROW, "judge_prompt_language": "es"}
+
+    with pytest.raises(RowContractError, match="'es'"):
+        validate_row("quality", row)
+
+
+def test_a_judged_row_with_an_unknown_rubric_kind_is_refused_by_value() -> None:
+    row = {**COMPLETE_JUDGED_QUALITY_ROW, "rubric_kind": "ternary"}
+
+    with pytest.raises(RowContractError, match="ternary"):
+        validate_row("quality", row)
+
+
+def test_a_judged_row_with_an_incomplete_egress_record_is_refused_by_name() -> None:
+    egress = {
+        k: v
+        for k, v in COMPLETE_JUDGED_QUALITY_ROW["judge_egress"].items()
+        if k != "providers"
+    }
+    row = {**COMPLETE_JUDGED_QUALITY_ROW, "judge_egress": egress}
+
+    with pytest.raises(RowContractError, match="providers"):
+        validate_row("quality", row)
+
+
+def test_a_judged_row_with_an_incomplete_cost_record_is_refused_by_name() -> None:
+    judge_cost = {
+        k: v
+        for k, v in COMPLETE_JUDGED_QUALITY_ROW["judge_cost"].items()
+        if k != "per_provider"
+    }
+    row = {**COMPLETE_JUDGED_QUALITY_ROW, "judge_cost": judge_cost}
+
+    with pytest.raises(RowContractError, match="per_provider"):
+        validate_row("quality", row)
+
+
+def test_a_runtime_row_is_never_held_to_the_judge_block() -> None:
+    # The judge block is a quality-row concept: the runtime harness makes no
+    # judged calls, so a stray judge key there must not trigger the gate.
+    row = {**COMPLETE_RUNTIME_ROW, "single_judge": True}
+
+    validate_row("runtime", row)
 
 
 def test_aggregation_map_naming_a_field_the_row_does_not_carry_is_refused() -> None:
