@@ -46,7 +46,7 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 import requests
 
@@ -57,6 +57,7 @@ from wave_local_ai_v2 import (
     cost,
     fiche_registry,
     google_client,
+    local_client,
     mistral_client,
     prompt_provenance,
     provenance,
@@ -139,10 +140,6 @@ GOOGLE_SAMPLING: dict[str, Any] = {
 _RETRY_BASE_DELAY_S = 1.0
 
 
-class LocalCompletionError(RuntimeError):
-    """Raised when a local llama-server /completion response has no usable content."""
-
-
 class _Completion(TypedDict):
     """One provider's per-item generation, unified across local and cloud shapes."""
 
@@ -156,8 +153,23 @@ class _Completion(TypedDict):
     truncation_reason: str | None
     # Retries `retry.call_with_retry` took to produce this item's completion.
     # 0 for local, which never retries (no `RetryableRequestError` type exists
-    # for the local /completion path).
+    # for the local path).
     retries: int
+    # The prompt-token count the provider reported for this item, or None when
+    # it reported none. The local chat endpoint returns it in `usage`, which is
+    # why `quality_rows.local_batch_fields` can publish `tokens_in_total` at
+    # all; the two cloud paths total their own separately and leave this None.
+    prompt_tokens: NotRequired[int]
+
+
+class _LocalBatch(TypedDict):
+    """What one local batch returns: its answers, and the two things only the
+    templated path can supply -- the string each item was actually rendered to,
+    and the template that rendered them."""
+
+    completions: list[_Completion]
+    rendered_prompts: list[str]
+    chat_template: str
 
 
 # A suite item, as everything downstream of the suite module needs it: a
@@ -189,6 +201,11 @@ class SuiteSpec:
     prompt_set_hash: str
     max_output_tokens: int
     stop_sequences: list[str]
+    # Whether the subject may spend its cap reasoning before answering. Only
+    # the local path can enforce it today (llama-server's
+    # `chat_template_kwargs`); every row of the batch publishes it regardless,
+    # because it is the suite's declaration and not a per-provider report.
+    thinking_policy: str
     context_length: int
     score_batch: ScoreBatch
 
@@ -292,6 +309,7 @@ _SUITES: dict[str, SuiteSpec] = {
         prompt_set_hash=classification_suite.PROMPT_SET_HASH,
         max_output_tokens=classification_suite.MAX_OUTPUT_TOKENS,
         stop_sequences=classification_suite.STOP_SEQUENCES,
+        thinking_policy=classification_suite.THINKING_POLICY,
         context_length=classification_suite.CONTEXT_LENGTH,
         score_batch=_score_classification_batch,
     ),
@@ -303,6 +321,7 @@ _SUITES: dict[str, SuiteSpec] = {
         prompt_set_hash=translation_suite.PROMPT_SET_HASH,
         max_output_tokens=translation_suite.MAX_OUTPUT_TOKENS,
         stop_sequences=translation_suite.STOP_SEQUENCES,
+        thinking_policy=translation_suite.THINKING_POLICY,
         context_length=translation_suite.CONTEXT_LENGTH,
         score_batch=_score_translation_batch,
     ),
@@ -359,7 +378,7 @@ def main() -> None:
         # `_try_run_cloud_provider` catches its own provider's error type
         # internally, printing a skip line rather than letting it reach main.
         # Only a local-suite failure still aborts the whole run.
-        LocalCompletionError,
+        local_client.LocalRequestError,
         SuiteGateError,
     ) as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -438,10 +457,11 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
         # item -- the same span `__init__.py`'s runtime harness measures
         # over, and the same repeated-batch-value pattern `suite_accuracy`
         # already uses.
-        local_completions, local_energy = measure_energy(
+        local_batch, local_energy = measure_energy(
             lambda: _run_local_suite(settings, flags, spec),
             country_iso_code=settings.emission_country_iso_code,
         )
+        local_completions = local_batch["completions"]
         # Persisted before the cloud suite starts: a 429, a dropped connection
         # or a malformed body would otherwise throw away the multi-minute
         # local run and write zero rows. Both batches share one run_id, so a
@@ -461,12 +481,16 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
             provenance_fields=provenance_fields,
             roster_entry=roster_entry,
             roster_version=loaded_roster.roster_version,
-            call_path_fields=_local_call_path(),
+            call_path_fields=_local_call_path(local_batch["chat_template"]),
             fiche_hash=fiche_hash_value,
             batch_fields=quality_rows.local_batch_fields(
                 settings, local_energy, local_completions
             ),
             resumed=is_resume,
+            # Methodology 2: the row stores the final prompt string as
+            # rendered for that provider. On this path that is not the item
+            # text, so the local batch overrides it per item.
+            prompts=local_batch["rendered_prompts"],
         )
 
     for provider in ("mistral", "google"):
@@ -656,13 +680,23 @@ def _try_run_cloud_provider(
     )
 
 
-def _local_call_path() -> dict[str, Any]:
-    """The four call-path fields of the raw local `/completion` path."""
+def _local_call_path(chat_template: str) -> dict[str, Any]:
+    """The four call-path fields of the local chat path.
+
+    The hash is taken over the loaded model's own template as the server
+    reported it, so the id names the mechanism and the hash names which
+    model's template rendered this row.
+
+    `reconstructed`, not `captured`: the chat endpoint echoes the rendered
+    prompt nowhere, so the string on the row comes from `/apply-template` --
+    the same server, template and arguments, but a different request from the
+    one that produced the answer.
+    """
     return {
-        "endpoint": prompt_provenance.LOCAL_COMPLETION_ENDPOINT,
-        "prompt_template_id": prompt_provenance.TEMPLATE_ID_NONE,
-        "prompt_template_hash": None,
-        "prompt_capture": prompt_provenance.PROMPT_CAPTURE_CAPTURED,
+        "endpoint": prompt_provenance.LOCAL_CHAT_ENDPOINT,
+        "prompt_template_id": prompt_provenance.TEMPLATE_ID_LLAMACPP_MODEL_CHAT,
+        "prompt_template_hash": prompt_provenance.template_hash(chat_template),
+        "prompt_capture": prompt_provenance.PROMPT_CAPTURE_RECONSTRUCTED,
     }
 
 
@@ -709,45 +743,63 @@ def _local_model_path(settings: Settings, roster_entry: roster.RosterEntry) -> P
 
 def _run_local_suite(
     settings: Settings, flags: list[str], spec: SuiteSpec
-) -> list[_Completion]:
+) -> _LocalBatch:
+    """Answer every item through the loaded model's own chat template.
+
+    Not `/completion`: that endpoint sends the prompt byte-for-byte, so a
+    chat-tuned model continues the item text instead of answering it, which is
+    the defect this path was rewritten to fix. The template is read once per
+    batch rather than once per item -- it is a property of the loaded model,
+    and the row publishes its hash.
+
+    The rendered prompt comes back beside each completion because the row
+    publishes it: Methodology 2 asks for "the final prompt string as rendered
+    for that provider", and on this path that string is not the item text.
+    """
     completions: list[_Completion] = []
+    rendered_prompts: list[str] = []
+    base_url = f"http://{server.HOST}:{server.PORT}"
 
     with server.running_server(settings.llama_server_path, flags):
+        template = local_client.chat_template(base_url, timeout=REQUEST_TIMEOUT_S)
         for item in spec.items:
-            response = requests.post(
-                f"http://{server.HOST}:{server.PORT}/completion",
-                json={
-                    "prompt": item["prompt"],
-                    "n_predict": spec.max_output_tokens,
-                    **LOCAL_SAMPLING,
-                },
+            rendered_prompts.append(
+                local_client.render_prompt(
+                    base_url,
+                    item["prompt"],
+                    thinking_policy=spec.thinking_policy,
+                    timeout=REQUEST_TIMEOUT_S,
+                )
+            )
+            response = local_client.complete_chat(
+                base_url,
+                item["prompt"],
+                max_tokens=spec.max_output_tokens,
+                sampling=LOCAL_SAMPLING,
+                thinking_policy=spec.thinking_policy,
                 timeout=REQUEST_TIMEOUT_S,
             )
-            response.raise_for_status()
-            response_json: dict[str, Any] = response.json()
-            try:
-                content = response_json["content"]
-            except (KeyError, TypeError) as exc:
-                raise LocalCompletionError(
-                    f"unexpected /completion response shape: {response_json!r}"
-                ) from exc
-            if not isinstance(content, str):
-                # A present-but-non-text content (null, object) would only fail
-                # further down in normalize_label, as an uncaught AttributeError.
-                raise LocalCompletionError(
-                    f"unexpected /completion content type: {content!r}"
-                )
             completions.append(
                 _Completion(
-                    content=content,
-                    truncated=bool(response_json.get("stopped_limit", False)),
-                    generated_tokens=response_json.get("tokens_predicted", 0),
+                    content=response["content"],
+                    # Read off the provider's own field, as both cloud paths
+                    # already do. The raw path's `stopped_limit` read is a key
+                    # llama.cpp b10537 does not return, which is a separate
+                    # open defect and is not inherited here.
+                    truncated=response["finish_reason"]
+                    in local_client.TRUNCATING_FINISH_REASONS,
+                    generated_tokens=response["generated_tokens"],
                     truncation_reason=None,
                     retries=0,
+                    prompt_tokens=response["prompt_tokens"],
                 )
             )
 
-    return completions
+    return _LocalBatch(
+        completions=completions,
+        rendered_prompts=rendered_prompts,
+        chat_template=template,
+    )
 
 
 def _make_mistral_complete_item(
@@ -994,8 +1046,14 @@ def _score_and_write(
     batch_fields: dict[str, Any],
     resumed: bool,
     extra_row_fields: list[dict[str, Any]] | None = None,
+    prompts: list[str] | None = None,
 ) -> None:
     per_item_fields, batch_score_fields = spec.score_batch(spec.items, completions)
+    # What each row publishes as `prompt`. The two cloud paths send the item
+    # text and declare the wrapper their template applies, so the item text is
+    # the rendered string for them; the local chat path renders the item into
+    # something else and supplies it here.
+    row_prompts = prompts or [item["prompt"] for item in spec.items]
 
     rows: list[dict[str, Any]] = []
     for index, (item, item_score_fields) in enumerate(
@@ -1015,7 +1073,7 @@ def _score_and_write(
             **batch_fields,
             "task_suite": spec.task_suite,
             "item_id": item["item_id"],
-            "prompt": item["prompt"],
+            "prompt": row_prompts[index],
             # Everything the suite's own scorer decided: the exact-match
             # fields on one suite, the graded block on the other, each
             # nulling the shape it does not publish so a reader never meets
@@ -1030,6 +1088,7 @@ def _score_and_write(
             "sampling": dict(sampling),
             "max_output_tokens": spec.max_output_tokens,
             "stop_sequences": list(spec.stop_sequences),
+            "thinking_policy": spec.thinking_policy,
             "context_length": spec.context_length,
             "suite_id": spec.suite_id,
             "suite_version": spec.suite_version,

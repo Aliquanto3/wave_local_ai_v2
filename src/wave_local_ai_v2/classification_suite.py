@@ -18,6 +18,8 @@ import hashlib
 from collections.abc import Mapping, Sequence
 from typing import Any, Literal, TypedDict
 
+from wave_local_ai_v2 import row_contract
+
 LABELS: frozenset[str] = frozenset({"billing", "technical", "account", "other"})
 
 _LABEL_LIST = ", ".join(sorted(LABELS))
@@ -39,6 +41,14 @@ SUITE_VERSION = "2"
 # here, on the suite, rather than in the CLI: the cap is a property of what the
 # suite asks a model to produce, not of the harness driving the request.
 MAX_OUTPUT_TOKENS = 32
+# What the model may spend that cap on -- the same class of declaration as the
+# cap itself (Methodology 3), and the one that makes the 32 above meaningful.
+# Probed on `b10537-bf0040e15`: asked through its own chat template with
+# thinking allowed, `Qwen3-0.6B` spends all 32 tokens in `reasoning_content`
+# and returns an empty answer, and so does `Qwen3.6-35B-A3B`. With thinking
+# disabled both answer in two tokens. A suite that wants deliberation declares
+# `allowed` and sizes its cap for it; this one asks for a single label word.
+THINKING_POLICY = row_contract.THINKING_POLICY_DISABLED
 # No stop sequence is sent to either provider today.
 STOP_SEQUENCES: list[str] = []
 # The context every compared model is assumed to run at. Phase 2 of the

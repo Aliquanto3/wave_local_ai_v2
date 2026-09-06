@@ -11,6 +11,7 @@ from wave_local_ai_v2 import (
     chrf,
     classification_suite,
     google_client,
+    local_client,
     mistral_client,
     quality_cli,
     translation_suite,
@@ -23,6 +24,7 @@ from wave_local_ai_v2.google_client import (
     GoogleBlockedError,
 )
 from wave_local_ai_v2.mistral_client import MistralRequestError, ModelUnavailableError
+from wave_local_ai_v2.prompt_provenance import template_hash
 from wave_local_ai_v2.results import read_rows
 from wave_local_ai_v2.row_contract import GRADED_FIELDS, SCHEMA_VERSION
 from wave_local_ai_v2.settings import DEFAULT_ROSTER_ENTRY_ID, Settings
@@ -103,6 +105,62 @@ def _write_fake_roster(tmp_path: Path) -> Path:
     return roster_path
 
 
+# The loaded model's own chat template, as `/props` reports it. Its content is
+# irrelevant to every test but one -- what matters is that the row's
+# `prompt_template_hash` is this string's hash and nothing else's.
+FAKE_CHAT_TEMPLATE = "{% for m in messages %}<|im_start|>{{ m.content }}{% endfor %}"
+
+
+# What `/apply-template` renders an item to, in these tests: the item text
+# wrapped in markers the bare text does not contain, so a row publishing the
+# item prompt instead of the rendered one is visible rather than plausible.
+def fake_render(prompt: str) -> str:
+    return f"<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"
+
+
+def local_post_router(
+    *,
+    content: str = "billing",
+    finish_reason: str = "stop",
+    generated_tokens: int = 3,
+    prompt_tokens: int = 11,
+    chat_body: dict | None = None,
+):
+    """Route a stubbed local POST by endpoint.
+
+    The local path is two calls per item now -- render, then answer -- so one
+    blanket return value would feed the chat response to `/apply-template` and
+    hide which call carried what.
+    """
+
+    def route(url, *args, **kwargs):
+        if url.endswith("/apply-template"):
+            rendered = fake_render(kwargs["json"]["messages"][0]["content"])
+            payload: dict = {"prompt": rendered}
+        else:
+            payload = (
+                chat_body
+                if chat_body is not None
+                else {
+                    "choices": [
+                        {
+                            "finish_reason": finish_reason,
+                            "message": {"role": "assistant", "content": content},
+                        }
+                    ],
+                    "usage": {
+                        "completion_tokens": generated_tokens,
+                        "prompt_tokens": prompt_tokens,
+                    },
+                }
+            )
+        return MagicMock(
+            status_code=200, json=lambda: payload, raise_for_status=lambda: None
+        )
+
+    return route
+
+
 @pytest.fixture
 def stubbed_run(tmp_path, monkeypatch):
     """Stub every I/O boundary quality_cli.main() touches: process, both HTTP clients."""
@@ -149,14 +207,14 @@ def stubbed_run(tmp_path, monkeypatch):
         ),
         "running_server": patch("wave_local_ai_v2.quality_cli.server.running_server"),
         "post": patch(
-            "wave_local_ai_v2.quality_cli.requests.post",
+            "wave_local_ai_v2.local_client.requests.post",
+            side_effect=local_post_router(),
+        ),
+        "props": patch(
+            "wave_local_ai_v2.local_client.requests.get",
             return_value=MagicMock(
                 status_code=200,
-                json=lambda: {
-                    "content": "billing",
-                    "stopped_limit": False,
-                    "tokens_predicted": 3,
-                },
+                json=lambda: {"chat_template": FAKE_CHAT_TEMPLATE},
                 raise_for_status=lambda: None,
             ),
         ),
@@ -299,10 +357,11 @@ def test_local_rows_carry_scope_2_energy_emissions_and_a_kwh_derived_cost(
         assert row["kwh_price_eur"] == 0.194
         assert row["kwh_price_currency"] == "EUR"
         assert row["normalization_unit"] == "cost_per_million_total_tokens"
-        # The local /completion path returns no prompt-token count, so the
-        # denominator is unknown and the rate is undefined, never fabricated.
-        assert row["tokens_in_total"] is None
-        assert row["cost_per_million_tokens"] is None
+        # The chat endpoint reports prompt tokens in `usage`, so the
+        # denominator exists and the rate is published. It stayed null for as
+        # long as the raw path gave nothing to publish.
+        assert row["tokens_in_total"] == 11 * len(CLASSIFICATION_TASK_SUITE)
+        assert row["cost_per_million_tokens"] is not None
         # A local batch buys kWh, not tokens: the whole list-price half is null.
         assert row["list_price_input_per_million"] is None
         assert row["list_price_output_per_million"] is None
@@ -521,7 +580,10 @@ def test_local_server_started_exactly_once_for_the_whole_suite(stubbed_run) -> N
     quality_cli._run()
 
     assert started["running_server"].call_count == 1
-    assert started["post"].call_count == len(CLASSIFICATION_TASK_SUITE)
+    # Two POSTs per item now -- render, then answer -- inside one launch. The
+    # model's template is one GET for the whole batch, never one per item.
+    assert started["post"].call_count == 2 * len(CLASSIFICATION_TASK_SUITE)
+    assert started["props"].call_count == 1
 
 
 def test_rows_carry_no_runtime_fields(stubbed_run) -> None:
@@ -533,7 +595,17 @@ def test_rows_carry_no_runtime_fields(stubbed_run) -> None:
         assert RUNTIME_ONLY_FIELDS.isdisjoint(row.keys())
 
 
-def test_rows_carry_the_shared_prompt_for_both_models(stubbed_run) -> None:
+def test_each_row_carries_the_prompt_as_rendered_for_its_own_provider(
+    stubbed_run,
+) -> None:
+    """Methodology 2, which is not "the same string on every row".
+
+    The two cloud paths send the item text and declare the wrapper their
+    endpoint puts around it, so the item text *is* their rendered string. The
+    local chat path renders the item through the model's own template first,
+    so its row carries that and not the item text -- publishing the bare
+    prompt there was the defect.
+    """
     quality_results_path, _ = stubbed_run
 
     quality_cli._run()
@@ -542,7 +614,15 @@ def test_rows_carry_the_shared_prompt_for_both_models(stubbed_run) -> None:
     prompts_by_item = {
         item["item_id"]: item["prompt"] for item in CLASSIFICATION_TASK_SUITE
     }
-    for row in rows:
+    local_rows = [row for row in rows if row["provider"] == "local"]
+    cloud_rows = [row for row in rows if row["provider"] != "local"]
+    assert local_rows and cloud_rows
+
+    for row in local_rows:
+        item_prompt = prompts_by_item[row["item_id"]]
+        assert row["prompt"] == fake_render(item_prompt)
+        assert row["prompt"] != item_prompt
+    for row in cloud_rows:
         assert row["prompt"] == prompts_by_item[row["item_id"]]
 
 
@@ -579,13 +659,9 @@ def test_run_skips_mistral_when_the_key_is_missing_but_still_runs_local(
 
 def test_run_raises_local_completion_error_on_malformed_response(stubbed_run) -> None:
     _, started = stubbed_run
-    started["post"].return_value = MagicMock(
-        status_code=200,
-        json=lambda: {"no_content_here": True},
-        raise_for_status=lambda: None,
-    )
+    started["post"].side_effect = local_post_router(chat_body={"no_choices": True})
 
-    with pytest.raises(quality_cli.LocalCompletionError):
+    with pytest.raises(local_client.LocalRequestError):
         quality_cli._run()
 
 
@@ -606,42 +682,35 @@ def test_run_raises_local_completion_error_when_response_is_not_an_object(
     stubbed_run,
 ) -> None:
     _, started = stubbed_run
-    started["post"].return_value = MagicMock(
-        status_code=200,
-        json=lambda: ["billing"],
-        raise_for_status=lambda: None,
-    )
+    started["post"].side_effect = local_post_router(chat_body=["billing"])
 
-    with pytest.raises(quality_cli.LocalCompletionError):
+    with pytest.raises(local_client.LocalRequestError):
         quality_cli._run()
 
 
 def test_main_exits_one_on_local_completion_error(stubbed_run, capsys) -> None:
     _, started = stubbed_run
-    started["post"].return_value = MagicMock(
-        status_code=200,
-        json=lambda: {"no_content_here": True},
-        raise_for_status=lambda: None,
-    )
+    started["post"].side_effect = local_post_router(chat_body={"no_choices": True})
 
     with pytest.raises(SystemExit) as exit_info:
         quality_cli.main()
 
     assert exit_info.value.code == 1
-    assert "unexpected /completion response shape" in capsys.readouterr().err
+    assert "unexpected /v1/chat/completions response shape" in capsys.readouterr().err
 
 
 def test_run_raises_local_completion_error_when_content_is_not_text(
     stubbed_run,
 ) -> None:
     _, started = stubbed_run
-    started["post"].return_value = MagicMock(
-        status_code=200,
-        json=lambda: {"content": None},
-        raise_for_status=lambda: None,
+    started["post"].side_effect = local_post_router(
+        chat_body={
+            "choices": [{"finish_reason": "stop", "message": {"content": None}}],
+            "usage": {"completion_tokens": 0, "prompt_tokens": 1},
+        }
     )
 
-    with pytest.raises(quality_cli.LocalCompletionError):
+    with pytest.raises(local_client.LocalRequestError):
         quality_cli._run()
 
 
@@ -650,8 +719,13 @@ def test_every_local_completion_request_pins_the_sampler(stubbed_run) -> None:
 
     quality_cli._run()
 
-    assert started["post"].call_count == len(CLASSIFICATION_TASK_SUITE)
-    for call in started["post"].call_args_list:
+    chat_calls = [
+        call
+        for call in started["post"].call_args_list
+        if call.args[0].endswith("/v1/chat/completions")
+    ]
+    assert len(chat_calls) == len(CLASSIFICATION_TASK_SUITE)
+    for call in chat_calls:
         body = call.kwargs["json"]
         # Literal expectations, not a comparison against LOCAL_SAMPLING: comparing
         # the request to the constant that built it would still pass if a key were
@@ -725,7 +799,7 @@ def test_run_still_runs_local_and_writes_its_rows_when_the_mistral_model_id_is_g
     # The local lifecycle runs unconditionally now: a cloud pre-flight
     # failure is a skip, not an abort, so it no longer gates the local batch.
     assert started["running_server"].call_count == 1
-    assert started["post"].call_count == len(CLASSIFICATION_TASK_SUITE)
+    assert started["post"].call_count == 2 * len(CLASSIFICATION_TASK_SUITE)
     rows = read_rows(quality_results_path)
     assert {row["provider"] for row in rows} == {"local"}
 
@@ -821,10 +895,14 @@ def test_local_and_cloud_rows_record_distinct_call_paths(stubbed_run) -> None:
     assert local_rows and cloud_rows
 
     for row in local_rows:
-        assert row["endpoint"] == "/completion"
-        assert row["prompt_template_id"] == "none"
-        assert row["prompt_template_hash"] is None
-        assert row["prompt_capture"] == "captured"
+        assert row["endpoint"] == "/v1/chat/completions"
+        assert row["prompt_template_id"] == "llamacpp-model-chat-template"
+        # The hash of the template the server actually reported, not a
+        # constant: it is what tells two models' rows apart.
+        assert row["prompt_template_hash"] == template_hash(FAKE_CHAT_TEMPLATE)
+        # The stored string came from /apply-template, not from the request
+        # that produced the answer.
+        assert row["prompt_capture"] == "reconstructed"
 
     cloud_hashes = {row["prompt_template_hash"] for row in cloud_rows}
     assert len(cloud_hashes) == 1
@@ -854,14 +932,13 @@ def test_successful_rows_carry_no_failure_reason_and_all_zero_counts(
 
 def test_local_cap_truncated_response_scores_truncated_max_tokens(stubbed_run) -> None:
     quality_results_path, started = stubbed_run
-    started["post"].return_value = MagicMock(
-        status_code=200,
-        json=lambda: {
-            "content": "bi",
-            "stopped_limit": True,
-            "tokens_predicted": classification_suite.MAX_OUTPUT_TOKENS,
-        },
-        raise_for_status=lambda: None,
+    # `finish_reason: "length"`, not the `stopped_limit` key the raw path read
+    # -- llama.cpp b10537 never returned that one, which is the separate open
+    # truncation defect this path no longer inherits.
+    started["post"].side_effect = local_post_router(
+        content="bi",
+        finish_reason="length",
+        generated_tokens=classification_suite.MAX_OUTPUT_TOKENS,
     )
 
     quality_cli._run()
@@ -1508,15 +1585,27 @@ def test_an_empty_translation_completion_scores_zero_and_stays_in_the_mean(
 ) -> None:
     quality_results_path, started = stubbed_run
     contents = iter([""] + ["Bonjour"] * (len(TRANSLATION_TASK_SUITE) - 1))
-    started["post"].return_value = MagicMock(
-        status_code=200,
-        json=lambda: {
-            "content": next(contents),
-            "stopped_limit": False,
-            "tokens_predicted": 3,
-        },
-        raise_for_status=lambda: None,
-    )
+
+    def one_empty_then_answers(url, *args, **kwargs):
+        if url.endswith("/apply-template"):
+            return MagicMock(
+                status_code=200,
+                json=lambda: {
+                    "prompt": fake_render(kwargs["json"]["messages"][0]["content"])
+                },
+                raise_for_status=lambda: None,
+            )
+        payload = {
+            "choices": [
+                {"finish_reason": "stop", "message": {"content": next(contents)}}
+            ],
+            "usage": {"completion_tokens": 3, "prompt_tokens": 11},
+        }
+        return MagicMock(
+            status_code=200, json=lambda: payload, raise_for_status=lambda: None
+        )
+
+    started["post"].side_effect = one_empty_then_answers
 
     quality_cli._run(suite="translation")
 
@@ -1564,8 +1653,14 @@ def test_the_translation_run_sends_the_suites_own_cap_to_every_provider(
 
     quality_cli._run(suite="translation")
 
-    local_body = started["post"].call_args.kwargs["json"]
-    assert local_body["n_predict"] == translation_suite.MAX_OUTPUT_TOKENS
+    chat_calls = [
+        call
+        for call in started["post"].call_args_list
+        if call.args[0].endswith("/v1/chat/completions")
+    ]
+    assert chat_calls
+    for call in chat_calls:
+        assert call.kwargs["json"]["max_tokens"] == translation_suite.MAX_OUTPUT_TOKENS
     cloud_kwargs = started["complete_prompt"].call_args.kwargs
     assert cloud_kwargs["max_tokens"] == translation_suite.MAX_OUTPUT_TOKENS
 
@@ -1612,3 +1707,81 @@ def test_local_rows_are_written_before_the_first_cloud_call(stubbed_run) -> None
     quality_cli._run()
 
     assert rows_at_first_cloud_call[0] == len(CLASSIFICATION_TASK_SUITE)
+
+
+def test_every_row_declares_the_suites_thinking_policy(stubbed_run) -> None:
+    """The suite's declaration, on every row of the batch.
+
+    Not only the local ones: it is what the suite asked for, in the same
+    status `stop_sequences` has, and a field that appeared on some providers
+    and not others would mean two different things depending on where it was
+    read.
+    """
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    assert {row["provider"] for row in rows} == {"local", "mistral"}
+    for row in rows:
+        assert row["thinking_policy"] == classification_suite.THINKING_POLICY
+        assert row["thinking_policy"] == "disabled"
+
+
+def test_the_local_chat_call_asks_the_model_not_to_think(stubbed_run) -> None:
+    """The argument that decides whether a score exists at all.
+
+    Probed live: without it, a thinking-by-default model spends the whole
+    32-token cap in `reasoning_content` and returns an empty answer, so the
+    suite would score 0.00 for a reason that is not the model's ability.
+    """
+    _, started = stubbed_run
+
+    quality_cli._run()
+
+    local_calls = [
+        call
+        for call in started["post"].call_args_list
+        if call.args[0].startswith("http://127.0.0.1:8080")
+    ]
+    assert local_calls
+    for call in local_calls:
+        assert call.kwargs["json"]["chat_template_kwargs"] == {"enable_thinking": False}
+
+
+def test_the_rendered_prompt_and_the_answer_run_under_one_policy(stubbed_run) -> None:
+    """Rendering under one policy and answering under another would publish a
+    string the answering call never used -- the template appends an empty
+    reasoning block when thinking is off."""
+    _, started = stubbed_run
+
+    quality_cli._run()
+
+    by_endpoint: dict[str, list] = {"render": [], "chat": []}
+    for call in started["post"].call_args_list:
+        key = "render" if call.args[0].endswith("/apply-template") else "chat"
+        by_endpoint[key].append(call.kwargs["json"].get("chat_template_kwargs"))
+    assert by_endpoint["render"] and by_endpoint["chat"]
+    assert set(map(str, by_endpoint["render"])) == set(map(str, by_endpoint["chat"]))
+
+
+def test_the_cloud_call_path_is_untouched_by_the_local_migration(stubbed_run) -> None:
+    """A guard, not a restatement: the per-provider prompt split and the
+    templated local path must not leak into a cloud row's four call-path
+    fields or into its stored prompt."""
+    quality_results_path, started = stubbed_run
+
+    quality_cli._run()
+
+    cloud_rows = [
+        row for row in read_rows(quality_results_path) if row["provider"] == "mistral"
+    ]
+    assert cloud_rows
+    for row in cloud_rows:
+        assert row["endpoint"] == mistral_client.CHAT_COMPLETIONS_URL
+        assert row["prompt_template_id"] == "mistral-chat-user-message"
+        assert row["prompt_capture"] == "captured"
+    # And nothing about the thinking policy reaches the provider that has no
+    # switch for it.
+    for call in started["complete_prompt"].call_args_list:
+        assert "chat_template_kwargs" not in call.kwargs

@@ -57,7 +57,16 @@ from wave_local_ai_v2 import (
 # row that carries any of it, the same conditional shape "9" established, so
 # an exact-match classification row and a judged probe row both validate
 # unchanged and no reference bundle is regenerated.
-SCHEMA_VERSION = "10"
+# "11": `thinking_policy` became required on quality rows only -- the runtime
+# row is untouched, since it runs no suite and renders no chat template. Added
+# because the local subject path moved to the chat endpoint, where a
+# thinking-by-default model spends its whole generation cap reasoning and
+# returns an empty answer unless the suite says otherwise: the same model at
+# the same cap on the same endpoint produces a score or no score depending on
+# one request argument, so a row that does not name the policy cannot be
+# compared to anything (the local-subject-prompts-are-never-chat-templated
+# defect).
+SCHEMA_VERSION = "11"
 
 # The two values `thinking_policy` may take. This is the **suite's** declared
 # policy, not a report of what each provider did with it: it is published on
@@ -240,6 +249,10 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "sampling",
             "max_output_tokens",
             "stop_sequences",
+            # The fourth generation constraint the suite declares, beside the
+            # three above (Methodology 3). See THINKING_POLICIES below for why
+            # it is on every row of a batch rather than only the local ones.
+            "thinking_policy",
             "context_length",
             "suite_id",
             "suite_version",

@@ -16,6 +16,7 @@ from wave_local_ai_v2 import (
     row_contract,
 )
 from wave_local_ai_v2.judge_probe import JUDGE_PROBE_ITEMS
+from wave_local_ai_v2.prompt_provenance import template_hash
 from wave_local_ai_v2.results import append_row, read_rows
 from wave_local_ai_v2.settings import DEFAULT_ROSTER_ENTRY_ID, Settings
 
@@ -119,6 +120,40 @@ def _google_reply(content: str, generated_tokens: int = 1) -> dict[str, object]:
     }
 
 
+FAKE_CHAT_TEMPLATE = "{% for m in messages %}<|im_start|>{{ m.content }}{% endfor %}"
+
+
+def _fake_render(prompt: str) -> str:
+    return "<|im_start|>user\n" + prompt + " <|im_end|>"
+
+
+def _local_post_router():
+    """Route a stubbed local POST by endpoint: render, then answer."""
+
+    def route(url, *args, **kwargs):
+        if url.endswith("/apply-template"):
+            payload: dict = {
+                "prompt": _fake_render(kwargs["json"]["messages"][0]["content"])
+            }
+        else:
+            payload = {
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {
+                            "content": ("Here is a clearer, more considerate version.")
+                        },
+                    }
+                ],
+                "usage": {"completion_tokens": 11, "prompt_tokens": 23},
+            }
+        return MagicMock(
+            status_code=200, json=lambda: payload, raise_for_status=lambda: None
+        )
+
+    return route
+
+
 @pytest.fixture
 def stubbed_probe(tmp_path, monkeypatch):
     """Stub every I/O boundary the probe touches: no process, no socket, no call."""
@@ -196,15 +231,18 @@ def stubbed_probe(tmp_path, monkeypatch):
             },
         ),
         "running_server": patch("wave_local_ai_v2.judge_probe.server.running_server"),
+        # The probe's subject generation goes through the shared local client
+        # now: two POSTs per item (render, then answer) plus one /props GET
+        # for the whole batch.
         "post": patch(
-            "wave_local_ai_v2.judge_probe.requests.post",
+            "wave_local_ai_v2.local_client.requests.post",
+            side_effect=_local_post_router(),
+        ),
+        "props": patch(
+            "wave_local_ai_v2.local_client.requests.get",
             return_value=MagicMock(
                 status_code=200,
-                json=lambda: {
-                    "content": "Here is a clearer, more considerate version.",
-                    "stopped_limit": False,
-                    "tokens_predicted": 11,
-                },
+                json=lambda: {"chat_template": FAKE_CHAT_TEMPLATE},
                 raise_for_status=lambda: None,
             ),
         ),
@@ -453,7 +491,10 @@ def test_the_local_server_is_launched_once_for_the_whole_probe(stubbed_probe) ->
     judge_probe._run()
 
     assert started["running_server"].call_count == 1
-    assert started["post"].call_count == len(JUDGE_PROBE_ITEMS)
+    # Two POSTs per item -- render, then answer -- and one /props GET for the
+    # whole batch.
+    assert started["post"].call_count == 2 * len(JUDGE_PROBE_ITEMS)
+    assert started["props"].call_count == 1
 
 
 def test_the_local_and_cloud_rows_record_their_own_call_paths(stubbed_probe) -> None:
@@ -463,9 +504,10 @@ def test_the_local_and_cloud_rows_record_their_own_call_paths(stubbed_probe) -> 
 
     rows = read_rows(probe_path)
     for row in (r for r in rows if r["provider"] == "local"):
-        assert row["endpoint"] == "/completion"
-        assert row["prompt_template_id"] == "none"
-        assert row["prompt_template_hash"] is None
+        assert row["endpoint"] == "/v1/chat/completions"
+        assert row["prompt_template_id"] == "llamacpp-model-chat-template"
+        assert row["prompt_template_hash"] == template_hash(FAKE_CHAT_TEMPLATE)
+        assert row["prompt_capture"] == "reconstructed"
     for row in (r for r in rows if r["provider"] == "google"):
         assert row["endpoint"] == google_client.GENERATE_URL
         assert row["prompt_template_id"] == "google-generatecontent-user-part"
@@ -479,8 +521,14 @@ def test_every_generation_asks_for_open_ended_prose_not_a_label(
 
     judge_probe._run()
 
-    for call in started["post"].call_args_list:
-        assert call.kwargs["json"]["n_predict"] == judge_probe.MAX_OUTPUT_TOKENS
+    chat_calls = [
+        call
+        for call in started["post"].call_args_list
+        if call.args[0].endswith("/v1/chat/completions")
+    ]
+    assert len(chat_calls) == len(JUDGE_PROBE_ITEMS)
+    for call in chat_calls:
+        assert call.kwargs["json"]["max_tokens"] == judge_probe.MAX_OUTPUT_TOKENS
         assert call.kwargs["json"]["temperature"] == 0
     subject_calls = [
         call

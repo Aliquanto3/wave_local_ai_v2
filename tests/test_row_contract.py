@@ -162,6 +162,7 @@ COMPLETE_QUALITY_ROW = {
     "sampling": {"seed": 1},
     "max_output_tokens": 32,
     "stop_sequences": [],
+    "thinking_policy": "disabled",
     "context_length": 32768,
     "suite_id": "classification-support-routing",
     "suite_version": "1",
@@ -809,8 +810,10 @@ def test_a_non_object_score_breakdown_cell_is_refused() -> None:
         validate_row("quality", row)
 
 
-def test_the_schema_version_moved_once_for_the_graded_block() -> None:
-    # "9" declared the judge block, "10" declares the graded one. Both are
-    # conditional on a row carrying any of their fields, which is what lets
-    # an exact-match classification row validate unchanged across the bump.
-    assert SCHEMA_VERSION == "10"
+def test_the_schema_version_moved_once_for_the_thinking_policy() -> None:
+    # "9" declared the judge block and "10" the graded one, both conditional
+    # on a row carrying any of their fields. "11" is not conditional:
+    # `thinking_policy` is required on every quality row, because a score
+    # produced with the subject allowed to reason and one produced without it
+    # are not the same measurement and a row has to say which it is.
+    assert SCHEMA_VERSION == "11"
