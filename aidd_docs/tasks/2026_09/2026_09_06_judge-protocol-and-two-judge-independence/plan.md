@@ -1,6 +1,6 @@
 ---
 objective: "A judged quality row cannot be written unless it names each judge's dated model id, the language variant and content hash of the prompt that was issued, the rubric version applied, each judge's raw returned text and parsed score, the judge-call egress and token cost, and either a named agreement statistic over two judges of different model families or an explicit single-judge flag."
-status: pending
+status: implemented
 ---
 
 <!-- Fill or omit these sections; never add, rename, or reorder one. -->

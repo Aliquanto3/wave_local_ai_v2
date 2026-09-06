@@ -9,6 +9,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The judge machinery, as four modules. `judge_protocol.py` holds one prompt
+  shell per language (`en`/`fr`/`de`), each written in that language, each
+  carrying its own id and a `prompt_provenance.template_hash` content hash
+  taken over the shell alone, plus the `OPEN_ENDED_QUALITY_1_TO_5` rubric,
+  versioned independently of the shells — a rubric revision moves
+  `rubric_version` and leaves `template_hash` byte-identical, and an item
+  whose language no variant covers is refused (`UnsupportedJudgeLanguageError`)
+  rather than judged in English by default. `judge.py` holds the
+  provider-agnostic `JudgeBackend` protocol, the parse into the rubric's scale
+  — an empty, unparseable or out-of-scale reply fails with a named reason and
+  leaves the score `None`, never `0`, with the raw text kept as the row's
+  evidence — and judge selection by model family, where a judge of the
+  subject's own family raises `JudgeFamilyCollisionError` before any call is
+  made, never a silent skip and never a substitution. `judge_backends.py` is
+  the only judge-path module importing `mistral_client`/`google_client`,
+  binding each to the protocol through `retry.py`'s pacer and run-scoped
+  budget. `agreement.py` computes quadratic-weighted Cohen's kappa for an
+  ordinal rubric and the unweighted form for a categorical one, publishes
+  exact-match and within-one rates beside the value, returns kappa as an
+  explicit null with its own reason when either judge's scores are constant
+  (`zero_variance`, deliberately stricter than the mathematically undefined
+  `zero_expected_disagreement`, which is kept as its own separate reason), and
+  owns the contested rule and the judged headline. `roster.py` gains the
+  family constants, an in-code `MODEL_FAMILIES` declaration keyed by literal
+  dated model ids, an optional `family` field on a roster entry, and
+  `family_of`, which prefers the entry's own value and refuses an unknown
+  model rather than defaulting one; the shipped roster file is unchanged and
+  `roster_version` does not move. `SCHEMA_VERSION` `"8"` → `"9"`: a judged
+  quality row carries the whole judge block (`row_contract.JUDGED_FIELDS`),
+  required only on a row that carries any of it, so an existing deterministic
+  quality row validates unchanged; a judged row carrying neither an agreement
+  figure nor the single-judge flag is refused naming what is absent, as is one
+  claiming both. Judge-call tokens are costed per judge provider at that
+  provider's own table rate into `judge_cost`
+  (`cost.judge_cost_fields`), and the row's `cost_total` remains the subject
+  generation's — whether judge tokens are summed into it stays open with
+  criterion 16. New configuration: `CONTESTED_ORDINAL_MAX_DELTA`, default `1`,
+  an item being contested when its two ordinal scores sit strictly further
+  apart than that, or when its categories differ at all. Deliberately not in
+  this increment: no CLI wiring, no judged suite, and no live judge call —
+  every test here runs against stubbed HTTP, and the live two-path proof and
+  the judged probe belong to the next story. One divergence to record: the 1-5
+  ordinal rubric publishes quadratic-weighted Cohen's kappa with the raw
+  agreement figures beside it, where the PRD's criterion 10 and the epic's own
+  decision row say absolute score delta.
 - A shared, provider-agnostic pacing/retry layer (`retry.py`: `Pacer`,
   `RetryBudget`, `call_with_retry`) backs both cloud clients, which now raise
   a typed `RetryableRequestError` (429/5xx for Mistral, 429/503 for Google,
