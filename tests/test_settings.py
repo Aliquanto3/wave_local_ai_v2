@@ -492,6 +492,57 @@ def test_load_settings_refuses_invalid_pacing_and_retry_values(
         load_settings()
 
 
+def test_load_settings_defaults_the_contested_threshold_when_unset(
+    monkeypatch, tmp_path: Path
+) -> None:
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    server_path = tmp_path / "llama-server.exe"
+    server_path.write_text("")
+
+    monkeypatch.setenv("SLM_MODELS_DIR", str(models_dir))
+    monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
+    monkeypatch.delenv("CONTESTED_ORDINAL_MAX_DELTA", raising=False)
+
+    settings = load_settings()
+
+    assert settings.contested_ordinal_max_delta == 1
+
+
+def test_load_settings_reads_the_contested_threshold_override(
+    monkeypatch, tmp_path: Path
+) -> None:
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    server_path = tmp_path / "llama-server.exe"
+    server_path.write_text("")
+
+    monkeypatch.setenv("SLM_MODELS_DIR", str(models_dir))
+    monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
+    monkeypatch.setenv("CONTESTED_ORDINAL_MAX_DELTA", "2")
+
+    settings = load_settings()
+
+    assert settings.contested_ordinal_max_delta == 2
+
+
+@pytest.mark.parametrize("value", ["-1", "not-a-number"])
+def test_load_settings_refuses_an_invalid_contested_threshold(
+    monkeypatch, tmp_path: Path, value: str
+) -> None:
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    server_path = tmp_path / "llama-server.exe"
+    server_path.write_text("")
+
+    monkeypatch.setenv("SLM_MODELS_DIR", str(models_dir))
+    monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
+    monkeypatch.setenv("CONTESTED_ORDINAL_MAX_DELTA", value)
+
+    with pytest.raises(SettingsError, match="CONTESTED_ORDINAL_MAX_DELTA"):
+        load_settings()
+
+
 def test_repr_omits_the_google_api_key_but_attribute_access_keeps_it(
     tmp_path: Path,
 ) -> None:
