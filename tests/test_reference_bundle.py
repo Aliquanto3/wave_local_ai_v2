@@ -10,13 +10,21 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from wave_local_ai_v2 import (
     fiche_registry,
+    read_model,
     results,
     roster,
     row_contract,
     settings,
     suite_snapshot,
+)
+from wave_local_ai_v2.read_model import (
+    ABSENT_POINTER_UNRESOLVED,
+    ABSENT_PREDATES_SCHEMA,
+    Absent,
 )
 
 RESULTS_DIR = Path("aidd_docs/results")
@@ -110,3 +118,143 @@ def test_superseded_files_exist_and_are_not_the_published_schema() -> None:
             schema_version = row.get("schema_version")
             if schema_version is not None:
                 assert schema_version != PUBLISHED_BUNDLE_SCHEMA_VERSION
+
+
+# --------------------------------------------------------------------------
+# The same read path a reader will actually use, over the published bundle.
+#
+# One schema behind the code, on purpose (see PUBLISHED_BUNDLE_SCHEMA_VERSION
+# above). Every field `"7"` predates must come back as a declared absence
+# naming `"7"` -- not as a failure, not as a zero, and not as a column the
+# view quietly drops.
+# --------------------------------------------------------------------------
+
+FICHE_REGISTRY_DIR = Path(settings.DEFAULT_FICHE_REGISTRY_DIR)
+ROSTER_PATH = Path(settings.DEFAULT_ROSTER_PATH)
+# Named fields the bundle's own version predates, asserted by name rather
+# than by "whatever happens to be absent": `thinking_policy` arrived at "11",
+# `retries`/`resumed` at "8", and the whole judge block is conditional and
+# has never been written by any CLI that produced this bundle.
+FIELDS_THE_BUNDLE_PREDATES = ("thinking_policy", "retries", "resumed")
+
+
+def _bundle_roster() -> roster.RosterFile | None:
+    return read_model.load_roster_file(ROSTER_PATH)
+
+
+def _bundle_runtime_view() -> dict[str, object]:
+    run_id = results.read_rows(RUNTIME_REFERENCE_PATH)[0]["run_id"]
+    view = read_model.runtime_view(
+        RUNTIME_REFERENCE_PATH,
+        str(run_id),
+        PUBLISHED_BUNDLE_SCHEMA_VERSION,
+        FICHE_REGISTRY_DIR,
+        _bundle_roster(),
+    )
+    assert view is not None
+    return view
+
+
+def _bundle_quality_view() -> dict[str, object]:
+    run_id = results.read_rows(QUALITY_REFERENCE_PATH)[0]["run_id"]
+    view = read_model.quality_view(
+        QUALITY_REFERENCE_PATH,
+        str(run_id),
+        PUBLISHED_BUNDLE_SCHEMA_VERSION,
+        _bundle_roster(),
+        SUITE_DEFINITIONS_DIR,
+        FICHE_REGISTRY_DIR,
+    )
+    assert view is not None
+    return view
+
+
+def _bundle_energy_view(path: Path, store: str) -> dict[str, object]:
+    run_id = results.read_rows(path)[0]["run_id"]
+    view = read_model.energy_view(
+        path, str(run_id), PUBLISHED_BUNDLE_SCHEMA_VERSION, store
+    )
+    assert view is not None
+    return view
+
+
+def _walk(value: object) -> list[object]:
+    found = [value]
+    if isinstance(value, dict):
+        for item in value.values():
+            found += _walk(item)
+    elif isinstance(value, list):
+        for item in value:
+            found += _walk(item)
+    return found
+
+
+def _all_bundle_views() -> list[dict[str, object]]:
+    return [
+        read_model.runs_view(
+            RUNTIME_REFERENCE_PATH,
+            QUALITY_REFERENCE_PATH,
+            PUBLISHED_BUNDLE_SCHEMA_VERSION,
+            _bundle_roster(),
+        ),
+        _bundle_runtime_view(),
+        _bundle_quality_view(),
+        _bundle_energy_view(RUNTIME_REFERENCE_PATH, "runtime"),
+        _bundle_energy_view(QUALITY_REFERENCE_PATH, "quality"),
+    ]
+
+
+def test_all_four_views_answer_over_the_committed_bundle() -> None:
+    views = _all_bundle_views()
+
+    assert all(view for view in views)
+    for view in views[1:]:
+        assert view["schema_floor"] == PUBLISHED_BUNDLE_SCHEMA_VERSION
+        assert view["unreadable"] == []
+        assert view["entries"]
+
+
+@pytest.mark.parametrize("field", FIELDS_THE_BUNDLE_PREDATES)
+def test_a_field_the_bundles_version_predates_is_named_not_defaulted(
+    field: str,
+) -> None:
+    entry = _bundle_quality_view()["entries"][0]  # type: ignore[index]
+
+    assert entry[field] == Absent(
+        ABSENT_PREDATES_SCHEMA,
+        {"row_schema_version": PUBLISHED_BUNDLE_SCHEMA_VERSION},
+    )
+
+
+def test_the_whole_judge_block_is_absent_naming_the_bundles_version() -> None:
+    judge = _bundle_quality_view()["entries"][0]["judge"]  # type: ignore[index]
+
+    assert set(judge) == set(row_contract.JUDGED_FIELDS)
+    for name, value in judge.items():
+        assert value == Absent(
+            ABSENT_PREDATES_SCHEMA,
+            {"row_schema_version": PUBLISHED_BUNDLE_SCHEMA_VERSION},
+        ), f"{name} is not a declared absence: {value!r}"
+
+
+def test_no_bundle_row_yields_an_unresolved_pointer_in_any_view() -> None:
+    # The bundle's five-part completeness, already asserted field by field
+    # above, asserted again through the read path a reader will actually use.
+    unresolved = [
+        node
+        for view in _all_bundle_views()
+        for node in _walk(view)
+        if isinstance(node, Absent) and node.reason == ABSENT_POINTER_UNRESOLVED
+    ]
+
+    assert unresolved == []
+
+
+def test_every_row_of_a_superseded_file_lands_in_unreadable() -> None:
+    for path in SUPERSEDED_PATHS:
+        read = results.read_rows_from_floor(path, PUBLISHED_BUNDLE_SCHEMA_VERSION)
+
+        assert read.rows == [], f"{path} rendered a row at floor 7"
+        assert sum(entry.count for entry in read.unreadable) == len(
+            results.read_rows(path)
+        )

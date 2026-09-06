@@ -9,6 +9,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A read-only results service, `wave-local-ai-v2-serve`**, answering the
+  four views the PRD names over HTTP: `GET /api/runs` (the run index as two
+  separately named collections, `runtime_runs` and `quality_runs`, never one
+  array), `GET /api/runs/{run_id}/quality`, `GET /api/runs/{run_id}/runtime`
+  with each row's fiche resolved beside it, and
+  `GET /api/runs/{run_id}/energy?store=runtime|quality`, whose `store`
+  parameter is required because both row kinds carry the same energy fields
+  and a probe of both would leave a number's origin ambiguous. "The two
+  stores are never merged" now holds because there is no endpoint that could
+  merge them, rather than because of a convention about table layout. Every
+  store file is opened for reading, no code path writes, and every non-`GET`
+  method on every route answers `405`.
+- **The declared-absent contract.** Every field a view names resolves to a
+  value or to a marked absence — `{"absent": true, "reason": ...,
+  "detail": {...}}` — over three finite reasons: the row's `schema_version`
+  predates the field, the row carries the key as `null`, or a pointer it
+  cites did not resolve. Nothing is defaulted, zero-filled, back-filled or
+  inferred; the service computes no verdict, score, agreement or aggregate,
+  and the energy composite is withheld outright — naming which channel label
+  is missing and why — rather than published without its three labels. A row
+  below the configured schema floor is reported in an `unreadable` count
+  naming its version, never rendered partially and never dropped. Which
+  fields each view renders is partitioned against
+  `row_contract.REQUIRED_FIELDS`, so a field added to the contract fails the
+  build naming itself instead of appearing as a blank column.
+- **The API key is required to start**, unconditionally: `SERVICE_API_KEY`
+  unset refuses before any socket is bound, on a loopback bind too, and no
+  key value ships in this repo. A loopback client is answered without a
+  header; every other client must present a matching `X-API-Key`, compared
+  with `hmac.compare_digest`, or gets a `401` that names the reason and
+  echoes nothing. An unparsable peer address counts as non-loopback and no
+  proxy header is read. `SERVICE_HOST`, `SERVICE_PORT` and
+  `SERVICE_SCHEMA_FLOOR` are the rest of its configuration; pointing the two
+  store paths at `aidd_docs/results/*-reference.jsonl` serves the committed
+  bundle with no code change. TLS and the browser's side of the key are a
+  later story — this ships plain HTTP on a loopback default.
+- Two pinned runtime dependencies, `fastapi` and `uvicorn` (plain, not
+  `[standard]`) — the first added since the five benchmark-side ones — plus
+  `httpx` in the dev group for the test client.
 - **`thinking_policy` on every quality row**, declared by the suite, values
   `disabled` or `allowed`, with `row_contract.SCHEMA_VERSION` moving `"10"` →
   `"11"` (quality rows only; the runtime row runs no suite and renders no

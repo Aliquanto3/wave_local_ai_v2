@@ -5,6 +5,9 @@ The macro technical shape: the stack, how the pieces fit, and the decisions behi
 ## Stack
 
 - Python, managed by uv (lockfile, fast installs, editable dev install)
+- FastAPI + uvicorn (plain `uvicorn`, not `uvicorn[standard]`) for the
+  read-only results service — the first runtime dependencies added since the
+  five benchmark-side ones, and the only HTTP *server* in the project
 - pytest for tests, mypy for type checking, ruff for linting and formatting
 - The fast gate (ruff, mypy, detect-secrets) is enforced by a local
   `pre-commit` hook (`.pre-commit-config.yaml`, `repo: local`,
@@ -43,6 +46,24 @@ flowchart LR
 
 ## Gotchas
 
+- The results service publishes a **declared-absent contract**: every field a
+  view names comes back as a value or as a marked absence
+  (`{"absent": true, "reason": ..., "detail": {...}}`), over exactly three
+  reasons — the row's `schema_version` predates the field
+  (`predates_schema`), the row carries the key as `null` (`null_in_row`), or a
+  pointer it cites did not resolve (`pointer_unresolved`). Nothing is
+  defaulted, zero-filled, back-filled or inferred anywhere in `read_model.py`,
+  and a row below the service's schema floor is counted in an `unreadable`
+  entry naming its version rather than rendered half-populated or dropped.
+  Which fields each view renders is *partitioned* against
+  `row_contract.REQUIRED_FIELDS` and asserted set-equal in
+  `tests/test_read_model.py` — so a field added to the contract fails the
+  build naming itself instead of appearing as a silently blank column.
+  The "the two stores are never merged" rule below is now enforced by there
+  being **no endpoint that could** merge them, not by a convention about how a
+  table is laid out: each route reads exactly one store, and the run index
+  answers two separately named collections that are never joined, ordered
+  against each other or summed.
 - One quality store now holds **two score shapes**. A classification row is
   an exact-match row (`correct`, `suite_accuracy`, `language_breakdown`); a
   translation row is a graded row (`item_score`, `suite_score`,
