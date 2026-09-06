@@ -385,9 +385,11 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
     # before the multi-minute local run, let alone any network call.
     gate_result = suite_gate.gate_suite(spec.items)
 
-    # Refuses (roster.RosterError) before any process spawns when
-    # settings.host_n_cpu_moe cannot be applied to roster_entry -- the check
-    # lives inside build_flags itself (server.py's one call site).
+    # Refuses (roster.RosterError) before any process spawns when the
+    # resolved n_cpu_moe cannot be applied to roster_entry -- the check lives
+    # inside build_flags itself (server.py's one call site), and it runs on
+    # the resolved value: settings.host_n_cpu_moe when set, the entry's own
+    # validated_host value when unset.
     flags = server.build_flags(
         roster_entry, settings.host_n_cpu_moe, settings.host_threads, model_path
     )

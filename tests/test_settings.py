@@ -102,6 +102,60 @@ def test_load_settings_reads_the_repetition_protocol_overrides(
     assert settings.runtime_spread_threshold == 0.20
 
 
+def _minimal_env(monkeypatch, tmp_path: Path) -> None:
+    """The two paths `load_settings` refuses to run without, and nothing else."""
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    server_path = tmp_path / "llama-server.exe"
+    server_path.write_text("")
+    monkeypatch.setenv("SLM_MODELS_DIR", str(models_dir))
+    monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
+
+
+def test_server_n_cpu_moe_unset_resolves_to_none_not_to_the_flagships_value(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Unset means "the selected entry decides", which is `None`, not `37`.
+
+    `37` here would be the MoE flagship's offload value handed to whatever
+    entry is selected, and every dense entry would refuse to launch.
+    """
+    _minimal_env(monkeypatch, tmp_path)
+    monkeypatch.delenv("SERVER_N_CPU_MOE", raising=False)
+
+    assert load_settings().host_n_cpu_moe is None
+
+
+def test_server_n_cpu_moe_set_resolves_to_that_integer(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _minimal_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("SERVER_N_CPU_MOE", "12")
+
+    assert load_settings().host_n_cpu_moe == 12
+
+
+def test_server_n_cpu_moe_set_to_zero_is_an_instruction_not_the_unset_state(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """`0` must survive as `0`, so a dense entry given it still refuses."""
+    _minimal_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("SERVER_N_CPU_MOE", "0")
+
+    assert load_settings().host_n_cpu_moe == 0
+
+
+@pytest.mark.parametrize("value", ["-1", "not-a-number"])
+def test_server_n_cpu_moe_still_refuses_an_invalid_value(
+    monkeypatch, tmp_path: Path, value: str
+) -> None:
+    _minimal_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("SERVER_N_CPU_MOE", value)
+
+    with pytest.raises(SettingsError, match="SERVER_N_CPU_MOE"):
+        load_settings()
+
+
 def test_load_settings_defaults_the_fiche_and_reference_paths_when_unset(
     monkeypatch, tmp_path: Path
 ) -> None:

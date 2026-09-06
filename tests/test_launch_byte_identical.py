@@ -16,7 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from wave_local_ai_v2 import roster, server
-from wave_local_ai_v2.settings import Settings
+from wave_local_ai_v2.settings import DEFAULT_HOST_N_CPU_MOE, Settings
 
 REAL_ROSTER_PATH = Path("aidd_docs/roster/models.json")
 REAL_ROSTER_ENTRY_ID = "qwen3.6-35b-a3b-ud-iq4xs"
@@ -106,10 +106,19 @@ def test_host_defaults_equal_the_shipped_entrys_validated_host() -> None:
     defaults reproduce the source document's command; this proves they are
     the same values the roster entry itself records as its validated host,
     so the two can't drift apart silently either.
+
+    `host_n_cpu_moe` reaches that value by a different route since the dense
+    ladder landed: its unset state is `None` and `build_flags` resolves it
+    from the entry, so what is pinned here is that
+    `DEFAULT_HOST_N_CPU_MOE` -- now documentation of the flagship rather than
+    the resolution path -- still says what the entry says. `host_threads` is
+    a genuine host value with no per-entry counterpart and is compared
+    directly.
     """
     loaded = roster.load_roster(REAL_ROSTER_PATH)
     entry = roster.resolve_entry(loaded, REAL_ROSTER_ENTRY_ID)
     settings = _default_settings()
 
-    assert settings.host_n_cpu_moe == entry.validated_host["n_cpu_moe"]
+    assert settings.host_n_cpu_moe is None
+    assert DEFAULT_HOST_N_CPU_MOE == entry.validated_host["n_cpu_moe"]
     assert settings.host_threads == entry.validated_host["threads"]

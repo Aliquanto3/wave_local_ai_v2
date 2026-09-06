@@ -1,5 +1,5 @@
 {
-  "roster_version": 1,
+  "roster_version": 2,
   "entries": {
     "qwen3.6-35b-a3b-ud-iq4xs": {
       "repo": "unsloth/Qwen3.6-35B-A3B-GGUF",
@@ -30,6 +30,108 @@
       },
       "validated_host": {
         "n_cpu_moe": 37,
+        "threads": 8,
+        "fiche_summary": "Consumer NVIDIA laptop GPU, ~6 GB VRAM, Windows"
+      }
+    },
+    "qwen3-0.6b-q8": {
+      "repo": "Qwen/Qwen3-0.6B-GGUF",
+      "revision": "23749fefcc72300e3a2ad315e1317431b06b590a",
+      "file": "Qwen3-0.6B/Qwen3-0.6B-Q8_0.gguf",
+      "display_id": "Qwen3-0.6B",
+      "quant": "Q8_0",
+      "sha256": "9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031",
+      "family": "qwen",
+      "architecture": {
+        "kind": "dense",
+        "expert_count": 0,
+        "active_params_b": 0.6
+      },
+      "server_flags": {
+        "n_gpu_layers": 99,
+        "context_size": 32768,
+        "flash_attention": "on",
+        "jinja": true,
+        "parallel_slots": 1,
+        "load_mode": "auto",
+        "sampler": {
+          "temperature": 0.6,
+          "top_p": 0.95,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5
+        }
+      },
+      "validated_host": {
+        "n_cpu_moe": null,
+        "threads": 8,
+        "fiche_summary": "Consumer NVIDIA laptop GPU, ~6 GB VRAM, Windows"
+      }
+    },
+    "qwen3-1.7b-q8": {
+      "repo": "Qwen/Qwen3-1.7B-GGUF",
+      "revision": "90862c4b9d2787eaed51d12237eafdfe7c5f6077",
+      "file": "Qwen3-1.7B/Qwen3-1.7B-Q8_0.gguf",
+      "display_id": "Qwen3-1.7B",
+      "quant": "Q8_0",
+      "sha256": "061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a",
+      "family": "qwen",
+      "architecture": {
+        "kind": "dense",
+        "expert_count": 0,
+        "active_params_b": 1.7
+      },
+      "server_flags": {
+        "n_gpu_layers": 99,
+        "context_size": 32768,
+        "flash_attention": "on",
+        "jinja": true,
+        "parallel_slots": 1,
+        "load_mode": "auto",
+        "sampler": {
+          "temperature": 0.6,
+          "top_p": 0.95,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5
+        }
+      },
+      "validated_host": {
+        "n_cpu_moe": null,
+        "threads": 8,
+        "fiche_summary": "Consumer NVIDIA laptop GPU, ~6 GB VRAM, Windows"
+      }
+    },
+    "qwen3-4b-q4km": {
+      "repo": "Qwen/Qwen3-4B-GGUF",
+      "revision": "bc640142c66e1fdd12af0bd68f40445458f3869b",
+      "file": "Qwen3-4B/Qwen3-4B-Q4_K_M.gguf",
+      "display_id": "Qwen3-4B",
+      "quant": "Q4_K_M",
+      "sha256": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
+      "family": "qwen",
+      "architecture": {
+        "kind": "dense",
+        "expert_count": 0,
+        "active_params_b": 4.0
+      },
+      "server_flags": {
+        "n_gpu_layers": 99,
+        "context_size": 32768,
+        "flash_attention": "on",
+        "jinja": true,
+        "parallel_slots": 1,
+        "load_mode": "auto",
+        "sampler": {
+          "temperature": 0.6,
+          "top_p": 0.95,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5
+        }
+      },
+      "validated_host": {
+        "n_cpu_moe": null,
         "threads": 8,
         "fiche_summary": "Consumer NVIDIA laptop GPU, ~6 GB VRAM, Windows"
       }

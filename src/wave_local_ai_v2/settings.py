@@ -12,12 +12,16 @@ DEFAULT_RESULTS_PATH = "aidd_docs/results/runtime.jsonl"
 DEFAULT_QUALITY_RESULTS_PATH = "aidd_docs/results/quality.jsonl"
 DEFAULT_ROSTER_PATH = "aidd_docs/roster/models.json"
 DEFAULT_ROSTER_ENTRY_ID = "qwen3.6-35b-a3b-ud-iq4xs"
-# The two host-fitted launch flags, defaulted to the values the shipped roster
-# entry records in its `validated_host` block. Named constants, not literals
-# repeated in the dataclass and in `load_settings`: the byte-identical
-# guarantee is "the defaults reproduce the baseline command", so the defaults
-# must have exactly one definition for a test to bind.
+# The MoE flagship's own `validated_host.n_cpu_moe`. Documentation of that
+# entry, not the resolution path: `SERVER_N_CPU_MOE` unset resolves to `None`
+# and `server.build_flags` reads the selected entry's own value, so a dense
+# entry (whose value is `null`) launches with no `--n-cpu-moe` at all while
+# the flagship's launch stays byte-identical. One definition, one meaning --
+# an operator who *does* set `SERVER_N_CPU_MOE` overrides the entry, and a
+# dense entry handed a value still refuses in `roster.validate_host_fit`.
 DEFAULT_HOST_N_CPU_MOE = 37
+# A genuine host value with no per-entry counterpart: every entry runs at the
+# same thread count on a given machine, so this one keeps a plain default.
 DEFAULT_HOST_THREADS = 8
 DEFAULT_FICHE_REGISTRY_DIR = "aidd_docs/results/fiches"
 DEFAULT_RUNTIME_REFERENCE_PATH = "aidd_docs/results/runtime-reference.jsonl"
@@ -119,11 +123,13 @@ class Settings:
     runtime_cooldown_s: float = 10.0
     runtime_warmup_count: int = 1
     runtime_spread_threshold: float = 0.10
-    # Host-fitted flags (plan.md's Decisions table): the only two launch flags
-    # that are not roster data, defaulted to today's validated baseline
-    # (`aidd_docs/roster/models.json`'s `validated_host` block) so a
-    # byte-identical launch needs no `.env` override on this machine.
-    host_n_cpu_moe: int = DEFAULT_HOST_N_CPU_MOE
+    # Host-fitted flags: the only two launch flags that are not roster data.
+    # `None` is `host_n_cpu_moe`'s unset state and means "the selected entry
+    # decides" -- `server.build_flags` resolves it from that entry's own
+    # `validated_host.n_cpu_moe`. It is not "0": 0 is an explicit instruction
+    # to offload no experts, which a dense entry refuses, and `None` is the
+    # absence of an instruction.
+    host_n_cpu_moe: int | None = None
     host_threads: int = DEFAULT_HOST_THREADS
     # No existence check at load time, mirrors roster_path: fiche_registry.write_fiche
     # creates it via mkdir(parents=True, exist_ok=True), matching results.append_row's
@@ -237,12 +243,22 @@ def load_settings() -> Settings:
         minimum=0.0,
         minimum_reason="a spread threshold cannot be negative",
     )
-    host_n_cpu_moe = _require_numeric(
-        "SERVER_N_CPU_MOE",
-        DEFAULT_HOST_N_CPU_MOE,
-        int,
-        minimum=0,
-        minimum_reason="--n-cpu-moe cannot offload a negative number of experts",
+    # Absent means `None`, the "read the selected entry" state -- not
+    # `DEFAULT_HOST_N_CPU_MOE`, which would put the flagship's 37 in front of
+    # every dense entry and make each one refuse. Present is validated
+    # exactly as before, so an out-of-range override still names its reason;
+    # the default handed to `_require_numeric` is unreachable on that branch
+    # and is the flagship's value only so the two never disagree.
+    host_n_cpu_moe = (
+        None
+        if os.environ.get("SERVER_N_CPU_MOE") is None
+        else _require_numeric(
+            "SERVER_N_CPU_MOE",
+            DEFAULT_HOST_N_CPU_MOE,
+            int,
+            minimum=0,
+            minimum_reason="--n-cpu-moe cannot offload a negative number of experts",
+        )
     )
     host_threads = _require_numeric(
         "SERVER_THREADS",

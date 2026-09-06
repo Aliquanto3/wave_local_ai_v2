@@ -92,10 +92,28 @@ stores are never merged (see `architecture.md`).
 
 Both commands resolve the model to launch through the tracked roster
 (`ROSTER_PATH`, default `aidd_docs/roster/models.json`) and select which
-entry to use via `ROSTER_ENTRY_ID` (default `qwen3.6-35b-a3b-ud-iq4xs`, the
-shipped baseline entry). Two more env vars set the launch flags that are
-host-fitted rather than roster data: `SERVER_N_CPU_MOE` (default `37`) and
-`SERVER_THREADS` (default `8`) — see `architecture.md`'s Gotchas for why
+entry to use via `ROSTER_ENTRY_ID`. The roster holds four entries at
+`roster_version` 2:
+
+| Entry id | Model | Arch | Quant |
+| -------- | ----- | ---- | ----- |
+| `qwen3.6-35b-a3b-ud-iq4xs` | Qwen3.6-35B-A3B | MoE, 40 experts | `UD-IQ4_XS` |
+| `qwen3-0.6b-q8` | Qwen3-0.6B | dense | `Q8_0` |
+| `qwen3-1.7b-q8` | Qwen3-1.7B | dense | `Q8_0` |
+| `qwen3-4b-q4km` | Qwen3-4B | dense | `Q4_K_M` |
+
+`ROSTER_ENTRY_ID` defaults to the MoE flagship. Running several entries in
+turn is a shell loop over the ids, not a runner script: `load_dotenv(override=
+False)` leaves a shell-set value in place, and `.env` does not set the
+variable at all. Each invocation is its own `run_id`.
+
+Two more env vars set the launch flags that are host-fitted rather than
+roster data: `SERVER_THREADS` (default `8`) and `SERVER_N_CPU_MOE`, which has
+two states. **Unset** means the selected entry decides — its own
+`validated_host.n_cpu_moe`, so `37` for the flagship and *no `--n-cpu-moe` at
+all* for a dense entry, whose value is `null`. **Set** overrides the entry,
+and a dense entry given any value (`0` included) refuses with a `RosterError`
+naming it before anything spawns. See `architecture.md`'s Gotchas for why
 these, and not the roster, are the knob to change on different hardware.
 
 ## Distribution

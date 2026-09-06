@@ -26,6 +26,14 @@ Model roster for this epic includes both MoE candidates and tiny dense candidate
 
 A client's engineer can rerun the classification/translation/rewriting suites against the shipped model roster, get the same quality scores back, and see inter-judge agreement reported for every judged result — closing the "quality" half of the PRD's defensibility bet (runtime half already shipped). Once `done`, record here whether reproduction actually held and whether any specific model's score was challenged in a real client session.
 
+## Progress (2026-09-06)
+
+Three of this epic's four stories are `done`: deterministic classification scoring, translation scoring, and the dense-vs-MoE comparison (the roster now holds the MoE flagship plus a Qwen3 0.6B/1.7B/4B dense ladder, and `aidd_docs/results/README.md` publishes a side-by-side table per use case).
+
+The epic stays open, and deliberately: its only remaining scope is `judge-scoring-with-inter-judge-agreement-proves-judged-machinery`, which carries **both** the rewriting task suite (the third of the three use cases named above) and the two-independent-judge machinery. Until it lands, the rewriting use case has no suite and no rows — the divergence every story delivered so far has recorded as its D1, and the reason the published comparison covers two use cases rather than three. No fabricated rewriting row stands in for it anywhere.
+
+One finding to carry into that story: the dense rows published so far measure instruction-following on a raw `/completion` endpoint, because the local quality path applies no chat template. It is filed in `aidd_docs/backlog/tech-debt.md`, and it is a decision the judged path will have to take a position on before it scores open-ended output.
+
 ## Dependencies and Unknowns
 
 | Item | Kind | Handling |

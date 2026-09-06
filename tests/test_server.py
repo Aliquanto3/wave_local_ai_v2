@@ -44,7 +44,11 @@ def test_build_flags_matches_baseline() -> None:
     # the exact flag list the old hardcoded-constant version built: this is
     # the phase's first byte-identical checkpoint. The host values come from
     # `Settings`' defaults, not from literals here, so a default edit fails
-    # this test rather than silently changing what the CLIs launch.
+    # this test rather than silently changing what the CLIs launch. Since the
+    # dense ladder landed, `host_n_cpu_moe` defaults to `None` and the `37`
+    # below is resolved from the entry's own `validated_host` -- the same
+    # command, reached through the entry instead of through a settings
+    # constant, which is exactly what this assertion is here to prove.
     assert flags == [
         "-m",
         "model.gguf",
@@ -111,6 +115,85 @@ def test_build_flags_refuses_an_over_ceiling_host_n_cpu_moe() -> None:
     ):
         server.build_flags(
             moe_entry, host_n_cpu_moe=41, host_threads=8, model_path=Path("model.gguf")
+        )
+
+    mock_popen.assert_not_called()
+
+
+SHIPPED_DENSE_ENTRY_ID = "qwen3-0.6b-q8"
+
+
+def test_build_flags_for_a_dense_entry_omits_the_moe_offload() -> None:
+    """A dense entry at default settings: the same list, minus `--n-cpu-moe`.
+
+    Not a `kind == "dense"` branch in the flag builder -- the entry's own
+    `validated_host["n_cpu_moe"]` is `null`, `host_n_cpu_moe` is unset, and
+    the resolution of the two produces no flag. Every other flag keeps its
+    position, so the only difference from the baseline above is the pair that
+    is gone and the values the entry itself declares.
+    """
+    loaded = roster.load_roster(REAL_ROSTER_PATH)
+    entry = roster.resolve_entry(loaded, SHIPPED_DENSE_ENTRY_ID)
+    settings = _default_settings()
+
+    assert settings.host_n_cpu_moe is None
+    flags = server.build_flags(
+        entry,
+        settings.host_n_cpu_moe,
+        settings.host_threads,
+        model_path=Path("model.gguf"),
+    )
+
+    assert "--n-cpu-moe" not in flags
+    assert flags == [
+        "-m",
+        "model.gguf",
+        "-ngl",
+        str(entry.server_flags["n_gpu_layers"]),
+        "-c",
+        "32768",
+        "-fa",
+        "on",
+        "-t",
+        "8",
+        "--jinja",
+        "-np",
+        "1",
+        "--load-mode",
+        "auto",
+        "--temp",
+        "0.6",
+        "--top-p",
+        "0.95",
+        "--top-k",
+        "20",
+        "--min-p",
+        "0",
+        "--presence-penalty",
+        "1.5",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8080",
+    ]
+
+
+def test_build_flags_refuses_a_shipped_dense_entry_given_an_explicit_zero() -> None:
+    """`SERVER_N_CPU_MOE=0` is an instruction, not the absence of one.
+
+    The unset state is `None`. An operator who writes `0` has asked for MoE
+    offload of no experts, which a dense entry cannot honour, and the
+    refusal it already produced must survive the resolution change.
+    """
+    loaded = roster.load_roster(REAL_ROSTER_PATH)
+    entry = roster.resolve_entry(loaded, SHIPPED_DENSE_ENTRY_ID)
+
+    with (
+        pytest.raises(roster.RosterError, match=SHIPPED_DENSE_ENTRY_ID),
+        patch("wave_local_ai_v2.server.subprocess.Popen") as mock_popen,
+    ):
+        server.build_flags(
+            entry, host_n_cpu_moe=0, host_threads=8, model_path=Path("model.gguf")
         )
 
     mock_popen.assert_not_called()

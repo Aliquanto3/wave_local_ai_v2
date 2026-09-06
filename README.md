@@ -34,13 +34,25 @@ high/critical-severity dependency finding — see open exceptions in
 
 ## Hardware you need before downloading anything
 
-The roster model, `Qwen3.6-35B-A3B-UD-IQ4_XS` (17.7 GB GGUF), needs:
+The roster holds four models: the MoE flagship and a dense Qwen3 size ladder.
+Which one you can run decides how much hardware you need.
+
+The flagship, `Qwen3.6-35B-A3B-UD-IQ4_XS` (17.7 GB GGUF), needs:
 
 - **32 GB system RAM**
 - An **NVIDIA GPU with CUDA 12.x support** — the committed evidence was
   produced on a 6 GB laptop GPU using `--n-cpu-moe` to offload experts to CPU
   RAM. VRAM is not the ceiling here; system RAM is.
 - **~18 GB free disk** for the model file plus the `llama-server` binary.
+
+The dense ladder — `Qwen3-0.6B`, `Qwen3-1.7B` and `Qwen3-4B` — is **4.63 GB
+for all three**, the largest single file 2.33 GB, and carries no MoE-offload
+flag at all: on the same 6 GB laptop GPU each held every layer in VRAM, and
+the 0.6B peaked at 1.1 GB of system RAM against the flagship's 15.2 GB. A
+machine that cannot host the flagship can still run every suite in this
+project. What each of the four actually scored, and what it cost, is the
+side-by-side section of
+[`aidd_docs/results/README.md`](aidd_docs/results/README.md).
 
 This is the class of the project's own laptop fiche
 ([`context_input/hardware.md`](context_input/hardware.md)), not a guarantee for

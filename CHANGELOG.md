@@ -9,6 +9,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A dense Qwen3 size ladder in the roster beside the MoE flagship, at
+  `roster_version` `2`: `qwen3-0.6b-q8`, `qwen3-1.7b-q8` and
+  `qwen3-4b-q4km`, each a vendor-official GGUF pinned by **commit sha**
+  rather than by `main`, each carrying the sha256 read off the file that is
+  actually loaded. The quants are what each vendor repo publishes — `Q8_0` at
+  0.6B and 1.7B (those repos contain exactly one quant each), `Q4_K_M` at 4B
+  — so the ladder varies size and is deliberately not quant-uniform; that is
+  named in `docs/setup.md` and in the results README rather than left for a
+  reader to assume away. All three are Apache-2.0, from one Qwen3 generation,
+  on an architecture (`qwen3`) checked against build `b10537`'s own
+  `LLM_ARCH_NAMES` rather than inferred from the family name. Total download
+  4.63 GiB against the flagship's 17.7, so a machine that cannot host the
+  flagship can still run every suite in this project.
+- A dense `architecture` block (`kind: "dense"`, `expert_count: 0`) and a
+  `validated_host.n_cpu_moe` of `null` on each new entry, which is what makes
+  "this entry carries no MoE offload" a checkable fact rather than a
+  convention: `roster.validate_host_fit` refuses a dense entry handed any
+  offload value, and the committed fiche for each run records the command
+  that actually launched, `--n-cpu-moe` absent from all three.
+- The launch seam that lets a dense entry run at all. `host_n_cpu_moe` gains
+  an unset state (`None`) meaning "read the selected entry", and
+  `server.build_flags` resolves it from `validated_host.n_cpu_moe` **before**
+  calling `validate_host_fit`, emitting `--n-cpu-moe` only when the resolved
+  value is not `None`. It is a resolution change rather than a
+  `kind == "dense"` branch in the flag builder on purpose: the refusal stays
+  a refusal, so an operator who writes `SERVER_N_CPU_MOE=0` against a dense
+  entry still gets a `RosterError` naming it with no process spawned. `0` is
+  an instruction to offload no experts; `None` is the absence of an
+  instruction, and a dense model can honour the second but not the first.
+- A per-entry run loop in `docs/setup.md` as the whole multi-model recipe —
+  no runner script, no fleet orchestrator. `ROSTER_ENTRY_ID` already selects
+  the entry and `load_dotenv(override=False)` leaves a shell-set value in
+  place, so a `foreach` over three entry ids is the entire seam; a script
+  would have to own sequencing and failure semantics the CLIs already own.
+- A published side-by-side per use case in `aidd_docs/results/README.md`:
+  four models on classification, four on translation, four on runtime, each
+  with its `run_id`, quant, `-ngl` and whether it carried an MoE-offload
+  flag, plus the two caveats the comparison genuinely carries (the ladder is
+  Qwen3 and the flagship Qwen3.6, so the architecture axis spans a
+  generation; and the quants are not uniform). The finding it records is that
+  the dense rows measure **instruction-following on a raw `/completion`
+  endpoint** rather than classification or translation ability: with no chat
+  template applied, these Qwen3 releases continue the prompt instead of
+  answering it, all three run the 32-token classification cap dry on every
+  item, and one 4B translation is shown verbatim producing correct German
+  after first continuing the French source. A weak result reported with its
+  cause, not omitted. Five divergences from the story that asked for this,
+  recorded on the story file and in the plan: scored on classification and
+  translation only, because the rewriting suite does not exist yet and
+  nothing fabricates a row for it; three dense models rather than the "at
+  least one" the story names, since one point cannot separate "dense wins"
+  from "this particular small model wins"; published to the live stores and
+  the results README rather than into the committed reference bundle, which
+  is frozen one schema behind and whose regeneration is separately filed
+  work; the launch seam above, which the story assumed already existed and
+  did not; and the cloud comparator cited from the `google` rows already on
+  disk rather than re-run, since they are the same suites, versions and items
+  already paid for.
 - Translation as a second deterministically-scored use case, selectable with
   `wave-local-ai-v2-quality --suite translation`. `chrf.py` is the character
   n-gram F-score (Popović 2015) reproducing sacreBLEU's default
@@ -327,6 +385,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `SERVER_N_CPU_MOE` unset no longer means `37`. It means "the selected
+  entry's `validated_host` decides": `37` for the MoE flagship, and no
+  `--n-cpu-moe` at all for a dense entry. Set, it overrides the entry exactly
+  as before, including the two refusals (above an MoE entry's `expert_count`,
+  or any value at all on a dense entry). The flagship's launch command is
+  byte-identical — both byte-identical tests pass with the `37` now arriving
+  from the entry rather than from a settings constant, and
+  `DEFAULT_HOST_N_CPU_MOE` stays as documentation of that entry's value.
+- `roster_version` moves `1` → `2`, because the file's content changed and a
+  row recording `roster_version: 1` must not be ambiguous between a one-entry
+  and a four-entry roster. Rows already published keep their `1`; nothing is
+  back-filled.
 - Mistral completions are sent the suite's declared output cap
   (`max_tokens`), the same one the local `/completion` call applies as
   `n_predict`. Both halves of a comparison now run under the cap their rows

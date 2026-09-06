@@ -372,10 +372,107 @@ def test_family_of_refuses_an_entry_declaring_an_unknown_family(tmp_path) -> Non
         roster.family_of("Qwen3.6-35B-A3B", entry)
 
 
-def test_the_shipped_roster_still_loads_with_no_family_and_no_version_move() -> None:
+def test_the_shipped_moe_entry_still_loads_with_no_family_of_its_own() -> None:
     loaded = roster.load_roster(REAL_ROSTER_PATH)
     entry = roster.resolve_entry(loaded, "qwen3.6-35b-a3b-ud-iq4xs")
 
-    assert loaded.roster_version == 1
+    # roster_version 2 is the dense ladder's arrival: rows already published
+    # carry 1 and are not back-filled, so the assertion follows the file
+    # rather than pinning a version the file has moved past.
+    assert loaded.roster_version == 2
     assert entry.family is None
     assert roster.family_of(entry.display_id, entry) == "qwen"
+
+
+# The three dense entries, keyed by entry id, with the identity fields
+# `docs/setup.md` publishes. Written out rather than read from the roster so
+# the test can disagree with the file: a checksum or a revision edited by
+# accident fails here instead of silently launching a different model.
+SHIPPED_DENSE_ENTRIES: dict[str, dict[str, object]] = {
+    "qwen3-0.6b-q8": {
+        "repo": "Qwen/Qwen3-0.6B-GGUF",
+        "revision": "23749fefcc72300e3a2ad315e1317431b06b590a",  # pragma: allowlist secret
+        "file": "Qwen3-0.6B/Qwen3-0.6B-Q8_0.gguf",
+        "display_id": "Qwen3-0.6B",
+        "quant": "Q8_0",
+        "sha256": "9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031",  # pragma: allowlist secret
+        "active_params_b": 0.6,
+    },
+    "qwen3-1.7b-q8": {
+        "repo": "Qwen/Qwen3-1.7B-GGUF",
+        "revision": "90862c4b9d2787eaed51d12237eafdfe7c5f6077",  # pragma: allowlist secret
+        "file": "Qwen3-1.7B/Qwen3-1.7B-Q8_0.gguf",
+        "display_id": "Qwen3-1.7B",
+        "quant": "Q8_0",
+        "sha256": "061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a",  # pragma: allowlist secret
+        "active_params_b": 1.7,
+    },
+    "qwen3-4b-q4km": {
+        "repo": "Qwen/Qwen3-4B-GGUF",
+        "revision": "bc640142c66e1fdd12af0bd68f40445458f3869b",  # pragma: allowlist secret
+        "file": "Qwen3-4B/Qwen3-4B-Q4_K_M.gguf",
+        "display_id": "Qwen3-4B",
+        "quant": "Q4_K_M",
+        "sha256": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",  # pragma: allowlist secret
+        "active_params_b": 4.0,
+    },
+}
+
+
+def test_the_shipped_roster_holds_the_moe_flagship_and_three_dense_entries() -> None:
+    loaded = roster.load_roster(REAL_ROSTER_PATH)
+
+    assert set(loaded.entries) == {
+        "qwen3.6-35b-a3b-ud-iq4xs",
+        *SHIPPED_DENSE_ENTRIES,
+    }
+
+
+@pytest.mark.parametrize("entry_id", sorted(SHIPPED_DENSE_ENTRIES))
+def test_each_shipped_dense_entry_matches_docs_setup_step_3(entry_id: str) -> None:
+    expected = SHIPPED_DENSE_ENTRIES[entry_id]
+    entry = roster.resolve_entry(roster.load_roster(REAL_ROSTER_PATH), entry_id)
+
+    assert entry.repo == expected["repo"]
+    assert entry.revision == expected["revision"]
+    assert entry.file == expected["file"]
+    assert entry.display_id == expected["display_id"]
+    assert entry.quant == expected["quant"]
+    assert entry.sha256 == expected["sha256"]
+    assert entry.architecture.active_params_b == expected["active_params_b"]
+
+
+@pytest.mark.parametrize("entry_id", sorted(SHIPPED_DENSE_ENTRIES))
+def test_each_shipped_dense_entry_carries_no_moe_offload(entry_id: str) -> None:
+    """A dense entry's whole point: nothing in it can produce `--n-cpu-moe`.
+
+    `load_mode` is checked alongside because `none` exists on the MoE entry
+    only to stop `--n-cpu-moe` mmapping experts from disk -- a dense entry
+    inheriting it would be carrying an MoE workaround it has no MoE to work
+    around.
+    """
+    entry = roster.resolve_entry(roster.load_roster(REAL_ROSTER_PATH), entry_id)
+
+    assert entry.architecture.kind == "dense"
+    assert entry.architecture.expert_count == 0
+    assert entry.validated_host["n_cpu_moe"] is None
+    assert entry.server_flags["load_mode"] == "auto"
+    # The declared family is what the judged path resolves, so a dense row
+    # never falls back to MODEL_FAMILIES for a model id it does not list.
+    assert entry.family == "qwen"
+    assert roster.family_of(entry.display_id, entry) == "qwen"
+
+
+@pytest.mark.parametrize("entry_id", sorted(SHIPPED_DENSE_ENTRIES))
+def test_each_shipped_dense_entry_publishes_the_suites_context_cap(
+    entry_id: str,
+) -> None:
+    """32768 is what both live suites publish as their context cap on every row.
+
+    An entry launched below it would make that published cap a lie, so the
+    value is asserted here rather than left to the operator's `-ngl` probe to
+    trade away when a model does not fit.
+    """
+    entry = roster.resolve_entry(roster.load_roster(REAL_ROSTER_PATH), entry_id)
+
+    assert entry.server_flags["context_size"] == 32768
