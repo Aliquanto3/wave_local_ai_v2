@@ -322,3 +322,22 @@ judges -> 3.9 translation -> 3.10 dense roster -> 3.11 FastAPI + API key -> 3.12
 Context hygiene rules of section 3 stand. One addition from section 4.3: after any
 `aidd-dev:05-review` that returns `approve`, merge; do not open another review on the same
 branch.
+
+## 6. Extension - research-publication ambitions (2026-09-06)
+
+New objective set by the owner (source docs to land in `context_input/`): a publication-grade
+benchmark across three machines (tower R5 7600/32GB DDR5/RTX 3050 8GB; laptop R7 5800H/32GB
+DDR4/RTX 3060 6GB; pro PC 16GB RAM no GPU), multi-family roster (>=2 families per size class),
+publication-level suites (public-benchmark subsets, contamination-marked), engine
+(llama.cpp/Ollama) + prompt-variant (baseline/Caveman-style/GBNF-DSL/LLMLingua-2) + agentic
+harness as row dimensions, bootstrap CI + paired Wilcoxon, judges re-targeted to Z.ai GLM +
+DeepSeek (paid, ~$10 campaign; GPT-5.6 Luna calibration on 10%; Google/Mistral demoted to
+subjects), CC-BY 4.0 on suite items + bundle (code stays MIT), tabular export; wattmeter
+explicitly out of scope; venue: blog/Wavestone first, arXiv optional, JOSS later-optional.
+
+Plan: Phase P (spec): P1 commit source docs; P2 PRD amendment; P3 new epics E-F machines,
+E-G statistics+suite growth, E-H engine+variant matrix, E-J data publication; P4 amend E-D
+(judges) and E-E (harness dimension); P5 three-amigos on E-G. Then: finish E-C stories 2-3
+(hold 4 until dimensions land), audit + v0.2.0, E-F, E-G, E-D judged phase + rewriting,
+E-H, E-E, E-J continuous. Decisions logged: public subsets per suite; providers/budget
+confirmed; 3 machines ready.
