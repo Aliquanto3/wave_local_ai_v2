@@ -13,9 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `frontend/src/views/quality/`, `views/runtime/`, `views/energy/` — each
   fetching its own route and rendering every field the PRD's Methodology
   section names, replacing the run index as the dashboard's only screen. A
-  run-scoped tab strip (`Quality | Runtime | Energy`) in `App.tsx` holds the
-  selection; clicking a run in the runs list opens the quality screen for
-  it. `frontend/src/labels/` carries the nine shared mark components — one
+  run-kind tab strip in `App.tsx` holds the selection: clicking a run in the
+  runs list opens that run's own screen (`Quality` for a quality run,
+  `Runtime` for a runtime run, since the two stores mint independent run
+  ids) plus `Energy` over the same store. `frontend/src/labels/` carries the nine shared mark components — one
   per methodology mark (indicative, contamination-risk, contested,
   single-judge, unreliable, verdict, per-channel energy method, scope
   comparability, a generic declared-absence marker) — so a mark renders one

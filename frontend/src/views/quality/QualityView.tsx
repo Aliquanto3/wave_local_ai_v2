@@ -78,37 +78,36 @@ function renderJudgeBlock(entry: QualityEntry): ReactNode {
   )
 }
 
+// The breakdown itself can be an absence (a row predating the field), not
+// only one of its cells.
+function renderLanguageBreakdown(entry: QualityEntry): ReactNode {
+  const breakdown =
+    entry.score_shape === 'exact_match' ? entry.language_breakdown : entry.score_breakdown
+  if (breakdown === undefined) {
+    return null
+  }
+  if (isAbsent(breakdown)) {
+    return <Absent reason={breakdown.reason} detail={breakdown.detail} />
+  }
+  return Object.entries(breakdown).map(([lang, cell]) =>
+    isAbsent(cell) ? (
+      <Absent key={lang} reason={cell.reason} detail={cell.detail} />
+    ) : (
+      <span key={lang} className="language-cell">
+        {lang}: {renderMaybe('accuracy' in cell ? cell.accuracy : cell.score)}{' '}
+        <IndicativeLabel indicative={cell.indicative} reasons={[]} n={cell.n} />
+      </span>
+    )
+  )
+}
+
 function QualityRow({ entry }: { entry: QualityEntry }) {
   return (
     <tr>
       <td>{renderMaybe(entry.item_id)}</td>
       <td>{renderMaybe(entry.language)}</td>
       <td>{renderScore(entry)}</td>
-      <td>
-        {entry.score_shape === 'exact_match' && entry.language_breakdown !== undefined
-          ? Object.entries(entry.language_breakdown).map(([lang, cell]) =>
-              isAbsent(cell) ? (
-                <Absent key={lang} reason={cell.reason} detail={cell.detail} />
-              ) : (
-                <span key={lang} className="language-cell">
-                  {lang}: {renderMaybe(cell.accuracy)}{' '}
-                  <IndicativeLabel indicative={cell.indicative} reasons={[]} n={cell.n} />
-                </span>
-              )
-            )
-          : entry.score_shape === 'graded' &&
-            entry.score_breakdown !== undefined &&
-            Object.entries(entry.score_breakdown).map(([lang, cell]) =>
-              isAbsent(cell) ? (
-                <Absent key={lang} reason={cell.reason} detail={cell.detail} />
-              ) : (
-                <span key={lang} className="language-cell">
-                  {lang}: {renderMaybe(cell.score)}{' '}
-                  <IndicativeLabel indicative={cell.indicative} reasons={[]} n={cell.n} />
-                </span>
-              )
-            )}
-      </td>
+      <td>{renderLanguageBreakdown(entry)}</td>
       <td>
         <ContaminationRiskLabel contaminationRisk={entry.contamination_risk} />
       </td>
@@ -139,26 +138,51 @@ function QualityRow({ entry }: { entry: QualityEntry }) {
   )
 }
 
+// One summary row per suite, not per item: the indicative mark and the
+// headline exclusion count qualify the suite's score, and the contested
+// items are listed by id under the suite whose headline excludes them.
 function SuiteLevelSummary({ entries }: { entries: QualityEntry[] }) {
+  const suites = new Map<string, QualityEntry[]>()
+  for (const entry of entries) {
+    const key = JSON.stringify([entry.suite_id, entry.suite_version])
+    suites.set(key, [...(suites.get(key) ?? []), entry])
+  }
+
   return (
     <section className="quality-suite-summary">
-      {entries.map((entry, index) => (
-        <div key={index} className="quality-suite-summary-row">
-          <IndicativeLabel indicative={entry.indicative} reasons={entry.indicative_reasons} />
-          {!isAbsent(entry.judge.contested) && (
-            <ContestedLabel
-              contested={entry.judge.contested}
-              reason={entry.judge.contested_reason}
-              threshold={entry.judge.contested_threshold}
+      {[...suites].map(([key, suiteEntries]) => {
+        const [first] = suiteEntries
+        // Never let a raised mark on one row be hidden by a silent sibling.
+        const indicativeSource = suiteEntries.find((entry) => entry.indicative === true) ?? first
+        const excludedN = suiteEntries
+          .map((entry) => entry.judge.judged_headline_excluded_n)
+          .find((n) => !isAbsent(n))
+        return (
+          <div key={key} className="quality-suite-summary-row">
+            {renderMaybe(first.suite_id)}:{' '}
+            <IndicativeLabel
+              indicative={indicativeSource.indicative}
+              reasons={indicativeSource.indicative_reasons}
             />
-          )}
-          {!isAbsent(entry.judge.judged_headline_excluded_n) && (
-            <span className="excluded-count">
-              excluded from headline: {entry.judge.judged_headline_excluded_n}
-            </span>
-          )}
-        </div>
-      ))}
+            {suiteEntries
+              .filter((entry) => entry.judge.contested === true)
+              .map((entry, index) => (
+                <span key={index} className="contested-item">
+                  {' '}
+                  {renderMaybe(entry.item_id)}:{' '}
+                  <ContestedLabel
+                    contested={entry.judge.contested}
+                    reason={entry.judge.contested_reason}
+                    threshold={entry.judge.contested_threshold}
+                  />
+                </span>
+              ))}
+            {excludedN !== undefined && (
+              <span className="excluded-count"> excluded from headline: {String(excludedN)}</span>
+            )}
+          </div>
+        )
+      })}
     </section>
   )
 }

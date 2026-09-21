@@ -30,7 +30,37 @@ function formatMiB(mib: number): string {
   return `${mib.toFixed(1)} MiB`
 }
 
-function FicheBlock({ fiche }: { fiche: Maybe<Record<string, unknown>> }) {
+/**
+ * One throughput figure with its spread always beside it, and the
+ * unreliable flag (or its absence) from `UnreliableLabel`: Methodology 7's
+ * spread is shown for interpretation and is visibly not the flag.
+ */
+function ThroughputCell({
+  value,
+  spread,
+  unreliable,
+  metric,
+}: {
+  value: Maybe<number>
+  spread: Maybe<number>
+  unreliable: Maybe<boolean>
+  metric: string
+}) {
+  return (
+    <>
+      {renderMaybe(value)} <span className="spread">(spread {renderMaybe(spread)})</span>{' '}
+      <UnreliableLabel unreliable={unreliable} spread={spread} metric={metric} />
+    </>
+  )
+}
+
+function FicheBlock({
+  fiche,
+  ficheHash,
+}: {
+  fiche: Maybe<Record<string, unknown>>
+  ficheHash: Maybe<string>
+}) {
   if (isAbsent(fiche)) {
     return <Absent reason={fiche.reason} detail={fiche.detail} />
   }
@@ -52,7 +82,7 @@ function FicheBlock({ fiche }: { fiche: Maybe<Record<string, unknown>> }) {
       <dt>Flags</dt>
       <dd>{Array.isArray(flags) ? flags.join(' ') : String(flags)}</dd>
       <dt>fiche_hash</dt>
-      <dd>{String(fiche.roster_entry_id)}</dd>
+      <dd className="fiche-hash">{renderMaybe(ficheHash)}</dd>
     </dl>
   )
 }
@@ -71,24 +101,20 @@ function RuntimeRow({ entry }: { entry: RuntimeEntry }) {
         <TtftCell ttftMs={entry.ttft_ms} ttftSource={entry.ttft_source} />
       </td>
       <td>
-        {renderMaybe(entry.prompt_tok_per_s)}
-        {!isAbsent(entry.unreliable) && entry.unreliable && (
-          <UnreliableLabel
-            unreliable={entry.unreliable}
-            spread={entry.prompt_tok_per_s_spread}
-            metric="prompt_tok_per_s"
-          />
-        )}
+        <ThroughputCell
+          value={entry.prompt_tok_per_s}
+          spread={entry.prompt_tok_per_s_spread}
+          unreliable={entry.unreliable}
+          metric="prompt_tok_per_s"
+        />
       </td>
       <td>
-        {renderMaybe(entry.gen_tok_per_s)}
-        {!isAbsent(entry.unreliable) && entry.unreliable && (
-          <UnreliableLabel
-            unreliable={entry.unreliable}
-            spread={entry.gen_tok_per_s_spread}
-            metric="gen_tok_per_s"
-          />
-        )}
+        <ThroughputCell
+          value={entry.gen_tok_per_s}
+          spread={entry.gen_tok_per_s_spread}
+          unreliable={entry.unreliable}
+          metric="gen_tok_per_s"
+        />
       </td>
       <td>
         {isAbsent(entry.process_rss_bytes)
@@ -113,7 +139,7 @@ function RuntimeRow({ entry }: { entry: RuntimeEntry }) {
         )}
       </td>
       <td>
-        <FicheBlock fiche={entry.fiche} />
+        <FicheBlock fiche={entry.fiche} ficheHash={entry.fiche_hash} />
       </td>
     </tr>
   )

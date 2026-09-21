@@ -80,6 +80,40 @@ describe('QualityView', () => {
     expect(screen.getByText(/graded \(chrf\)/)).toBeInTheDocument()
   })
 
+  it('renders the suite-level summary once per suite, not once per item', async () => {
+    vi.spyOn(client, 'apiFetch').mockResolvedValueOnce(qualityViewFixture)
+
+    const { container } = renderWithGate()
+
+    expect(await screen.findByText(/indicative \(low_n\)/)).toBeInTheDocument()
+    expect(container.querySelectorAll('.quality-suite-summary-row')).toHaveLength(1)
+    expect(screen.getAllByText(/excluded from headline: 3/)).toHaveLength(1)
+  })
+
+  it('routes a breakdown that is itself absent through Absent, not through its keys', async () => {
+    const [entry] = qualityViewFixture.entries
+    vi.spyOn(client, 'apiFetch').mockResolvedValueOnce({
+      ...qualityViewFixture,
+      entries: [
+        {
+          ...entry,
+          language_breakdown: {
+            absent: true,
+            reason: 'predates_schema',
+            detail: { row_schema_version: '7' },
+          },
+        },
+      ],
+    })
+
+    const { container } = renderWithGate()
+
+    await screen.findByText(/no-use-case-is-silently-absent/)
+    const perLanguageCell = container.querySelectorAll('tbody tr td')[3]
+    expect(perLanguageCell.querySelector('.absent')).not.toBeNull()
+    expect(perLanguageCell.textContent).not.toMatch(/absent:|undefined/)
+  })
+
   it('renders the four failure-count reasons individually', async () => {
     vi.spyOn(client, 'apiFetch').mockResolvedValueOnce(qualityViewFixture)
 

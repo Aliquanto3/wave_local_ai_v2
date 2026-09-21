@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useState, type ReactNode } from 'react'
 import { apiFetch, UnauthorizedError } from '../../api/client'
 import type { Maybe } from '../../api/types'
 import { isAbsent } from '../../api/types'
@@ -52,7 +52,10 @@ function HeadlineBlock({ entry }: { entry: EnergyEntry }) {
         {renderMaybe(headline.energy_kwh)} kWh / {renderMaybe(headline.emissions_kg)} kg CO2e
       </span>
       {CHANNELS.map((channel) => (
-        <EnergyMethodLabel key={channel} channel={channel} method={headline.methods[channel]} />
+        <Fragment key={channel}>
+          {' · '}
+          <EnergyMethodLabel channel={channel} method={headline.methods[channel]} />
+        </Fragment>
       ))}
     </div>
   )
@@ -87,13 +90,9 @@ function DrillDown({ entry }: { entry: EnergyEntry }) {
           <td colSpan={3}>
             emission_factor_kg_per_kwh: {renderMaybe(entry.emission_factor_kg_per_kwh)} ·
             emission_region: {renderMaybe(entry.emission_region)} · emissions_scope:{' '}
-            {renderMaybe(entry.emissions_scope)} · formula_id:{' '}
+            {renderMaybe(entry.emissions_scope)} (scope comparability:{' '}
+            <ScopeComparabilityLabel text={entry.scope_comparability} />) · formula_id:{' '}
             {renderMaybe(entry.emissions_scope_formula_id)}
-          </td>
-        </tr>
-        <tr>
-          <td colSpan={3}>
-            <ScopeComparabilityLabel text={entry.scope_comparability} />
           </td>
         </tr>
       </tfoot>

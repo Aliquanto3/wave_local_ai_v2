@@ -37,6 +37,17 @@ describe('EnergyView', () => {
     expect(screen.getAllByText(/estimated_constant/).length).toBeGreaterThan(0)
   })
 
+  it('separates the three headline channel labels from the figures and from each other', async () => {
+    vi.spyOn(client, 'apiFetch').mockResolvedValueOnce(energyViewFixture)
+
+    renderWithGate()
+
+    const figures = await screen.findByText(/kWh \/.*kg CO2e/)
+    expect(figures.closest('.energy-headline')?.textContent).toMatch(
+      /CO2e · cpu: .+ · gpu: .+ · ram: /
+    )
+  })
+
   it('shows no headline and names the missing channel for the withheld entry', async () => {
     vi.spyOn(client, 'apiFetch').mockResolvedValueOnce(energyViewFixture)
 
