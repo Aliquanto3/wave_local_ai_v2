@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Instruction: The three screens over fixture data, boundary test, no-scroll check

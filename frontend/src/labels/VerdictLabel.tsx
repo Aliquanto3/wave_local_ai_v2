@@ -11,7 +11,7 @@ const VERDICT_NOT_COMPARABLE = 'not_comparable'
 
 interface VerdictLabelProps {
   verdict: Maybe<string>
-  referenceRunId?: Maybe<string>
+  referenceRunId?: Maybe<string> | null
   differingFields?: Maybe<string[]>
 }
 

@@ -36,9 +36,22 @@ function renderJoinedList(items: Maybe<string>[] | Maybe<RosterEntry>[]): ReactN
   return nodes.flatMap((node, index) => (index === 0 ? [node] : [', ', node]))
 }
 
-function RunRow({ run, kind }: { run: RunEntry; kind: 'runtime' | 'quality' }) {
+function RunRow({
+  run,
+  kind,
+  onSelectRun,
+}: {
+  run: RunEntry
+  kind: 'runtime' | 'quality'
+  onSelectRun: (runId: string) => void
+}) {
+  const runId = run.run_id
+  const selectable = !isAbsent(runId)
   return (
-    <tr>
+    <tr
+      className={selectable ? 'run-row run-row-selectable' : 'run-row'}
+      onClick={selectable ? () => onSelectRun(runId) : undefined}
+    >
       <td>{renderMaybe(run.run_id)}</td>
       <td>{renderMaybe(run.captured_at)}</td>
       <td>{renderJoinedList(run.models)}</td>
@@ -62,10 +75,12 @@ function RunsSection({
   title,
   collection,
   kind,
+  onSelectRun,
 }: {
   title: string
   collection: RunsCollection
   kind: 'runtime' | 'quality'
+  onSelectRun: (runId: string) => void
 }) {
   return (
     <section>
@@ -87,7 +102,7 @@ function RunsSection({
           </thead>
           <tbody>
             {collection.runs.map((run, index) => (
-              <RunRow key={index} run={run} kind={kind} />
+              <RunRow key={index} run={run} kind={kind} onSelectRun={onSelectRun} />
             ))}
           </tbody>
         </table>
@@ -96,7 +111,7 @@ function RunsSection({
   )
 }
 
-export function RunsList() {
+export function RunsList({ onSelectRun }: { onSelectRun: (runId: string) => void }) {
   const { reportUnauthorized } = useKeyGate()
   const [state, setState] = useState<LoadState>({ status: 'loading' })
 
@@ -140,11 +155,13 @@ export function RunsList() {
         title="Runtime runs"
         collection={state.view.runtime_runs}
         kind="runtime"
+        onSelectRun={onSelectRun}
       />
       <RunsSection
         title="Quality runs"
         collection={state.view.quality_runs}
         kind="quality"
+        onSelectRun={onSelectRun}
       />
     </>
   )
