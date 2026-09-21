@@ -49,7 +49,8 @@ function HeadlineBlock({ entry }: { entry: EnergyEntry }) {
   return (
     <div className="energy-headline">
       <span className="energy-headline-figures">
-        {renderMaybe(headline.energy_kwh)} kWh / {renderMaybe(headline.emissions_kg)} kg CO2e
+        {renderMaybe(headline.energy_kwh)} kWh / {renderMaybe(headline.emissions_kg)} kg
+        CO2e
       </span>
       {CHANNELS.map((channel) => (
         <Fragment key={channel}>
@@ -88,8 +89,8 @@ function DrillDown({ entry }: { entry: EnergyEntry }) {
       <tfoot>
         <tr>
           <td colSpan={3}>
-            emission_factor_kg_per_kwh: {renderMaybe(entry.emission_factor_kg_per_kwh)} ·
-            emission_region: {renderMaybe(entry.emission_region)} · emissions_scope:{' '}
+            emission_factor_kg_per_kwh: {renderMaybe(entry.emission_factor_kg_per_kwh)}{' '}
+            · emission_region: {renderMaybe(entry.emission_region)} · emissions_scope:{' '}
             {renderMaybe(entry.emissions_scope)} (scope comparability:{' '}
             <ScopeComparabilityLabel text={entry.scope_comparability} />) · formula_id:{' '}
             {renderMaybe(entry.emissions_scope_formula_id)}

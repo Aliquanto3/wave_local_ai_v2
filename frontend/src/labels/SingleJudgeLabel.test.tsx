@@ -12,7 +12,7 @@ describe('SingleJudgeLabel', () => {
 
   it('renders nothing when false', () => {
     const { container } = render(
-      <SingleJudgeLabel singleJudge={false} reason="second_judge_unavailable" />
+      <SingleJudgeLabel singleJudge={false} reason="second_judge_unavailable" />,
     )
 
     expect(container.textContent).toBe('')
@@ -23,7 +23,7 @@ describe('SingleJudgeLabel', () => {
       <SingleJudgeLabel
         singleJudge={{ absent: true, reason: 'null_in_row', detail: {} }}
         reason="second_judge_unavailable"
-      />
+      />,
     )
 
     expect(screen.getByText(/not reported/i)).toBeInTheDocument()

@@ -21,7 +21,7 @@ describe('VerdictLabel', () => {
       <VerdictLabel
         verdict="not_comparable"
         differingFields={['sampling', 'endpoint']}
-      />
+      />,
     )
 
     expect(screen.getByText(/not comparable/)).toBeInTheDocument()
@@ -31,7 +31,7 @@ describe('VerdictLabel', () => {
 
   it('routes through Absent when Absent', () => {
     render(
-      <VerdictLabel verdict={{ absent: true, reason: 'null_in_row', detail: {} }} />
+      <VerdictLabel verdict={{ absent: true, reason: 'null_in_row', detail: {} }} />,
     )
 
     expect(screen.getByText(/not reported/i)).toBeInTheDocument()

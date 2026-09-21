@@ -11,7 +11,9 @@ export function ContaminationRiskLabel({
   contaminationRisk,
 }: ContaminationRiskLabelProps) {
   if (isAbsent(contaminationRisk)) {
-    return <Absent reason={contaminationRisk.reason} detail={contaminationRisk.detail} />
+    return (
+      <Absent reason={contaminationRisk.reason} detail={contaminationRisk.detail} />
+    )
   }
   if (!contaminationRisk) {
     return null

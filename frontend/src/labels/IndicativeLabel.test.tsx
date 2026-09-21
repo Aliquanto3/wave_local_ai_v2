@@ -19,7 +19,7 @@ describe('IndicativeLabel', () => {
 
   it('renders nothing when indicative is false', () => {
     const { container } = render(
-      <IndicativeLabel indicative={false} reasons={['low_n']} />
+      <IndicativeLabel indicative={false} reasons={['low_n']} />,
     )
 
     expect(container.textContent).toBe('')
@@ -30,7 +30,7 @@ describe('IndicativeLabel', () => {
       <IndicativeLabel
         indicative={{ absent: true, reason: 'null_in_row', detail: {} }}
         reasons={['low_n']}
-      />
+      />,
     )
 
     expect(screen.getByText(/not reported/i)).toBeInTheDocument()
@@ -41,7 +41,7 @@ describe('IndicativeLabel', () => {
       <IndicativeLabel
         indicative
         reasons={{ absent: true, reason: 'null_in_row', detail: {} }}
-      />
+      />,
     )
 
     expect(screen.getByText(/not reported/i)).toBeInTheDocument()

@@ -12,7 +12,7 @@ function renderWithGate() {
   return render(
     <KeyGate>
       <QualityView runId={RUN_ID} />
-    </KeyGate>
+    </KeyGate>,
   )
 }
 
@@ -31,7 +31,9 @@ describe('QualityView', () => {
 
     renderWithGate()
 
-    expect(await screen.findByText(/no-use-case-is-silently-absent/)).toBeInTheDocument()
+    expect(
+      await screen.findByText(/no-use-case-is-silently-absent/),
+    ).toBeInTheDocument()
   })
 
   it('renders every real verdict distinctly', async () => {

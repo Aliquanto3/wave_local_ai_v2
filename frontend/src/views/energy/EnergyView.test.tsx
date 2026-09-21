@@ -12,7 +12,7 @@ function renderWithGate() {
   return render(
     <KeyGate>
       <EnergyView runId={RUN_ID} />
-    </KeyGate>
+    </KeyGate>,
   )
 }
 
@@ -44,7 +44,7 @@ describe('EnergyView', () => {
 
     const figures = await screen.findByText(/kWh \/.*kg CO2e/)
     expect(figures.closest('.energy-headline')?.textContent).toMatch(
-      /CO2e · cpu: .+ · gpu: .+ · ram: /
+      /CO2e · cpu: .+ · gpu: .+ · ram: /,
     )
   })
 
@@ -54,7 +54,7 @@ describe('EnergyView', () => {
     renderWithGate()
 
     const withheld = (await screen.findAllByText(/energy-headline-withheld/)).map(
-      (node) => node.closest('.energy-headline')
+      (node) => node.closest('.energy-headline'),
     )
     expect(withheld.some(Boolean)).toBe(true)
     expect(screen.getAllByText(/gpu_energy_method/).length).toBeGreaterThan(0)

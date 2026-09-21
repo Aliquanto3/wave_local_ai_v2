@@ -13,7 +13,7 @@ describe('UnreliableLabel', () => {
 
   it('renders nothing from this component when false', () => {
     const { container } = render(
-      <UnreliableLabel unreliable={false} spread={0.42} metric="ttft_ms" />
+      <UnreliableLabel unreliable={false} spread={0.42} metric="ttft_ms" />,
     )
 
     expect(container.textContent).toBe('')
@@ -25,7 +25,7 @@ describe('UnreliableLabel', () => {
         unreliable={{ absent: true, reason: 'null_in_row', detail: {} }}
         spread={0.42}
         metric="ttft_ms"
-      />
+      />,
     )
 
     expect(screen.getByText(/not reported/i)).toBeInTheDocument()

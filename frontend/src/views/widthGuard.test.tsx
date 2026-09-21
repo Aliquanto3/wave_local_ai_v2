@@ -48,7 +48,7 @@ describe('no screen declares an element wider than 1280px', () => {
     const { container, findByText } = render(
       <KeyGate>
         <QualityView runId={QUALITY_RUN_ID} />
-      </KeyGate>
+      </KeyGate>,
     )
     await findByText(/no-use-case-is-silently-absent/)
 
@@ -60,7 +60,7 @@ describe('no screen declares an element wider than 1280px', () => {
     const { container, findAllByText } = render(
       <KeyGate>
         <RuntimeView runId={RUN_ID} />
-      </KeyGate>
+      </KeyGate>,
     )
     await findAllByText(/RTX 3060/)
 
@@ -72,7 +72,7 @@ describe('no screen declares an element wider than 1280px', () => {
     const { container, findByText } = render(
       <KeyGate>
         <EnergyView runId={RUN_ID} />
-      </KeyGate>
+      </KeyGate>,
     )
     await findByText(/kWh \/.*kg CO2e/)
 

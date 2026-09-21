@@ -48,7 +48,8 @@ function ThroughputCell({
 }) {
   return (
     <>
-      {renderMaybe(value)} <span className="spread">(spread {renderMaybe(spread)})</span>{' '}
+      {renderMaybe(value)}{' '}
+      <span className="spread">(spread {renderMaybe(spread)})</span>{' '}
       <UnreliableLabel unreliable={unreliable} spread={spread} metric={metric} />
     </>
   )
@@ -92,7 +93,10 @@ function RuntimeRow({ entry }: { entry: RuntimeEntry }) {
     <tr>
       <td>
         {isAbsent(entry.roster_entry) ? (
-          <Absent reason={entry.roster_entry.reason} detail={entry.roster_entry.detail} />
+          <Absent
+            reason={entry.roster_entry.reason}
+            detail={entry.roster_entry.detail}
+          />
         ) : (
           entry.roster_entry.display_id
         )}

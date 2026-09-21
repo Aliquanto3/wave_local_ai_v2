@@ -15,7 +15,7 @@ describe('TtftCell', () => {
       <TtftCell
         ttftMs={{ absent: true, reason: 'null_in_row', detail: {} }}
         ttftSource="server_reported"
-      />
+      />,
     )
 
     expect(screen.getByText(/not reported/i)).toBeInTheDocument()
@@ -26,7 +26,7 @@ describe('TtftCell', () => {
       <TtftCell
         ttftMs={5465.025}
         ttftSource={{ absent: true, reason: 'null_in_row', detail: {} }}
-      />
+      />,
     )
 
     expect(screen.getByText(/not reported/i)).toBeInTheDocument()

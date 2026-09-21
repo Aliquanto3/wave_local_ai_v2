@@ -38,9 +38,7 @@ export function CapsCell({
       <span>context_length: {renderMaybe(contextLength)}</span>
       <span>thinking_policy: {renderMaybe(thinkingPolicy)}</span>
       {!isAbsent(thinkingPolicy) && thinkingPolicy === 'disabled' && (
-        <span className="caps-cell-note">
-          routing score, not the model's ceiling
-        </span>
+        <span className="caps-cell-note">routing score, not the model's ceiling</span>
       )}
     </span>
   )

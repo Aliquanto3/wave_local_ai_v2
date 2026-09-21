@@ -47,14 +47,18 @@ function importedModuleSpecifiers(text: string): string[] {
 describe('the quality/runtime component boundary', () => {
   it('no file under views/quality/ imports from views/runtime/', () => {
     for (const [path, text] of Object.entries(qualitySources)) {
-      const violation = importedModuleSpecifiers(text).find((s) => s.includes('runtime'))
+      const violation = importedModuleSpecifiers(text).find((s) =>
+        s.includes('runtime'),
+      )
       expect(violation, `${path} imports ${String(violation)}`).toBeUndefined()
     }
   })
 
   it('no file under views/runtime/ imports from views/quality/', () => {
     for (const [path, text] of Object.entries(runtimeSources)) {
-      const violation = importedModuleSpecifiers(text).find((s) => s.includes('quality'))
+      const violation = importedModuleSpecifiers(text).find((s) =>
+        s.includes('quality'),
+      )
       expect(violation, `${path} imports ${String(violation)}`).toBeUndefined()
     }
   })

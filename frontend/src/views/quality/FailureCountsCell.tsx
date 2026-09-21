@@ -38,7 +38,7 @@ export function FailureCountsCell({ failureCounts }: FailureCountsCellProps) {
   return (
     <span className="failure-counts-cell">
       {(Object.keys(REASON_LABELS) as (keyof FailureCounts)[]).map((key) =>
-        renderCount(REASON_LABELS[key], failureCounts[key])
+        renderCount(REASON_LABELS[key], failureCounts[key]),
       )}
     </span>
   )

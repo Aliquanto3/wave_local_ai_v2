@@ -19,7 +19,7 @@ const IDENTITY = {
   schema_version: '7',
   roster_entry_id: 'qwen3.6-35b-a3b-ud-iq4xs',
   release_version: '0.1.0+untagged',
-  commit_sha: '9bc9da88cf6c450e8f9d086d853b5ee73f55cbd7',  // pragma: allowlist secret
+  commit_sha: '9bc9da88cf6c450e8f9d086d853b5ee73f55cbd7', // pragma: allowlist secret
   tree_dirty: true,
 }
 

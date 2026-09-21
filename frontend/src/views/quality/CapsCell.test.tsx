@@ -10,7 +10,7 @@ describe('CapsCell', () => {
         stopSequences={[]}
         contextLength={32768}
         thinkingPolicy="disabled"
-      />
+      />,
     )
 
     expect(screen.getByText(/max_output_tokens: 32/)).toBeInTheDocument()
@@ -18,17 +18,19 @@ describe('CapsCell', () => {
     expect(screen.getByText(/thinking_policy: disabled/)).toBeInTheDocument()
   })
 
-  it("states the routing-score caveat when thinking_policy is disabled", () => {
+  it('states the routing-score caveat when thinking_policy is disabled', () => {
     render(
       <CapsCell
         maxOutputTokens={32}
         stopSequences={[]}
         contextLength={32768}
         thinkingPolicy="disabled"
-      />
+      />,
     )
 
-    expect(screen.getByText(/routing score, not the model's ceiling/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/routing score, not the model's ceiling/),
+    ).toBeInTheDocument()
   })
 
   it('omits the caveat when thinking_policy is not disabled', () => {
@@ -38,7 +40,7 @@ describe('CapsCell', () => {
         stopSequences={[]}
         contextLength={32768}
         thinkingPolicy="enabled"
-      />
+      />,
     )
 
     expect(screen.queryByText(/routing score/)).not.toBeInTheDocument()
@@ -51,7 +53,7 @@ describe('CapsCell', () => {
         stopSequences={[]}
         contextLength={32768}
         thinkingPolicy={{ absent: true, reason: 'predates_schema', detail: {} }}
-      />
+      />,
     )
 
     expect(screen.getByText(/not reported/i)).toBeInTheDocument()

@@ -12,7 +12,7 @@ function renderWithGate() {
   return render(
     <KeyGate>
       <RuntimeView runId={RUN_ID} />
-    </KeyGate>
+    </KeyGate>,
   )
 }
 
@@ -39,7 +39,9 @@ describe('RuntimeView', () => {
 
     renderWithGate()
 
-    expect((await screen.findAllByText(/5465.*server_reported/)).length).toBeGreaterThan(0)
+    expect(
+      (await screen.findAllByText(/5465.*server_reported/)).length,
+    ).toBeGreaterThan(0)
   })
 
   it('renders process_rss_bytes and vram_used_mib with distinct unit suffixes', async () => {
@@ -57,7 +59,9 @@ describe('RuntimeView', () => {
     renderWithGate()
 
     expect((await screen.findAllByText(/unreliable/)).length).toBeGreaterThan(0)
-    expect(screen.getByText(/unreliable \(gen_tok_per_s spread 0\.18\)/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/unreliable \(gen_tok_per_s spread 0\.18\)/),
+    ).toBeInTheDocument()
   })
 
   it('shows each throughput spread even on a row that is not flagged unreliable', async () => {
@@ -75,9 +79,9 @@ describe('RuntimeView', () => {
 
     const hashes = await screen.findAllByText(/^b9d1af56db2b6a26/)
     expect(hashes.length).toBeGreaterThan(0)
-    expect(hashes.every((node) => node.previousElementSibling?.textContent === 'fiche_hash')).toBe(
-      true
-    )
+    expect(
+      hashes.every((node) => node.previousElementSibling?.textContent === 'fiche_hash'),
+    ).toBe(true)
   })
 
   it('routes an unresolved fiche through Absent, naming the hash', async () => {

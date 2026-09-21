@@ -51,7 +51,7 @@ const ROSTER_ENTRY = {
   revision: 'main',
   file: 'Qwen3.6-35B-A3B/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf',
   quant: 'UD-IQ4_XS',
-  sha256: '649d7508507b84638732c4f52c24c8b15843c6dca2f3ff793ae07c14a67ebbb3',  // pragma: allowlist secret
+  sha256: '649d7508507b84638732c4f52c24c8b15843c6dca2f3ff793ae07c14a67ebbb3', // pragma: allowlist secret
   family: null,
   architecture: { kind: 'moe', expert_count: 40, active_params_b: 3.1 },
   roster_version: 2,
@@ -61,16 +61,42 @@ const FICHE = {
   cpu: 'AMD64 Family 25 Model 80 Stepping 0, AuthenticAMD',
   cuda_ceiling: '12.8',
   flags: [
-    '-m', 'D:\\ia\\models\\Qwen3.6-35B-A3B\\Qwen3.6-35B-A3B-UD-IQ4_XS.gguf',
-    '-ngl', '99', '--n-cpu-moe', '37', '-c', '32768', '-fa', 'on', '-t', '8',
-    '--jinja', '-np', '1', '--load-mode', 'none', '--temp', '1.0',
-    '--top-p', '0.95', '--top-k', '20', '--min-p', '0', '--presence-penalty', '1.5',
-    '--host', '127.0.0.1', '--port', '8080',
+    '-m',
+    'D:\\ia\\models\\Qwen3.6-35B-A3B\\Qwen3.6-35B-A3B-UD-IQ4_XS.gguf',
+    '-ngl',
+    '99',
+    '--n-cpu-moe',
+    '37',
+    '-c',
+    '32768',
+    '-fa',
+    'on',
+    '-t',
+    '8',
+    '--jinja',
+    '-np',
+    '1',
+    '--load-mode',
+    'none',
+    '--temp',
+    '1.0',
+    '--top-p',
+    '0.95',
+    '--top-k',
+    '20',
+    '--min-p',
+    '0',
+    '--presence-penalty',
+    '1.5',
+    '--host',
+    '127.0.0.1',
+    '--port',
+    '8080',
   ],
   gpu_driver_version: '572.70',
   gpu_name: 'NVIDIA GeForce RTX 3060 Laptop GPU',
   llama_cpp_build: 'b10537',
-  model_sha256: '649d7508507b84638732c4f52c24c8b15843c6dca2f3ff793ae07c14a67ebbb3',  // pragma: allowlist secret
+  model_sha256: '649d7508507b84638732c4f52c24c8b15843c6dca2f3ff793ae07c14a67ebbb3', // pragma: allowlist secret
   os: 'Windows 11',
   quant: 'UD-IQ4_XS',
   ram_gb: 31.4,
@@ -81,7 +107,7 @@ const SUITE_DEFINITION = {
   snapshot_filename: 'classification-support-routing@2.json',
   context_length: 32768,
   max_output_tokens: 32,
-  prompt_set_hash: 'd41a2134274cf1c8036022d2b68396d04bfd14ff263d2f8699dbefd7a2e4596a',  // pragma: allowlist secret
+  prompt_set_hash: 'd41a2134274cf1c8036022d2b68396d04bfd14ff263d2f8699dbefd7a2e4596a', // pragma: allowlist secret
   stop_sequences: [],
   suite_id: 'classification-support-routing',
   suite_version: '2',
@@ -93,7 +119,7 @@ const IDENTITY_5E1 = {
   schema_version: '7',
   roster_entry_id: 'qwen3.6-35b-a3b-ud-iq4xs',
   release_version: '0.1.0+untagged',
-  commit_sha: '9bc9da88cf6c450e8f9d086d853b5ee73f55cbd7',  // pragma: allowlist secret
+  commit_sha: '9bc9da88cf6c450e8f9d086d853b5ee73f55cbd7', // pragma: allowlist secret
   tree_dirty: true,
 }
 
@@ -105,21 +131,32 @@ const SHARED_FIELDS = {
   prompt_capture: 'captured',
   model_id: 'Qwen3.6-35B-A3B',
   provider: 'local',
-  fiche_hash: 'b9d1af56db2b6a26bfb265842bfd757dc78ed2d95e4ad3fce0088b8396d9003a',  // pragma: allowlist secret
+  fiche_hash: 'b9d1af56db2b6a26bfb265842bfd757dc78ed2d95e4ad3fce0088b8396d9003a', // pragma: allowlist secret
   task_suite: 'classification',
   expected_label: 'billing',
   predicted_label: 'billing',
-  sampling: { seed: 20260821, temperature: 0, top_k: 0, top_p: 1.0, presence_penalty: 0 },
+  sampling: {
+    seed: 20260821,
+    temperature: 0,
+    top_k: 0,
+    top_p: 1.0,
+    presence_penalty: 0,
+  },
   max_output_tokens: 32,
   stop_sequences: [],
   thinking_policy: PREDATES_SCHEMA(),
   context_length: 32768,
   suite_id: 'classification-support-routing',
   suite_version: '2',
-  prompt_set_hash: 'd41a2134274cf1c8036022d2b68396d04bfd14ff263d2f8699dbefd7a2e4596a',  // pragma: allowlist secret
+  prompt_set_hash: 'd41a2134274cf1c8036022d2b68396d04bfd14ff263d2f8699dbefd7a2e4596a', // pragma: allowlist secret
   provenance: 'hand_written',
   failure_reason: NULL_ABSENT,
-  failure_counts: { empty: 0, unparseable: 4, truncated_max_tokens: 0, truncated_context: 0 },
+  failure_counts: {
+    empty: 0,
+    unparseable: 4,
+    truncated_max_tokens: 0,
+    truncated_context: 0,
+  },
   retries: PREDATES_SCHEMA(),
   resumed: PREDATES_SCHEMA(),
   tokens_in_total: NULL_ABSENT,
@@ -174,7 +211,7 @@ const IDENTITY_D20 = {
   schema_version: '7',
   roster_entry_id: 'qwen3.6-35b-a3b-ud-iq4xs',
   release_version: '0.1.0+untagged',
-  commit_sha: '9bc9da88cf6c450e8f9d086d853b5ee73f55cbd7',  // pragma: allowlist secret
+  commit_sha: '9bc9da88cf6c450e8f9d086d853b5ee73f55cbd7', // pragma: allowlist secret
   tree_dirty: true,
 }
 
@@ -294,4 +331,3 @@ export const qualityViewFixture: QualityView = {
   ],
   unreadable: [],
 }
-

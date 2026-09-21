@@ -39,7 +39,10 @@ function renderDifferingFields(differingFields: VerdictLabelProps['differingFiel
     return null
   }
   return (
-    <span className="verdict-differing-fields"> differing: {differingFields.join(', ')}</span>
+    <span className="verdict-differing-fields">
+      {' '}
+      differing: {differingFields.join(', ')}
+    </span>
   )
 }
 

@@ -31,7 +31,8 @@ function renderScore(entry: QualityEntry): ReactNode {
   if (entry.score_shape === 'exact_match') {
     return (
       <span className="quality-score">
-        exact-match: {renderMaybe(entry.correct)} (suite {renderMaybe(entry.suite_accuracy)})
+        exact-match: {renderMaybe(entry.correct)} (suite{' '}
+        {renderMaybe(entry.suite_accuracy)})
       </span>
     )
   }
@@ -71,9 +72,14 @@ function renderJudgeBlock(entry: QualityEntry): ReactNode {
         judged score: {renderMaybe(judge.judged_headline_score)}
       </span>
       {isSingleJudge && (
-        <SingleJudgeLabel singleJudge={singleJudge} reason={judge.single_judge_reason} />
+        <SingleJudgeLabel
+          singleJudge={singleJudge}
+          reason={judge.single_judge_reason}
+        />
       )}
-      {hasAgreement && <span className="agreement-figure">agreement: {String(agreement)}</span>}
+      {hasAgreement && (
+        <span className="agreement-figure">agreement: {String(agreement)}</span>
+      )}
     </span>
   )
 }
@@ -82,7 +88,9 @@ function renderJudgeBlock(entry: QualityEntry): ReactNode {
 // only one of its cells.
 function renderLanguageBreakdown(entry: QualityEntry): ReactNode {
   const breakdown =
-    entry.score_shape === 'exact_match' ? entry.language_breakdown : entry.score_breakdown
+    entry.score_shape === 'exact_match'
+      ? entry.language_breakdown
+      : entry.score_breakdown
   if (breakdown === undefined) {
     return null
   }
@@ -97,7 +105,7 @@ function renderLanguageBreakdown(entry: QualityEntry): ReactNode {
         {lang}: {renderMaybe('accuracy' in cell ? cell.accuracy : cell.score)}{' '}
         <IndicativeLabel indicative={cell.indicative} reasons={[]} n={cell.n} />
       </span>
-    )
+    ),
   )
 }
 
@@ -153,7 +161,8 @@ function SuiteLevelSummary({ entries }: { entries: QualityEntry[] }) {
       {[...suites].map(([key, suiteEntries]) => {
         const [first] = suiteEntries
         // Never let a raised mark on one row be hidden by a silent sibling.
-        const indicativeSource = suiteEntries.find((entry) => entry.indicative === true) ?? first
+        const indicativeSource =
+          suiteEntries.find((entry) => entry.indicative === true) ?? first
         const excludedN = suiteEntries
           .map((entry) => entry.judge.judged_headline_excluded_n)
           .find((n) => !isAbsent(n))
@@ -178,7 +187,10 @@ function SuiteLevelSummary({ entries }: { entries: QualityEntry[] }) {
                 </span>
               ))}
             {excludedN !== undefined && (
-              <span className="excluded-count"> excluded from headline: {String(excludedN)}</span>
+              <span className="excluded-count">
+                {' '}
+                excluded from headline: {String(excludedN)}
+              </span>
             )}
           </div>
         )

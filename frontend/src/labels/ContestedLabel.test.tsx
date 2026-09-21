@@ -13,7 +13,7 @@ describe('ContestedLabel', () => {
 
   it('renders nothing when not contested', () => {
     const { container } = render(
-      <ContestedLabel contested={false} reason="split_verdict" threshold={0.2} />
+      <ContestedLabel contested={false} reason="split_verdict" threshold={0.2} />,
     )
 
     expect(container.textContent).toBe('')
@@ -25,7 +25,7 @@ describe('ContestedLabel', () => {
         contested={{ absent: true, reason: 'null_in_row', detail: {} }}
         reason="split_verdict"
         threshold={0.2}
-      />
+      />,
     )
 
     expect(screen.getByText(/not reported/i)).toBeInTheDocument()
@@ -37,7 +37,7 @@ describe('ContestedLabel', () => {
         contested
         reason="split_verdict"
         threshold={{ absent: true, reason: 'predates_schema', detail: {} }}
-      />
+      />,
     )
 
     expect(screen.getByText(/not reported/i)).toBeInTheDocument()

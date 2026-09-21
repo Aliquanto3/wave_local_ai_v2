@@ -12,7 +12,7 @@ describe('FailureCountsCell', () => {
           truncated_max_tokens: 1,
           truncated_context: 2,
         }}
-      />
+      />,
     )
 
     expect(screen.getByText(/empty: 0/)).toBeInTheDocument()
@@ -25,7 +25,7 @@ describe('FailureCountsCell', () => {
     render(
       <FailureCountsCell
         failureCounts={{ absent: true, reason: 'null_in_row', detail: {} }}
-      />
+      />,
     )
 
     expect(screen.getByText(/not reported/i)).toBeInTheDocument()

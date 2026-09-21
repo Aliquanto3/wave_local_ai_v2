@@ -15,7 +15,9 @@ export function DeclaredAbsenceLabel({ reason, detail }: DeclaredAbsenceLabelPro
   return (
     <span className="declared-absence-label">
       not yet available: {reason}
-      {detail !== undefined && <span className="declared-absence-detail"> ({detail})</span>}
+      {detail !== undefined && (
+        <span className="declared-absence-detail"> ({detail})</span>
+      )}
     </span>
   )
 }

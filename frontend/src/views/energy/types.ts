@@ -34,7 +34,7 @@ export interface EnergyHeadlineComposite {
 export type EnergyHeadline = EnergyHeadlineWithheld | EnergyHeadlineComposite
 
 export function isWithheldHeadline(
-  headline: EnergyHeadline
+  headline: EnergyHeadline,
 ): headline is EnergyHeadlineWithheld {
   return (headline as EnergyHeadlineWithheld).withheld === true
 }

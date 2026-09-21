@@ -19,7 +19,7 @@ describe('ContaminationRiskLabel', () => {
     render(
       <ContaminationRiskLabel
         contaminationRisk={{ absent: true, reason: 'null_in_row', detail: {} }}
-      />
+      />,
     )
 
     expect(screen.getByText(/not reported/i)).toBeInTheDocument()
