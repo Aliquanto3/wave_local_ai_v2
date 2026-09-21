@@ -1,6 +1,13 @@
 default_install_hook_types: [pre-commit, pre-push]
 default_stages: [pre-commit]
 
+# Front-end ESLint/Prettier/tsc stay CI-only, not wired into this file: this
+# fast gate is a `uv run`-only pipeline, and adding `npm` invocations here
+# would force every contributor's local pre-commit hook to have Node
+# installed even for a Python-only change, slowing the commit-stage hook this
+# file already optimizes for speed. The `frontend` CI job (.github/workflows/ci.yml)
+# runs the same checks on every push and PR, so the gate exists -- just at CI
+# time rather than commit time.
 repos:
   - repo: local
     hooks:

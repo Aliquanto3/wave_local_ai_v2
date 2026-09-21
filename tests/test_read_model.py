@@ -252,9 +252,83 @@ def test_the_runs_view_answers_two_named_collections_never_one_array(
         "captured_at",
         "schema_version",
         "roster_entry_id",
+        "release_version",
+        "commit_sha",
+        "tree_dirty",
         "row_count",
         "roster_entry",
+        "models",
+        "suites",
     }
+    # Runtime carries models but never a suites key at all: the concept does
+    # not apply to a runtime row.
+    assert "suites" not in view["runtime_runs"]["runs"][0]
+
+
+def test_the_runs_view_surfaces_the_three_relocated_fields(
+    bundle: dict[str, Path],
+) -> None:
+    write_store(
+        bundle["runtime"],
+        [
+            make_row(
+                "runtime",
+                release_version="1.2.3",
+                commit_sha="deadbeef",
+                tree_dirty=True,
+            )
+        ],
+    )
+
+    view = read_model.runs_view(
+        bundle["runtime"], bundle["quality"], FLOOR, loaded_roster(bundle)
+    )
+
+    run = view["runtime_runs"]["runs"][0]
+    assert run["release_version"] == "1.2.3"
+    assert run["commit_sha"] == "deadbeef"
+    assert run["tree_dirty"] is True
+    # Relocated out of the per-run-entry views, not duplicated into them.
+    assert "release_version" not in view["runtime_runs"]["runs"][0]["roster_entry"]
+
+
+def test_the_runs_view_enumerates_distinct_models_and_suites(
+    bundle: dict[str, Path],
+) -> None:
+    write_store(
+        bundle["quality"],
+        [
+            make_row("quality", task_suite="suite-a"),
+            make_row("quality", task_suite="suite-b"),
+            make_row("quality", roster_entry_id="unknown-entry", task_suite="suite-a"),
+        ],
+    )
+
+    view = read_model.runs_view(
+        bundle["runtime"], bundle["quality"], FLOOR, loaded_roster(bundle)
+    )
+
+    run = view["quality_runs"]["runs"][0]
+    assert run["suites"] == ["suite-a", "suite-b"]
+    models = run["models"]
+    assert len(models) == 2
+    assert models[0]["display_id"] == "Qwen3.6-35B-A3B"
+    assert isinstance(models[1], Absent)
+    assert models[1].reason == ABSENT_POINTER_UNRESOLVED
+
+
+def test_a_runtime_only_store_carries_models_but_no_suites_key(
+    bundle: dict[str, Path],
+) -> None:
+    write_store(bundle["runtime"], [make_row("runtime")])
+
+    view = read_model.runs_view(
+        bundle["runtime"], bundle["quality"], FLOOR, loaded_roster(bundle)
+    )
+
+    run = view["runtime_runs"]["runs"][0]
+    assert run["models"][0]["display_id"] == "Qwen3.6-35B-A3B"
+    assert "suites" not in run
 
 
 def test_an_unknown_run_is_none_not_an_empty_list(bundle: dict[str, Path]) -> None:

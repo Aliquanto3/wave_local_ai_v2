@@ -9,6 +9,9 @@ wheels/
 # Virtual environments
 .venv
 
+# Front end (frontend/dist is already covered by the dist/ rule above)
+frontend/node_modules
+
 # --- Project ---
 .env
 .venv/

@@ -20,6 +20,9 @@ from typing import Annotated, Any, Literal
 
 import uvicorn
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from wave_local_ai_v2 import read_model, roster
 from wave_local_ai_v2.settings import (
@@ -220,11 +223,42 @@ def create_app(settings: ServiceSettings) -> FastAPI:
             raise _not_found(run_id, store, settings.schema_floor)
         return read_model.to_jsonable(view)
 
-    # No CORS configuration here, deliberately: the single-origin topology and
-    # CORS-as-defence-in-depth belong to the story that serves the bundle, and
-    # a permissive default added now is the kind of thing that survives to
-    # production unreviewed.
     app.include_router(api)
+
+    # Restricted to the one configured dashboard origin, defence-in-depth
+    # only: the shipped topology is single-origin (the browser and `/api`
+    # share host:port), so this has nothing to permit in production and
+    # exists only to fail closed if that topology is ever violated.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[settings.dashboard_origin],
+        allow_methods=["GET"],
+        allow_headers=[API_KEY_HEADER],
+    )
+
+    # The bundle is served last: `/api` is registered above, so it is tried
+    # first and is never shadowed. Never committed (plan.md's Decisions): a
+    # fresh checkout with no `npm run build` yet simply has nothing to mount
+    # or serve here, and every non-`/api` request 404s instead of crashing
+    # startup.
+    assets_dir = settings.dashboard_bundle_dir / "assets"
+    if assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="dashboard-assets")
+
+    entry_document = settings.dashboard_bundle_dir / "index.html"
+
+    @app.get("/{full_path:path}")
+    def serve_dashboard_entry(full_path: str) -> FileResponse:
+        # `/api/*` is already exhausted by the router above: reaching here
+        # with an `api/` prefix means no route matched it, and it must stay a
+        # 404 rather than fall back to the entry document -- an unknown API
+        # path must never leak HTML.
+        if full_path == "api" or full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail=f"no such route: /{full_path}")
+        if not entry_document.is_file():
+            raise HTTPException(status_code=404, detail="dashboard bundle is not built")
+        return FileResponse(entry_document)
+
     return app
 
 
