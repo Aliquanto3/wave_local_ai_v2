@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { KeyGate } from './components/KeyGate'
+import { ComparisonView } from './views/comparison/ComparisonView'
 import { EnergyView } from './views/energy/EnergyView'
 import { QualityView } from './views/quality/QualityView'
 import { RuntimeView } from './views/runtime/RuntimeView'
@@ -11,6 +12,7 @@ type Screen = 'primary' | 'energy'
 type Selection =
   | { status: 'runs' }
   | { status: 'selected'; runId: string; kind: RunKind; screen: Screen }
+  | { status: 'comparison' }
 
 // A quality run_id and a runtime run_id are minted by two separate CLIs over
 // two separate stores (see read_model.runs_view's own docstring) -- there is
@@ -70,13 +72,34 @@ function App() {
       <header>
         <h1>wave-local-ai-v2</h1>
       </header>
-      {selection.status === 'runs' ? (
-        <RunsList
-          onSelectRun={(runId, kind) =>
-            setSelection({ status: 'selected', runId, kind, screen: 'primary' })
-          }
-        />
-      ) : (
+      {selection.status === 'runs' && (
+        <>
+          <nav className="top-nav">
+            <button
+              type="button"
+              onClick={() => setSelection({ status: 'comparison' })}
+            >
+              Compare dense and MoE
+            </button>
+          </nav>
+          <RunsList
+            onSelectRun={(runId, kind) =>
+              setSelection({ status: 'selected', runId, kind, screen: 'primary' })
+            }
+          />
+        </>
+      )}
+      {selection.status === 'comparison' && (
+        <>
+          <nav className="top-nav">
+            <button type="button" onClick={() => setSelection({ status: 'runs' })}>
+              ← Runs
+            </button>
+          </nav>
+          <ComparisonView />
+        </>
+      )}
+      {selection.status === 'selected' && (
         <>
           <TabStrip
             runId={selection.runId}

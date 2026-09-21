@@ -26,6 +26,12 @@ const runtimeSources = import.meta.glob('./runtime/**/*.{ts,tsx}', {
   import: 'default',
 }) as Record<string, string>
 
+const comparisonSources = import.meta.glob('./comparison/**/*.{ts,tsx}', {
+  eager: true,
+  query: '?raw',
+  import: 'default',
+}) as Record<string, string>
+
 /**
  * Every `import ... from '...'` module specifier in `text`, ignoring
  * comments -- so a docstring that merely *names* the other view's path
@@ -58,6 +64,20 @@ describe('the quality/runtime component boundary', () => {
     for (const [path, text] of Object.entries(runtimeSources)) {
       const violation = importedModuleSpecifiers(text).find((s) =>
         s.includes('quality'),
+      )
+      expect(violation, `${path} imports ${String(violation)}`).toBeUndefined()
+    }
+  })
+
+  // Confirmed this fails before the fix: a cross-import
+  // (`import type { RuntimeView } from '../runtime/types'`) was temporarily
+  // added to `views/comparison/ComparisonView.tsx`, the test run to see it
+  // fail ("imports ../runtime/types"), and the line removed -- same proof
+  // method as the original pair above.
+  it('no file under views/comparison/ imports from views/runtime/', () => {
+    for (const [path, text] of Object.entries(comparisonSources)) {
+      const violation = importedModuleSpecifiers(text).find((s) =>
+        s.includes('runtime'),
       )
       expect(violation, `${path} imports ${String(violation)}`).toBeUndefined()
     }
