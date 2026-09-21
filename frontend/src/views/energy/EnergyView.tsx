@@ -101,9 +101,15 @@ function DrillDown({ entry }: { entry: EnergyEntry }) {
   )
 }
 
-export function EnergyView({ runId }: { runId: string }) {
+export function EnergyView({
+  runId,
+  initialStore = 'runtime',
+}: {
+  runId: string
+  initialStore?: Store
+}) {
   const { reportUnauthorized } = useKeyGate()
-  const [store, setStore] = useState<Store>('runtime')
+  const [store, setStore] = useState<Store>(initialStore)
   const [state, setState] = useState<LoadState>({ status: 'loading' })
 
   useEffect(() => {

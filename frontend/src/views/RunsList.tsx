@@ -43,14 +43,14 @@ function RunRow({
 }: {
   run: RunEntry
   kind: 'runtime' | 'quality'
-  onSelectRun: (runId: string) => void
+  onSelectRun: (runId: string, kind: 'runtime' | 'quality') => void
 }) {
   const runId = run.run_id
   const selectable = !isAbsent(runId)
   return (
     <tr
       className={selectable ? 'run-row run-row-selectable' : 'run-row'}
-      onClick={selectable ? () => onSelectRun(runId) : undefined}
+      onClick={selectable ? () => onSelectRun(runId, kind) : undefined}
     >
       <td>{renderMaybe(run.run_id)}</td>
       <td>{renderMaybe(run.captured_at)}</td>
@@ -80,7 +80,7 @@ function RunsSection({
   title: string
   collection: RunsCollection
   kind: 'runtime' | 'quality'
-  onSelectRun: (runId: string) => void
+  onSelectRun: (runId: string, kind: 'runtime' | 'quality') => void
 }) {
   return (
     <section>
@@ -111,7 +111,11 @@ function RunsSection({
   )
 }
 
-export function RunsList({ onSelectRun }: { onSelectRun: (runId: string) => void }) {
+export function RunsList({
+  onSelectRun,
+}: {
+  onSelectRun: (runId: string, kind: 'runtime' | 'quality') => void
+}) {
   const { reportUnauthorized } = useKeyGate()
   const [state, setState] = useState<LoadState>({ status: 'loading' })
 

@@ -6,7 +6,9 @@ import { setKey } from '../api/keyStore'
 import { EMPTY_RUNS_VIEW_FIXTURE, RUNS_VIEW_FIXTURE } from './fixtures/runsView.fixture'
 import { RunsList } from './RunsList'
 
-function renderWithGate(onSelectRun: (runId: string) => void = () => {}) {
+function renderWithGate(
+  onSelectRun: (runId: string, kind: 'runtime' | 'quality') => void = () => {},
+) {
   return render(
     <KeyGate>
       <RunsList onSelectRun={onSelectRun} />
@@ -61,7 +63,7 @@ describe('RunsList', () => {
     expect(await screen.findAllByText('no runs recorded')).toHaveLength(2)
   })
 
-  it('calls onSelectRun with the run_id when a run row is clicked', async () => {
+  it('calls onSelectRun with the run_id and its kind when a run row is clicked', async () => {
     vi.spyOn(client, 'apiFetch').mockResolvedValueOnce(RUNS_VIEW_FIXTURE)
     const onSelectRun = vi.fn()
 
@@ -70,7 +72,7 @@ describe('RunsList', () => {
     const cell = await screen.findByText('runtime-run-1')
     cell.closest('tr')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
 
-    expect(onSelectRun).toHaveBeenCalledWith('runtime-run-1')
+    expect(onSelectRun).toHaveBeenCalledWith('runtime-run-1', 'runtime')
   })
 
   it('renders a named unreachable message on a rejected fetch', async () => {

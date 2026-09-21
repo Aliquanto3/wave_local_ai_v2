@@ -36,6 +36,42 @@ runs in a quiet thermal window, two quality runs, the validator proof, this READ
 tables rebuilt), filed in `aidd_docs/backlog/tech-debt.md`, not something a schema bump
 does to the published bytes on its way past.
 
+## What the dashboard withholds, and why
+
+The three pitch screens (`frontend/src/views/quality/`, `views/runtime/`,
+`views/energy/`) render every field the read model resolves, but three
+constructs are deliberately shown as a declared absence rather than as a
+value on day one -- documented evidence of honest withholding against this
+bundle's real state, not an apparent gap in what those screens ship.
+
+- **A judged score.** `read_model.QUALITY_JUDGE_FIELDS` (`row_contract.
+  JUDGED_FIELDS`) resolves against every row in this bundle -- no store,
+  reference or live, holds a judged row today. `QualityView`'s judge column
+  (`renderJudgeBlock` in `frontend/src/views/quality/QualityView.tsx`)
+  renders `DeclaredAbsenceLabel` naming `judged-score-withheld` on every
+  entry until a row carries either an agreement figure over two judges or
+  the `single_judge` flag; Methodology 11 forbids a plain `judged_headline_score`
+  number without one. The owning epic is the judge machinery this repo has
+  already built (`judge.py`, `judge_protocol.py`, `agreement.py`) but has not
+  yet run against either suite.
+- **The energy headline, when a channel's label is missing.**
+  `read_model._energy_entry` withholds `energy_headline` outright -- never
+  publishing a composite `energy_kwh`/`emissions_kg` without all three
+  per-channel `*_energy_method` labels beside it -- and states which channel
+  is missing via `missing_labels`. `EnergyView`'s `HeadlineBlock` renders
+  that as `DeclaredAbsenceLabel` per missing channel rather than a number
+  with an unlabelled method. Every row in this bundle carries all three
+  labels; the mechanism is exercised in tests against a hand-edited fixture
+  entry (`frontend/src/views/energy/fixtures/energyView.fixture.ts`), not
+  against a real gap in the committed bundle.
+- **The coverage record.** No store, route, or `read_model` field carries a
+  coverage record (exercised/covered-by-dimension/out-of-scope) today --
+  it is owned and built by a sibling epic, per that epic's own boundary
+  ("this epic excludes showing any of this to a human"). `QualityView`'s
+  `CoverageRecord` component renders a static `DeclaredAbsenceLabel` naming
+  `no-use-case-is-silently-absent`, wired to no API field, rather than
+  fabricating an entry this story's own scope does not build.
+
 ## This regeneration (Story 19 + Story 20, 2026-08-27)
 
 Both files were regenerated from scratch under the current schema (`schema_version` `"7"`),
