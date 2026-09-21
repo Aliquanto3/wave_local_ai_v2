@@ -8,12 +8,18 @@ non-loopback paths are both exercised without monkeypatching anything.
 from __future__ import annotations
 
 import hashlib
+import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 from starlette.testclient import TestClient
 from store_fixtures import RUN_ID, make_row, write_store
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+
+from generate_dev_cert import generate_cert
 
 from wave_local_ai_v2 import results, row_contract, service
 from wave_local_ai_v2.settings import ServiceSettings, SettingsError
@@ -43,14 +49,20 @@ def dashboard_bundle_dir(tmp_path: Path) -> Path:
     return root
 
 
+@pytest.fixture(scope="session")
+def _tls_pem() -> tuple[bytes, bytes]:
+    # Generated once: RSA key generation is the slow part, and `main()` loads
+    # the pair for real before it serves, so placeholder bytes would not do.
+    return generate_cert([])
+
+
 @pytest.fixture
-def tls_pair(tmp_path: Path) -> tuple[Path, Path]:
-    """An on-disk cert/key pair -- content is never asserted, only presence
-    and the path making its way into `uvicorn.run`."""
+def tls_pair(tmp_path: Path, _tls_pem: tuple[bytes, bytes]) -> tuple[Path, Path]:
+    """A real, loadable on-disk cert/key pair."""
     certfile = tmp_path / "cert.pem"
     keyfile = tmp_path / "key.pem"
-    certfile.write_text("cert", encoding="utf-8")
-    keyfile.write_text("key", encoding="utf-8")
+    certfile.write_bytes(_tls_pem[0])
+    keyfile.write_bytes(_tls_pem[1])
     return certfile, keyfile
 
 
@@ -419,6 +431,36 @@ def test_the_serve_entry_refuses_to_start_without_a_key(
 
     assert exit_code == 1
     assert "SERVICE_API_KEY is not set" in capsys.readouterr().err
+    assert bound == [], "no socket may be bound on the refusal path"
+
+
+@pytest.mark.parametrize("breakage", ["swapped", "not-pem"])
+def test_the_serve_entry_refuses_an_unloadable_tls_pair_before_announcing(
+    monkeypatch,
+    settings: ServiceSettings,
+    capsys: pytest.CaptureFixture[str],
+    breakage: str,
+) -> None:
+    if breakage == "swapped":
+        broken = replace(
+            settings,
+            tls_certfile=settings.tls_keyfile,
+            tls_keyfile=settings.tls_certfile,
+        )
+    else:
+        settings.tls_certfile.write_text("not a certificate", encoding="utf-8")
+        broken = settings
+    bound: list[Any] = []
+    monkeypatch.setattr(service, "load_service_settings", lambda: broken)
+    monkeypatch.setattr(service.uvicorn, "run", lambda *a, **k: bound.append(a))
+
+    exit_code = service.main()
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "SERVICE_TLS_CERTFILE/SERVICE_TLS_KEYFILE" in captured.err
+    assert "serving" not in captured.out
+    assert API_KEY not in captured.out + captured.err
     assert bound == [], "no socket may be bound on the refusal path"
 
 

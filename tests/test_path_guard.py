@@ -30,6 +30,13 @@ def test_an_absolute_part_that_escapes_root_returns_none(tmp_path: Path) -> None
     assert resolve_within_root(root, str(escaped)) is None
 
 
+def test_a_part_carrying_a_nul_byte_returns_none_not_raising(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+
+    assert resolve_within_root(root, "a\x00b.json") is None
+
+
 def test_a_root_relative_part_is_a_no_op(tmp_path: Path) -> None:
     root = tmp_path / "root"
     root.mkdir()

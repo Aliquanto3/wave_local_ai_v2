@@ -28,3 +28,13 @@ One traversal gap (the scope table's own named item) existed before this
 branch and is fixed by it (phase 1). Every other scope item was already
 compliant or is closed by this branch's own changes; the broader automated
 pass found no additional high-confidence finding. No open finding remains.
+
+## Post-review addendum
+
+The branch's `aidd-dev:05-review` found two gaps this report missed, both
+fixed in the review commit:
+
+| Scope item | Finding | Resolution |
+| --- | --- | --- |
+| **Traversal on the configurable store path** | `path_guard.resolve_within_root` raised `ValueError` on a pointer carrying a NUL byte (`Path.resolve()` refuses it), turning a malformed stored `fiche_hash`/`suite_id` into a 500 where `main`'s plain `Path.exists()` had degraded to "absent". | Fixed: the resolve is guarded and returns `None`, the same absence an escape reports. |
+| **TLS configuration** | A cert/key pair that exists but cannot be loaded (swapped files, a directory, not PEM) passed the existence check and failed only inside `uvicorn.run`, after `main()` had already printed `serving https://...`, with a bare traceback. | Fixed: `main()` loads the pair into an `ssl.SSLContext` before announcing and refuses with a message naming both variables, exit 1, no socket bound. |

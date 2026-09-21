@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: done
 ---
 
 # Instruction: Evidence — a real HTTPS run, a keyless transcript, a screenshot
@@ -84,11 +84,13 @@ and `evidence/keyless-curl-refusal.txt` are on disk, captured against a real
 search — so the evidence file does not itself become the leak it is proving
 absent.
 
-Task 3 is **blocked**: the Claude-in-Chrome browser extension is not
-connected in this environment (`tabs_context_mcp` returns "Browser extension
-is not connected"), so no real browser is drivable here to render the
-dashboard, submit a wrong key and capture
-`evidence/browser-refusal-screenshot.png`. Needs a human to install/connect
-the extension (or to take the screenshot manually against a running
-`uv run wave-local-ai-v2-serve` per `docs/demo.md`'s step 5), after which
-this task can resume.
+Task 3 done: `evidence/browser-refusal-screenshot.png` was captured during
+the review from a real Chromium browser (headless Microsoft Edge driven over
+the DevTools protocol, since the Claude-in-Chrome extension was still not
+connected) against `uv run wave-local-ai-v2-serve` bound over TLS to
+`10.42.47.37:8443` with the same `scripts/generate_dev_cert.py`-issued cert.
+The browser reached the service through the LAN address, so the peer was
+non-loopback and the key gate applied: the page rendered the dialog labeled
+"API key required", a wrong key was submitted through its form, the `/api/runs`
+call was refused with 401, and the dialog re-rendered with "The service
+refused that key. Enter it again." `localStorage` was empty afterwards.

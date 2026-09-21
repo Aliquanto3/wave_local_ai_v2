@@ -17,9 +17,16 @@ def resolve_within_root(root: Path, *parts: str) -> Path | None:
     Returns the resolved `Path` when it does, `None` when a part such as
     `"../../etc/passwd"` walks it outside `root`. No filesystem I/O beyond the
     two `.resolve()` calls -- existence is still the caller's own check.
+
+    A part `.resolve()` cannot represent (an embedded NUL byte raises
+    `ValueError`) is also `None`: both callers promise to degrade to "absent",
+    never to raise, and `Path.exists()` itself swallows that same error.
     """
     resolved_root = root.resolve()
-    candidate = resolved_root.joinpath(*parts).resolve()
+    try:
+        candidate = resolved_root.joinpath(*parts).resolve()
+    except (ValueError, OSError):
+        return None
     if not candidate.is_relative_to(resolved_root):
         return None
     return candidate

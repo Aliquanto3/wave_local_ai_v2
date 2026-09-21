@@ -1,6 +1,6 @@
 ---
 objective: "The service binds where configured and serves only over TLS; every /api/* request off loopback is answered or refused by an identical-shaped body that discloses nothing; a configurable store path can never resolve outside its own root; the browser's existing key custody is verified against the named refusal screen; the branch clears a threat-scoped security review before merge."
-status: blocked
+status: done
 ---
 
 # Plan: The demo address serves over TLS and refuses a keyless request

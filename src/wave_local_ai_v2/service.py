@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hmac
 import ipaddress
+import ssl
 import sys
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -272,11 +273,27 @@ def main() -> int:
     A missing key or TLS cert/key pair returns 1 with its message on stderr
     and binds no socket. TLS is unconditional -- on loopback included -- the
     same posture `load_service_settings` already takes for `SERVICE_API_KEY`.
+
+    A pair that exists but cannot be loaded (swapped files, a directory, not
+    PEM) is refused the same way, before the `serving https://` line: uvicorn
+    would otherwise load it only inside `run`, after that line already
+    claimed the service was up, and fail with a bare traceback.
     """
     try:
         settings = load_service_settings()
     except SettingsError as exc:
         print(str(exc), file=sys.stderr)
+        return 1
+    try:
+        ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER).load_cert_chain(
+            settings.tls_certfile, settings.tls_keyfile
+        )
+    except (ssl.SSLError, OSError) as exc:
+        print(
+            "SERVICE_TLS_CERTFILE/SERVICE_TLS_KEYFILE do not form a loadable "
+            f"TLS cert/key pair: {exc}",
+            file=sys.stderr,
+        )
         return 1
 
     app = create_app(settings)
