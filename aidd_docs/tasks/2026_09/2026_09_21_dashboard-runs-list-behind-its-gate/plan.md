@@ -1,6 +1,6 @@
 ---
 objective: "The service serves a built dashboard on its own origin, opening on a runs list that names every absence and every dirty tree, and a `frontend` CI job blocks a merge exactly as the Python job does."
-status: in-progress
+status: implemented
 ---
 
 # Plan: The browser opens on the list of runs, behind the front-end's own gate
