@@ -18,7 +18,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
@@ -34,7 +34,7 @@ jobs:
         run: uv run pytest
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: coverage-${{ matrix.os }}
           path: coverage.xml
@@ -46,6 +46,35 @@ jobs:
 
       - name: Dependency audit
         run: uv run python scripts/audit_dependencies.py
+
+  frontend:
+    name: frontend
+    # Ubuntu only, unlike `test`'s two-OS matrix: front-end tooling has no
+    # OS-specific behavior this project depends on.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: frontend/.nvmrc
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Tests (coverage-gated)
+        run: npm test -- --coverage
 
   build:
     name: build
@@ -60,7 +89,7 @@ jobs:
       IMAGE: wave-local-ai-v2:ci
       EXPECTED_SOURCE: ${{ github.server_url }}/${{ github.repository }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
@@ -128,7 +157,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
@@ -156,7 +185,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
@@ -182,7 +211,7 @@ jobs:
 
   required:
     name: required
-    needs: [test, build]
+    needs: [test, build, frontend]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -194,6 +223,10 @@ jobs:
           fi
           if [ "${{ needs.build.result }}" != "success" ] && [ "${{ needs.build.result }}" != "skipped" ]; then
             echo "build did not succeed: ${{ needs.build.result }}"
+            exit 1
+          fi
+          if [ "${{ needs.frontend.result }}" != "success" ]; then
+            echo "frontend did not succeed: ${{ needs.frontend.result }}"
             exit 1
           fi
         shell: bash
