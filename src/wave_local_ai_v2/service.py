@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hmac
 import ipaddress
+import ssl
 import sys
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -76,14 +77,18 @@ def _require_key(
 ) -> None:
     """Refuse a non-loopback request that does not present the matching key.
 
-    The 401 body names which of the two refusals applies and carries no key
-    material, no store path and no traceback.
+    The 401 body is byte-identical whether the key is absent or wrong -- a
+    client must not be able to tell the two reasons apart -- and carries no
+    key material, no store path and no traceback.
     """
     client = request.client
     if is_loopback_client(None if client is None else client.host):
         return
+    refusal = HTTPException(
+        status_code=401, detail=f"missing or invalid {API_KEY_HEADER}"
+    )
     if presented_key is None:
-        raise HTTPException(status_code=401, detail=f"missing {API_KEY_HEADER}")
+        raise refusal
     # `compare_digest`, never `==`: a byte-by-byte comparison that short
     # circuits leaks the key's prefix to anyone who can time the response.
     #
@@ -96,7 +101,7 @@ def _require_key(
     if not hmac.compare_digest(
         presented_key.encode("latin-1"), settings.api_key.encode("utf-8")
     ):
-        raise HTTPException(status_code=401, detail=f"invalid {API_KEY_HEADER}")
+        raise refusal
 
 
 def _not_found(run_id: str, store: str, floor: str) -> HTTPException:
@@ -263,23 +268,39 @@ def create_app(settings: ServiceSettings) -> FastAPI:
 
 
 def main() -> int:
-    """Load the settings, build the app, and serve it over plain HTTP.
+    """Load the settings, build the app, and serve it over TLS.
 
-    A missing key returns 1 with its message on stderr and binds no socket.
-    Plain HTTP: TLS is a later story in this epic, and no certificate setting
-    is read here (see `settings.DEFAULT_SERVICE_SCHEMA_FLOOR`'s neighbours).
+    A missing key or TLS cert/key pair returns 1 with its message on stderr
+    and binds no socket. TLS is unconditional -- on loopback included -- the
+    same posture `load_service_settings` already takes for `SERVICE_API_KEY`.
+
+    A pair that exists but cannot be loaded (swapped files, a directory, not
+    PEM) is refused the same way, before the `serving https://` line: uvicorn
+    would otherwise load it only inside `run`, after that line already
+    claimed the service was up, and fail with a bare traceback.
     """
     try:
         settings = load_service_settings()
     except SettingsError as exc:
         print(str(exc), file=sys.stderr)
         return 1
+    try:
+        ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER).load_cert_chain(
+            settings.tls_certfile, settings.tls_keyfile
+        )
+    except (ssl.SSLError, OSError) as exc:
+        print(
+            "SERVICE_TLS_CERTFILE/SERVICE_TLS_KEYFILE do not form a loadable "
+            f"TLS cert/key pair: {exc}",
+            file=sys.stderr,
+        )
+        return 1
 
     app = create_app(settings)
     # The bound address and the floor in force, and nothing else. Never the
     # key, never its length.
     print(
-        f"serving http://{settings.host}:{settings.port} "
+        f"serving https://{settings.host}:{settings.port} "
         f"at schema floor {settings.schema_floor}"
     )
     # `proxy_headers=False` is what makes `is_loopback_client`'s "the peer
@@ -290,7 +311,14 @@ def main() -> int:
     # the key gate's only input one `FORWARDED_ALLOW_IPS` value away from
     # being client-supplied. This epic has no reverse-proxy posture, so the
     # middleware has nothing to do here but weaken the gate.
-    uvicorn.run(app, host=settings.host, port=settings.port, proxy_headers=False)
+    uvicorn.run(
+        app,
+        host=settings.host,
+        port=settings.port,
+        proxy_headers=False,
+        ssl_certfile=settings.tls_certfile,
+        ssl_keyfile=settings.tls_keyfile,
+    )
     return 0
 
 

@@ -12,6 +12,10 @@ wheels/
 # Front end (frontend/dist is already covered by the dist/ rule above)
 frontend/node_modules
 
+# scripts/generate_dev_cert.py's default output: a self-signed cert/key pair,
+# never committed.
+dev-certs/
+
 # --- Project ---
 .env
 .venv/

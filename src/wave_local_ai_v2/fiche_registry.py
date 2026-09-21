@@ -13,7 +13,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal, TypedDict
 
-from wave_local_ai_v2 import hardware
+from wave_local_ai_v2 import hardware, path_guard
 
 # A local `--version` invocation-scale timeout: `git show` reads one blob from
 # the local object database, no network involved.
@@ -48,10 +48,13 @@ def read_fiche(fiche_hash: str, registry_dir: Path) -> dict[str, Any] | None:
     """Return the fiche stored under `fiche_hash`, or `None` if absent.
 
     Never raises on a missing file: the validator (phase 2) distinguishes
-    "missing" from "edited" and needs this to degrade quietly.
+    "missing" from "edited" and needs this to degrade quietly. A `fiche_hash`
+    that resolves outside `registry_dir` (e.g. `"../../../../etc/passwd"`)
+    degrades the same way, via `path_guard`: an escape is reported as absent,
+    never read.
     """
-    path = registry_dir / f"{fiche_hash}.json"
-    if not path.exists():
+    path = path_guard.resolve_within_root(registry_dir, f"{fiche_hash}.json")
+    if path is None or not path.exists():
         return None
     return json.loads(path.read_text(encoding="utf-8"))
 

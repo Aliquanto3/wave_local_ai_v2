@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -481,6 +482,28 @@ def test_an_unresolved_suite_pointer_names_the_file_it_looked_for(
             "pointer": "suite_id/suite_version",
             "value": suite_snapshot.snapshot_filename(SUITE_ID, "99"),
         },
+    )
+
+
+def test_a_suite_pointer_carrying_traversal_is_the_same_unresolved_absence(
+    bundle: dict[str, Path], tmp_path: Path
+) -> None:
+    # `snapshot_filename` is a raw f-string: a `suite_id`/`suite_version`
+    # pair that composes to a path escaping `suite_definitions_dir` must
+    # degrade exactly like a missing snapshot -- never read the escaped file,
+    # even when a real, well-formed snapshot sits at that escaped location.
+    filename = suite_snapshot.snapshot_filename("../secrets", "99")
+    (tmp_path / filename).write_text(
+        json.dumps({"prompt_set_hash": "escaped", "items": []}), encoding="utf-8"
+    )
+
+    view = build_quality(
+        bundle, [make_row("quality", suite_id="../secrets", suite_version="99")]
+    )
+
+    assert view["entries"][0]["suite_definition"] == Absent(
+        ABSENT_POINTER_UNRESOLVED,
+        {"pointer": "suite_id/suite_version", "value": filename},
     )
 
 

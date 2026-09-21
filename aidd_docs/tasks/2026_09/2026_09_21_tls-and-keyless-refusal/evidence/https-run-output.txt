@@ -1,0 +1,11 @@
+INFO:     Started server process [12264]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on https://10.42.47.37:8000 (Press CTRL+C to quit)
+serving https://10.42.47.37:8000 at schema floor 7
+INFO:     10.42.47.37:62413 - "GET /api/runs HTTP/1.1" 401 Unauthorized
+INFO:     10.42.47.37:62416 - "GET /api/runs HTTP/1.1" 401 Unauthorized
+INFO:     10.42.47.37:62417 - "GET /api/runs HTTP/1.1" 401 Unauthorized
+INFO:     10.42.47.37:62418 - "GET /api/runs HTTP/1.1" 200 OK
+INFO:     10.42.47.37:62425 - "GET /api/runs HTTP/1.1" 401 Unauthorized
+INFO:     10.42.47.37:62428 - "GET /api/runs HTTP/1.1" 401 Unauthorized

@@ -8,12 +8,18 @@ non-loopback paths are both exercised without monkeypatching anything.
 from __future__ import annotations
 
 import hashlib
+import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 from starlette.testclient import TestClient
 from store_fixtures import RUN_ID, make_row, write_store
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+
+from generate_dev_cert import generate_cert
 
 from wave_local_ai_v2 import results, row_contract, service
 from wave_local_ai_v2.settings import ServiceSettings, SettingsError
@@ -43,10 +49,32 @@ def dashboard_bundle_dir(tmp_path: Path) -> Path:
     return root
 
 
+@pytest.fixture(scope="session")
+def _tls_pem() -> tuple[bytes, bytes]:
+    # Generated once: RSA key generation is the slow part, and `main()` loads
+    # the pair for real before it serves, so placeholder bytes would not do.
+    return generate_cert([])
+
+
 @pytest.fixture
-def settings(bundle: dict[str, Path], dashboard_bundle_dir: Path) -> ServiceSettings:
+def tls_pair(tmp_path: Path, _tls_pem: tuple[bytes, bytes]) -> tuple[Path, Path]:
+    """A real, loadable on-disk cert/key pair."""
+    certfile = tmp_path / "cert.pem"
+    keyfile = tmp_path / "key.pem"
+    certfile.write_bytes(_tls_pem[0])
+    keyfile.write_bytes(_tls_pem[1])
+    return certfile, keyfile
+
+
+@pytest.fixture
+def settings(
+    bundle: dict[str, Path],
+    dashboard_bundle_dir: Path,
+    tls_pair: tuple[Path, Path],
+) -> ServiceSettings:
     write_store(bundle["runtime"], [make_row("runtime")])
     write_store(bundle["quality"], [make_row("quality")])
+    certfile, keyfile = tls_pair
     return ServiceSettings(
         api_key=API_KEY,
         host="127.0.0.1",
@@ -59,6 +87,8 @@ def settings(bundle: dict[str, Path], dashboard_bundle_dir: Path) -> ServiceSett
         suite_definitions_dir=bundle["suites"],
         dashboard_bundle_dir=dashboard_bundle_dir,
         dashboard_origin=DASHBOARD_ORIGIN,
+        tls_certfile=certfile,
+        tls_keyfile=keyfile,
     )
 
 
@@ -101,7 +131,7 @@ def test_the_quality_route_answers_one_entry_per_row_with_its_shape(
 
 
 def test_the_quality_route_names_a_field_the_floor_predates_over_http(
-    bundle: dict[str, Path], dashboard_bundle_dir: Path
+    bundle: dict[str, Path], dashboard_bundle_dir: Path, tls_pair: tuple[Path, Path]
 ) -> None:
     # A "7"-floor row: schema_version "7" for real (not just a floor param
     # over an "11" row), and thinking_policy dropped entirely -- the one
@@ -113,6 +143,7 @@ def test_the_quality_route_names_a_field_the_floor_predates_over_http(
     del row["thinking_policy"]
     write_store(bundle["quality"], [row])
     write_store(bundle["runtime"], [make_row("runtime", schema_version="7")])
+    certfile, keyfile = tls_pair
     settings = ServiceSettings(
         api_key=API_KEY,
         host="127.0.0.1",
@@ -125,6 +156,8 @@ def test_the_quality_route_names_a_field_the_floor_predates_over_http(
         suite_definitions_dir=bundle["suites"],
         dashboard_bundle_dir=dashboard_bundle_dir,
         dashboard_origin=DASHBOARD_ORIGIN,
+        tls_certfile=certfile,
+        tls_keyfile=keyfile,
     )
 
     with TestClient(service.create_app(settings), client=LOOPBACK) as client:
@@ -267,7 +300,7 @@ def test_a_non_loopback_client_without_the_key_is_refused(remote: TestClient) ->
     response = remote.get("/api/runs")
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "missing X-API-Key"
+    assert response.json()["detail"] == "missing or invalid X-API-Key"
     assert API_KEY not in response.text
 
 
@@ -275,8 +308,19 @@ def test_a_non_loopback_client_with_a_wrong_key_is_refused(remote: TestClient) -
     response = remote.get("/api/runs", headers={"X-API-Key": "wrong"})
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "invalid X-API-Key"
+    assert response.json()["detail"] == "missing or invalid X-API-Key"
     assert API_KEY not in response.text
+
+
+def test_a_missing_and_a_wrong_key_answer_byte_identical_bodies(
+    remote: TestClient,
+) -> None:
+    # The acceptance is indistinguishability, not merely the string chosen.
+    missing = remote.get("/api/runs")
+    wrong = remote.get("/api/runs", headers={"X-API-Key": "wrong"})
+
+    assert missing.status_code == wrong.status_code == 401
+    assert missing.content == wrong.content
 
 
 def test_an_unparsable_client_host_is_refused(settings: ServiceSettings) -> None:
@@ -293,7 +337,7 @@ def test_a_non_ascii_key_header_is_refused_not_a_500(remote: TestClient) -> None
     response = remote.get("/api/runs", headers={b"x-api-key": b"cl\xe9-invalide"})
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "invalid X-API-Key"
+    assert response.json()["detail"] == "missing or invalid X-API-Key"
 
 
 @pytest.mark.parametrize("path", ["/openapi.json", "/docs", "/redoc"])
@@ -342,6 +386,32 @@ def test_no_response_body_anywhere_contains_the_key(
         assert API_KEY not in remote.get(route, headers={"X-API-Key": API_KEY}).text
 
 
+def test_the_key_appears_in_no_logged_or_printed_record(
+    monkeypatch,
+    settings: ServiceSettings,
+    local: TestClient,
+    remote: TestClient,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Loading settings, the startup print, a served request (loopback and
+    # remote-with-the-right-key) and a refused one (remote, wrong key) -- the
+    # literal key value is searched for, not inferred from reading the
+    # middleware.
+    monkeypatch.setattr(service, "load_service_settings", lambda: settings)
+    monkeypatch.setattr(service.uvicorn, "run", lambda *a, **k: None)
+    caplog.set_level("DEBUG")
+
+    assert service.main() == 0
+    assert local.get("/api/runs").status_code == 200
+    assert remote.get("/api/runs", headers={"X-API-Key": API_KEY}).status_code == 200
+    assert remote.get("/api/runs", headers={"X-API-Key": "wrong"}).status_code == 401
+
+    captured = capsys.readouterr()
+    assert API_KEY not in captured.out + captured.err
+    assert API_KEY not in caplog.text
+
+
 # --------------------------------------------------------------------------
 # The serving entry
 # --------------------------------------------------------------------------
@@ -364,6 +434,36 @@ def test_the_serve_entry_refuses_to_start_without_a_key(
     assert bound == [], "no socket may be bound on the refusal path"
 
 
+@pytest.mark.parametrize("breakage", ["swapped", "not-pem"])
+def test_the_serve_entry_refuses_an_unloadable_tls_pair_before_announcing(
+    monkeypatch,
+    settings: ServiceSettings,
+    capsys: pytest.CaptureFixture[str],
+    breakage: str,
+) -> None:
+    if breakage == "swapped":
+        broken = replace(
+            settings,
+            tls_certfile=settings.tls_keyfile,
+            tls_keyfile=settings.tls_certfile,
+        )
+    else:
+        settings.tls_certfile.write_text("not a certificate", encoding="utf-8")
+        broken = settings
+    bound: list[Any] = []
+    monkeypatch.setattr(service, "load_service_settings", lambda: broken)
+    monkeypatch.setattr(service.uvicorn, "run", lambda *a, **k: bound.append(a))
+
+    exit_code = service.main()
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "SERVICE_TLS_CERTFILE/SERVICE_TLS_KEYFILE" in captured.err
+    assert "serving" not in captured.out
+    assert API_KEY not in captured.out + captured.err
+    assert bound == [], "no socket may be bound on the refusal path"
+
+
 def test_the_serve_entry_prints_the_address_and_floor_and_never_the_key(
     monkeypatch, settings: ServiceSettings, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -376,8 +476,16 @@ def test_the_serve_entry_prints_the_address_and_floor_and_never_the_key(
     assert service.main() == 0
 
     printed = capsys.readouterr().out
-    assert served == [{"host": "127.0.0.1", "port": 8000, "proxy_headers": False}]
-    assert "http://127.0.0.1:8000" in printed
+    assert served == [
+        {
+            "host": "127.0.0.1",
+            "port": 8000,
+            "proxy_headers": False,
+            "ssl_certfile": settings.tls_certfile,
+            "ssl_keyfile": settings.tls_keyfile,
+        }
+    ]
+    assert "https://127.0.0.1:8000" in printed
     assert "schema floor 7" in printed
     assert API_KEY not in printed
 

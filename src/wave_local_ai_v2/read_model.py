@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from wave_local_ai_v2 import roster, row_contract, scoring
+from wave_local_ai_v2 import path_guard, roster, row_contract, scoring
 from wave_local_ai_v2.fiche_registry import read_fiche
 from wave_local_ai_v2.results import StoreRead, UnreadableRows, read_rows_from_floor
 from wave_local_ai_v2.suite_snapshot import snapshot_filename
@@ -424,8 +424,8 @@ def resolve_suite_definition(
             return pointer_part
 
     filename = snapshot_filename(str(suite_id), str(suite_version))
-    path = suite_definitions_dir / filename
-    if not path.exists():
+    path = path_guard.resolve_within_root(suite_definitions_dir, filename)
+    if path is None or not path.exists():
         return _unresolved(POINTER_SUITE, filename)
     try:
         snapshot = json.loads(path.read_text(encoding="utf-8"))

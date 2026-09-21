@@ -671,6 +671,8 @@ SERVICE_ENV_VARS = (
     "SUITE_DEFINITIONS_DIR",
     "DASHBOARD_BUNDLE_DIR",
     "DASHBOARD_ORIGIN",
+    "SERVICE_TLS_CERTFILE",
+    "SERVICE_TLS_KEYFILE",
 )
 
 
@@ -680,10 +682,28 @@ def _clean_service_env(monkeypatch) -> None:
         monkeypatch.delenv(env_var, raising=False)
 
 
-def test_load_service_settings_defaults_everything_but_the_key(
-    monkeypatch, _clean_service_env: None
+@pytest.fixture
+def _tls_env(monkeypatch, tmp_path: Path) -> tuple[Path, Path]:
+    """A cert/key pair on disk, with `SERVICE_TLS_CERTFILE`/`KEYFILE` set.
+
+    Existence is all `load_service_settings` checks at load time -- content
+    is uvicorn's own concern at bind time -- so a placeholder byte string is
+    enough here.
+    """
+    certfile = tmp_path / "cert.pem"
+    keyfile = tmp_path / "key.pem"
+    certfile.write_text("cert", encoding="utf-8")
+    keyfile.write_text("key", encoding="utf-8")
+    monkeypatch.setenv("SERVICE_TLS_CERTFILE", str(certfile))
+    monkeypatch.setenv("SERVICE_TLS_KEYFILE", str(keyfile))
+    return certfile, keyfile
+
+
+def test_load_service_settings_defaults_everything_but_the_key_and_tls(
+    monkeypatch, _clean_service_env: None, _tls_env: tuple[Path, Path]
 ) -> None:
     monkeypatch.setenv("SERVICE_API_KEY", "a-key")  # pragma: allowlist secret
+    certfile, keyfile = _tls_env
 
     settings = load_service_settings()
 
@@ -698,12 +718,15 @@ def test_load_service_settings_defaults_everything_but_the_key(
     assert settings.suite_definitions_dir == Path(DEFAULT_SUITE_DEFINITIONS_DIR)
     assert settings.dashboard_bundle_dir == Path(DEFAULT_DASHBOARD_BUNDLE_DIR)
     # Not a separate hardcoded default: computed from the bound host/port so
-    # it cannot drift from the address the service actually binds.
-    assert settings.dashboard_origin == "http://127.0.0.1:8000"
+    # it cannot drift from the address the service actually binds. https,
+    # not http -- the service serves over TLS unconditionally.
+    assert settings.dashboard_origin == "https://127.0.0.1:8000"
+    assert settings.tls_certfile == certfile
+    assert settings.tls_keyfile == keyfile
 
 
 def test_load_service_settings_needs_no_local_model_install(
-    monkeypatch, _clean_service_env: None
+    monkeypatch, _clean_service_env: None, _tls_env: tuple[Path, Path]
 ) -> None:
     # The two paths `load_settings` refuses to run without. A reader of
     # published artifacts has no reason to have either on disk.
@@ -715,7 +738,7 @@ def test_load_service_settings_needs_no_local_model_install(
 
 
 def test_load_service_settings_reads_every_override(
-    monkeypatch, tmp_path: Path, _clean_service_env: None
+    monkeypatch, tmp_path: Path, _clean_service_env: None, _tls_env: tuple[Path, Path]
 ) -> None:
     monkeypatch.setenv("SERVICE_API_KEY", "a-key")  # pragma: allowlist secret
     monkeypatch.setenv("SERVICE_HOST", "0.0.0.0")
@@ -745,8 +768,8 @@ def test_load_service_settings_reads_every_override(
     assert settings.dashboard_origin == "https://dashboard.example"
 
 
-def test_load_service_settings_does_not_require_any_path_to_exist(
-    monkeypatch, tmp_path: Path, _clean_service_env: None
+def test_load_service_settings_does_not_require_the_store_paths_to_exist(
+    monkeypatch, tmp_path: Path, _clean_service_env: None, _tls_env: tuple[Path, Path]
 ) -> None:
     # A missing store is zero rows to a reader, not a load failure.
     monkeypatch.setenv("SERVICE_API_KEY", "a-key")  # pragma: allowlist secret
@@ -757,6 +780,28 @@ def test_load_service_settings_does_not_require_any_path_to_exist(
 
     assert not settings.runtime_results_path.exists()
     assert not settings.roster_path.exists()
+
+
+@pytest.mark.parametrize("env_var", ["SERVICE_TLS_CERTFILE", "SERVICE_TLS_KEYFILE"])
+def test_load_service_settings_requires_the_tls_pair_to_exist(
+    monkeypatch,
+    tmp_path: Path,
+    _clean_service_env: None,
+    _tls_env: tuple[Path, Path],
+    env_var: str,
+) -> None:
+    # The TLS pair is the one exception, alongside the key, among service-side
+    # paths: unlike the store paths above, an unset or missing one refuses the
+    # load rather than degrading to zero rows.
+    monkeypatch.setenv("SERVICE_API_KEY", "a-key")  # pragma: allowlist secret
+
+    monkeypatch.delenv(env_var, raising=False)
+    with pytest.raises(SettingsError, match=env_var):
+        load_service_settings()
+
+    monkeypatch.setenv(env_var, str(tmp_path / "does-not-exist.pem"))
+    with pytest.raises(SettingsError, match=env_var):
+        load_service_settings()
 
 
 @pytest.mark.parametrize("value", ["", None])
@@ -819,7 +864,9 @@ def test_service_settings_repr_omits_the_api_key(tmp_path: Path) -> None:
         roster_path=tmp_path / "models.json",
         suite_definitions_dir=tmp_path / "suites",
         dashboard_bundle_dir=tmp_path / "dashboard-dist",
-        dashboard_origin="http://127.0.0.1:8000",
+        dashboard_origin="https://127.0.0.1:8000",
+        tls_certfile=tmp_path / "cert.pem",
+        tls_keyfile=tmp_path / "key.pem",
     )
 
     assert secret not in repr(settings)
@@ -827,7 +874,7 @@ def test_service_settings_repr_omits_the_api_key(tmp_path: Path) -> None:
 
 
 def test_the_loaded_service_settings_repr_omits_the_key(
-    monkeypatch, _clean_service_env: None
+    monkeypatch, _clean_service_env: None, _tls_env: tuple[Path, Path]
 ) -> None:
     secret = "loaded-secret-value"  # pragma: allowlist secret
     monkeypatch.setenv("SERVICE_API_KEY", secret)

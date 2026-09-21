@@ -1,6 +1,6 @@
 ---
 type: story
-status: ready
+status: done
 source: aidd_docs/backlog/epics/the-pitch-runs-from-a-browser-and-only-with-the-key.md
 parent: aidd_docs/backlog/epics/the-pitch-runs-from-a-browser-and-only-with-the-key.md
 depends_on: aidd_docs/backlog/stories/the-browser-opens-on-the-list-of-runs-behind-its-own-gate.md
