@@ -21,6 +21,8 @@ from wave_local_ai_v2.settings import ServiceSettings, SettingsError
 API_KEY = "a-service-key"  # pragma: allowlist secret
 LOOPBACK = ("127.0.0.1", 12345)
 REMOTE = ("192.168.1.50", 12345)
+DASHBOARD_ORIGIN = "http://dashboard.example"
+ENTRY_DOCUMENT_TEXT = "<html>the dashboard entry</html>"
 ROUTES = (
     "/api/runs",
     f"/api/runs/{RUN_ID}/quality",
@@ -31,7 +33,18 @@ NON_GET_METHODS = ("post", "put", "patch", "delete")
 
 
 @pytest.fixture
-def settings(bundle: dict[str, Path]) -> ServiceSettings:
+def dashboard_bundle_dir(tmp_path: Path) -> Path:
+    """A temp bundle dir with an entry document and a hashed asset."""
+    root = tmp_path / "dashboard-dist"
+    assets = root / "assets"
+    assets.mkdir(parents=True)
+    (root / "index.html").write_text(ENTRY_DOCUMENT_TEXT, encoding="utf-8")
+    (assets / "app.deadbeef.js").write_text("console.log(1)", encoding="utf-8")
+    return root
+
+
+@pytest.fixture
+def settings(bundle: dict[str, Path], dashboard_bundle_dir: Path) -> ServiceSettings:
     write_store(bundle["runtime"], [make_row("runtime")])
     write_store(bundle["quality"], [make_row("quality")])
     return ServiceSettings(
@@ -44,6 +57,8 @@ def settings(bundle: dict[str, Path]) -> ServiceSettings:
         fiche_registry_dir=bundle["fiches"],
         roster_path=bundle["roster"],
         suite_definitions_dir=bundle["suites"],
+        dashboard_bundle_dir=dashboard_bundle_dir,
+        dashboard_origin=DASHBOARD_ORIGIN,
     )
 
 
@@ -240,13 +255,17 @@ def test_a_non_ascii_key_header_is_refused_not_a_500(remote: TestClient) -> None
 
 
 @pytest.mark.parametrize("path", ["/openapi.json", "/docs", "/redoc"])
-def test_the_schema_and_docs_surfaces_are_not_mounted_at_all(
+def test_the_schema_and_docs_surfaces_are_not_mounted_by_fastapi(
     remote: TestClient, path: str
 ) -> None:
-    # FastAPI mounts these at the root, outside the gated `/api` router, so
-    # leaving them on would answer a keyless non-loopback client with the whole
-    # route list and its parameters -- not "route absence and nothing else".
-    assert remote.get(path).status_code == 404
+    # `openapi_url`/`docs_url`/`redoc_url` are `None`: FastAPI itself never
+    # registers these, so what answers here is the same SPA catch-all that
+    # answers any other unknown non-`/api` path -- never the schema or its
+    # parameter list, and never gated behind the key (the dashboard shell
+    # carries no secret).
+    response = remote.get(path)
+    assert response.status_code == 200
+    assert response.text == ENTRY_DOCUMENT_TEXT
 
 
 def test_the_same_request_with_the_key_gets_the_loopback_body(
@@ -341,6 +360,70 @@ def test_the_serve_entry_disables_uvicorns_proxy_header_middleware(
     service.main()
 
     assert served[0]["proxy_headers"] is False
+
+
+# --------------------------------------------------------------------------
+# Serving the dashboard bundle
+# --------------------------------------------------------------------------
+
+
+def test_root_serves_the_bundles_entry_document(local: TestClient) -> None:
+    response = local.get("/")
+
+    assert response.status_code == 200
+    assert response.text == ENTRY_DOCUMENT_TEXT
+
+
+def test_an_unknown_client_route_falls_back_to_the_entry_document(
+    local: TestClient,
+) -> None:
+    response = local.get("/some/client/route")
+
+    assert response.status_code == 200
+    assert response.text == ENTRY_DOCUMENT_TEXT
+
+
+def test_a_built_asset_is_served_from_the_bundle(local: TestClient) -> None:
+    response = local.get("/assets/app.deadbeef.js")
+
+    assert response.status_code == 200
+    assert "console.log(1)" in response.text
+
+
+def test_an_unknown_api_path_is_404_json_never_the_entry_document(
+    local: TestClient,
+) -> None:
+    response = local.get("/api/does-not-exist")
+
+    assert response.status_code == 404
+    assert response.json()["detail"]
+    assert ENTRY_DOCUMENT_TEXT not in response.text
+
+
+def test_a_preflight_from_another_origin_is_not_granted(local: TestClient) -> None:
+    response = local.options(
+        "/api/runs",
+        headers={
+            "Origin": "http://not-the-dashboard.example",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert "access-control-allow-origin" not in response.headers
+
+
+def test_a_preflight_from_the_configured_origin_is_granted(
+    local: TestClient,
+) -> None:
+    response = local.options(
+        "/api/runs",
+        headers={
+            "Origin": DASHBOARD_ORIGIN,
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert response.headers["access-control-allow-origin"] == DASHBOARD_ORIGIN
 
 
 # --------------------------------------------------------------------------

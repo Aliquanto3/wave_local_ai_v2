@@ -5,6 +5,7 @@ import pytest
 import wave_local_ai_v2.settings as settings_module
 from wave_local_ai_v2.settings import (
     DEFAULT_CLOUD_RETRY_MAX_ATTEMPTS,
+    DEFAULT_DASHBOARD_BUNDLE_DIR,
     DEFAULT_EMISSION_COUNTRY_ISO_CODE,
     DEFAULT_EMISSION_FACTOR_KG_PER_KWH,
     DEFAULT_EMISSION_REGION,
@@ -668,6 +669,8 @@ SERVICE_ENV_VARS = (
     "FICHE_REGISTRY_DIR",
     "ROSTER_PATH",
     "SUITE_DEFINITIONS_DIR",
+    "DASHBOARD_BUNDLE_DIR",
+    "DASHBOARD_ORIGIN",
 )
 
 
@@ -693,6 +696,10 @@ def test_load_service_settings_defaults_everything_but_the_key(
     assert settings.fiche_registry_dir == Path(DEFAULT_FICHE_REGISTRY_DIR)
     assert settings.roster_path == Path(DEFAULT_ROSTER_PATH)
     assert settings.suite_definitions_dir == Path(DEFAULT_SUITE_DEFINITIONS_DIR)
+    assert settings.dashboard_bundle_dir == Path(DEFAULT_DASHBOARD_BUNDLE_DIR)
+    # Not a separate hardcoded default: computed from the bound host/port so
+    # it cannot drift from the address the service actually binds.
+    assert settings.dashboard_origin == "http://127.0.0.1:8000"
 
 
 def test_load_service_settings_needs_no_local_model_install(
@@ -719,6 +726,8 @@ def test_load_service_settings_reads_every_override(
     monkeypatch.setenv("FICHE_REGISTRY_DIR", str(tmp_path / "fiches"))
     monkeypatch.setenv("ROSTER_PATH", str(tmp_path / "models.json"))
     monkeypatch.setenv("SUITE_DEFINITIONS_DIR", str(tmp_path / "suites"))
+    monkeypatch.setenv("DASHBOARD_BUNDLE_DIR", str(tmp_path / "dashboard-dist"))
+    monkeypatch.setenv("DASHBOARD_ORIGIN", "https://dashboard.example")
 
     settings = load_service_settings()
 
@@ -732,6 +741,8 @@ def test_load_service_settings_reads_every_override(
     assert settings.fiche_registry_dir == tmp_path / "fiches"
     assert settings.roster_path == tmp_path / "models.json"
     assert settings.suite_definitions_dir == tmp_path / "suites"
+    assert settings.dashboard_bundle_dir == tmp_path / "dashboard-dist"
+    assert settings.dashboard_origin == "https://dashboard.example"
 
 
 def test_load_service_settings_does_not_require_any_path_to_exist(
@@ -807,6 +818,8 @@ def test_service_settings_repr_omits_the_api_key(tmp_path: Path) -> None:
         fiche_registry_dir=tmp_path / "fiches",
         roster_path=tmp_path / "models.json",
         suite_definitions_dir=tmp_path / "suites",
+        dashboard_bundle_dir=tmp_path / "dashboard-dist",
+        dashboard_origin="http://127.0.0.1:8000",
     )
 
     assert secret not in repr(settings)

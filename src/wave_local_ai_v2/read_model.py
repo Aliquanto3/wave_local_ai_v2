@@ -140,7 +140,15 @@ def resolve_fields(row: dict[str, Any], fields: frozenset[str]) -> dict[str, Any
 # --------------------------------------------------------------------------
 
 RUNS_VIEW_FIELDS: frozenset[str] = frozenset(
-    {"run_id", "captured_at", "schema_version", "roster_entry_id"}
+    {
+        "run_id",
+        "captured_at",
+        "schema_version",
+        "roster_entry_id",
+        "release_version",
+        "commit_sha",
+        "tree_dirty",
+    }
 )
 
 # Both row kinds carry the same thirteen energy/emissions fields (schema "4"),
@@ -175,9 +183,6 @@ ENERGY_CHANNELS: tuple[tuple[str, str, str], ...] = (
 
 RUNTIME_VIEW_FIELDS: frozenset[str] = frozenset(
     {
-        "release_version",
-        "commit_sha",
-        "tree_dirty",
         "roster_version",
         "endpoint",
         "prompt_template_id",
@@ -248,9 +253,6 @@ RUNTIME_FIELDS_NOT_RENDERED: frozenset[str] = frozenset(
 
 QUALITY_VIEW_FIELDS: frozenset[str] = frozenset(
     {
-        "release_version",
-        "commit_sha",
-        "tree_dirty",
         "roster_version",
         "endpoint",
         "prompt_template_id",
@@ -460,13 +462,31 @@ def _rows_for_run(store: StoreRead, run_id: str) -> list[dict[str, Any]]:
     return [row for row in store.rows if row.get("run_id") == run_id]
 
 
+def _dedup_key(value: Any) -> Any:
+    """A hashable stand-in for `value`, since an `Absent` carries a `dict`.
+
+    Two `Absent`s with the same reason and detail dedupe together; two with
+    different detail (e.g. a different unresolved id) stay distinct entries,
+    matching "unresolved ids kept as their own absence rather than dropped".
+    """
+    if isinstance(value, Absent):
+        return ("absent", value.reason, tuple(sorted(value.detail.items())))
+    return value
+
+
 def _runs_collection(
-    path: Path, floor: str, roster_file: roster.RosterFile | None
+    path: Path,
+    floor: str,
+    roster_file: roster.RosterFile | None,
+    *,
+    with_suites: bool,
 ) -> dict[str, Any]:
     """One store's runs, grouped by `run_id` in first-seen file order."""
     store = read_rows_from_floor(path, floor)
     first_row: dict[str, dict[str, Any]] = {}
     row_counts: dict[str, int] = {}
+    models: dict[str, dict[Any, Any]] = {}
+    suites: dict[str, dict[Any, Any]] = {}
     for row in store.rows:
         run_id = row.get("run_id")
         key = "" if run_id is None else str(run_id)
@@ -474,8 +494,20 @@ def _runs_collection(
             first_row[key] = row
         row_counts[key] = row_counts.get(key, 0) + 1
 
-    runs = [
-        {
+        entry_id = resolve_field(row, POINTER_ROSTER_ENTRY_ID)
+        run_models = models.setdefault(key, {})
+        model_key = _dedup_key(entry_id)
+        if model_key not in run_models:
+            run_models[model_key] = resolve_roster_entry(row, roster_file)
+
+        if with_suites:
+            task_suite = resolve_field(row, "task_suite")
+            run_suites = suites.setdefault(key, {})
+            run_suites.setdefault(_dedup_key(task_suite), task_suite)
+
+    runs = []
+    for key, row in first_row.items():
+        entry: dict[str, Any] = {
             # The run's own first row states these; they are not reduced,
             # ranged or otherwise summarised across the run, since a min/max
             # over `captured_at` would be an aggregate this module does not
@@ -483,9 +515,12 @@ def _runs_collection(
             **_identity(row),
             "row_count": row_counts[key],
             "roster_entry": resolve_roster_entry(row, roster_file),
+            "models": list(models[key].values()),
         }
-        for key, row in first_row.items()
-    ]
+        if with_suites:
+            entry["suites"] = list(suites[key].values())
+        runs.append(entry)
+
     return {
         "schema_floor": floor,
         "runs": runs,
@@ -507,10 +542,19 @@ def runs_view(
     than by convention -- and each carries its own `unreadable` count, since
     "how many rows this store holds that I could not read" is a fact about
     one file, not about the pair.
+
+    `suites` is a quality-only key: a runtime row carries no suite dimension,
+    so a runtime entry carries `models` only, never `suites` set to an
+    absence -- a key that is always absent is worse than a key that does not
+    exist.
     """
     return {
-        "runtime_runs": _runs_collection(runtime_path, floor, roster_file),
-        "quality_runs": _runs_collection(quality_path, floor, roster_file),
+        "runtime_runs": _runs_collection(
+            runtime_path, floor, roster_file, with_suites=False
+        ),
+        "quality_runs": _runs_collection(
+            quality_path, floor, roster_file, with_suites=True
+        ),
     }
 
 

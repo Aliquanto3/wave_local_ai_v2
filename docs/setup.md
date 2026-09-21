@@ -33,6 +33,25 @@ contributor step: it installs both the commit-stage and push-stage hooks in one
 command — see `aidd_docs/memory/coding-assertions.md` for what each stage runs.
 Running the benchmarks does not require it.
 
+### 1.1 The results dashboard (front end)
+
+Needs Node — the version `frontend/.nvmrc` pins (`nvm use` from `frontend/`
+reads it). No GPU, no API key, and no bearing on steps 2-4 below, which are
+the Python-only benchmark walkthrough.
+
+```sh
+cd frontend
+npm ci
+npm run build
+```
+
+This produces `frontend/dist/`, never committed (see `plan.md`'s Decisions in
+the dashboard story) — reproduced by this one command on every fresh clone,
+matching `uv sync`'s posture for the Python half above. Point
+`DASHBOARD_BUNDLE_DIR` at it (default: `frontend/dist`, so an unset variable
+already matches) and start the service (`uv run wave-local-ai-v2-serve`) to
+serve the dashboard from the service's own origin.
+
 ## 2. Get `llama-server`, build `b10537`
 
 Every command below is pinned to `b10537` — the build the committed reference

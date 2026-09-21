@@ -111,6 +111,16 @@ DEFAULT_SERVICE_SCHEMA_FLOOR = "7"
 # this epic; a knob read but never used is configuration that lies about what
 # the process does, so the omission is a decision rather than an oversight.
 
+# Where the built dashboard bundle lives. Never committed (plan.md's
+# Decisions): the fresh-machine command (`cd frontend && npm ci && npm run
+# build`) produces this directory, matching `uv sync`'s own posture for the
+# Python half.
+DEFAULT_DASHBOARD_BUNDLE_DIR = "frontend/dist"
+# `DASHBOARD_ORIGIN` unset resolves from the bound host/port rather than a
+# separate hardcoded default: the shipped topology is single-origin, so the
+# dashboard's own origin and the service's bound address are the same fact
+# and must not be able to drift apart.
+
 
 class SettingsError(RuntimeError):
     """Raised when required configuration is missing or invalid."""
@@ -210,6 +220,8 @@ class ServiceSettings:
     fiche_registry_dir: Path
     roster_path: Path
     suite_definitions_dir: Path
+    dashboard_bundle_dir: Path
+    dashboard_origin: str
 
 
 def load_service_settings() -> ServiceSettings:
@@ -266,6 +278,10 @@ def load_service_settings() -> ServiceSettings:
         suite_definitions_dir=Path(
             os.environ.get("SUITE_DEFINITIONS_DIR", DEFAULT_SUITE_DEFINITIONS_DIR)
         ),
+        dashboard_bundle_dir=Path(
+            os.environ.get("DASHBOARD_BUNDLE_DIR", DEFAULT_DASHBOARD_BUNDLE_DIR)
+        ),
+        dashboard_origin=os.environ.get("DASHBOARD_ORIGIN", f"http://{host}:{port}"),
     )
 
 

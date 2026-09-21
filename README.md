@@ -70,6 +70,16 @@ command is:
 uv sync
 ```
 
+The results dashboard is its own half, needing Node (`frontend/.nvmrc` pins
+the version) rather than the model/GPU prerequisites above:
+
+```sh
+cd frontend && npm ci && npm run build
+```
+
+See [`docs/setup.md`](docs/setup.md#11-the-results-dashboard-front-end) for
+serving the built bundle from `service.py`.
+
 ### `.env` keys
 
 | Key | Holds | Read by |
