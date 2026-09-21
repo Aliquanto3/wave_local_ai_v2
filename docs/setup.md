@@ -52,6 +52,9 @@ matching `uv sync`'s posture for the Python half above. Point
 already matches) and start the service (`uv run wave-local-ai-v2-serve`) to
 serve the dashboard from the service's own origin.
 
+For the TLS certificate, the key, and reaching the dashboard from a second
+machine (the demo/pitch path), see `docs/demo.md`.
+
 ## 2. Get `llama-server`, build `b10537`
 
 Every command below is pinned to `b10537` — the build the committed reference
