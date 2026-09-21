@@ -42,3 +42,14 @@ def test_read_fiche_after_write_fiche_returns_the_fiche_including_flags(
 
     assert stored == FIXTURE_FICHE
     assert stored["flags"] == ["-ngl", "99"]
+
+
+def test_a_fiche_hash_carrying_traversal_resolves_to_none_never_reads_outside(
+    tmp_path,
+) -> None:
+    registry_dir = tmp_path / "fiches"
+    registry_dir.mkdir()
+    escaped = tmp_path / "escaped.json"
+    escaped.write_text('{"secret": true}', encoding="utf-8")
+
+    assert read_fiche("../escaped", registry_dir) is None

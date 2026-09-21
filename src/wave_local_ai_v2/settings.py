@@ -107,9 +107,9 @@ DEFAULT_SERVICE_PORT = 8000
 # below it and are counted rather than rendered. Compared as an integer, never
 # as a string -- see `results.read_rows_from_floor`.
 DEFAULT_SERVICE_SCHEMA_FLOOR = "7"
-# No TLS certificate setting lives here, deliberately. TLS is a later story in
-# this epic; a knob read but never used is configuration that lies about what
-# the process does, so the omission is a decision rather than an oversight.
+# No default certificate/key path ships, mirroring SERVICE_API_KEY: an unset
+# or non-existent SERVICE_TLS_CERTFILE/SERVICE_TLS_KEYFILE is a SettingsError
+# naming the variable, not a plain-HTTP fallback.
 
 # Where the built dashboard bundle lives. Never committed (plan.md's
 # Decisions): the fresh-machine command (`cd frontend && npm ci && npm run
@@ -222,6 +222,8 @@ class ServiceSettings:
     suite_definitions_dir: Path
     dashboard_bundle_dir: Path
     dashboard_origin: str
+    tls_certfile: Path
+    tls_keyfile: Path
 
 
 def load_service_settings() -> ServiceSettings:
@@ -231,6 +233,11 @@ def load_service_settings() -> ServiceSettings:
     criterion ("the service refuses to start without one") is stated without
     exception, and it is taken literally rather than relaxed for a loopback
     bind. A development default would be the key that ships to production.
+
+    `SERVICE_TLS_CERTFILE`/`SERVICE_TLS_KEYFILE` are required and
+    existence-checked the same way: the service binds only over TLS, on
+    loopback included, so an unset or missing pair is refused before the app
+    is built rather than silently served over plain HTTP.
 
     The store, roster and registry paths are read from the *same* environment
     variables and `DEFAULT_*` constants `load_settings` uses -- the registry
@@ -281,7 +288,9 @@ def load_service_settings() -> ServiceSettings:
         dashboard_bundle_dir=Path(
             os.environ.get("DASHBOARD_BUNDLE_DIR", DEFAULT_DASHBOARD_BUNDLE_DIR)
         ),
-        dashboard_origin=os.environ.get("DASHBOARD_ORIGIN", f"http://{host}:{port}"),
+        dashboard_origin=os.environ.get("DASHBOARD_ORIGIN", f"https://{host}:{port}"),
+        tls_certfile=_require_existing_path("SERVICE_TLS_CERTFILE"),
+        tls_keyfile=_require_existing_path("SERVICE_TLS_KEYFILE"),
     )
 
 

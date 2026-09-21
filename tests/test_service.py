@@ -44,9 +44,25 @@ def dashboard_bundle_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def settings(bundle: dict[str, Path], dashboard_bundle_dir: Path) -> ServiceSettings:
+def tls_pair(tmp_path: Path) -> tuple[Path, Path]:
+    """An on-disk cert/key pair -- content is never asserted, only presence
+    and the path making its way into `uvicorn.run`."""
+    certfile = tmp_path / "cert.pem"
+    keyfile = tmp_path / "key.pem"
+    certfile.write_text("cert", encoding="utf-8")
+    keyfile.write_text("key", encoding="utf-8")
+    return certfile, keyfile
+
+
+@pytest.fixture
+def settings(
+    bundle: dict[str, Path],
+    dashboard_bundle_dir: Path,
+    tls_pair: tuple[Path, Path],
+) -> ServiceSettings:
     write_store(bundle["runtime"], [make_row("runtime")])
     write_store(bundle["quality"], [make_row("quality")])
+    certfile, keyfile = tls_pair
     return ServiceSettings(
         api_key=API_KEY,
         host="127.0.0.1",
@@ -59,6 +75,8 @@ def settings(bundle: dict[str, Path], dashboard_bundle_dir: Path) -> ServiceSett
         suite_definitions_dir=bundle["suites"],
         dashboard_bundle_dir=dashboard_bundle_dir,
         dashboard_origin=DASHBOARD_ORIGIN,
+        tls_certfile=certfile,
+        tls_keyfile=keyfile,
     )
 
 
@@ -101,7 +119,7 @@ def test_the_quality_route_answers_one_entry_per_row_with_its_shape(
 
 
 def test_the_quality_route_names_a_field_the_floor_predates_over_http(
-    bundle: dict[str, Path], dashboard_bundle_dir: Path
+    bundle: dict[str, Path], dashboard_bundle_dir: Path, tls_pair: tuple[Path, Path]
 ) -> None:
     # A "7"-floor row: schema_version "7" for real (not just a floor param
     # over an "11" row), and thinking_policy dropped entirely -- the one
@@ -113,6 +131,7 @@ def test_the_quality_route_names_a_field_the_floor_predates_over_http(
     del row["thinking_policy"]
     write_store(bundle["quality"], [row])
     write_store(bundle["runtime"], [make_row("runtime", schema_version="7")])
+    certfile, keyfile = tls_pair
     settings = ServiceSettings(
         api_key=API_KEY,
         host="127.0.0.1",
@@ -125,6 +144,8 @@ def test_the_quality_route_names_a_field_the_floor_predates_over_http(
         suite_definitions_dir=bundle["suites"],
         dashboard_bundle_dir=dashboard_bundle_dir,
         dashboard_origin=DASHBOARD_ORIGIN,
+        tls_certfile=certfile,
+        tls_keyfile=keyfile,
     )
 
     with TestClient(service.create_app(settings), client=LOOPBACK) as client:
@@ -267,7 +288,7 @@ def test_a_non_loopback_client_without_the_key_is_refused(remote: TestClient) ->
     response = remote.get("/api/runs")
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "missing X-API-Key"
+    assert response.json()["detail"] == "missing or invalid X-API-Key"
     assert API_KEY not in response.text
 
 
@@ -275,8 +296,19 @@ def test_a_non_loopback_client_with_a_wrong_key_is_refused(remote: TestClient) -
     response = remote.get("/api/runs", headers={"X-API-Key": "wrong"})
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "invalid X-API-Key"
+    assert response.json()["detail"] == "missing or invalid X-API-Key"
     assert API_KEY not in response.text
+
+
+def test_a_missing_and_a_wrong_key_answer_byte_identical_bodies(
+    remote: TestClient,
+) -> None:
+    # The acceptance is indistinguishability, not merely the string chosen.
+    missing = remote.get("/api/runs")
+    wrong = remote.get("/api/runs", headers={"X-API-Key": "wrong"})
+
+    assert missing.status_code == wrong.status_code == 401
+    assert missing.content == wrong.content
 
 
 def test_an_unparsable_client_host_is_refused(settings: ServiceSettings) -> None:
@@ -293,7 +325,7 @@ def test_a_non_ascii_key_header_is_refused_not_a_500(remote: TestClient) -> None
     response = remote.get("/api/runs", headers={b"x-api-key": b"cl\xe9-invalide"})
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "invalid X-API-Key"
+    assert response.json()["detail"] == "missing or invalid X-API-Key"
 
 
 @pytest.mark.parametrize("path", ["/openapi.json", "/docs", "/redoc"])
@@ -342,6 +374,32 @@ def test_no_response_body_anywhere_contains_the_key(
         assert API_KEY not in remote.get(route, headers={"X-API-Key": API_KEY}).text
 
 
+def test_the_key_appears_in_no_logged_or_printed_record(
+    monkeypatch,
+    settings: ServiceSettings,
+    local: TestClient,
+    remote: TestClient,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Loading settings, the startup print, a served request (loopback and
+    # remote-with-the-right-key) and a refused one (remote, wrong key) -- the
+    # literal key value is searched for, not inferred from reading the
+    # middleware.
+    monkeypatch.setattr(service, "load_service_settings", lambda: settings)
+    monkeypatch.setattr(service.uvicorn, "run", lambda *a, **k: None)
+    caplog.set_level("DEBUG")
+
+    assert service.main() == 0
+    assert local.get("/api/runs").status_code == 200
+    assert remote.get("/api/runs", headers={"X-API-Key": API_KEY}).status_code == 200
+    assert remote.get("/api/runs", headers={"X-API-Key": "wrong"}).status_code == 401
+
+    captured = capsys.readouterr()
+    assert API_KEY not in captured.out + captured.err
+    assert API_KEY not in caplog.text
+
+
 # --------------------------------------------------------------------------
 # The serving entry
 # --------------------------------------------------------------------------
@@ -376,8 +434,16 @@ def test_the_serve_entry_prints_the_address_and_floor_and_never_the_key(
     assert service.main() == 0
 
     printed = capsys.readouterr().out
-    assert served == [{"host": "127.0.0.1", "port": 8000, "proxy_headers": False}]
-    assert "http://127.0.0.1:8000" in printed
+    assert served == [
+        {
+            "host": "127.0.0.1",
+            "port": 8000,
+            "proxy_headers": False,
+            "ssl_certfile": settings.tls_certfile,
+            "ssl_keyfile": settings.tls_keyfile,
+        }
+    ]
+    assert "https://127.0.0.1:8000" in printed
     assert "schema floor 7" in printed
     assert API_KEY not in printed
 
