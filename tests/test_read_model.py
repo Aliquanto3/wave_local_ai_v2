@@ -11,6 +11,7 @@ from store_fixtures import (
     FLOOR,
     GRADED_VALUES,
     NAMED_VALUES,
+    ROSTER_ENTRY_ID,
     RUN_ID,
     SUITE_ID,
     make_row,
@@ -605,6 +606,250 @@ def test_a_graded_cell_missing_a_key_is_an_absence_not_a_hole(
     assert cell["score"] == 0.62
     assert cell["n"] == 1
     assert isinstance(cell["indicative"], Absent)
+
+
+# --------------------------------------------------------------------------
+# The comparison view: one column per (suite_id, roster_entry_id), one row
+# per item_id the union of every column's suite carries.
+# --------------------------------------------------------------------------
+
+SECOND_ROSTER_ENTRY_ID = "qwen3-4b-q4km"
+
+
+def two_entry_roster_path(tmp_path: Path) -> Path:
+    """A roster carrying the fixture's own MoE entry plus one dense entry."""
+    path = tmp_path / "two-entry-roster.json"
+
+    def server_flags() -> dict[str, Any]:
+        return {
+            "n_gpu_layers": 99,
+            "context_size": 32768,
+            "flash_attention": "on",
+            "jinja": True,
+            "parallel_slots": 1,
+            "load_mode": "mmap",
+            "sampler": {
+                "temperature": 0.0,
+                "top_p": 1.0,
+                "top_k": 0,
+                "min_p": 0.0,
+                "presence_penalty": 0.0,
+            },
+        }
+
+    path.write_text(
+        json.dumps(
+            {
+                "roster_version": 3,
+                "entries": {
+                    ROSTER_ENTRY_ID: {
+                        "repo": "unsloth/Qwen3.6-35B-A3B-GGUF",
+                        "revision": "main",
+                        "file": "model.gguf",
+                        "display_id": "Qwen3.6-35B-A3B",
+                        "quant": "UD-IQ4_XS",
+                        "sha256": "c" * 64,
+                        "architecture": {
+                            "kind": "moe",
+                            "expert_count": 48,
+                            "active_params_b": 3.0,
+                        },
+                        "server_flags": server_flags(),
+                        "validated_host": {
+                            "n_cpu_moe": 37,
+                            "threads": 8,
+                            "fiche_summary": "a laptop",
+                        },
+                    },
+                    SECOND_ROSTER_ENTRY_ID: {
+                        "repo": "unsloth/Qwen3-4B-GGUF",
+                        "revision": "main",
+                        "file": "model.gguf",
+                        "display_id": "Qwen3-4B",
+                        "quant": "Q4_K_M",
+                        "sha256": "d" * 64,
+                        "architecture": {
+                            "kind": "dense",
+                            "expert_count": None,
+                            "active_params_b": 4.0,
+                        },
+                        "server_flags": server_flags(),
+                        "validated_host": {
+                            "n_cpu_moe": None,
+                            "threads": 8,
+                            "fiche_summary": "a laptop",
+                        },
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def build_comparison(
+    bundle: dict[str, Path], rows: list[dict[str, Any]], roster_path: Path
+) -> Any:
+    write_store(bundle["quality"], rows)
+    return read_model.comparison_view(
+        bundle["quality"],
+        FLOOR,
+        read_model.load_roster_file(roster_path),
+        bundle["suites"],
+        bundle["fiches"],
+    )
+
+
+def _column(view: dict[str, Any], roster_entry_id: str) -> dict[str, Any]:
+    for suite in view["suites"]:
+        for column in suite["columns"]:
+            if column["roster_entry_id"] == roster_entry_id:
+                return column
+    raise AssertionError(f"no column for {roster_entry_id!r} in {view!r}")
+
+
+def _cell(suite: dict[str, Any], item_id: str, column_index: int) -> dict[str, Any]:
+    for item in suite["items"]:
+        if item["item_id"] == item_id:
+            return item["cells"][column_index]
+    raise AssertionError(f"no item {item_id!r} in {suite!r}")
+
+
+def test_a_comparisons_columns_each_name_their_own_suite_version(
+    bundle: dict[str, Path], tmp_path: Path
+) -> None:
+    roster_path = two_entry_roster_path(tmp_path)
+    older = make_row(
+        "quality",
+        roster_entry_id=ROSTER_ENTRY_ID,
+        suite_version="1",
+        item_id="item-01",
+        run_id="run-moe",
+    )
+    newer_shared = make_row(
+        "quality",
+        roster_entry_id=SECOND_ROSTER_ENTRY_ID,
+        suite_version="2",
+        item_id="item-01",
+        run_id="run-dense",
+    )
+    newer_only = make_row(
+        "quality",
+        roster_entry_id=SECOND_ROSTER_ENTRY_ID,
+        suite_version="2",
+        item_id="item-02",
+        run_id="run-dense",
+    )
+
+    view = build_comparison(bundle, [older, newer_shared, newer_only], roster_path)
+
+    assert len(view["suites"]) == 1
+    suite = view["suites"][0]
+    assert suite["suite_id"] == SUITE_ID
+    assert len(suite["columns"]) == 2
+    older_column = _column(view, ROSTER_ENTRY_ID)
+    newer_column = _column(view, SECOND_ROSTER_ENTRY_ID)
+    assert older_column["suite_version"] == "1"
+    assert newer_column["suite_version"] == "2"
+
+    older_index = suite["columns"].index(older_column)
+    newer_index = suite["columns"].index(newer_column)
+    assert _cell(suite, "item-02", older_index)["status"] == "not_compared"
+    assert _cell(suite, "item-02", older_index) == {
+        "status": "not_compared",
+        "item_id": "item-02",
+    }
+    assert _cell(suite, "item-02", newer_index)["status"] == "compared"
+    assert _cell(suite, "item-01", older_index)["status"] == "compared"
+    assert _cell(suite, "item-01", newer_index)["status"] == "compared"
+
+
+def test_a_comparison_column_with_an_unresolved_roster_entry_id_still_appears(
+    bundle: dict[str, Path], tmp_path: Path
+) -> None:
+    view = build_comparison(
+        bundle,
+        [make_row("quality", roster_entry_id="not-in-roster")],
+        two_entry_roster_path(tmp_path),
+    )
+
+    column = _column(view, "not-in-roster")
+    assert column["roster_entry"] == Absent(
+        ABSENT_POINTER_UNRESOLVED,
+        {"pointer": "roster_entry_id", "value": "not-in-roster"},
+    )
+    assert column["dimensions"]["architecture"] == column["roster_entry"]
+
+
+def test_a_comparison_column_is_backed_by_only_the_later_run(
+    bundle: dict[str, Path], tmp_path: Path
+) -> None:
+    older_run = make_row(
+        "quality",
+        roster_entry_id=ROSTER_ENTRY_ID,
+        item_id="item-01",
+        run_id="run-older",
+        captured_at="2026-01-01T00:00:00+00:00",
+        correct=False,
+    )
+    newer_run = make_row(
+        "quality",
+        roster_entry_id=ROSTER_ENTRY_ID,
+        item_id="item-01",
+        run_id="run-newer",
+        captured_at="2026-02-01T00:00:00+00:00",
+        correct=True,
+    )
+
+    view = build_comparison(
+        bundle, [older_run, newer_run], two_entry_roster_path(tmp_path)
+    )
+
+    suite = view["suites"][0]
+    assert len(suite["columns"]) == 1
+    column = suite["columns"][0]
+    assert column["run_id"] == "run-newer"
+    cell = _cell(suite, "item-01", 0)
+    assert cell["run_id"] == "run-newer"
+    assert cell["correct"] is True
+
+
+COMPARISON_ENTRY_FIELDS: frozenset[str] = (
+    read_model.RUNS_VIEW_FIELDS
+    | read_model.QUALITY_VIEW_FIELDS
+    | read_model.QUALITY_EXACT_MATCH_FIELDS
+    | read_model.QUALITY_GRADED_FIELDS
+    | read_model.QUALITY_JUDGE_FIELDS
+    | frozenset(
+        {
+            "score_shape",
+            "roster_entry",
+            "fiche",
+            "suite_definition",
+            "score_breakdown",
+            "language_breakdown",
+            "status",
+        }
+    )
+)
+
+
+# The fields RUNTIME_VIEW_FIELDS owns that QUALITY_VIEW_FIELDS does not: the
+# runtime-exclusive measurements (ttft_ms, wall_clock_s, gen_tok_per_s, ...).
+# Identity/pricing fields (cost_total, roster_version, ...) legitimately
+# carry the same name on both row kinds and are not what "quality-only" means
+# here -- see RUNTIME_VIEW_FIELDS' own set for the full shared block.
+RUNTIME_EXCLUSIVE_FIELDS: frozenset[str] = (
+    read_model.RUNTIME_VIEW_FIELDS
+    - read_model.QUALITY_VIEW_FIELDS
+    - read_model.RUNS_VIEW_FIELDS
+)
+
+
+def test_no_runtime_or_energy_field_is_reachable_on_a_comparison_entry() -> None:
+    assert COMPARISON_ENTRY_FIELDS & RUNTIME_EXCLUSIVE_FIELDS == frozenset()
+    assert COMPARISON_ENTRY_FIELDS & read_model.ENERGY_VIEW_FIELDS == frozenset()
 
 
 # --------------------------------------------------------------------------
