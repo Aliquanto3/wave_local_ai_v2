@@ -18,7 +18,7 @@ npm ci
 | `npm run build`          | Type-checks (`tsc -b`) and builds `dist/`         |
 | `npm run lint`           | ESLint                                            |
 | `npm run format`         | `prettier --check .`                              |
-| `npm run typecheck`      | `tsc --noEmit`                                    |
+| `npm run typecheck`      | `tsc -b --noEmit`, over every referenced project  |
 | `npm test -- --coverage` | vitest, failing under 80% line coverage           |
 
 `dist/` is never committed: `npm ci && npm run build` from a fresh clone

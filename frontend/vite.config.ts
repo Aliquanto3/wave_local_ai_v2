@@ -16,6 +16,16 @@ export default defineConfig({
     setupFiles: ['./src/setupTests.ts'],
     coverage: {
       provider: 'v8',
+      // Every source file counts, loaded by a test or not: without `include`,
+      // deleting a test file drops its subject from the denominator and the
+      // percentage goes up instead of failing the gate.
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: [
+        'src/**/*.test.{ts,tsx}',
+        'src/setupTests.ts',
+        'src/views/fixtures/**',
+        'src/main.tsx',
+      ],
       thresholds: {
         lines: 80,
       },
