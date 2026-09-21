@@ -1,4 +1,4 @@
-"""The read-only results service: four `GET` routes over the two stores.
+"""The read-only results service: five `GET` routes over the two stores.
 
 Read-only in the strict sense the story asks for. This module imports only
 read paths -- `read_model`, which itself imports no writer -- so
@@ -186,6 +186,24 @@ def create_app(settings: ServiceSettings) -> FastAPI:
                 settings.quality_results_path,
                 settings.schema_floor,
                 loaded_roster(),
+            )
+        )
+
+    @api.get("/comparisons")
+    def get_comparisons() -> dict[str, Any]:
+        """Every roster model, side by side, over the same items of each suite.
+
+        The one route in the quality family scoped to no single `run_id`:
+        the comparison is store-wide by construction, reading only
+        `quality_results_path`.
+        """
+        return read_model.to_jsonable(
+            read_model.comparison_view(
+                settings.quality_results_path,
+                settings.schema_floor,
+                loaded_roster(),
+                settings.suite_definitions_dir,
+                settings.fiche_registry_dir,
             )
         )
 

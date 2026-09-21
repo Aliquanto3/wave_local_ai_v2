@@ -336,6 +336,28 @@ EXACT_MATCH_LANGUAGE_CELL_FIELDS: frozenset[str] = frozenset(
 )
 
 
+# The ordered, extensible list of dimensions a comparison column's identity
+# is built from. Adding a dimension means appending a name here and, once it
+# resolves from the row rather than the roster entry, teaching
+# `_resolve_comparison_dimension` how to read it -- never reshaping the
+# column-assembly loop in `_comparison_columns`. Reserved future entries:
+# `machine`, `engine`, `prompt_variant`, each resolved from the row once it
+# carries the field; `architecture` alone resolves from the roster entry
+# today.
+COMPARISON_DIMENSIONS: tuple[str, ...] = ("architecture",)
+
+
+def _resolve_comparison_dimension(
+    row: dict[str, Any], dimension: str, resolved_roster_entry: Any | Absent
+) -> Any | Absent:
+    """One dimension's value for a column, given its resolved roster entry."""
+    if dimension == "architecture":
+        if isinstance(resolved_roster_entry, Absent):
+            return resolved_roster_entry
+        return resolved_roster_entry["architecture"]
+    return resolve_field(row, dimension)
+
+
 def load_roster_file(path: Path) -> roster.RosterFile | None:
     """The roster at `path`, or `None` when it cannot be read.
 
@@ -765,4 +787,184 @@ def energy_view(
         "schema_floor": floor,
         "entries": [_energy_entry(row) for row in rows],
         "unreadable": _unreadable_as_json(read.unreadable),
+    }
+
+
+@dataclass(frozen=True)
+class _ComparisonColumn:
+    """One `(suite_id, roster_entry_id)` column, backed by its winning run.
+
+    `rows_by_item` is keyed by `_dedup_key(item_id)` -- an `Absent` `item_id`
+    is unhashable on its own, exactly the reason `_runs_collection` dedupes
+    the same way -- and carries the item's own (possibly absent) id beside
+    its row, so the union and the cells can both be built from it without
+    resolving the row twice.
+    """
+
+    roster_entry_id: Any
+    run_id: Any
+    suite_version: Any
+    prompt_set_hash: Any
+    thinking_policy: Any
+    roster_entry: Any
+    dimensions: dict[str, Any]
+    rows_by_item: dict[Any, tuple[Any, dict[str, Any]]]
+
+
+def _captured_at_sort_key(row: dict[str, Any]) -> tuple[str, str]:
+    """`(captured_at, run_id)` as strings, so the latest run sorts greatest.
+
+    Compared as strings, not parsed as datetimes: `captured_at` is written as
+    ISO 8601 in one timezone, which already sorts correctly lexically, and
+    parsing here would be one more thing this module computes rather than
+    reads. `run_id` breaks a tie deterministically rather than by dict order.
+    """
+    captured_at = row.get("captured_at")
+    run_id = row.get("run_id")
+    return (
+        "" if captured_at is None else str(captured_at),
+        "" if run_id is None else str(run_id),
+    )
+
+
+def _comparison_columns(
+    store: StoreRead, roster_file: roster.RosterFile | None
+) -> list[tuple[Any, list[_ComparisonColumn]]]:
+    """The quality store's rows, grouped by `suite_id` then `roster_entry_id`.
+
+    One column per group, backed only by the rows of the single run carrying
+    the greatest `captured_at` in it -- a later run of the same model on the
+    same suite supersedes an earlier one rather than being merged with it.
+    Suites, and roster_entry_ids within a suite, are ordered by their string
+    form for a stable response rather than by first-seen file order.
+    """
+    groups: dict[Any, tuple[Any, dict[Any, dict[Any, list[dict[str, Any]]]]]] = {}
+    for row in store.rows:
+        suite_id = resolve_field(row, "suite_id")
+        suite_key = _dedup_key(suite_id)
+        entry_id = resolve_field(row, POINTER_ROSTER_ENTRY_ID)
+        entry_key = _dedup_key(entry_id)
+        run_id = row.get("run_id")
+        run_key = "" if run_id is None else str(run_id)
+
+        _, by_entry = groups.setdefault(suite_key, (suite_id, {}))
+        by_run = by_entry.setdefault(entry_key, {})
+        by_run.setdefault(run_key, []).append(row)
+
+    result: list[tuple[Any, list[_ComparisonColumn]]] = []
+    for suite_key in sorted(groups, key=str):
+        suite_id, by_entry = groups[suite_key]
+        columns: list[_ComparisonColumn] = []
+        for entry_key in sorted(by_entry, key=str):
+            by_run = by_entry[entry_key]
+            winning_run_key = max(
+                by_run, key=lambda key: _captured_at_sort_key(by_run[key][0])
+            )
+            winning_rows = by_run[winning_run_key]
+            sample = winning_rows[0]
+            roster_entry = resolve_roster_entry(sample, roster_file)
+            dimensions = {
+                dimension: _resolve_comparison_dimension(
+                    sample, dimension, roster_entry
+                )
+                for dimension in COMPARISON_DIMENSIONS
+            }
+            rows_by_item = {
+                _dedup_key(resolve_field(row, "item_id")): (
+                    resolve_field(row, "item_id"),
+                    row,
+                )
+                for row in winning_rows
+            }
+            columns.append(
+                _ComparisonColumn(
+                    roster_entry_id=resolve_field(sample, POINTER_ROSTER_ENTRY_ID),
+                    run_id=resolve_field(sample, "run_id"),
+                    suite_version=resolve_field(sample, "suite_version"),
+                    prompt_set_hash=resolve_field(sample, "prompt_set_hash"),
+                    thinking_policy=resolve_field(sample, "thinking_policy"),
+                    roster_entry=roster_entry,
+                    dimensions=dimensions,
+                    rows_by_item=rows_by_item,
+                )
+            )
+        result.append((suite_id, columns))
+    return result
+
+
+def comparison_view(
+    quality_path: Path,
+    floor: str,
+    roster_file: roster.RosterFile | None,
+    suite_definitions_dir: Path,
+    fiche_registry_dir: Path,
+) -> dict[str, Any]:
+    """Every roster model, side by side, over the same items of each suite.
+
+    Store-wide by construction -- no `run_id` names all the rows a column
+    needs, since each column may be backed by a different run of a different
+    model. One entry per `suite_id` present in the quality store; within it,
+    one column per `(suite_id, roster_entry_id)` and one row per `item_id`
+    the union of every column's suite carries. A column missing an item its
+    suite union carries renders that cell `{"status": "not_compared"}` --
+    never a blank or a zero.
+    """
+    store = read_rows_from_floor(quality_path, floor)
+    grouped = _comparison_columns(store, roster_file)
+
+    suites = []
+    for suite_id, columns in grouped:
+        item_order: dict[Any, Any] = {}
+        for column in columns:
+            for key, (item_id, _row) in column.rows_by_item.items():
+                item_order.setdefault(key, item_id)
+        sorted_keys = sorted(item_order, key=lambda key: str(item_order[key]))
+
+        items = []
+        for key in sorted_keys:
+            item_id = item_order[key]
+            cells = []
+            for column in columns:
+                entry = column.rows_by_item.get(key)
+                if entry is None:
+                    cells.append({"status": "not_compared", "item_id": item_id})
+                else:
+                    _, row = entry
+                    cells.append(
+                        {
+                            "status": "compared",
+                            **_quality_entry(
+                                row,
+                                fiche_registry_dir=fiche_registry_dir,
+                                roster_file=roster_file,
+                                suite_definitions_dir=suite_definitions_dir,
+                            ),
+                        }
+                    )
+            items.append({"item_id": item_id, "cells": cells})
+
+        suites.append(
+            {
+                "suite_id": suite_id,
+                "columns": [
+                    {
+                        "roster_entry_id": column.roster_entry_id,
+                        "run_id": column.run_id,
+                        "suite_version": column.suite_version,
+                        "prompt_set_hash": column.prompt_set_hash,
+                        "thinking_policy": column.thinking_policy,
+                        "roster_entry": column.roster_entry,
+                        "dimensions": column.dimensions,
+                    }
+                    for column in columns
+                ],
+                "items": items,
+            }
+        )
+
+    return {
+        "store": "quality",
+        "schema_floor": floor,
+        "suites": suites,
+        "unreadable": _unreadable_as_json(store.unreadable),
     }
