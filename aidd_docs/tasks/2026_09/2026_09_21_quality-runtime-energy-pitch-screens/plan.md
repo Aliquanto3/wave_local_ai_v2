@@ -1,6 +1,6 @@
 ---
 objective: "The quality table, the runtime table with its fiche, and the per-run energy detail each render as their own screen over the four read-model routes, every methodology mark on screen through a shared, screen-boundary-enforced label component, and no screen ever composes a quality figure with a runtime one."
-status: in-progress
+status: implemented
 ---
 
 # Plan: Quality, runtime and energy read at pitch distance, every caveat on screen
