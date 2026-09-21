@@ -16,7 +16,7 @@ from store_fixtures import (
     write_store,
 )
 
-from wave_local_ai_v2 import read_model, row_contract, suite_snapshot
+from wave_local_ai_v2 import read_model, results, row_contract, settings, suite_snapshot
 from wave_local_ai_v2.read_model import (
     ABSENCE_REASONS,
     ABSENT_NULL_IN_ROW,
@@ -24,6 +24,43 @@ from wave_local_ai_v2.read_model import (
     ABSENT_PREDATES_SCHEMA,
     Absent,
 )
+
+# The committed reference bundle, entirely schema "7" -- see
+# tests/test_reference_bundle.py's own PUBLISHED_BUNDLE_SCHEMA_VERSION for why
+# this is pinned rather than read from row_contract.SCHEMA_VERSION.
+REFERENCE_BUNDLE_SCHEMA_VERSION = "7"
+QUALITY_REFERENCE_PATH = Path(settings.DEFAULT_QUALITY_REFERENCE_PATH)
+RUNTIME_REFERENCE_PATH = Path(settings.DEFAULT_RUNTIME_REFERENCE_PATH)
+SUITE_DEFINITIONS_DIR = Path(settings.DEFAULT_SUITE_DEFINITIONS_DIR)
+FICHE_REGISTRY_DIR = Path(settings.DEFAULT_FICHE_REGISTRY_DIR)
+ROSTER_PATH = Path(settings.DEFAULT_ROSTER_PATH)
+
+
+def reference_bundle_quality_view() -> dict[str, Any]:
+    run_id = results.read_rows(QUALITY_REFERENCE_PATH)[0]["run_id"]
+    view = read_model.quality_view(
+        QUALITY_REFERENCE_PATH,
+        str(run_id),
+        REFERENCE_BUNDLE_SCHEMA_VERSION,
+        read_model.load_roster_file(ROSTER_PATH),
+        SUITE_DEFINITIONS_DIR,
+        FICHE_REGISTRY_DIR,
+    )
+    assert view is not None
+    return view
+
+
+def reference_bundle_runtime_view() -> dict[str, Any]:
+    run_id = results.read_rows(RUNTIME_REFERENCE_PATH)[0]["run_id"]
+    view = read_model.runtime_view(
+        RUNTIME_REFERENCE_PATH,
+        str(run_id),
+        REFERENCE_BUNDLE_SCHEMA_VERSION,
+        FICHE_REGISTRY_DIR,
+        read_model.load_roster_file(ROSTER_PATH),
+    )
+    assert view is not None
+    return view
 
 
 def loaded_roster(bundle: dict[str, Path]) -> Any:
@@ -545,6 +582,46 @@ def test_a_graded_cell_missing_a_key_is_an_absence_not_a_hole(
     assert cell["score"] == 0.62
     assert cell["n"] == 1
     assert isinstance(cell["indicative"], Absent)
+
+
+# --------------------------------------------------------------------------
+# The committed reference bundle: every field the story names, over real rows
+# at schema "7" -- see plan.md's Decisions for which fields this bundle's own
+# floor already carries and which one it predates.
+# --------------------------------------------------------------------------
+
+
+def test_the_reference_bundle_quality_row_carries_the_storys_named_fields() -> None:
+    entry = reference_bundle_quality_view()["entries"][0]
+
+    for field in ("contamination_risk", "indicative_reasons", "failure_counts"):
+        assert not isinstance(entry[field], Absent), f"{field} is unexpectedly absent"
+
+    assert entry["thinking_policy"] == Absent(
+        ABSENT_PREDATES_SCHEMA, {"row_schema_version": "7"}
+    )
+
+
+def test_the_reference_bundle_suite_definition_carries_the_suites_own_caps() -> None:
+    entry = reference_bundle_quality_view()["entries"][0]
+
+    suite_definition = entry["suite_definition"]
+    assert not isinstance(suite_definition, Absent)
+    for field in ("max_output_tokens", "stop_sequences", "context_length"):
+        assert field in suite_definition
+
+
+def test_the_reference_bundle_runtime_row_carries_the_storys_named_fields() -> None:
+    entry = reference_bundle_runtime_view()["entries"][0]
+
+    for field in (
+        "ttft_source",
+        "ttft_ms_spread",
+        "prompt_tok_per_s_spread",
+        "gen_tok_per_s_spread",
+        "unreliable",
+    ):
+        assert not isinstance(entry[field], Absent), f"{field} is unexpectedly absent"
 
 
 # --------------------------------------------------------------------------

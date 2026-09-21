@@ -100,6 +100,48 @@ def test_the_quality_route_answers_one_entry_per_row_with_its_shape(
     assert body["entries"][0]["judge"]["agreement"]["absent"] is True
 
 
+def test_the_quality_route_names_a_field_the_floor_predates_over_http(
+    bundle: dict[str, Path], dashboard_bundle_dir: Path
+) -> None:
+    # A "7"-floor row: schema_version "7" for real (not just a floor param
+    # over an "11" row), and thinking_policy dropped entirely -- the one
+    # field this store's own schema genuinely predates (see plan.md's
+    # Decisions). The four other story-named fields stay on the row, proving
+    # the route carries them as real values rather than as an accidental
+    # absence sharing the same floor.
+    row = make_row("quality", schema_version="7")
+    del row["thinking_policy"]
+    write_store(bundle["quality"], [row])
+    write_store(bundle["runtime"], [make_row("runtime", schema_version="7")])
+    settings = ServiceSettings(
+        api_key=API_KEY,
+        host="127.0.0.1",
+        port=8000,
+        schema_floor="7",
+        runtime_results_path=bundle["runtime"],
+        quality_results_path=bundle["quality"],
+        fiche_registry_dir=bundle["fiches"],
+        roster_path=bundle["roster"],
+        suite_definitions_dir=bundle["suites"],
+        dashboard_bundle_dir=dashboard_bundle_dir,
+        dashboard_origin=DASHBOARD_ORIGIN,
+    )
+
+    with TestClient(service.create_app(settings), client=LOOPBACK) as client:
+        body = client.get(f"/api/runs/{RUN_ID}/quality").json()
+
+    entry = body["entries"][0]
+    assert entry["thinking_policy"] == {
+        "absent": True,
+        "reason": "predates_schema",
+        "detail": {"row_schema_version": "7"},
+    }
+    for field in ("contamination_risk", "indicative_reasons", "failure_counts"):
+        value = entry[field]
+        is_absent = isinstance(value, dict) and value.get("absent") is True
+        assert not is_absent, f"{field} is unexpectedly absent"
+
+
 def test_the_runtime_route_answers_with_the_fiche_beside_the_row(
     local: TestClient,
 ) -> None:
