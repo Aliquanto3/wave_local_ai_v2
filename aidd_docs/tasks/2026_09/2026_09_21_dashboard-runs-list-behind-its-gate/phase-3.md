@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Instruction: Runs list view, absence rendering, local build proof
@@ -111,3 +111,26 @@ journey
 | 1    | `Absent` renders visibly distinct, non-empty text for every `reason` value `read_model.ABSENCE_REASONS` defines; snapshot or text-query tests cover at least one of each. |
 | 2    | `RunsList` rendered against the fixture shows every real value from the fixture and every `Absent` field via the shared component; an empty-collections fixture shows the named empty state; a rejected `apiFetch` (non-401) shows the named unreachable state. |
 | 3    | The manual walk is documented (screenshot or written observation) as the phase's evidence, showing a real run's absence rendered and a real `tree_dirty` tag rendered, over the built bundle served by `service.py` — not a mocked fetch. |
+
+## Task 3 evidence: manual walk over the real service
+
+`npm run build` produced `frontend/dist/`. The service was started with
+`DASHBOARD_BUNDLE_DIR` pointed at it, `RUNTIME_RESULTS_PATH`/`QUALITY_RESULTS_PATH`
+pointed at a temp store built from `tests/store_fixtures.py`'s own fixtures, over
+two runtime rows (`clean-run` with `commit_sha="abc1234"`, `tree_dirty=false`;
+`dirty-run` with `commit_sha=None` — a declared `null_in_row` absence —
+`tree_dirty=true`) and one quality row.
+
+Opened `http://127.0.0.1:8123/` in a real browser (Claude in Chrome), entered a
+key past the client-side `KeyGate` prompt, and confirmed on the rendered page:
+
+- The runs list renders with no dev tooling, over the real built bundle served
+  by `service.py` (not a mocked fetch) — two named sections, `Runtime runs`
+  and `Quality runs`.
+- `dirty-run`'s `commit_sha` cell renders `not reported (not captured on this
+  row)` via the shared `Absent` component — never blank, a dash, or `0`.
+- `dirty-run` (and `quality-run-a`, which had no `tree_dirty` override in this
+  ad hoc fixture) show the visible red `dirty tree` tag; `clean-run`
+  (`tree_dirty=false`) shows no tag.
+
+Screenshot: [`evidence/phase-3-manual-verification.jpg`](./evidence/phase-3-manual-verification.jpg).

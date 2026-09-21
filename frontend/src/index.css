@@ -37,3 +37,34 @@ body {
   padding: 24px;
   box-sizing: border-box;
 }
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th,
+td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.dirty-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  font-size: 0.85em;
+}
+
+.absent {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.empty-state,
+.error-state {
+  color: var(--text-muted);
+}

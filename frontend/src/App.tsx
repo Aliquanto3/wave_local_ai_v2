@@ -1,9 +1,13 @@
 import { KeyGate } from './components/KeyGate'
+import { RunsList } from './views/RunsList'
 
 function App() {
   return (
     <KeyGate>
-      <p>Signed in.</p>
+      <header>
+        <h1>wave-local-ai-v2</h1>
+      </header>
+      <RunsList />
     </KeyGate>
   )
 }
