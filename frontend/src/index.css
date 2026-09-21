@@ -64,6 +64,10 @@ td {
   font-style: italic;
 }
 
+.fiche-hash {
+  overflow-wrap: anywhere;
+}
+
 .empty-state,
 .error-state {
   color: var(--text-muted);
