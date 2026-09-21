@@ -1,0 +1,14 @@
+The real SERVICE_API_KEY value used for this capture is not reproduced in
+this committed file (the search would otherwise embed the key it is proving
+absent). It is a 43-character secrets.token_urlsafe(32) value; its sha256 is
+27683fa1dc847e768b902764f8159dbcecf1859d8000cd57597c79a7e31b4289
+for anyone re-running this same key to verify against.
+
+Command actually run:
+  $ grep -F -c "<the real SERVICE_API_KEY value>" https-run-output.txt
+  0
+
+Independently: https-run-output.txt is committed in full below this file's
+own directory, and a manual review of it (and of keyless-curl-refusal.txt)
+confirms it never prints the key -- only the bound address, the schema
+floor, and uvicorn's own access-log lines (method, path, status).

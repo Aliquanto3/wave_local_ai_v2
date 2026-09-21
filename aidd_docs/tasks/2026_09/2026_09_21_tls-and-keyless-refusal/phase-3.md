@@ -1,5 +1,5 @@
 ---
-status: pending
+status: in-progress
 ---
 
 # Instruction: Evidence — a real HTTPS run, a keyless transcript, a screenshot
@@ -72,3 +72,23 @@ journey
 | 1    | `evidence/https-run-output.txt` shows a `serving https://...` line (not `http://`); `evidence/https-run-key-search.txt` shows the search command and zero matches for the real key value. |
 | 2    | `evidence/keyless-curl-refusal.txt` shows two `401` responses whose bodies are textually identical, neither containing a filesystem path, a store name, or any fragment of the configured key. |
 | 3    | `evidence/browser-refusal-screenshot.png` exists and visibly shows the named refusal state, not a stack trace, blank page, or hang. |
+
+## Status
+
+Tasks 1 and 2 done: `evidence/https-run-output.txt`, `evidence/https-run-key-search.txt`
+and `evidence/keyless-curl-refusal.txt` are on disk, captured against a real
+`uv run wave-local-ai-v2-serve` bound to this machine's LAN address
+(`10.42.47.37`) with a `scripts/generate_dev_cert.py`-issued cert. The real
+`SERVICE_API_KEY` value is deliberately not reproduced in
+`https-run-key-search.txt` — only its sha256 and the fact of the zero-match
+search — so the evidence file does not itself become the leak it is proving
+absent.
+
+Task 3 is **blocked**: the Claude-in-Chrome browser extension is not
+connected in this environment (`tabs_context_mcp` returns "Browser extension
+is not connected"), so no real browser is drivable here to render the
+dashboard, submit a wrong key and capture
+`evidence/browser-refusal-screenshot.png`. Needs a human to install/connect
+the extension (or to take the screenshot manually against a running
+`uv run wave-local-ai-v2-serve` per `docs/demo.md`'s step 5), after which
+this task can resume.

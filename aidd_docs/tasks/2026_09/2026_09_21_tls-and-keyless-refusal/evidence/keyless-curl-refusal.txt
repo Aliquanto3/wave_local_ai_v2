@@ -1,0 +1,17 @@
+=== keyless: curl -k -i https://10.42.47.37:8000/api/runs ===
+HTTP/1.1 401 Unauthorized
+date: Mon, 21 Sep 2026 15:11:57 GMT
+server: uvicorn
+content-length: 41
+content-type: application/json
+
+{"detail":"missing or invalid X-API-Key"}
+
+=== wrong key: curl -k -i https://10.42.47.37:8000/api/runs -H "X-API-Key: wrong" ===
+HTTP/1.1 401 Unauthorized
+date: Mon, 21 Sep 2026 15:11:57 GMT
+server: uvicorn
+content-length: 41
+content-type: application/json
+
+{"detail":"missing or invalid X-API-Key"}
