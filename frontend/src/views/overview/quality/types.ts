@@ -91,9 +91,6 @@ export interface OverviewQualityEntry {
   fiche_hash: Maybe<string>
   verdict: Maybe<VerdictBlock>
   task_suite: Maybe<string>
-  item_id: Maybe<string>
-  expected_label: Maybe<string>
-  predicted_label: Maybe<string>
   sampling: Maybe<Record<string, unknown>>
   max_output_tokens: Maybe<number>
   stop_sequences: Maybe<string[]>
@@ -107,7 +104,6 @@ export interface OverviewQualityEntry {
   contamination_risk: Maybe<boolean>
   indicative: Maybe<boolean>
   indicative_reasons: Maybe<string[]>
-  failure_reason: Maybe<string>
   failure_counts: Maybe<FailureCounts>
   retries: Maybe<number>
   resumed: Maybe<boolean>

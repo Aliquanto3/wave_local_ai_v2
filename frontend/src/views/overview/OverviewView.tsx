@@ -65,8 +65,12 @@ export function OverviewView() {
     )
     .map((useCase) => ({
       suite: useCase.task_suite,
+      // `'unpublished'` (the leader set field is unowned) and `[]` (published,
+      // but every row was excluded) are different facts -- collapsing them
+      // would make the runtime panel say "no leader set published" for a
+      // suite that published one with zero members.
       leaderRosterEntryIds: isAbsent(useCase.leader)
-        ? []
+        ? ('unpublished' as const)
         : useCase.leader.members
             .map((entry) => entry.roster_entry_id)
             .filter((id): id is string => !isAbsent(id)),

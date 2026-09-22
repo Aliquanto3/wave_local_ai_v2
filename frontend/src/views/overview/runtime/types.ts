@@ -35,6 +35,8 @@ export function isWithheldHeadline(
 
 export interface RuntimeHeadline {
   median_gen_tok_per_s: Maybe<number>
+  run_id: Maybe<string>
+  fiche_hash: Maybe<string>
   machine: Maybe<Record<string, unknown>>
 }
 

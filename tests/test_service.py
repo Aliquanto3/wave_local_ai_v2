@@ -197,24 +197,76 @@ def test_the_energy_route_answers_three_channels_each_beside_its_label(
 def test_the_overview_quality_route_answers_one_use_case_per_task_suite(
     local: TestClient,
 ) -> None:
-    body = local.get("/api/overview/quality").json()
+    response = local.get("/api/overview/quality")
+    body = response.json()
 
     assert body["store"] == "quality"
     assert body["use_cases"]
     use_case = body["use_cases"][0]
     assert set(use_case) == {"task_suite", "leader", "cloud_comparators"}
     assert use_case["leader"]["absent"] is True
+    # Structural, not just top-level: a runtime field nested inside a member
+    # or a comparator entry must fail this too.
+    runtime_only = sorted(
+        row_contract.REQUIRED_FIELDS["runtime"]
+        - row_contract.REQUIRED_FIELDS["quality"]
+    )
+    assert not any(f'"{name}"' in response.text for name in runtime_only)
 
 
 def test_the_overview_runtime_route_answers_one_entry_per_roster_entry(
     local: TestClient,
 ) -> None:
-    body = local.get("/api/overview/runtime").json()
+    response = local.get("/api/overview/runtime")
+    body = response.json()
 
     assert body["store"] == "runtime"
     entry = body["entries"][0]
     assert entry["roster_entry_id"] == ROSTER_ENTRY_ID
     assert set(entry) == {"roster_entry_id", "runtime_headline", "energy_headline"}
+    # Structural, not just top-level: a quality-only field nested anywhere in
+    # the entry must fail this too.
+    quality_only = sorted(
+        row_contract.REQUIRED_FIELDS["quality"]
+        - row_contract.REQUIRED_FIELDS["runtime"]
+    )
+    assert not any(f'"{name}"' in response.text for name in quality_only)
+
+
+def test_the_overview_routes_carry_no_identity_from_the_other_store(
+    bundle: dict[str, Path], dashboard_bundle_dir: Path, tls_pair: tuple[Path, Path]
+) -> None:
+    # A runtime-only roster_entry_id would pass a plain key-set or field-name
+    # check, since `roster_entry_id` is a name both stores share -- this
+    # proves the *value* from one store's rows never reaches the other
+    # route's response, the way `test_read_model.py`'s counterpart does over
+    # the read model directly.
+    write_store(bundle["quality"], [make_row("quality")])
+    write_store(
+        bundle["runtime"], [make_row("runtime", roster_entry_id="only-runtime")]
+    )
+    certfile, keyfile = tls_pair
+    settings = ServiceSettings(
+        api_key=API_KEY,
+        host="127.0.0.1",
+        port=8000,
+        schema_floor="7",
+        runtime_results_path=bundle["runtime"],
+        quality_results_path=bundle["quality"],
+        fiche_registry_dir=bundle["fiches"],
+        roster_path=bundle["roster"],
+        suite_definitions_dir=bundle["suites"],
+        dashboard_bundle_dir=dashboard_bundle_dir,
+        dashboard_origin=DASHBOARD_ORIGIN,
+        tls_certfile=certfile,
+        tls_keyfile=keyfile,
+    )
+    with TestClient(service.create_app(settings), client=LOOPBACK) as client:
+        quality_text = client.get("/api/overview/quality").text
+        runtime_text = client.get("/api/overview/runtime").text
+
+    assert "only-runtime" not in quality_text
+    assert ROSTER_ENTRY_ID not in runtime_text
 
 
 @pytest.mark.parametrize("query", ["", "?store=both", "?store=", "?store=Runtime"])

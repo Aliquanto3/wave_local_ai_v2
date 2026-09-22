@@ -1134,40 +1134,91 @@ def test_overview_quality_view_over_the_reference_bundle_names_every_suites_lead
 def test_overview_quality_view_groups_by_task_suite_leader_and_cloud_provider(
     bundle: dict[str, Path],
 ) -> None:
-    leader_one = make_row(
+    # Two distinct subjects (`run_a`, `run_b`), each with two item rows, so
+    # the leader set proves it collapses to one member per subject -- never
+    # one member per item row -- and carries the run's own suite_accuracy
+    # rather than either item's `correct`.
+    leader_run_a_item_1 = make_row(
         "quality",
         task_suite="suite-a",
         provider="local",
         run_id="run-a",
         item_id="item-1",
         leader_set_member=True,
+        suite_accuracy=0.9,
+        correct=True,
     )
-    leader_two = make_row(
+    leader_run_a_item_2 = make_row(
         "quality",
         task_suite="suite-a",
         provider="local",
         run_id="run-a",
         item_id="item-2",
         leader_set_member=True,
+        suite_accuracy=0.9,
+        correct=False,
     )
-    cloud_row = make_row(
-        "quality", task_suite="suite-a", provider="mistral", run_id="run-a"
+    leader_run_b_item_1 = make_row(
+        "quality",
+        task_suite="suite-a",
+        provider="local",
+        run_id="run-b",
+        item_id="item-1",
+        leader_set_member=True,
+        suite_accuracy=0.75,
+        correct=False,
+    )
+    # A cloud subject with two item rows -- also one subject, not two.
+    cloud_run_c_item_1 = make_row(
+        "quality",
+        task_suite="suite-a",
+        provider="mistral",
+        run_id="run-c",
+        item_id="item-1",
+        suite_accuracy=0.5,
+    )
+    cloud_run_c_item_2 = make_row(
+        "quality",
+        task_suite="suite-a",
+        provider="mistral",
+        run_id="run-c",
+        item_id="item-2",
+        suite_accuracy=0.5,
     )
     other_suite_row = make_row("quality", task_suite="suite-b", provider="local")
 
     view = build_overview_quality(
-        bundle, [leader_one, leader_two, cloud_row, other_suite_row]
+        bundle,
+        [
+            leader_run_a_item_1,
+            leader_run_a_item_2,
+            leader_run_b_item_1,
+            cloud_run_c_item_1,
+            cloud_run_c_item_2,
+            other_suite_row,
+        ],
     )
 
     use_cases = {entry["task_suite"]: entry for entry in view["use_cases"]}
     assert set(use_cases) == {"suite-a", "suite-b"}
 
     suite_a = use_cases["suite-a"]
-    assert {member["item_id"] for member in suite_a["leader"]["members"]} == {
-        "item-1",
-        "item-2",
-    }
-    assert [c["provider"] for c in suite_a["cloud_comparators"]] == ["mistral"]
+    members = suite_a["leader"]["members"]
+    assert len(members) == 2, "one member per subject (run_id), never per item row"
+    by_run = {member["run_id"]: member for member in members}
+    assert set(by_run) == {"run-a", "run-b"}
+    assert by_run["run-a"]["suite_accuracy"] == 0.9
+    assert by_run["run-b"]["suite_accuracy"] == 0.75
+    for member in members:
+        assert "item_id" not in member
+        assert "correct" not in member
+
+    comparators = suite_a["cloud_comparators"]
+    assert len(comparators) == 1, "the cloud subject's two item rows are one entry"
+    assert comparators[0]["provider"] == "mistral"
+    assert comparators[0]["run_id"] == "run-c"
+    assert comparators[0]["suite_accuracy"] == 0.5
+    assert "item_id" not in comparators[0]
 
     suite_b = use_cases["suite-b"]
     assert isinstance(suite_b["leader"], Absent)

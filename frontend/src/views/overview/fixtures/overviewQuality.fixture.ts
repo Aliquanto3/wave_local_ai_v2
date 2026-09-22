@@ -95,7 +95,6 @@ const SHARED_FIELDS = {
   suite_version: '2',
   prompt_set_hash: 'd41a2134274cf1c8036022d2b68396d04bfd14ff263d2f8699dbefd7a2e4596a', // pragma: allowlist secret
   provenance: 'hand_written',
-  failure_reason: NULL_ABSENT,
   failure_counts: {
     empty: 0,
     unparseable: 4,
@@ -121,8 +120,6 @@ const SHARED_FIELDS = {
   roster_entry: ROSTER_ENTRY,
   suite_definition: SUITE_DEFINITION,
   judge: PREDATES_SCHEMA_JUDGE,
-  expected_label: 'billing',
-  predicted_label: 'billing',
   score_shape: 'exact_match' as const,
   correct: true,
   suite_accuracy: 0.8,
@@ -146,7 +143,6 @@ const LEADER_MEMBER_ONE: OverviewQualityEntry = {
   model_id: 'Qwen3.6-35B-A3B',
   provider: 'local',
   fiche: LOCAL_FICHE,
-  item_id: 'billing-01',
   language: 'en',
   contamination_risk: false,
   indicative: false,
@@ -169,7 +165,6 @@ const LEADER_MEMBER_TWO: OverviewQualityEntry = {
   model_id: 'Qwen3.6-35B-A3B',
   provider: 'local',
   fiche: LOCAL_FICHE,
-  item_id: 'billing-02',
   language: 'fr',
   contamination_risk: false,
   indicative: true,
@@ -191,7 +186,6 @@ const CLOUD_COMPARATOR: OverviewQualityEntry = {
   model_id: 'mistral-medium',
   provider: 'mistral',
   fiche: PREDATES_SCHEMA(),
-  item_id: 'billing-01',
   language: 'en',
   contamination_risk: false,
   indicative: false,
@@ -218,9 +212,18 @@ const TRANSLATION_USE_CASE = {
   cloud_comparators: [],
 }
 
+// A suite whose leader set is published (not `Absent`) but whose every row
+// resolved `leader_set_member` to `false` -- a real "evaluated, none
+// qualified" fact, distinct from `TRANSLATION_USE_CASE`'s "field unowned".
+const EMPTY_LEADER_USE_CASE = {
+  task_suite: 'summarization',
+  leader: { members: [] },
+  cloud_comparators: [CLOUD_COMPARATOR],
+}
+
 export const overviewQualityFixture: OverviewQualityView = {
   store: 'quality',
   schema_floor: '7',
-  use_cases: [CLASSIFICATION_USE_CASE, TRANSLATION_USE_CASE],
+  use_cases: [CLASSIFICATION_USE_CASE, TRANSLATION_USE_CASE, EMPTY_LEADER_USE_CASE],
   unreadable: [],
 }

@@ -16,6 +16,8 @@ const LEADER_ENTRY: OverviewRuntimeEntry = {
   roster_entry_id: 'qwen3.6-35b-a3b-ud-iq4xs',
   runtime_headline: {
     median_gen_tok_per_s: 24.801659953618945,
+    run_id: '5e13166da0654390a7d63f346ea5d4f1',
+    fiche_hash: 'b9d1af56db2b6a26bfb265842bfd757dc78ed2d95e4ad3fce0088b8396d9003a', // pragma: allowlist secret
     machine: MACHINE,
   },
   energy_headline: {
@@ -35,6 +37,8 @@ const WITHHELD_ENTRY: OverviewRuntimeEntry = {
   roster_entry_id: 'phi-4-14b-q4-k-m',
   runtime_headline: {
     median_gen_tok_per_s: 18.2,
+    run_id: 'd20afbda710c40378e6ad5ca8d9b6558',
+    fiche_hash: 'b9d1af56db2b6a26bfb265842bfd757dc78ed2d95e4ad3fce0088b8396d9003a', // pragma: allowlist secret
     machine: MACHINE,
   },
   energy_headline: {

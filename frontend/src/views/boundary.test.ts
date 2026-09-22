@@ -114,10 +114,10 @@ describe('the quality/runtime component boundary', () => {
 // to see it fail ("imports ../runtime/types"), and the line removed -- same
 // proof method as the pairs above.
 describe('the overview quality/runtime component boundary', () => {
-  it('no file under overview/quality/ imports from overview/runtime/', () => {
+  it('no file under overview/quality/ imports from overview/runtime/ or views/energy/', () => {
     for (const [path, text] of Object.entries(overviewQualitySources)) {
-      const violation = importedModuleSpecifiers(text).find((s) =>
-        s.includes('runtime'),
+      const violation = importedModuleSpecifiers(text).find(
+        (s) => s.includes('runtime') || s.includes('energy'),
       )
       expect(violation, `${path} imports ${String(violation)}`).toBeUndefined()
     }

@@ -27,7 +27,16 @@ function renderMachine(machine: Maybe<Record<string, unknown>>): ReactNode {
   if (isAbsent(machine)) {
     return <Absent reason={machine.reason} detail={machine.detail} />
   }
-  return <span className="overview-machine">{String(machine.gpu_name)}</span>
+  const gpuName = machine.gpu_name
+  return (
+    <span className="overview-machine">
+      {typeof gpuName === 'string' ? (
+        gpuName
+      ) : (
+        <DeclaredAbsenceLabel reason="cpu-only fiche" detail="no gpu_name on this machine" />
+      )}
+    </span>
+  )
 }
 
 // Mirrors `EnergyView.tsx`'s own `HeadlineBlock` for the same reason
@@ -67,7 +76,7 @@ function EnergyHeadlineBlock({ headline }: { headline: EnergyHeadline }) {
 export function RuntimeEnergyPanel({
   leaderRosterEntryIds,
 }: {
-  leaderRosterEntryIds: string[]
+  leaderRosterEntryIds: string[] | 'unpublished'
 }) {
   const { reportUnauthorized } = useKeyGate()
   const [state, setState] = useState<LoadState>({ status: 'loading' })
@@ -105,7 +114,7 @@ export function RuntimeEnergyPanel({
     return <p className="error-state">could not reach the service: {state.message}</p>
   }
 
-  if (leaderRosterEntryIds.length === 0) {
+  if (leaderRosterEntryIds === 'unpublished') {
     return (
       <section className="overview-runtime-panel">
         <DeclaredAbsenceLabel
@@ -116,21 +125,44 @@ export function RuntimeEnergyPanel({
     )
   }
 
-  const entries = state.view.entries.filter((entry) =>
-    leaderRosterEntryIds.includes(String(entry.roster_entry_id)),
-  )
+  if (leaderRosterEntryIds.length === 0) {
+    return (
+      <section className="overview-runtime-panel">
+        <DeclaredAbsenceLabel
+          reason="no model to take a headline from"
+          detail="leader set published, no member"
+        />
+      </section>
+    )
+  }
 
   return (
     <section className="overview-runtime-panel">
-      {entries.map((entry, index) => (
-        <div key={index} className="overview-runtime-entry">
-          <span className="overview-runtime-headline">
-            {renderMaybe(entry.runtime_headline.median_gen_tok_per_s)} tok/s ·{' '}
-            {renderMachine(entry.runtime_headline.machine)}
-          </span>
-          <EnergyHeadlineBlock headline={entry.energy_headline} />
-        </div>
-      ))}
+      {leaderRosterEntryIds.map((id) => {
+        const entry = state.view.entries.find(
+          (candidate) => String(candidate.roster_entry_id) === id,
+        )
+        if (entry === undefined) {
+          return (
+            <DeclaredAbsenceLabel
+              key={id}
+              reason="no runtime row for this leader"
+              detail={id}
+            />
+          )
+        }
+        return (
+          <div key={id} className="overview-runtime-entry">
+            <span className="overview-runtime-headline">
+              {renderMaybe(entry.runtime_headline.median_gen_tok_per_s)} tok/s ·{' '}
+              {renderMachine(entry.runtime_headline.machine)} · run{' '}
+              {renderMaybe(entry.runtime_headline.run_id)} · fiche{' '}
+              {renderMaybe(entry.runtime_headline.fiche_hash)}
+            </span>
+            <EnergyHeadlineBlock headline={entry.energy_headline} />
+          </div>
+        )
+      })}
     </section>
   )
 }
