@@ -22,8 +22,12 @@ dependencies = [
 module = "pynvml"
 ignore_missing_imports = true
 
+# --cov-fail-under is coverage.py's only floor; it combines statements and
+# branches into one percentage (no separate branch-only gate exists), so the
+# floor must sit near the measured combined total (95.66%) or branch misses
+# can hide under slack in the statement count. Only ever raise this floor.
 [tool.pytest.ini_options]
-addopts = "--cov=src/wave_local_ai_v2 --cov-branch --cov-report=term-missing --cov-report=xml --cov-fail-under=80"
+addopts = "--cov=src/wave_local_ai_v2 --cov-branch --cov-report=term-missing --cov-report=xml --cov-fail-under=95"
 
 [tool.coverage.run]
 source = ["src/wave_local_ai_v2"]

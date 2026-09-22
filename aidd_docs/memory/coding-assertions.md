@@ -38,7 +38,7 @@ one stable `required` check. Each leg runs:
 | Order | Command | Checks |
 | ----- | ------- | ------ |
 | 1 | `uv run pre-commit run --all-files` | the four before-commit hooks above (lint, format, types, secrets) |
-| 2 | `uv run pytest` | tests, coverage-gated at 80% over lines and branches combined (`pyproject.toml`'s `--cov-branch` + `--cov-fail-under`) |
+| 2 | `uv run pytest` | tests, coverage-gated at 95% over lines and branches combined — the floor sits near the measured total since `--cov-fail-under` has no separate branch-only mode (`pyproject.toml`'s `--cov-branch` + `--cov-fail-under`) |
 | 3 | `uv run python scripts/audit_dependencies.py` | dependency vulnerabilities, severity-resolved via OSV, waivable via `docs/dependency-waivers.yml` |
 
 `coverage.xml` is uploaded per OS and the coverage percentage is printed to
