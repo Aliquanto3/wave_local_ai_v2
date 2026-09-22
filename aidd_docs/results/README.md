@@ -36,6 +36,28 @@ runs in a quiet thermal window, two quality runs, the validator proof, this READ
 tables rebuilt), filed in `aidd_docs/backlog/tech-debt.md`, not something a schema bump
 does to the published bytes on its way past.
 
+## Runtime energy window changed underfoot the rows already in this file (2026-09-22)
+
+As of this increment's commit (`row_contract.SCHEMA_VERSION` `"12"`, see its numbered
+comment for the full field list), a runtime row's `energy_kwh` and its three per-channel
+siblings (`cpu_energy_kwh`, `gpu_energy_kwh`, `ram_energy_kwh`) are measured **per counted
+repetition** -- the CodeCarbon tracker starts and stops around each generation only,
+excluding the fixed cooldown between repetitions -- and the row states the method
+(`energy_window_method`) plus the two window sizes it measured and excluded
+(`active_window_s`, `idle_window_s`).
+
+Every runtime row produced before this commit -- **including every runtime table already
+in this file** -- measured the whole counted-repetition span instead, cooldowns included,
+per the superseded `aggregation.AGGREGATION_LABELS` value
+`"total_over_counted_repetitions_including_cooldowns"`. Idle cooldown was 43-89% of that
+measured window (audit finding C3, `aidd_docs/tasks/2026_09/2026_09_22_audit/report.md`),
+biasing every fast model's energy, emissions and cost-per-token figures upward relative to
+a slower one. Those rows and tables are **not edited**: this file's "superseded, never
+edited" discipline (see "Dense versus MoE" below) applies to every energy-bearing number
+already published here, not only to full-row regenerations. A reader can tell which stored
+rows are affected by `schema_version` alone: any row below `"12"` measured the whole
+window.
+
 ## What the dashboard withholds, and why
 
 The three pitch screens (`frontend/src/views/quality/`, `views/runtime/`,
