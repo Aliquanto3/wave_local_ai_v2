@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-22
+
 ### Added
 
 - **`GET /api/comparisons` and `views/comparison/`** — the quality store as
@@ -577,5 +579,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CI refuses a tag whose name disagrees with the packaged version before the
   image is published.
 
-[Unreleased]: https://github.com/Aliquanto3/wave_local_ai_v2/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Aliquanto3/wave_local_ai_v2/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Aliquanto3/wave_local_ai_v2/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Aliquanto3/wave_local_ai_v2/releases/tag/v0.1.0
