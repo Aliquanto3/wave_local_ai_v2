@@ -36,7 +36,8 @@ ENERGY_METHOD_UNAVAILABLE = "unavailable"
 # cooldown and found it negligible, so `per_repetition_tasks` -- summing each
 # counted repetition's own isolated energy delta -- is the only method
 # implemented; `ENERGY_WINDOW_METHOD_UNAVAILABLE` names a row whose energy
-# could not be measured at all, not a second method.
+# could not be measured over every counted repetition (tracker never started,
+# or one repetition's delta was lost), not a second method.
 ENERGY_WINDOW_METHOD_PER_REPETITION = "per_repetition_tasks"
 ENERGY_WINDOW_METHOD_UNAVAILABLE = "unavailable"
 

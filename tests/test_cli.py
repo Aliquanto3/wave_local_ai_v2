@@ -98,6 +98,30 @@ def _fake_energy_tracker(**_kwargs) -> MagicMock:
     return tracker
 
 
+UNAVAILABLE_ENERGY_RESULT = {
+    "cpu_energy_kwh": None,
+    "cpu_energy_method": "unavailable",
+    "gpu_energy_kwh": None,
+    "gpu_energy_method": "unavailable",
+    "ram_energy_kwh": None,
+    "ram_energy_method": "unavailable",
+    "energy_kwh": None,
+}
+
+
+def _fake_unavailable_energy_tracker(**_kwargs) -> MagicMock:
+    """Stand-in for a `RepetitionEnergyTracker` whose tracker never started, or
+    lost one counted repetition's `stop_task()` delta: every repetition still
+    runs for real (`wrap` stays a passthrough), but `finish` reports the
+    all-or-nothing failure shape `energy.RepetitionEnergyTracker.finish`
+    returns in that case -- every channel `None`, method `"unavailable"`.
+    """
+    tracker = MagicMock()
+    tracker.wrap.side_effect = lambda fn: fn
+    tracker.finish.return_value = (dict(UNAVAILABLE_ENERGY_RESULT), "unavailable")
+    return tracker
+
+
 # The mirror of `RUNTIME_ONLY_FIELDS` in tests/test_quality_cli.py. Both
 # directions need a guard for `aidd_docs/memory/architecture.md`'s "the two are
 # never merged into a single table" to hold: that file stops a runtime field
@@ -317,6 +341,41 @@ def test_run_appends_one_row_with_fiche_and_metrics(stubbed_run, tmp_path) -> No
     assert "prompt_tok_per_s_spread" in row
     # No reference configured (default tmp path is absent): not_comparable.
     assert row["verdict"]["verdict"] == "not_comparable"
+
+
+def test_run_appends_a_row_with_energy_fields_none_when_the_tracker_is_unavailable(
+    stubbed_run,
+) -> None:
+    """A `RepetitionEnergyTracker` that never started, or lost one counted
+    repetition's `stop_task()` delta, must not block the row: it is still
+    appended, with every energy figure `None` and `energy_window_method`
+    `"unavailable"` rather than a partial sum (`energy.RepetitionEnergyTracker`'s
+    all-or-nothing contract). `append_row` gates every write on
+    `row_contract.validate_row`, so a row missing one of the three window
+    fields would raise here before any assertion runs.
+    """
+    results_path, started = stubbed_run
+    started["energy"].side_effect = _fake_unavailable_energy_tracker
+
+    _run()
+
+    rows = read_rows(results_path)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["energy_window_method"] == "unavailable"
+    assert row["energy_kwh"] is None
+    assert row["cpu_energy_kwh"] is None
+    assert row["gpu_energy_kwh"] is None
+    assert row["ram_energy_kwh"] is None
+    # Downstream figures derived from energy_kwh become None too, never a
+    # fabricated zero (emissions.local_emissions / cost.local_cost).
+    assert row["emissions_kg"] is None
+    assert row["cost_total"] is None
+    assert row["cost_per_million_tokens"] is None
+    # active_window_s/idle_window_s are timing quantities, independent of the
+    # energy tracker, so they still carry real values.
+    assert row["active_window_s"] == row["wall_clock_s"]
+    assert row["idle_window_s"] == 4 * 10.0
 
 
 def test_run_reports_reproduced_against_a_matching_reference_row(

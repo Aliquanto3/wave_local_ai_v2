@@ -55,7 +55,7 @@ journey
     _run() with 5 counted repetitions, 10s cooldown => row carries energy_window_method "per_repetition_tasks", active_window_s equal to summed wall_clock_s, idle_window_s equal to 4*10.0: 5: cli
     cost_total and cost_per_million_tokens are computed from the summed active energy_kwh, unchanged formula: 5: cli
   section Edge case - one repetition's stop_task fails
-    Mock RepetitionEnergyTracker so the third call returns no task data => row's energy_kwh and every channel are None, energy_window_method still names the attempted method: 1: system
+    Mock RepetitionEnergyTracker so the third call returns no task data => row's energy_kwh and every channel are None, energy_window_method is unavailable: 1: system
   section Edge case - tracker init fails entirely
     OfflineEmissionsTracker() raises on construction => row still written, every energy field None, repetitions still run and return real timings: 1: system
   section Edge case - quality row unaffected
