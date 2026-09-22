@@ -72,4 +72,14 @@ describe('OverviewView', () => {
       overviewQualityFixture.use_cases.length,
     )
   })
+
+  it('renders a named unreachable message on a rejected fetch', async () => {
+    vi.spyOn(client, 'apiFetch').mockRejectedValueOnce(
+      new client.NetworkError(new TypeError('down')),
+    )
+
+    renderWithGate()
+
+    expect(await screen.findByText(/could not reach the service/i)).toBeInTheDocument()
+  })
 })

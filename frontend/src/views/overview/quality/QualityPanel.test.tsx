@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as client from '../../../api/client'
 import { setKey } from '../../../api/keyStore'
@@ -61,5 +61,26 @@ describe('QualityPanel', () => {
       ),
     ).toBeInTheDocument()
     expect(container.querySelectorAll('.overview-leader-members')).toHaveLength(0)
+  })
+
+  it('renders nothing when the fetched view carries no use case for this suite', async () => {
+    vi.spyOn(client, 'apiFetch').mockResolvedValueOnce(overviewQualityFixture)
+
+    const { container } = renderWithGate('no-such-suite')
+    await waitFor(() =>
+      expect(screen.queryByText(/Loading quality/)).not.toBeInTheDocument(),
+    )
+
+    expect(container.querySelector('.overview-quality-panel')).toBeNull()
+  })
+
+  it('renders a named unreachable message on a rejected fetch', async () => {
+    vi.spyOn(client, 'apiFetch').mockRejectedValueOnce(
+      new client.NetworkError(new TypeError('down')),
+    )
+
+    renderWithGate('classification')
+
+    expect(await screen.findByText(/could not reach the service/i)).toBeInTheDocument()
   })
 })

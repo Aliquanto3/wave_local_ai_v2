@@ -56,4 +56,14 @@ describe('RuntimeEnergyPanel', () => {
     expect(await screen.findByText(/missing gpu_energy_method/)).toBeInTheDocument()
     expect(screen.queryByText(/kg CO2e/)).not.toBeInTheDocument()
   })
+
+  it('renders a named unreachable message on a rejected fetch', async () => {
+    vi.spyOn(client, 'apiFetch').mockRejectedValueOnce(
+      new client.NetworkError(new TypeError('down')),
+    )
+
+    renderWithGate(['qwen3.6-35b-a3b-ud-iq4xs'])
+
+    expect(await screen.findByText(/could not reach the service/i)).toBeInTheDocument()
+  })
 })
