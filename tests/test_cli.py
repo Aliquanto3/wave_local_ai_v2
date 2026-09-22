@@ -86,6 +86,18 @@ FAKE_ENERGY_RESULT = {
     "energy_kwh": 0.00042,
 }
 
+
+def _fake_energy_tracker(**_kwargs) -> MagicMock:
+    """Stand-in for `energy.RepetitionEnergyTracker`: `wrap` is a no-op passthrough
+    (every repetition still runs for real), `finish` returns FAKE_ENERGY_RESULT
+    tagged with the production window method, method-agnostic to the stub.
+    """
+    tracker = MagicMock()
+    tracker.wrap.side_effect = lambda fn: fn
+    tracker.finish.return_value = (dict(FAKE_ENERGY_RESULT), "per_repetition_tasks")
+    return tracker
+
+
 # The mirror of `RUNTIME_ONLY_FIELDS` in tests/test_quality_cli.py. Both
 # directions need a guard for `aidd_docs/memory/architecture.md`'s "the two are
 # never merged into a single table" to hold: that file stops a runtime field
@@ -123,10 +135,10 @@ QUALITY_ONLY_FIELDS = {
 def stubbed_run(tmp_path, monkeypatch):
     """Stub every I/O boundary main() touches: process, HTTP, GPU, RSS, energy.
 
-    measure_energy is patched here on purpose: unpatched it builds a real
-    CodeCarbon EmissionsTracker, which imports codecarbon, probes the hardware
-    and starts a sampling thread, costing seconds per test and making the
-    result machine-dependent.
+    RepetitionEnergyTracker is patched here on purpose: unpatched it builds a
+    real CodeCarbon EmissionsTracker, which imports codecarbon, probes the
+    hardware and starts a sampling thread, costing seconds per test and
+    making the result machine-dependent.
     """
     results_path = tmp_path / "runtime.jsonl"
     model_dir = tmp_path / "models"
@@ -195,8 +207,8 @@ def stubbed_run(tmp_path, monkeypatch):
         ),
         "rss": patch("wave_local_ai_v2.read_process_rss", return_value=500_000_000),
         "energy": patch(
-            "wave_local_ai_v2.measure_energy",
-            side_effect=lambda fn, **kwargs: (fn(), dict(FAKE_ENERGY_RESULT)),
+            "wave_local_ai_v2.energy.RepetitionEnergyTracker",
+            side_effect=_fake_energy_tracker,
         ),
         # Real would sleep runtime_cooldown_s (10.0 by default) between every
         # repetition -- N-1 times plus once after the warm-up.
@@ -242,6 +254,11 @@ def test_run_appends_one_row_with_fiche_and_metrics(stubbed_run, tmp_path) -> No
     assert row["cost_per_million_tokens"] == pytest.approx(
         0.00042 * 0.194 / (512 * 5 + 128 * 5) * 1_000_000
     )
+    assert row["energy_window_method"] == "per_repetition_tasks"
+    # Same quantity as wall_clock_s, restated beside the energy block
+    # (plan.md's Decisions) -- not a new measurement stream.
+    assert row["active_window_s"] == row["wall_clock_s"]
+    assert row["idle_window_s"] == 4 * 10.0
     assert row["kwh_price_eur"] == 0.194
     assert row["list_price_input_per_million"] is None
     assert row["list_price_output_per_million"] is None
@@ -499,8 +516,8 @@ def test_run_takes_the_mean_of_the_two_middle_values_when_n_is_even(
         ),
         patch("wave_local_ai_v2.read_process_rss", return_value=500_000_000),
         patch(
-            "wave_local_ai_v2.measure_energy",
-            side_effect=lambda fn, **kwargs: (fn(), dict(FAKE_ENERGY_RESULT)),
+            "wave_local_ai_v2.energy.RepetitionEnergyTracker",
+            side_effect=_fake_energy_tracker,
         ),
         patch("wave_local_ai_v2.time.sleep"),
     ):
@@ -554,8 +571,8 @@ def test_run_appends_zero_rows_when_request_fails(tmp_path, monkeypatch) -> None
         # Without this the real EmissionsTracker is built before the request
         # fails, costing seconds for a test about appending zero rows.
         patch(
-            "wave_local_ai_v2.measure_energy",
-            side_effect=lambda fn, **kwargs: (fn(), dict(FAKE_ENERGY_RESULT)),
+            "wave_local_ai_v2.energy.RepetitionEnergyTracker",
+            side_effect=_fake_energy_tracker,
         ),
         pytest.raises(requests.ConnectionError),
     ):

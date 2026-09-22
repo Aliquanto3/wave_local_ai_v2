@@ -66,7 +66,18 @@ from wave_local_ai_v2 import (
 # one request argument, so a row that does not name the policy cannot be
 # compared to anything (the local-subject-prompts-are-never-chat-templated
 # defect).
-SCHEMA_VERSION = "11"
+# "12": `active_window_s`, `idle_window_s` and `energy_window_method` became
+# required on runtime rows only -- fixes finding C3 of the 2026-09-22 audit
+# (`aidd_docs/tasks/2026_09/2026_09_22_audit/report.md`): the runtime row's
+# energy/emissions/cost-per-token figures used to span the whole counted-
+# repetition window, cooldowns included, biasing every fast model's figures
+# upward. `energy_kwh` and its three per-channel siblings now sum each
+# repetition's own isolated `start_task`/`stop_task` delta instead, and the
+# three new fields name the method and the two window sizes that were
+# measured, so a reader does not have to guess which span a row's numbers
+# cover. Quality rows are untouched: the quality-side energy window (server
+# launch plus model load) is a separate, still-open finding (W4).
+SCHEMA_VERSION = "12"
 
 # The two values `thinking_policy` may take. This is the **suite's** declared
 # policy, not a report of what each provider did with it: it is published on
@@ -136,6 +147,12 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "ram_energy_kwh",
             "ram_energy_method",
             "energy_kwh",
+            # energy.RepetitionEnergyTracker: the two window sizes and the
+            # method the four energy fields above were measured with (schema
+            # "12" / audit finding C3)
+            "active_window_s",
+            "idle_window_s",
+            "energy_window_method",
             # emissions.local_emissions / emissions.scope3_cloud_emissions
             "emissions_kg",
             "emission_factor_kg_per_kwh",

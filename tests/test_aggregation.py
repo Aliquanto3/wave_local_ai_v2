@@ -186,7 +186,7 @@ def test_aggregation_labels_cover_every_declared_measurement() -> None:
     assert AGGREGATION_LABELS["wall_clock_s"] == "total_over_counted_repetitions"
     assert (
         AGGREGATION_LABELS["energy_kwh"]
-        == "total_over_counted_repetitions_including_cooldowns"
+        == "total_over_counted_repetitions_active_window"
     )
     assert MEASUREMENT_FIELDS == frozenset(AGGREGATION_LABELS)
 
@@ -195,8 +195,7 @@ def test_per_channel_energy_fields_are_measurement_fields() -> None:
     for field in ("cpu_energy_kwh", "gpu_energy_kwh", "ram_energy_kwh"):
         assert field in MEASUREMENT_FIELDS
         assert (
-            AGGREGATION_LABELS[field]
-            == "total_over_counted_repetitions_including_cooldowns"
+            AGGREGATION_LABELS[field] == "total_over_counted_repetitions_active_window"
         )
     assert "emissions_kg" not in MEASUREMENT_FIELDS
 

@@ -223,6 +223,9 @@ def test_the_runtime_view_carries_its_fields_and_the_resolved_fiche(
     assert not any(isinstance(node, Absent) for node in walk(entry))
     # The energy block belongs to its own route, not to this one.
     assert "cpu_energy_kwh" not in entry
+    assert entry["active_window_s"] == NAMED_VALUES["active_window_s"]
+    assert entry["idle_window_s"] == NAMED_VALUES["idle_window_s"]
+    assert entry["energy_window_method"] == NAMED_VALUES["energy_window_method"]
 
 
 def test_the_quality_view_declares_each_rows_shape_and_its_cells(
@@ -401,7 +404,7 @@ def test_a_quality_row_with_no_judge_block_is_absences_not_zeroes(
     for field, value in judge.items():
         assert isinstance(value, Absent), f"{field} is not an absence: {value!r}"
         assert value.reason == ABSENT_PREDATES_SCHEMA
-        assert value.detail == {"row_schema_version": "11"}
+        assert value.detail == {"row_schema_version": "12"}
     assert 0 not in judge.values()
 
 
@@ -534,7 +537,7 @@ def test_a_row_below_the_floor_is_counted_and_never_partially_rendered(
     )
 
     assert len(view["entries"]) == 1
-    assert view["entries"][0]["schema_version"] == "11"
+    assert view["entries"][0]["schema_version"] == "12"
     assert view["unreadable"] == [
         {"schema_version": "2", "count": 1, "reason": "below_schema_floor"}
     ]

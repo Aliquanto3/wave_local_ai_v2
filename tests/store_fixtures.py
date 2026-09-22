@@ -26,7 +26,7 @@ SUITE_VERSION = "1"
 # placeholders. Everything else in the contract's required set gets a marker
 # string naming the field, so a test that finds one knows where it came from.
 NAMED_VALUES: dict[str, Any] = {
-    "schema_version": "11",
+    "schema_version": "12",
     "run_id": RUN_ID,
     "captured_at": "2026-09-01T00:00:00+00:00",
     "roster_entry_id": ROSTER_ENTRY_ID,
@@ -41,6 +41,9 @@ NAMED_VALUES: dict[str, Any] = {
     "ram_energy_method": "estimated_constant",
     "energy_kwh": 0.00132,
     "emissions_kg": 0.000074,
+    "active_window_s": 12.5,
+    "idle_window_s": 40.0,
+    "energy_window_method": "per_repetition_tasks",
     "correct": True,
     "suite_accuracy": 1.0,
     "language_breakdown": {

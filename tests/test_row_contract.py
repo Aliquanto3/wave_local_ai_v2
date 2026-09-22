@@ -71,6 +71,9 @@ COMPLETE_RUNTIME_ROW = {
     "ram_energy_kwh": 0.00012,
     "ram_energy_method": "estimated_constant",
     "energy_kwh": 0.00042,
+    "active_window_s": 15.0,
+    "idle_window_s": 40.0,
+    "energy_window_method": "per_repetition_tasks",
     "emissions_kg": 0.0000235,
     "emission_factor_kg_per_kwh": 0.056039,
     "emission_region": "FR",
@@ -816,4 +819,17 @@ def test_the_schema_version_moved_once_for_the_thinking_policy() -> None:
     # `thinking_policy` is required on every quality row, because a score
     # produced with the subject allowed to reason and one produced without it
     # are not the same measurement and a row has to say which it is.
-    assert SCHEMA_VERSION == "11"
+    assert SCHEMA_VERSION == "12"
+
+
+def test_the_schema_version_moved_for_the_runtime_energy_window() -> None:
+    # "12" fixes audit finding C3: the runtime row's energy figures used to
+    # span the whole counted-repetition window, cooldowns included. Required
+    # only on runtime rows -- quality rows carry no energy window at all.
+    assert SCHEMA_VERSION == "12"
+    assert {"active_window_s", "idle_window_s", "energy_window_method"} <= (
+        REQUIRED_FIELDS["runtime"]
+    )
+    assert {"active_window_s", "idle_window_s", "energy_window_method"}.isdisjoint(
+        REQUIRED_FIELDS["quality"]
+    )
