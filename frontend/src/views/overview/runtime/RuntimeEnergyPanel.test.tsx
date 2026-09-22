@@ -19,7 +19,10 @@ const LEADER_MACHINE = LEADER_ENTRY.runtime_headline.machine as Record<string, u
 
 // Every numeric text node the panel renders must trace back to a number the
 // fixture itself carries.
-function assertEveryRenderedNumberIsInFixture(container: HTMLElement, entries: unknown) {
+function assertEveryRenderedNumberIsInFixture(
+  container: HTMLElement,
+  entries: unknown,
+) {
   const fixtureText = JSON.stringify(entries)
   const numbers = container.textContent?.match(/-?\d+(\.\d+)?/g) ?? []
   for (const number of numbers) {
@@ -47,7 +50,9 @@ describe('RuntimeEnergyPanel', () => {
         new RegExp(String(LEADER_ENTRY.runtime_headline.median_gen_tok_per_s)),
       ),
     ).toBeInTheDocument()
-    expect(screen.getByText(new RegExp(String(LEADER_MACHINE.gpu_name)))).toBeInTheDocument()
+    expect(
+      screen.getByText(new RegExp(String(LEADER_MACHINE.gpu_name))),
+    ).toBeInTheDocument()
     expect(
       screen.getByText(new RegExp(String(LEADER_ENTRY.runtime_headline.run_id))),
     ).toBeInTheDocument()
@@ -63,7 +68,9 @@ describe('RuntimeEnergyPanel', () => {
     renderWithGate('unpublished')
 
     expect(
-      await screen.findByText(/no leader set published for this suite and machine class/),
+      await screen.findByText(
+        /no leader set published for this suite and machine class/,
+      ),
     ).toBeInTheDocument()
   })
 
@@ -72,7 +79,9 @@ describe('RuntimeEnergyPanel', () => {
 
     renderWithGate([])
 
-    expect(await screen.findByText(/leader set published, no member/)).toBeInTheDocument()
+    expect(
+      await screen.findByText(/leader set published, no member/),
+    ).toBeInTheDocument()
     expect(
       screen.queryByText(/no leader set published for this suite and machine class/),
     ).not.toBeInTheDocument()
@@ -83,7 +92,9 @@ describe('RuntimeEnergyPanel', () => {
 
     renderWithGate(['no-such-roster-entry'])
 
-    expect(await screen.findByText(/no runtime row for this leader/)).toBeInTheDocument()
+    expect(
+      await screen.findByText(/no runtime row for this leader/),
+    ).toBeInTheDocument()
     expect(screen.getByText(/no-such-roster-entry/)).toBeInTheDocument()
   })
 

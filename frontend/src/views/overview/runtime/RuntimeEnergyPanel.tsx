@@ -33,7 +33,10 @@ function renderMachine(machine: Maybe<Record<string, unknown>>): ReactNode {
       {typeof gpuName === 'string' ? (
         gpuName
       ) : (
-        <DeclaredAbsenceLabel reason="cpu-only fiche" detail="no gpu_name on this machine" />
+        <DeclaredAbsenceLabel
+          reason="cpu-only fiche"
+          detail="no gpu_name on this machine"
+        />
       )}
     </span>
   )

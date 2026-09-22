@@ -18,14 +18,19 @@ const CLASSIFICATION_USE_CASE = overviewQualityFixture.use_cases.find(
   (useCase) => useCase.task_suite === 'classification',
 )!
 const CLASSIFICATION_MEMBERS =
-  'members' in CLASSIFICATION_USE_CASE.leader ? CLASSIFICATION_USE_CASE.leader.members : []
+  'members' in CLASSIFICATION_USE_CASE.leader
+    ? CLASSIFICATION_USE_CASE.leader.members
+    : []
 const [CLASSIFICATION_LEADER_ONE, CLASSIFICATION_LEADER_TWO] = CLASSIFICATION_MEMBERS
 const [CLASSIFICATION_COMPARATOR] = CLASSIFICATION_USE_CASE.cloud_comparators
 
 // Every numeric text node the panel renders must trace back to a number the
 // fixture itself carries -- proving a figure not present in the fixture
 // would fail this test rather than pass silently.
-function assertEveryRenderedNumberIsInFixture(container: HTMLElement, useCase: unknown) {
+function assertEveryRenderedNumberIsInFixture(
+  container: HTMLElement,
+  useCase: unknown,
+) {
   const fixtureText = JSON.stringify(useCase)
   const numbers = container.textContent?.match(/-?\d+(\.\d+)?/g) ?? []
   for (const number of numbers) {
@@ -62,7 +67,9 @@ describe('QualityPanel', () => {
       screen.getAllByText(
         new RegExp(`suite accuracy: ${CLASSIFICATION_LEADER_ONE.suite_accuracy}`),
       ),
-    ).toHaveLength(CLASSIFICATION_MEMBERS.length + CLASSIFICATION_USE_CASE.cloud_comparators.length)
+    ).toHaveLength(
+      CLASSIFICATION_MEMBERS.length + CLASSIFICATION_USE_CASE.cloud_comparators.length,
+    )
     assertEveryRenderedNumberIsInFixture(container, CLASSIFICATION_USE_CASE)
   })
 
@@ -93,7 +100,9 @@ describe('QualityPanel', () => {
     )
     expect(comparators).toHaveLength(1)
     expect(
-      within(comparators[0] as HTMLElement).getByText(String(CLASSIFICATION_COMPARATOR.run_id)),
+      within(comparators[0] as HTMLElement).getByText(
+        String(CLASSIFICATION_COMPARATOR.run_id),
+      ),
     ).toBeInTheDocument()
   })
 
