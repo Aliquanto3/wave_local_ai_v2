@@ -1,6 +1,6 @@
 ---
 objective: "Every in-scope finding of the 2026-09-22 audit is fixed and proven by a test or a CI guard, and the backlog records the rest without a parallel row."
-status: in-progress
+status: implemented
 ---
 
 <!-- Fill or omit these sections; never add, rename, or reorder one. -->
