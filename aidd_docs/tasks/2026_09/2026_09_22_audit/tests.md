@@ -1,0 +1,63 @@
+# Codebase Audit: tests pillar (full codebase)
+
+Both suites are green and well above their gates, and the metric maths is tested against hand-computed values. The gaps are in what binds published artifacts to the code that makes them: the dashboard fixtures, the committed fiches and suite snapshots, and chrF's claimed equivalence to sacreBLEU.
+
+- **Date**: 2026_09_22
+- **Scope**: `src/wave_local_ai_v2/`, `tests/`, `frontend/src/`, `.github/workflows/ci.yml`, `pyproject.toml`, `frontend/vite.config.ts`
+- **Health**: fair
+- **Findings**: 0 critical, 7 warning, 6 minor
+
+Health: `good` = no critical findings; `fair` = critical findings exist but are isolated and addressable; `poor` = systemic or widespread critical findings. (No critical finding here. The rating is `fair` rather than `good` because four warnings leave published artifacts unguarded by CI.)
+
+## Findings
+
+Deduplicated against `aidd_docs/backlog/tech-debt.md`. Where a row escalates a logged item, it says so.
+
+| Sev | Category | Location | Issue | Suggested fix | Effort |
+| --- | -------- | -------- | ----- | ------------- | ------ |
+| 🟡 | tests | `frontend/src/views/comparison/fixtures/comparisonView.fixture.ts:1-5` (same pattern: `views/energy/fixtures/energyView.fixture.ts:1-7`, `views/quality/fixtures/qualityView.fixture.ts:1-7`, `views/runtime/fixtures/runtimeView.fixture.ts:1-3`, `api/types.ts:1-3`, `views/*/types.ts:1-2`) | Every dashboard fixture was "hand-transcribed" from `read_model.*_view` output, and every `types.ts` "mirrors" the Python shape by hand. No test binds either one to the real read-model output. A field rename or a changed number in `read_model.py` still leaves all 95 vitest tests green. The energy fixture was spot-checked and matches the Python output today, apart from its documented hand-edits. | Add a Python test (next to `tests/test_reference_bundle.py:207`) that dumps each view over the committed bundle to `frontend/src/views/*/fixtures/*.generated.json` and fails if the committed JSON differs. The TS fixtures then import that JSON and apply their documented hand-edits as explicit overrides. | M |
+| 🟡 | tests | `tests/test_reference_bundle.py:57-64` | `test_every_row_resolves_its_fiche_hash` checks only that `read_fiche` returns non-`None`. It never checks that the stored fiche still hashes to its own name. Nothing in CI runs `verify_fiche` or `validate_bundle` over the committed registry: all 13 call sites in `tests/test_fiche_validator.py` use `tmp_path`. An edited fiche, or a change to `hardware.normalise_fiche` or `fiche_hash`'s serialisation, passes CI and only fails later when someone runs `wave-local-ai-v2-validate`. Verified today: all 5 committed fiches return `ok`. | Assert `fiche_registry.verify_fiche(h, dir)["status"] == "ok"` for every cited hash, or run `validate_bundle` over the `settings.DEFAULT_*` paths and assert no `missing`/`edited` entries. | S |
+| 🟡 | tests | `tests/test_suite_snapshot.py:103-111` | `test_every_shipped_suite_resolves_to_a_committed_definition_file` asserts only `path.exists()`. If a suite's items change without a version bump, the committed `suite-definitions/<id>@<v>.json` goes stale while every row cites it, and the test still passes. `suite_snapshot.main()` (`:126-141`) is uncovered. Verified today: both live builders are byte-equal to the committed JSON. | Compare `json.loads(path.read_text())` with `json.loads(json.dumps(builder()))` and name the re-export command in the failure message. | S |
+| 🟡 | tests | `tests/test_chrf.py:1-6`, `:121-130` | chrF claims sacreBLEU equivalence (`chrf.py:11-13`), but the only evidence is hand vectors over 1-6-character ASCII strings. No vector is a real sentence, and none comes from sacreBLEU itself. `test_n_grams_are_cut_over_characters_not_bytes` says "the arithmetic below would not hold" but then asserts only `0 < score < 1`, so the multibyte path has no pinned value. | Pin about 10 real pairs from `translation_suite` (en/fr/de, accented, multi-word) to values computed once offline with `sacrebleu.sentence_chrf(h, [r]).score / 100`. Record the sacreBLEU version in a comment. This adds no runtime dependency. | S |
+| 🟡 | tests | `src/wave_local_ai_v2/judge_probe.py:85-97`, `:588-591`; `tests/test_judge_probe.py:104,142` | The judge probe's local batch loop duplicates `quality_cli.py:764-797`, and its `LOCAL_SAMPLING` comment claims it matches `quality_cli`'s "key for key and value for value". No test binds the two dicts, so the sampling-parity claim is unguarded. The truncation branch (`finish_reason in TRUNCATING_FINISH_REASONS`) is tested in `quality_cli` (`test_quality_cli.py:933`) but never in the probe, whose stubs only return `"stop"`. The runtime `/completion` POST (`__init__.py:301`) is a separate path with its own tests. Logged row `tech-debt.md:15` covers the older CLI duplication, not these probe tests. | Assert `judge_probe.LOCAL_SAMPLING == {**quality_cli.LOCAL_SAMPLING, "seed": judge_probe.PROBE_SEED}`. Add a probe test with `finish_reason="length"` that asserts `truncated=True` reaches the row. Optionally extract the shared loop into `local_client`. | S |
+| 🟡 | tests | `pyproject.toml:26`, `frontend/vite.config.ts` (`thresholds: { lines: 80 }`) | Both coverage gates count lines only. Python has no `--cov-branch`, yet the metric modules are mostly early-return branches: chrF's effective-order skip, kappa's null reasons, cost `None` propagation. The frontend gates lines at 80% while branch coverage sits at 66.87%, with `ComparisonView.tsx` at 54.79% and `RuntimeView.tsx` at 46.15%. The 96.64% Python figure therefore overstates how much of the logic is exercised. | Add `--cov-branch` to `addopts` and re-baseline `--cov-fail-under`. Add `branches` to the vitest thresholds at the current floor and ratchet it up. | S |
+| 🟡 | tests | `src/wave_local_ai_v2/machine_state.py:76-98` | The CPU package-sensor selection (take a sensor labelled "package", never publish a per-core reading as `cpu_temp_source: "psutil"`) is never executed on any runner. Coverage for the module is 70%. On Windows, the `hasattr` check short-circuits. On the ubuntu CI VM, no `coretemp` sensor exists. This escalates `tech-debt.md:63`, which is about test isolation: that row does not cover the fact that the reproducibility-metadata rule itself has zero coverage. | Monkeypatch `psutil.sensors_temperatures` with fake entries. A "Package id 0" entry should give `(value, "psutil")`, core-only entries should give `(None, "unavailable")`, and an empty mapping should give `unavailable`. | S |
+| 🟢 | tests | `tests/test_energy.py:45-50`, `:8-22` | The comment says "gpu_count=0 with a nonzero gpu_energy", but the test passes `gpu_energy=0.0`, so the "availability, not magnitude" rule is never tested. `_fake_emissions_data` is a spec-less `MagicMock`, so a renamed codecarbon field would go undetected (it matches codecarbon 3.3.0 today). | Pass `gpu_energy=0.0005` and build the fake with `create_autospec(EmissionsData)`, or construct a real `EmissionsData`. | S |
+| 🟢 | tests | `frontend/src/views/comparison/ComparisonView.tsx:276-284` (same in `RuntimeView.tsx:166-174`, `QualityView.tsx:216-224`, `EnergyView.tsx:125-133`) | In all four data views, the `UnauthorizedError` branch (which calls `reportUnauthorized`) and the "could not reach the service" branch are untested. The App-level gap is already logged at `tech-debt.md:133`, so it is not counted here. | Add one test per view with `apiFetch` rejected by `UnauthorizedError` (assert `reportUnauthorized` is called and no data renders) and one with a generic `Error` (assert the message). | S |
+| 🟢 | tests | `tests/test_row_contract.py:290-294`; `src/wave_local_ai_v2/row_contract.py:398,470,631` | Missing-field refusal is proven for a single field (`fiche_hash`). Three refusal branches are uncovered: endpoint/prompt-template inconsistency, a non-object `judges[i]`, and a non-object required block. | Parametrize the missing-field test over `sorted(REQUIRED_FIELDS[kind])` for both kinds, and add the three negative cases. | S |
+| 🟢 | tests | `tests/test_agreement.py:32-59`; `src/wave_local_ai_v2/agreement.py:140` | Kappa is verified on one hand-computed 5x5 matrix only. The `zero_expected_disagreement` null branch is uncovered. | Add 2-3 matrices pinned from `sklearn.metrics.cohen_kappa_score(..., weights="quadratic")`, computed once offline. Omitting the weight normalisation cancels in the ratio, so the values are directly comparable. Add a case that triggers `:140`. | S |
+| 🟢 | tests | `tests/test_ci_workflow.py:43-98`; `pyproject.toml:9`; `.pre-commit-config.yaml:28` | The CI shape test asserts only the frontend job and sha pins. Nothing pins the Python `test` job's `windows-latest` leg or its coverage-gated `pytest` step, the only cross-OS reproducibility guard. CI runs Python 3.12 only, while `requires-python = ">=3.12"`. `mypy` skips `tests/`. | Assert that `matrix.os` contains both OSes and that the step runs `uv run pytest`. Either cap `requires-python` to `<3.13` or add a 3.13 leg. Optionally add `tests/` to the mypy entry. | S |
+| 🟢 | tests | `src/wave_local_ai_v2/fiche_registry.py:99-135` | The degradation paths of the committed-fiche diff (git fails to run, non-zero exit, path outside the repo, invalid or non-object committed JSON) are untested, at 82% coverage. These are the branches that turn "edited" into an honest "unavailable". | Stub `subprocess.run` for each case and assert the exact `unavailable: ...` string. | S |
+
+Checked and found clean:
+- **Flakiness**: every `time.sleep` is patched (`test_cli.py:203`, `test_quality_cli.py:268`, `test_judge_probe.py:277`, `test_server.py:259`), and `test_retry.py` uses a fake clock. No test uses unseeded randomness or wall-clock time.
+- **Skips**: no `skip`/`xfail` markers in `tests/`, and no `.skip`/`.todo` in `frontend/src`.
+- **Pyramid**: unit-heavy, plus bundle-level contract tests. No e2e tests.
+
+## Top actions
+
+1. **Generate the dashboard fixtures from `read_model`** and fail CI on drift. Resolves row 1. Hand off to `aidd-dev:06-test`; one story.
+2. **Make CI re-verify every committed publication artifact**: fiches re-hashed and snapshots content-compared to their builders. Resolves rows 2 and 3. `aidd-dev:06-test`, one line each.
+3. **Pin chrF and kappa to external reference values** (sacreBLEU, sklearn) on real inputs. Resolves rows 4 and 11. `aidd-dev:06-test`, one refactor pass.
+4. **Turn on branch coverage in both gates**, then close the branch gaps it exposes: probe truncation and sampling parity, machine-state sensor selection, row-contract refusals. Resolves rows 5, 6, 7 and 10. `aidd-dev:06-test`, one refactor pass.
+5. **Clean-up batch**: rows 8, 9, 12 and 13. `aidd-dev:06-test`.
+
+## Coverage
+
+- **Scanned**: tests
+- **Skipped**: none. No code or existing file was changed; this file is the only write.
+
+Commands run on 2026-09-22 (win32, Python 3.12.13, Node per `frontend/.nvmrc`):
+
+- `uv run pytest -q -p no:cacheprovider`, with `addopts` supplying `--cov=src/wave_local_ai_v2 --cov-report=term-missing --cov-report=xml --cov-fail-under=80`
+  - `962 passed, 2 warnings in 36.64s`
+  - `Required test coverage of 80% reached. Total coverage: 96.64%` (3069 statements, 103 missed; statement coverage only)
+  - Lowest modules: `machine_state.py` 70%, `suite_snapshot.py` 72%, `fiche_registry.py` 82%, `google_client.py` 86%, `server.py` 94%, `judge_probe.py` 95%
+  - Critical-path modules: `aggregation`, `chrf`, `scoring`, `repetitions`, `emissions`, `local_client`, `provenance` and `build_info` at 100%; `agreement` 99%, `verdict` 99%, `cost` 98%, `energy` 98%, `row_contract` 98%, `read_model` 96%, `hardware` 96%
+  - The 2 warnings are Starlette/anyio deprecations from `tests/test_service.py:17`.
+  - No network or GPU was needed; nothing was skipped.
+- `npx vitest run --coverage` in `frontend/` (same as CI's `npm test -- --coverage`)
+  - `Test Files 23 passed (23)`, `Tests 95 passed (95)`
+  - Statements 83.14% (365/439), Branches 66.87% (210/314), Functions 88.8% (119/134), Lines 83.17% (361/434). The gate is lines at 80%.
+  - Lowest files: `App.tsx` 0% (already logged at `tech-debt.md:133`), `RuntimeView.tsx` 72.72% lines / 46.15% branches, `EnergyView.tsx` 74.28% / 57.89%, `ComparisonView.tsx` 75.32% / 54.79%
+- Spot checks, all passing today: `verify_fiche` over the 5 committed fiches returns `ok`; both suite snapshot builders equal their committed JSON; the energy fixture matches `read_model.energy_view` over the committed bundle, apart from its documented hand-edits; codecarbon 3.3.0 `EmissionsData` still carries the five fields `energy.py` reads.
