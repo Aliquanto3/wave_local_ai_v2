@@ -357,24 +357,22 @@ def _run() -> None:
     aggregated_timings = aggregation.aggregate_timings(
         counted, threshold=settings.runtime_spread_threshold
     )
-    # Restated beside the energy block under its own name, not a new
-    # measurement stream: active_window_s is the same sum wall_clock_s already
-    # publishes below, and idle_window_s is deterministic from settings
-    # already on the row (plan.md's Decisions table).
-    active_window_s = sum(rep["wall_clock_s"] for rep in counted)
-    idle_window_s = (
-        (settings.runtime_repetitions - 1) * settings.runtime_cooldown_s
-        if settings.runtime_repetitions > 0
-        else 0.0
-    )
     peaks = {
         metric: aggregation.peak([rep[metric] for rep in counted])  # type: ignore[literal-required]
         for metric in aggregation.PEAK_METRICS
     }
     # wall_clock_s is a sum, not a peak: AGGREGATION_LABELS declares it
     # "total_over_counted_repetitions" -- each repetition's own request time,
-    # summed, excluding the cooldowns between them.
+    # summed, excluding the cooldowns between them. Each timed call includes
+    # the tracker's own start_task/stop_task (~1.65 ms median, measured by
+    # phase 1's probe), because the energy wrap sits inside the timed send().
     wall_clock_s = sum(rep["wall_clock_s"] for rep in counted)
+    # Restated beside the energy block under its own name, not a new
+    # measurement stream: active_window_s is wall_clock_s, and idle_window_s is
+    # deterministic from settings already on the row (settings enforces at
+    # least two repetitions, so N-1 cooldowns always run) (plan.md's Decisions).
+    active_window_s = wall_clock_s
+    idle_window_s = (settings.runtime_repetitions - 1) * settings.runtime_cooldown_s
 
     emissions_kg = emissions.local_emissions(
         energy_result["energy_kwh"], settings.emission_factor_kg_per_kwh
