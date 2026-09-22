@@ -207,6 +207,30 @@ def create_app(settings: ServiceSettings) -> FastAPI:
             )
         )
 
+    @api.get("/overview/quality")
+    def get_overview_quality() -> dict[str, Any]:
+        """One entry per use case present in the quality store, store-wide."""
+        return read_model.to_jsonable(
+            read_model.overview_quality_view(
+                settings.quality_results_path,
+                settings.schema_floor,
+                loaded_roster(),
+                settings.suite_definitions_dir,
+                settings.fiche_registry_dir,
+            )
+        )
+
+    @api.get("/overview/runtime")
+    def get_overview_runtime() -> dict[str, Any]:
+        """One runtime/energy headline per roster entry, over the runtime store only."""
+        return read_model.to_jsonable(
+            read_model.overview_runtime_view(
+                settings.runtime_results_path,
+                settings.schema_floor,
+                settings.fiche_registry_dir,
+            )
+        )
+
     @api.get("/runs/{run_id}/quality")
     def get_quality(run_id: str) -> dict[str, Any]:
         """The quality table for one run, over the quality store only."""

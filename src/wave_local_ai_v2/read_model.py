@@ -57,6 +57,19 @@ POINTER_FICHE_HASH = "fiche_hash"
 POINTER_ROSTER_ENTRY_ID = "roster_entry_id"
 POINTER_SUITE = "suite_id/suite_version"
 
+# The leader set is anticipated, not owned here: nothing in the repo writes
+# this field today (the stats epic records its derivation as unowned, per
+# `a-score-is-published-with-its-interval-a-difference-with-its-test.md`'s
+# own Dependencies table). It is resolved through the existing `resolve_field`
+# like any other row field -- a row that does not carry it reports the
+# ordinary `predates_schema` absence, never a new absence reason.
+LEADER_SET_MEMBER_FIELD = "leader_set_member"
+
+# Mirrors `judge_probe.PROVIDER_LOCAL`, duplicated as a one-line literal
+# rather than imported: `judge_probe` pulls in the Mistral/Google client
+# stacks, and this read-only service module imports only read paths.
+PROVIDER_LOCAL = "local"
+
 
 @dataclass(frozen=True)
 class Absent:
@@ -771,6 +784,37 @@ def runtime_view(
     }
 
 
+def _energy_headline_for(row: dict[str, Any]) -> dict[str, Any]:
+    """The composite energy/emissions headline, or why it is withheld.
+
+    Shared by `_energy_entry` and `overview_runtime_view` so the overview's
+    energy headline is the same code path the energy detail view already
+    uses, not a second implementation.
+    """
+    channels = {
+        channel: resolve_field(row, method_field)
+        for channel, _, method_field in ENERGY_CHANNELS
+    }
+    missing_labels = [
+        {"field": method_field, "absence": channels[channel]}
+        for channel, _, method_field in ENERGY_CHANNELS
+        if isinstance(channels[channel], Absent)
+    ]
+    if missing_labels:
+        # No headline at all rather than one carrying an unlabelled number:
+        # each missing label states its own three-reason absence, so the
+        # caller learns which label is missing and why without a fourth
+        # reason being invented for the composite.
+        return {"withheld": True, "missing_labels": missing_labels}
+    return {
+        "energy_kwh": resolve_field(row, "energy_kwh"),
+        "emissions_kg": resolve_field(row, "emissions_kg"),
+        # Three labels, never one: the single `energy_method` field a
+        # composite headline would have carried was retired at schema "4".
+        "methods": {channel: channels[channel] for channel, _, _ in ENERGY_CHANNELS},
+    }
+
+
 def _energy_entry(row: dict[str, Any]) -> dict[str, Any]:
     channels = {
         channel: {
@@ -785,36 +829,11 @@ def _energy_entry(row: dict[str, Any]) -> dict[str, Any]:
         - {energy for _, energy, _ in ENERGY_CHANNELS}
         - {method for _, _, method in ENERGY_CHANNELS},
     )
-    missing_labels = [
-        {"field": method_field, "absence": channels[channel]["energy_method"]}
-        for channel, _, method_field in ENERGY_CHANNELS
-        if isinstance(channels[channel]["energy_method"], Absent)
-    ]
-    if missing_labels:
-        # No headline at all rather than one carrying an unlabelled number:
-        # each missing label states its own three-reason absence, so the
-        # caller learns which label is missing and why without a fourth
-        # reason being invented for the composite.
-        headline: dict[str, Any] = {
-            "withheld": True,
-            "missing_labels": missing_labels,
-        }
-    else:
-        headline = {
-            "energy_kwh": composite["energy_kwh"],
-            "emissions_kg": composite["emissions_kg"],
-            # Three labels, never one: the single `energy_method` field a
-            # composite headline would have carried was retired at schema "4".
-            "methods": {
-                channel: channels[channel]["energy_method"]
-                for channel, _, _ in ENERGY_CHANNELS
-            },
-        }
     return {
         **_identity(row),
         "channels": channels,
         **composite,
-        "energy_headline": headline,
+        "energy_headline": _energy_headline_for(row),
     }
 
 
@@ -1039,5 +1058,171 @@ def comparison_view(
         "store": "quality",
         "schema_floor": floor,
         "suites": suites,
+        "unreadable": _unreadable_as_json(store.unreadable),
+    }
+
+
+def _leader_membership(
+    rows: list[dict[str, Any]],
+    *,
+    fiche_registry_dir: Path,
+    roster_file: roster.RosterFile | None,
+    suite_definitions_dir: Path,
+) -> Any | dict[str, Any]:
+    """The suite's leader set, or the absence that says the field is unowned.
+
+    A row resolving `leader_set_member` to `False` is a real "evaluated, not
+    a member" fact, excluded from `members` without affecting whether the
+    suite counted as having a leader set at all -- only "every row resolves
+    to `Absent`" means unpublished.
+    """
+    resolved = [resolve_field(row, LEADER_SET_MEMBER_FIELD) for row in rows]
+    if all(isinstance(value, Absent) for value in resolved):
+        return resolved[0]
+    return {
+        "members": [
+            _quality_entry(
+                row,
+                fiche_registry_dir=fiche_registry_dir,
+                roster_file=roster_file,
+                suite_definitions_dir=suite_definitions_dir,
+            )
+            for row, value in zip(rows, resolved, strict=True)
+            if value is True
+        ]
+    }
+
+
+def _cloud_comparators(
+    rows: list[dict[str, Any]],
+    *,
+    fiche_registry_dir: Path,
+    roster_file: roster.RosterFile | None,
+    suite_definitions_dir: Path,
+) -> list[dict[str, Any]]:
+    """The suite's rows run by a cloud provider, rendered like any quality entry.
+
+    A row whose `provider` cannot be resolved is excluded, not treated as
+    cloud: a field the pointer machinery cannot resolve says nothing about
+    the model's origin.
+    """
+    cloud_rows = []
+    for row in rows:
+        provider = resolve_field(row, "provider")
+        if not isinstance(provider, Absent) and provider != PROVIDER_LOCAL:
+            cloud_rows.append(row)
+    return [
+        _quality_entry(
+            row,
+            fiche_registry_dir=fiche_registry_dir,
+            roster_file=roster_file,
+            suite_definitions_dir=suite_definitions_dir,
+        )
+        for row in cloud_rows
+    ]
+
+
+def overview_quality_view(
+    quality_path: Path,
+    floor: str,
+    roster_file: roster.RosterFile | None,
+    suite_definitions_dir: Path,
+    fiche_registry_dir: Path,
+) -> dict[str, Any]:
+    """One entry per use case (`task_suite`) present in the quality store.
+
+    Store-wide by construction, like `comparison_view`: a use case's leader
+    set and cloud comparators are drawn from every row of its `task_suite`
+    across the store, not scoped to one run. Reads only `quality_path` -- the
+    runtime store is never opened here, matching the epic's boundary rule
+    that no response composes the two stores.
+    """
+    store = read_rows_from_floor(quality_path, floor)
+    groups: dict[Any, tuple[Any, list[dict[str, Any]]]] = {}
+    for row in store.rows:
+        task_suite = resolve_field(row, "task_suite")
+        key = _dedup_key(task_suite)
+        _, rows = groups.setdefault(key, (task_suite, []))
+        rows.append(row)
+
+    use_cases = []
+    for key in sorted(groups, key=str):
+        task_suite, rows = groups[key]
+        use_cases.append(
+            {
+                "task_suite": task_suite,
+                "leader": _leader_membership(
+                    rows,
+                    fiche_registry_dir=fiche_registry_dir,
+                    roster_file=roster_file,
+                    suite_definitions_dir=suite_definitions_dir,
+                ),
+                "cloud_comparators": _cloud_comparators(
+                    rows,
+                    fiche_registry_dir=fiche_registry_dir,
+                    roster_file=roster_file,
+                    suite_definitions_dir=suite_definitions_dir,
+                ),
+            }
+        )
+
+    return {
+        "store": "quality",
+        "schema_floor": floor,
+        "use_cases": use_cases,
+        "unreadable": _unreadable_as_json(store.unreadable),
+    }
+
+
+def _runtime_headline(row: dict[str, Any], fiche_registry_dir: Path) -> dict[str, Any]:
+    """The runtime headline: `gen_tok_per_s`'s median, plus the row's machine.
+
+    `gen_tok_per_s` is the field `aggregation.py` writes as the repetition
+    set's median -- `_mean`/`_sd`/`_spread` are the separate, additionally
+    rendered statistics -- so no new computation is introduced here.
+    """
+    return {
+        "median_gen_tok_per_s": resolve_field(row, "gen_tok_per_s"),
+        "machine": resolve_fiche(row, fiche_registry_dir),
+    }
+
+
+def overview_runtime_view(
+    runtime_path: Path, floor: str, fiche_registry_dir: Path
+) -> dict[str, Any]:
+    """One runtime/energy headline per `roster_entry_id` present, store-wide.
+
+    Store-wide and keyed by `roster_entry_id` rather than scoped to a use
+    case: the runtime store carries no suite dimension (`runs_view`'s own
+    documented fact), so this route returns every entry present and lets the
+    caller look up the ones it needs. Reads only `runtime_path` -- no roster
+    file, no quality store, no suite dimension of any kind.
+    """
+    store = read_rows_from_floor(runtime_path, floor)
+    latest: dict[Any, dict[str, Any]] = {}
+    latest_key: dict[Any, tuple[str, str]] = {}
+    for row in store.rows:
+        entry_id = resolve_field(row, POINTER_ROSTER_ENTRY_ID)
+        key = _dedup_key(entry_id)
+        sort_key = _captured_at_sort_key(row)
+        if key not in latest or sort_key > latest_key[key]:
+            latest[key] = row
+            latest_key[key] = sort_key
+
+    entries = []
+    for key in sorted(latest, key=str):
+        row = latest[key]
+        entries.append(
+            {
+                "roster_entry_id": resolve_field(row, POINTER_ROSTER_ENTRY_ID),
+                "runtime_headline": _runtime_headline(row, fiche_registry_dir),
+                "energy_headline": _energy_headline_for(row),
+            }
+        )
+
+    return {
+        "store": "runtime",
+        "schema_floor": floor,
+        "entries": entries,
         "unreadable": _unreadable_as_json(store.unreadable),
     }

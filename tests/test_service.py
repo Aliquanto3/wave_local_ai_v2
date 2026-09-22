@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 from starlette.testclient import TestClient
-from store_fixtures import RUN_ID, make_row, write_store
+from store_fixtures import ROSTER_ENTRY_ID, RUN_ID, make_row, write_store
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
@@ -34,6 +34,8 @@ ROUTES = (
     f"/api/runs/{RUN_ID}/quality",
     f"/api/runs/{RUN_ID}/runtime",
     f"/api/runs/{RUN_ID}/energy?store=runtime",
+    "/api/overview/quality",
+    "/api/overview/runtime",
 )
 NON_GET_METHODS = ("post", "put", "patch", "delete")
 
@@ -190,6 +192,29 @@ def test_the_energy_route_answers_three_channels_each_beside_its_label(
 
     assert set(body["entries"][0]["channels"]) == {"cpu", "gpu", "ram"}
     assert body["entries"][0]["channels"]["gpu"]["energy_method"] == "nvml_sampled"
+
+
+def test_the_overview_quality_route_answers_one_use_case_per_task_suite(
+    local: TestClient,
+) -> None:
+    body = local.get("/api/overview/quality").json()
+
+    assert body["store"] == "quality"
+    assert body["use_cases"]
+    use_case = body["use_cases"][0]
+    assert set(use_case) == {"task_suite", "leader", "cloud_comparators"}
+    assert use_case["leader"]["absent"] is True
+
+
+def test_the_overview_runtime_route_answers_one_entry_per_roster_entry(
+    local: TestClient,
+) -> None:
+    body = local.get("/api/overview/runtime").json()
+
+    assert body["store"] == "runtime"
+    entry = body["entries"][0]
+    assert entry["roster_entry_id"] == ROSTER_ENTRY_ID
+    assert set(entry) == {"roster_entry_id", "runtime_headline", "energy_headline"}
 
 
 @pytest.mark.parametrize("query", ["", "?store=both", "?store=", "?store=Runtime"])
