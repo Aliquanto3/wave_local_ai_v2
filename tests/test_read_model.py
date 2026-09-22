@@ -1078,3 +1078,236 @@ def test_the_views_never_write_to_the_store(bundle: dict[str, Path]) -> None:
         name: bundle[name].read_bytes() for name in ("runtime", "quality")
     } == before
     assert sorted(path.name for path in root.iterdir()) == listing_before
+
+
+# --------------------------------------------------------------------------
+# overview_quality_view / overview_runtime_view
+# --------------------------------------------------------------------------
+
+
+def build_overview_quality(
+    bundle: dict[str, Path], rows: list[dict[str, Any]]
+) -> dict[str, Any]:
+    write_store(bundle["quality"], rows)
+    return read_model.overview_quality_view(
+        bundle["quality"],
+        FLOOR,
+        loaded_roster(bundle),
+        bundle["suites"],
+        bundle["fiches"],
+    )
+
+
+def build_overview_runtime(
+    bundle: dict[str, Path], rows: list[dict[str, Any]]
+) -> dict[str, Any]:
+    write_store(bundle["runtime"], rows)
+    return read_model.overview_runtime_view(bundle["runtime"], FLOOR, bundle["fiches"])
+
+
+def test_overview_quality_view_over_the_reference_bundle_names_every_suites_leader() -> (
+    None
+):
+    view = read_model.overview_quality_view(
+        QUALITY_REFERENCE_PATH,
+        REFERENCE_BUNDLE_SCHEMA_VERSION,
+        read_model.load_roster_file(ROSTER_PATH),
+        SUITE_DEFINITIONS_DIR,
+        FICHE_REGISTRY_DIR,
+    )
+
+    assert view["use_cases"], "the reference bundle should carry at least one use case"
+    for use_case in view["use_cases"]:
+        leader = use_case["leader"]
+        assert isinstance(leader, Absent), (
+            "leader_set_member is unowned today -- no row of the reference "
+            "bundle carries it"
+        )
+        assert leader.reason == ABSENT_PREDATES_SCHEMA
+        # The bundle does carry a cloud (mistral) provider alongside local
+        # rows, so cloud_comparators is not vacuously empty here -- every
+        # rendered comparator is drawn from a non-local provider.
+        for comparator in use_case["cloud_comparators"]:
+            assert comparator["provider"] != read_model.PROVIDER_LOCAL
+
+
+def test_overview_quality_view_groups_by_task_suite_leader_and_cloud_provider(
+    bundle: dict[str, Path],
+) -> None:
+    # Two distinct subjects (`run_a`, `run_b`), each with two item rows, so
+    # the leader set proves it collapses to one member per subject -- never
+    # one member per item row -- and carries the run's own suite_accuracy
+    # rather than either item's `correct`.
+    leader_run_a_item_1 = make_row(
+        "quality",
+        task_suite="suite-a",
+        provider="local",
+        run_id="run-a",
+        item_id="item-1",
+        leader_set_member=True,
+        suite_accuracy=0.9,
+        correct=True,
+    )
+    leader_run_a_item_2 = make_row(
+        "quality",
+        task_suite="suite-a",
+        provider="local",
+        run_id="run-a",
+        item_id="item-2",
+        leader_set_member=True,
+        suite_accuracy=0.9,
+        correct=False,
+    )
+    leader_run_b_item_1 = make_row(
+        "quality",
+        task_suite="suite-a",
+        provider="local",
+        run_id="run-b",
+        item_id="item-1",
+        leader_set_member=True,
+        suite_accuracy=0.75,
+        correct=False,
+    )
+    # A cloud subject with two item rows -- also one subject, not two.
+    cloud_run_c_item_1 = make_row(
+        "quality",
+        task_suite="suite-a",
+        provider="mistral",
+        run_id="run-c",
+        item_id="item-1",
+        suite_accuracy=0.5,
+    )
+    cloud_run_c_item_2 = make_row(
+        "quality",
+        task_suite="suite-a",
+        provider="mistral",
+        run_id="run-c",
+        item_id="item-2",
+        suite_accuracy=0.5,
+    )
+    other_suite_row = make_row("quality", task_suite="suite-b", provider="local")
+
+    view = build_overview_quality(
+        bundle,
+        [
+            leader_run_a_item_1,
+            leader_run_a_item_2,
+            leader_run_b_item_1,
+            cloud_run_c_item_1,
+            cloud_run_c_item_2,
+            other_suite_row,
+        ],
+    )
+
+    use_cases = {entry["task_suite"]: entry for entry in view["use_cases"]}
+    assert set(use_cases) == {"suite-a", "suite-b"}
+
+    suite_a = use_cases["suite-a"]
+    members = suite_a["leader"]["members"]
+    assert len(members) == 2, "one member per subject (run_id), never per item row"
+    by_run = {member["run_id"]: member for member in members}
+    assert set(by_run) == {"run-a", "run-b"}
+    assert by_run["run-a"]["suite_accuracy"] == 0.9
+    assert by_run["run-b"]["suite_accuracy"] == 0.75
+    for member in members:
+        assert "item_id" not in member
+        assert "correct" not in member
+
+    comparators = suite_a["cloud_comparators"]
+    assert len(comparators) == 1, "the cloud subject's two item rows are one entry"
+    assert comparators[0]["provider"] == "mistral"
+    assert comparators[0]["run_id"] == "run-c"
+    assert comparators[0]["suite_accuracy"] == 0.5
+    assert "item_id" not in comparators[0]
+
+    suite_b = use_cases["suite-b"]
+    assert isinstance(suite_b["leader"], Absent)
+    assert suite_b["leader"].reason == ABSENT_PREDATES_SCHEMA
+    assert suite_b["cloud_comparators"] == []
+
+
+def test_overview_quality_view_never_carries_a_runtime_only_field(
+    bundle: dict[str, Path],
+) -> None:
+    runtime_only = sorted(
+        row_contract.REQUIRED_FIELDS["runtime"]
+        - row_contract.REQUIRED_FIELDS["quality"]
+    )
+    view = build_overview_quality(bundle, [make_row("quality")])
+
+    text = json.dumps(read_model.to_jsonable(view))
+    assert not any(f'"{name}"' in text for name in runtime_only)
+
+
+def test_overview_runtime_view_over_the_reference_bundle_picks_the_latest_row() -> None:
+    view = read_model.overview_runtime_view(
+        RUNTIME_REFERENCE_PATH, REFERENCE_BUNDLE_SCHEMA_VERSION, FICHE_REGISTRY_DIR
+    )
+
+    rows = results.read_rows(RUNTIME_REFERENCE_PATH)
+    roster_entry_id = rows[0]["roster_entry_id"]
+    assert {row["roster_entry_id"] for row in rows} == {roster_entry_id}
+    latest_row = max(rows, key=read_model._captured_at_sort_key)
+
+    assert len(view["entries"]) == 1
+    entry = view["entries"][0]
+    assert entry["roster_entry_id"] == roster_entry_id
+    # The row's own `gen_tok_per_s` -- the median -- never `_mean`.
+    assert (
+        entry["runtime_headline"]["median_gen_tok_per_s"]
+        == latest_row["gen_tok_per_s"]
+        != latest_row["gen_tok_per_s_mean"]
+    )
+    assert (
+        entry["energy_headline"]
+        == read_model._energy_entry(latest_row)["energy_headline"]
+    )
+
+
+def test_overview_runtime_view_withholds_the_energy_headline_on_a_missing_label(
+    bundle: dict[str, Path],
+) -> None:
+    row = make_row("runtime")
+    del row["gpu_energy_method"]
+
+    view = build_overview_runtime(bundle, [row])
+
+    entry = view["entries"][0]
+    assert entry["energy_headline"]["withheld"] is True
+    assert entry["energy_headline"]["missing_labels"][0]["field"] == "gpu_energy_method"
+
+
+def test_overview_runtime_view_carries_no_suite_or_quality_only_field(
+    bundle: dict[str, Path],
+) -> None:
+    quality_only = sorted(
+        row_contract.REQUIRED_FIELDS["quality"]
+        - row_contract.REQUIRED_FIELDS["runtime"]
+    )
+    view = build_overview_runtime(bundle, [make_row("runtime")])
+
+    text = json.dumps(read_model.to_jsonable(view))
+    assert not any(f'"{name}"' in text for name in quality_only)
+
+
+def test_overview_quality_and_runtime_views_share_no_stores_identity(
+    bundle: dict[str, Path],
+) -> None:
+    write_store(bundle["quality"], [make_row("quality")])
+    write_store(
+        bundle["runtime"], [make_row("runtime", roster_entry_id="only-runtime")]
+    )
+
+    quality = read_model.overview_quality_view(
+        bundle["quality"],
+        FLOOR,
+        loaded_roster(bundle),
+        bundle["suites"],
+        bundle["fiches"],
+    )
+    runtime = read_model.overview_runtime_view(
+        bundle["runtime"], FLOOR, bundle["fiches"]
+    )
+
+    assert "only-runtime" not in json.dumps(read_model.to_jsonable(quality))
+    assert ROSTER_ENTRY_ID not in json.dumps(read_model.to_jsonable(runtime))

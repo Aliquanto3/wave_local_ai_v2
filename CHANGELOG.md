@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`GET /api/overview/quality` and `GET /api/overview/runtime`, and
+  `views/overview/`** — the service root, replacing the runs list as
+  `App.tsx`'s landing screen (the runs list stays one click away). One card
+  (`OverviewCard.tsx`) per `task_suite` present in the quality store: a
+  `QualityPanel` (leader-set members, or a declared absence when
+  `leader_set_member` is unowned, plus the suite's cloud comparators) beside
+  a `RuntimeEnergyPanel` (the leader's runtime/energy headline, store-wide
+  and keyed by `roster_entry_id` since the runtime store carries no suite
+  dimension). `OverviewView.tsx` is the one file that knows both stores
+  exist, composing nothing server-side across them; `CoverageAbsence.tsx`
+  renders the `no-use-case-is-silently-absent` absence once, at the page
+  level.
+
 ## [0.2.0] - 2026-09-22
 
 ### Added

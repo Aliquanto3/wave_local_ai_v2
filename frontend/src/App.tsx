@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { KeyGate } from './components/KeyGate'
 import { ComparisonView } from './views/comparison/ComparisonView'
 import { EnergyView } from './views/energy/EnergyView'
+import { OverviewView } from './views/overview/OverviewView'
 import { QualityView } from './views/quality/QualityView'
 import { RuntimeView } from './views/runtime/RuntimeView'
 import { RunsList } from './views/RunsList'
@@ -10,6 +11,7 @@ type RunKind = 'quality' | 'runtime'
 type Screen = 'primary' | 'energy'
 
 type Selection =
+  | { status: 'overview' }
   | { status: 'runs' }
   | { status: 'selected'; runId: string; kind: RunKind; screen: Screen }
   | { status: 'comparison' }
@@ -65,13 +67,23 @@ function TabStrip({
 }
 
 function App() {
-  const [selection, setSelection] = useState<Selection>({ status: 'runs' })
+  const [selection, setSelection] = useState<Selection>({ status: 'overview' })
 
   return (
     <KeyGate>
       <header>
         <h1>wave-local-ai-v2</h1>
       </header>
+      {selection.status === 'overview' && (
+        <>
+          <nav className="top-nav">
+            <button type="button" onClick={() => setSelection({ status: 'runs' })}>
+              Runs →
+            </button>
+          </nav>
+          <OverviewView />
+        </>
+      )}
       {selection.status === 'runs' && (
         <>
           <nav className="top-nav">

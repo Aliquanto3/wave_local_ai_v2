@@ -57,6 +57,19 @@ POINTER_FICHE_HASH = "fiche_hash"
 POINTER_ROSTER_ENTRY_ID = "roster_entry_id"
 POINTER_SUITE = "suite_id/suite_version"
 
+# The leader set is anticipated, not owned here: nothing in the repo writes
+# this field today (the stats epic records its derivation as unowned, per
+# `a-score-is-published-with-its-interval-a-difference-with-its-test.md`'s
+# own Dependencies table). It is resolved through the existing `resolve_field`
+# like any other row field -- a row that does not carry it reports the
+# ordinary `predates_schema` absence, never a new absence reason.
+LEADER_SET_MEMBER_FIELD = "leader_set_member"
+
+# Mirrors `judge_probe.PROVIDER_LOCAL`, duplicated as a one-line literal
+# rather than imported: `judge_probe` pulls in the Mistral/Google client
+# stacks, and this read-only service module imports only read paths.
+PROVIDER_LOCAL = "local"
+
 
 @dataclass(frozen=True)
 class Absent:
@@ -771,6 +784,37 @@ def runtime_view(
     }
 
 
+def _energy_headline_for(row: dict[str, Any]) -> dict[str, Any]:
+    """The composite energy/emissions headline, or why it is withheld.
+
+    Shared by `_energy_entry` and `overview_runtime_view` so the overview's
+    energy headline is the same code path the energy detail view already
+    uses, not a second implementation.
+    """
+    channels = {
+        channel: resolve_field(row, method_field)
+        for channel, _, method_field in ENERGY_CHANNELS
+    }
+    missing_labels = [
+        {"field": method_field, "absence": channels[channel]}
+        for channel, _, method_field in ENERGY_CHANNELS
+        if isinstance(channels[channel], Absent)
+    ]
+    if missing_labels:
+        # No headline at all rather than one carrying an unlabelled number:
+        # each missing label states its own three-reason absence, so the
+        # caller learns which label is missing and why without a fourth
+        # reason being invented for the composite.
+        return {"withheld": True, "missing_labels": missing_labels}
+    return {
+        "energy_kwh": resolve_field(row, "energy_kwh"),
+        "emissions_kg": resolve_field(row, "emissions_kg"),
+        # Three labels, never one: the single `energy_method` field a
+        # composite headline would have carried was retired at schema "4".
+        "methods": {channel: channels[channel] for channel, _, _ in ENERGY_CHANNELS},
+    }
+
+
 def _energy_entry(row: dict[str, Any]) -> dict[str, Any]:
     channels = {
         channel: {
@@ -785,36 +829,11 @@ def _energy_entry(row: dict[str, Any]) -> dict[str, Any]:
         - {energy for _, energy, _ in ENERGY_CHANNELS}
         - {method for _, _, method in ENERGY_CHANNELS},
     )
-    missing_labels = [
-        {"field": method_field, "absence": channels[channel]["energy_method"]}
-        for channel, _, method_field in ENERGY_CHANNELS
-        if isinstance(channels[channel]["energy_method"], Absent)
-    ]
-    if missing_labels:
-        # No headline at all rather than one carrying an unlabelled number:
-        # each missing label states its own three-reason absence, so the
-        # caller learns which label is missing and why without a fourth
-        # reason being invented for the composite.
-        headline: dict[str, Any] = {
-            "withheld": True,
-            "missing_labels": missing_labels,
-        }
-    else:
-        headline = {
-            "energy_kwh": composite["energy_kwh"],
-            "emissions_kg": composite["emissions_kg"],
-            # Three labels, never one: the single `energy_method` field a
-            # composite headline would have carried was retired at schema "4".
-            "methods": {
-                channel: channels[channel]["energy_method"]
-                for channel, _, _ in ENERGY_CHANNELS
-            },
-        }
     return {
         **_identity(row),
         "channels": channels,
         **composite,
-        "energy_headline": headline,
+        "energy_headline": _energy_headline_for(row),
     }
 
 
@@ -1039,5 +1058,244 @@ def comparison_view(
         "store": "quality",
         "schema_floor": floor,
         "suites": suites,
+        "unreadable": _unreadable_as_json(store.unreadable),
+    }
+
+
+# The fields `_quality_entry` resolves that describe one item, not the run
+# that produced it: an accuracy or a chrF score is a fact about the whole
+# suite the run scored, not about `item_id`'s row in particular. A subject
+# entry (one card row per `run_id`) drops these and keeps only the
+# suite-level score (`suite_accuracy`/`suite_score`), which every item row of
+# the same run already carries identically.
+QUALITY_SUBJECT_ITEM_ONLY_FIELDS: frozenset[str] = frozenset(
+    {
+        "item_id",
+        "expected_label",
+        "predicted_label",
+        "failure_reason",
+        "correct",
+        "language_breakdown",
+        "item_score",
+        "score_breakdown",
+        "reference_output",
+    }
+)
+
+
+def _group_rows_by_run(rows: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    """`rows` grouped by `run_id`, one group per subject, first-seen order."""
+    groups: dict[str, list[dict[str, Any]]] = {}
+    order: list[str] = []
+    for row in rows:
+        run_id = row.get("run_id")
+        key = "" if run_id is None else str(run_id)
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(row)
+    return [groups[key] for key in order]
+
+
+def _quality_subject_entry(
+    rows: list[dict[str, Any]],
+    *,
+    fiche_registry_dir: Path,
+    roster_file: roster.RosterFile | None,
+    suite_definitions_dir: Path,
+) -> dict[str, Any]:
+    """One entry per subject (`run_id`): the run's score, not one item's.
+
+    `rows` is every item row of one run. Any one of them carries the same
+    run-level fields (`suite_accuracy`/`suite_score`, the judge block,
+    `roster_entry`, `thinking_policy`, ...), so the first stands for the
+    group; the item-only fields it also carries (`QUALITY_SUBJECT_ITEM_ONLY_FIELDS`)
+    are dropped, since a card names a subject, not one of its items.
+    """
+    sample = rows[0]
+    entry = _quality_entry(
+        sample,
+        fiche_registry_dir=fiche_registry_dir,
+        roster_file=roster_file,
+        suite_definitions_dir=suite_definitions_dir,
+    )
+    return {
+        key: value
+        for key, value in entry.items()
+        if key not in QUALITY_SUBJECT_ITEM_ONLY_FIELDS
+    }
+
+
+def _leader_membership(
+    rows: list[dict[str, Any]],
+    *,
+    fiche_registry_dir: Path,
+    roster_file: roster.RosterFile | None,
+    suite_definitions_dir: Path,
+) -> Any | dict[str, Any]:
+    """The suite's leader set, or the absence that says the field is unowned.
+
+    A row resolving `leader_set_member` to `False` is a real "evaluated, not
+    a member" fact, excluded from `members` without affecting whether the
+    suite counted as having a leader set at all -- only "every row resolves
+    to `Absent`" means unpublished. One member per subject (`run_id`), not
+    per item row: `_group_rows_by_run` folds a member's item rows together
+    before `_quality_subject_entry` renders the run's suite-level score.
+    """
+    resolved = [resolve_field(row, LEADER_SET_MEMBER_FIELD) for row in rows]
+    if all(isinstance(value, Absent) for value in resolved):
+        return resolved[0]
+    member_rows = [
+        row for row, value in zip(rows, resolved, strict=True) if value is True
+    ]
+    return {
+        "members": [
+            _quality_subject_entry(
+                group,
+                fiche_registry_dir=fiche_registry_dir,
+                roster_file=roster_file,
+                suite_definitions_dir=suite_definitions_dir,
+            )
+            for group in _group_rows_by_run(member_rows)
+        ]
+    }
+
+
+def _cloud_comparators(
+    rows: list[dict[str, Any]],
+    *,
+    fiche_registry_dir: Path,
+    roster_file: roster.RosterFile | None,
+    suite_definitions_dir: Path,
+) -> list[dict[str, Any]]:
+    """The suite's cloud subjects, one entry per `run_id`, not per item row.
+
+    A row whose `provider` cannot be resolved is excluded, not treated as
+    cloud: a field the pointer machinery cannot resolve says nothing about
+    the model's origin.
+    """
+    cloud_rows = []
+    for row in rows:
+        provider = resolve_field(row, "provider")
+        if not isinstance(provider, Absent) and provider != PROVIDER_LOCAL:
+            cloud_rows.append(row)
+    return [
+        _quality_subject_entry(
+            group,
+            fiche_registry_dir=fiche_registry_dir,
+            roster_file=roster_file,
+            suite_definitions_dir=suite_definitions_dir,
+        )
+        for group in _group_rows_by_run(cloud_rows)
+    ]
+
+
+def overview_quality_view(
+    quality_path: Path,
+    floor: str,
+    roster_file: roster.RosterFile | None,
+    suite_definitions_dir: Path,
+    fiche_registry_dir: Path,
+) -> dict[str, Any]:
+    """One entry per use case (`task_suite`) present in the quality store.
+
+    Store-wide by construction, like `comparison_view`: a use case's leader
+    set and cloud comparators are drawn from every row of its `task_suite`
+    across the store, not scoped to one run. Reads only `quality_path` -- the
+    runtime store is never opened here, matching the epic's boundary rule
+    that no response composes the two stores.
+    """
+    store = read_rows_from_floor(quality_path, floor)
+    groups: dict[Any, tuple[Any, list[dict[str, Any]]]] = {}
+    for row in store.rows:
+        task_suite = resolve_field(row, "task_suite")
+        key = _dedup_key(task_suite)
+        _, rows = groups.setdefault(key, (task_suite, []))
+        rows.append(row)
+
+    use_cases = []
+    for key in sorted(groups, key=str):
+        task_suite, rows = groups[key]
+        use_cases.append(
+            {
+                "task_suite": task_suite,
+                "leader": _leader_membership(
+                    rows,
+                    fiche_registry_dir=fiche_registry_dir,
+                    roster_file=roster_file,
+                    suite_definitions_dir=suite_definitions_dir,
+                ),
+                "cloud_comparators": _cloud_comparators(
+                    rows,
+                    fiche_registry_dir=fiche_registry_dir,
+                    roster_file=roster_file,
+                    suite_definitions_dir=suite_definitions_dir,
+                ),
+            }
+        )
+
+    return {
+        "store": "quality",
+        "schema_floor": floor,
+        "use_cases": use_cases,
+        "unreadable": _unreadable_as_json(store.unreadable),
+    }
+
+
+def _runtime_headline(row: dict[str, Any], fiche_registry_dir: Path) -> dict[str, Any]:
+    """The runtime headline: `gen_tok_per_s`'s median, plus the row's machine.
+
+    `gen_tok_per_s` is the field `aggregation.py` writes as the repetition
+    set's median -- `_mean`/`_sd`/`_spread` are the separate, additionally
+    rendered statistics -- so no new computation is introduced here.
+
+    `run_id` and `fiche_hash` ride along so the headline names the row it was
+    read from, as every other figure on a card does.
+    """
+    return {
+        "median_gen_tok_per_s": resolve_field(row, "gen_tok_per_s"),
+        "run_id": resolve_field(row, "run_id"),
+        "fiche_hash": resolve_field(row, POINTER_FICHE_HASH),
+        "machine": resolve_fiche(row, fiche_registry_dir),
+    }
+
+
+def overview_runtime_view(
+    runtime_path: Path, floor: str, fiche_registry_dir: Path
+) -> dict[str, Any]:
+    """One runtime/energy headline per `roster_entry_id` present, store-wide.
+
+    Store-wide and keyed by `roster_entry_id` rather than scoped to a use
+    case: the runtime store carries no suite dimension (`runs_view`'s own
+    documented fact), so this route returns every entry present and lets the
+    caller look up the ones it needs. Reads only `runtime_path` -- no roster
+    file, no quality store, no suite dimension of any kind.
+    """
+    store = read_rows_from_floor(runtime_path, floor)
+    latest: dict[Any, dict[str, Any]] = {}
+    latest_key: dict[Any, tuple[str, str]] = {}
+    for row in store.rows:
+        entry_id = resolve_field(row, POINTER_ROSTER_ENTRY_ID)
+        key = _dedup_key(entry_id)
+        sort_key = _captured_at_sort_key(row)
+        if key not in latest or sort_key > latest_key[key]:
+            latest[key] = row
+            latest_key[key] = sort_key
+
+    entries = []
+    for key in sorted(latest, key=str):
+        row = latest[key]
+        entries.append(
+            {
+                "roster_entry_id": resolve_field(row, POINTER_ROSTER_ENTRY_ID),
+                "runtime_headline": _runtime_headline(row, fiche_registry_dir),
+                "energy_headline": _energy_headline_for(row),
+            }
+        )
+
+    return {
+        "store": "runtime",
+        "schema_floor": floor,
+        "entries": entries,
         "unreadable": _unreadable_as_json(store.unreadable),
     }

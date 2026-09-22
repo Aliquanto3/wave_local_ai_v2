@@ -17,6 +17,9 @@ import { comparisonViewFixture } from './comparison/fixtures/comparisonView.fixt
 import { ComparisonView } from './comparison/ComparisonView'
 import { energyViewFixture } from './energy/fixtures/energyView.fixture'
 import { EnergyView } from './energy/EnergyView'
+import { overviewQualityFixture } from './overview/fixtures/overviewQuality.fixture'
+import { overviewRuntimeFixture } from './overview/fixtures/overviewRuntime.fixture'
+import { OverviewView } from './overview/OverviewView'
 
 const MAX_WIDTH_PX = 1280
 const RUN_ID = 'f5f78c795eaa4175ac506440e597ee3e' // pragma: allowlist secret
@@ -77,6 +80,22 @@ describe('no screen declares an element wider than 1280px', () => {
       </KeyGate>,
     )
     await findByText(/kWh \/.*kg CO2e/)
+
+    assertNoElementExceedsWidth(container)
+  })
+
+  it('OverviewView', async () => {
+    vi.spyOn(client, 'apiFetch').mockImplementation((path: string) =>
+      path.includes('runtime')
+        ? Promise.resolve(overviewRuntimeFixture)
+        : Promise.resolve(overviewQualityFixture),
+    )
+    const { container, findByText } = render(
+      <KeyGate>
+        <OverviewView />
+      </KeyGate>,
+    )
+    await findByText(/no-use-case-is-silently-absent/)
 
     assertNoElementExceedsWidth(container)
   })

@@ -130,6 +130,40 @@ bundle's real state, not an apparent gap in what those screens ship.
   `no-use-case-is-silently-absent`, wired to no API field, rather than
   fabricating an entry this story's own scope does not build.
 
+## What the overview withholds on day one, and why
+
+The pitch overview (`views/overview/`, `GET /api/overview/quality`,
+`GET /api/overview/runtime`) is the routed root, composing one card per
+`task_suite` present in the quality store. Two of the three constructs above
+carry through to it unchanged; a third is specific to the overview's own
+leader-set mechanism.
+
+- **The leader set.** `read_model.LEADER_SET_MEMBER_FIELD`
+  (`leader_set_member`) resolves against every row of this bundle via the
+  ordinary `resolve_field` machinery -- no new absence reason, no field
+  stubbed into `row_contract.py`. Nothing in the repo writes it today: the
+  stats epic records its derivation as unowned (see
+  `a-score-is-published-with-its-interval-a-difference-with-its-test.md`'s
+  own Dependencies table). `overview/quality/QualityPanel.tsx` renders
+  `DeclaredAbsenceLabel` naming "no leader set published for this suite and
+  machine class" on every card of this bundle rather than a substituted
+  highest score. `cloud_comparators` is not part of this withholding -- the
+  reference bundle does carry `provider != "local"` rows (a real mistral
+  comparator alongside the local ones), so every card's cloud-comparator list
+  is populated, not empty.
+- **The runtime/energy headline, following from having no leader.**
+  `overview/runtime/RuntimeEnergyPanel.tsx` receives `leaderRosterEntryIds`
+  from `OverviewView`, derived from `leader.members` when a leader set
+  exists. With no leader set (every card of this bundle), that list is empty
+  and the panel renders the same class of `DeclaredAbsenceLabel` ("no model
+  to take a headline from") rather than guessing a headline from an
+  unranked row. This is a structural consequence of the leader-set absence
+  above, not a second, independently missing construct.
+- **The coverage record.** `overview/CoverageAbsence.tsx` is the same
+  `no-use-case-is-silently-absent` declared absence as `QualityView`'s
+  `CoverageRecord`, rendered once at the overview page level rather than
+  once per card.
+
 ## This regeneration (Story 19 + Story 20, 2026-08-27)
 
 Both files were regenerated from scratch under the current schema (`schema_version` `"7"`),
