@@ -32,6 +32,24 @@ const comparisonSources = import.meta.glob('./comparison/**/*.{ts,tsx}', {
   import: 'default',
 }) as Record<string, string>
 
+const overviewQualitySources = import.meta.glob('./overview/quality/**/*.{ts,tsx}', {
+  eager: true,
+  query: '?raw',
+  import: 'default',
+}) as Record<string, string>
+
+const overviewRuntimeSources = import.meta.glob('./overview/runtime/**/*.{ts,tsx}', {
+  eager: true,
+  query: '?raw',
+  import: 'default',
+}) as Record<string, string>
+
+const overviewShellSources = import.meta.glob('./overview/*.{ts,tsx}', {
+  eager: true,
+  query: '?raw',
+  import: 'default',
+}) as Record<string, string>
+
 /**
  * Every `import ... from '...'` module specifier in `text`, ignoring
  * comments -- so a docstring that merely *names* the other view's path
@@ -82,6 +100,57 @@ describe('the quality/runtime component boundary', () => {
         (s) => s.includes('runtime') || s.includes('energy'),
       )
       expect(violation, `${path} imports ${String(violation)}`).toBeUndefined()
+    }
+  })
+})
+
+// The overview's own quality/runtime pair (see plan.md's Decisions on the
+// view-boundary carve-out): `OverviewCard.tsx`/`OverviewView.tsx` are the
+// only files allowed to know both `overview/quality` and `overview/runtime`
+// exist, and only through their components -- never through a cross-import
+// of the other's type module. Confirmed this fails before the fix: a
+// cross-import (`import type { OverviewRuntimeView } from '../runtime/types'`)
+// was temporarily added to `overview/quality/QualityPanel.tsx`, the test run
+// to see it fail ("imports ../runtime/types"), and the line removed -- same
+// proof method as the pairs above.
+describe('the overview quality/runtime component boundary', () => {
+  it('no file under overview/quality/ imports from overview/runtime/', () => {
+    for (const [path, text] of Object.entries(overviewQualitySources)) {
+      const violation = importedModuleSpecifiers(text).find((s) =>
+        s.includes('runtime'),
+      )
+      expect(violation, `${path} imports ${String(violation)}`).toBeUndefined()
+    }
+  })
+
+  it('no file under overview/runtime/ imports from overview/quality/', () => {
+    for (const [path, text] of Object.entries(overviewRuntimeSources)) {
+      const violation = importedModuleSpecifiers(text).find((s) =>
+        s.includes('quality'),
+      )
+      expect(violation, `${path} imports ${String(violation)}`).toBeUndefined()
+    }
+  })
+
+  it('no overview shell file imports the quality or runtime type modules', () => {
+    for (const [path, text] of Object.entries(overviewShellSources)) {
+      const violation = importedModuleSpecifiers(text).find(
+        (s) => s.includes('quality/types') || s.includes('runtime/types'),
+      )
+      // OverviewView.tsx is the one file allowed to know the quality store's
+      // shape (it derives the suite list and leader roster ids from it) --
+      // never the runtime store's.
+      if (path.endsWith('OverviewCard.tsx')) {
+        expect(violation, `${path} imports ${String(violation)}`).toBeUndefined()
+      } else {
+        const runtimeTypesViolation = importedModuleSpecifiers(text).find((s) =>
+          s.includes('runtime/types'),
+        )
+        expect(
+          runtimeTypesViolation,
+          `${path} imports ${String(runtimeTypesViolation)}`,
+        ).toBeUndefined()
+      }
     }
   })
 })

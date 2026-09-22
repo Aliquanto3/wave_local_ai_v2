@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Instruction: The overview screen — card shell, quality panel, runtime+energy panel, landing wiring, boundary and width guards
