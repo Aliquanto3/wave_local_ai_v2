@@ -194,6 +194,53 @@ def test_an_unusable_reported_metric_nulls_its_delta_without_blocking(
     assert result["prompt_tok_per_s_delta"] is None
 
 
+def test_a_blocking_field_null_on_both_sides_is_not_comparable(tmp_path) -> None:
+    registry_dir = tmp_path / "fiches"
+    fiche_hash = _write_fiche(registry_dir, llama_cpp_build=None)
+    reference = _runtime_row(fiche_hash)
+    candidate = _runtime_row(fiche_hash, run_id="run-candidate")
+
+    result = runtime_verdict(candidate, [reference], registry_dir, tolerance=0.10)
+
+    # Two unknown builds are not evidence of the same build.
+    assert result["verdict"] == VERDICT_NOT_COMPARABLE
+    assert "llama_cpp_build" in result["differing_fields"]
+
+
+def test_a_blocking_field_null_on_the_reference_only_is_not_comparable(
+    tmp_path,
+) -> None:
+    registry_dir = tmp_path / "fiches"
+    reference_hash = _write_fiche(registry_dir, gpu_name=None)
+    candidate_hash = _write_fiche(registry_dir)
+    reference = _runtime_row(reference_hash)
+    candidate = _runtime_row(candidate_hash, run_id="run-candidate")
+
+    result = runtime_verdict(candidate, [reference], registry_dir, tolerance=0.10)
+
+    assert result["verdict"] == VERDICT_NOT_COMPARABLE
+    assert result["differing_fields"] == ["gpu_name"]
+
+
+def test_a_blocking_field_null_on_the_candidate_only_is_not_comparable(
+    tmp_path,
+) -> None:
+    registry_dir = tmp_path / "fiches"
+    reference_hash = _write_fiche(registry_dir)
+    # `flags` stays out of the fiche hash, so a non-blocking field is varied
+    # too: otherwise write-once storage hands back the reference's fiche.
+    candidate_hash = _write_fiche(registry_dir, flags=None, cpu="cpu-b")
+    reference = _runtime_row(reference_hash)
+    candidate = _runtime_row(candidate_hash, run_id="run-candidate")
+
+    result = runtime_verdict(candidate, [reference], registry_dir, tolerance=0.10)
+
+    assert result["verdict"] == VERDICT_NOT_COMPARABLE
+    assert result["reference_run_id"] is None
+    assert result["differing_fields"] == ["flags"]
+    assert "null" in result["reason"]
+
+
 def _quality_row(model_id="Fake Model", suite_version="1", seed=1, **overrides) -> dict:
     row = {
         "run_id": "run-ref",
@@ -258,6 +305,49 @@ def test_quality_reference_selection_never_crosses_task_suites() -> None:
 
     assert result["verdict"] == VERDICT_REPRODUCED
     assert result["compared_field"] == "item_score"
+
+
+def _two_run_reference(first_label: str, second_label: str) -> list[dict]:
+    # The two-quality-runs protocol: every regenerated bundle carries two
+    # runs of one batch, so the verdict must say which one it compared.
+    return [
+        _quality_row(run_id="run-ref-a", item_id="billing-01"),
+        _quality_row(
+            run_id="run-ref-a", item_id="refund-09", predicted_label=first_label
+        ),
+        _quality_row(run_id="run-ref-b", item_id="billing-01"),
+        _quality_row(
+            run_id="run-ref-b", item_id="refund-09", predicted_label=second_label
+        ),
+    ]
+
+
+def _two_item_candidate() -> list[dict]:
+    return [
+        _quality_row(run_id="run-candidate", item_id="billing-01"),
+        _quality_row(
+            run_id="run-candidate", item_id="refund-09", predicted_label="refund"
+        ),
+    ]
+
+
+def test_quality_two_reference_runs_compare_against_the_named_run() -> None:
+    reference = _two_run_reference(first_label="refund", second_label="billing")
+
+    result = quality_verdict(_two_item_candidate(), reference)
+
+    assert result["verdict"] == VERDICT_REPRODUCED
+    assert result["reference_run_id"] == "run-ref-a"
+
+
+def test_quality_a_disagreement_in_the_named_run_alone_is_not_reproduced() -> None:
+    reference = _two_run_reference(first_label="billing", second_label="refund")
+
+    result = quality_verdict(_two_item_candidate(), reference)
+
+    assert result["verdict"] == VERDICT_NOT_REPRODUCED
+    assert result["reference_run_id"] == "run-ref-a"
+    assert result["differing_fields"] == ["refund-09"]
 
 
 def test_quality_no_matching_reference_is_not_comparable() -> None:

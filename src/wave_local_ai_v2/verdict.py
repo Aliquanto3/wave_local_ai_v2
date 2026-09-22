@@ -8,6 +8,10 @@ a candidate and a reference row are the same run to compare (PRD Methodology
 re-run's fiche hash" and "CPU/RAM/driver/OS never block a comparison" by
 naming these four fields explicitly, separate from the fiche's full identity
 hash).
+
+A blocking field that is null on either side never matches, not even another
+null: two unknown builds or GPUs are not evidence of the same run, so such a
+pair is `not_comparable`, naming the null field.
 """
 
 from __future__ import annotations
@@ -40,6 +44,11 @@ def runtime_blocking_fields(fiche: dict[str, Any]) -> dict[str, Any]:
     return {key: fiche[key] for key in _RUNTIME_BLOCKING_FIELDS}
 
 
+def null_blocking_fields(fiche: dict[str, Any]) -> list[str]:
+    """The blocking fields `fiche` leaves null, in declaration order."""
+    return [key for key in _RUNTIME_BLOCKING_FIELDS if fiche[key] is None]
+
+
 def _resolve_fiche(row: dict[str, Any], registry_dir: Path) -> dict[str, Any] | None:
     fiche_hash = row.get("fiche_hash")
     if fiche_hash is None:
@@ -55,16 +64,17 @@ def select_runtime_reference(
     """Return the first reference row whose blocking fields all match, or `None`.
 
     File order is the only tie-break: reference files are curated
-    single-model snapshots, so no other ordering is meaningful.
+    single-model snapshots, so no other ordering is meaningful. A reference
+    whose fiche leaves a blocking field null is skipped: null never matches.
     """
     candidate_fiche = _resolve_fiche(candidate_row, registry_dir)
-    if candidate_fiche is None:
+    if candidate_fiche is None or null_blocking_fields(candidate_fiche):
         return None
     candidate_blocking = runtime_blocking_fields(candidate_fiche)
 
     for reference_row in reference_rows:
         reference_fiche = _resolve_fiche(reference_row, registry_dir)
-        if reference_fiche is None:
+        if reference_fiche is None or null_blocking_fields(reference_fiche):
             continue
         if runtime_blocking_fields(reference_fiche) == candidate_blocking:
             return ReferenceMatch(
@@ -82,7 +92,8 @@ def _closest_reference_differing_fields(
 
     "Closest" is the reference with the fewest differing blocking fields,
     file order breaking a tie -- informative rather than reporting "everything
-    differs" against an arbitrary reference.
+    differs" against an arbitrary reference. A field null on either side
+    counts as differing, even when both are null.
     """
     candidate_fiche = _resolve_fiche(candidate_row, registry_dir)
     if candidate_fiche is None:
@@ -98,7 +109,9 @@ def _closest_reference_differing_fields(
         differing = sorted(
             key
             for key in _RUNTIME_BLOCKING_FIELDS
-            if candidate_blocking[key] != reference_blocking[key]
+            if candidate_blocking[key] is None
+            or reference_blocking[key] is None
+            or candidate_blocking[key] != reference_blocking[key]
         )
         if best is None or len(differing) < len(best):
             best = differing
@@ -157,6 +170,17 @@ def runtime_verdict(
             "reference_run_id": None,
             "differing_fields": [],
             "reason": "no reference row shares this candidate's roster_entry_id",
+        }
+
+    candidate_fiche = _resolve_fiche(candidate_row, registry_dir)
+    candidate_nulls = null_blocking_fields(candidate_fiche) if candidate_fiche else []
+    if candidate_nulls:
+        return {
+            "verdict": VERDICT_NOT_COMPARABLE,
+            "reference_run_id": None,
+            "differing_fields": candidate_nulls,
+            "reason": "the candidate's fiche leaves a blocking field null, and an "
+            "unknown value cannot be compared",
         }
 
     match = select_runtime_reference(candidate_row, same_model, registry_dir)
@@ -269,6 +293,11 @@ def quality_verdict(
     and would be called reproduced. That is accepted, because the published
     rule is about scores, and pinning reproduction to output text instead
     would hold a re-run to a stricter standard than the one the PRD states.
+
+    When several reference runs match the batch (the two-quality-runs
+    protocol commits two per batch), the first run in file order is the
+    reference, the same tie-break as `select_runtime_reference`: its items
+    alone are compared, and `reference_run_id` names it.
     """
     matching = select_quality_references(candidate_rows, reference_rows)
     if not matching:
@@ -281,7 +310,10 @@ def quality_verdict(
             "task_suite/model_id/suite_version/seed",
         }
 
-    reference_by_item = {row["item_id"]: row for row in matching}
+    reference_run_id = matching[0].get("run_id")
+    reference_by_item = {
+        row["item_id"]: row for row in matching if row.get("run_id") == reference_run_id
+    }
     candidate_by_item = {row["item_id"]: row for row in candidate_rows}
     # Compared before the labels: an item present on one side only cannot be
     # compared, and narrowing to the overlap silently would let a batch with
@@ -291,7 +323,7 @@ def quality_verdict(
     if unmatched_items:
         return {
             "verdict": VERDICT_NOT_COMPARABLE,
-            "reference_run_id": matching[0].get("run_id"),
+            "reference_run_id": reference_run_id,
             "differing_fields": unmatched_items,
             "compared_field": None,
             "reason": "these item_ids are on one side only, so the two batches "
@@ -302,7 +334,7 @@ def quality_verdict(
     if compared_field is None:
         return {
             "verdict": VERDICT_NOT_COMPARABLE,
-            "reference_run_id": matching[0].get("run_id"),
+            "reference_run_id": reference_run_id,
             "differing_fields": [],
             "compared_field": None,
             "reason": "the two batches carry no comparable per-item value: "
@@ -318,7 +350,7 @@ def quality_verdict(
 
     return {
         "verdict": verdict,
-        "reference_run_id": matching[0].get("run_id"),
+        "reference_run_id": reference_run_id,
         "differing_fields": differing_items,
         "compared_field": compared_field,
         "reason": None,
