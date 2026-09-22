@@ -72,3 +72,45 @@ td {
 .error-state {
   color: var(--text-muted);
 }
+
+/* The comparison screen: up to one column per roster model, so the table
+   scrolls inside its own box rather than widening the page, and each header
+   stacks its identity lines instead of running them together. */
+.comparison-table-wrap {
+  overflow-x: auto;
+}
+
+.comparison-table {
+  font-size: 0.85em;
+}
+
+.comparison-table th,
+.comparison-table td {
+  padding: 4px 6px;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.comparison-item-column {
+  width: 7em;
+}
+
+.comparison-column-header span,
+.comparison-suite-score .language-cell,
+.comparison-cell > * {
+  display: block;
+}
+
+.comparison-column-header span:not(.comparison-roster-entry-id) {
+  font-weight: normal;
+  color: var(--text-muted);
+}
+
+.comparison-not-compared {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.comparison-version-caveat {
+  color: var(--text-muted);
+}

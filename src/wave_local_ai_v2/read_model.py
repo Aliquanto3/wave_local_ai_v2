@@ -346,6 +346,43 @@ EXACT_MATCH_LANGUAGE_CELL_FIELDS: frozenset[str] = frozenset(
 # today.
 COMPARISON_DIMENSIONS: tuple[str, ...] = ("architecture",)
 
+# The row fields that make one comparison column one model. `roster_entry_id`
+# alone is not enough: a cited cloud comparator row carries the roster entry
+# of the local subject it was run against, so keying on the id alone would
+# fold the comparator into that subject's column and let the later run hide
+# it. `provider` + `model_id` keep the two apart. `fiche_hash` keeps machines
+# apart: the same model run on two hosts is two columns, never the later
+# host's run silently hiding the earlier one's. The fiche fingerprints the
+# whole setup, so a rebuilt llama.cpp on one host also opens a new column.
+COMPARISON_COLUMN_KEY: tuple[str, ...] = (
+    POINTER_ROSTER_ENTRY_ID,
+    "provider",
+    "model_id",
+    "fiche_hash",
+)
+
+# The fields a compared cell carries: the item's score in either shape, its
+# language breakdown, and the two quality labels -- nothing else of
+# `_quality_entry`. The comparison is quality-only, so the cost, pricing and
+# token-total fields a quality row also holds stay out of it, and a field
+# added to `_quality_entry` later does not reach this route unless listed.
+COMPARISON_CELL_FIELDS: frozenset[str] = frozenset(
+    {
+        "run_id",
+        "item_id",
+        "score_shape",
+        "correct",
+        "suite_accuracy",
+        "language_breakdown",
+        "metric_id",
+        "item_score",
+        "suite_score",
+        "score_breakdown",
+        "contamination_risk",
+        "verdict",
+    }
+)
+
 
 def _resolve_comparison_dimension(
     row: dict[str, Any], dimension: str, resolved_roster_entry: Any | Absent
@@ -792,7 +829,7 @@ def energy_view(
 
 @dataclass(frozen=True)
 class _ComparisonColumn:
-    """One `(suite_id, roster_entry_id)` column, backed by its winning run.
+    """One `suite_id` + `COMPARISON_COLUMN_KEY` column, backed by its winning run.
 
     `rows_by_item` is keyed by `_dedup_key(item_id)` -- an `Absent` `item_id`
     is unhashable on its own, exactly the reason `_runs_collection` dedupes
@@ -802,6 +839,9 @@ class _ComparisonColumn:
     """
 
     roster_entry_id: Any
+    provider: Any
+    model_id: Any
+    fiche_hash: Any
     run_id: Any
     suite_version: Any
     prompt_set_hash: Any
@@ -830,20 +870,21 @@ def _captured_at_sort_key(row: dict[str, Any]) -> tuple[str, str]:
 def _comparison_columns(
     store: StoreRead, roster_file: roster.RosterFile | None
 ) -> list[tuple[Any, list[_ComparisonColumn]]]:
-    """The quality store's rows, grouped by `suite_id` then `roster_entry_id`.
+    """The quality store's rows, grouped by `suite_id` then `COMPARISON_COLUMN_KEY`.
 
     One column per group, backed only by the rows of the single run carrying
     the greatest `captured_at` in it -- a later run of the same model on the
     same suite supersedes an earlier one rather than being merged with it.
-    Suites, and roster_entry_ids within a suite, are ordered by their string
-    form for a stable response rather than by first-seen file order.
+    Suites, and column keys within a suite, are ordered by their string form
+    for a stable response rather than by first-seen file order.
     """
     groups: dict[Any, tuple[Any, dict[Any, dict[Any, list[dict[str, Any]]]]]] = {}
     for row in store.rows:
         suite_id = resolve_field(row, "suite_id")
         suite_key = _dedup_key(suite_id)
-        entry_id = resolve_field(row, POINTER_ROSTER_ENTRY_ID)
-        entry_key = _dedup_key(entry_id)
+        entry_key = tuple(
+            _dedup_key(resolve_field(row, field)) for field in COMPARISON_COLUMN_KEY
+        )
         run_id = row.get("run_id")
         run_key = "" if run_id is None else str(run_id)
 
@@ -879,6 +920,9 @@ def _comparison_columns(
             columns.append(
                 _ComparisonColumn(
                     roster_entry_id=resolve_field(sample, POINTER_ROSTER_ENTRY_ID),
+                    provider=resolve_field(sample, "provider"),
+                    model_id=resolve_field(sample, "model_id"),
+                    fiche_hash=resolve_field(sample, "fiche_hash"),
                     run_id=resolve_field(sample, "run_id"),
                     suite_version=resolve_field(sample, "suite_version"),
                     prompt_set_hash=resolve_field(sample, "prompt_set_hash"),
@@ -904,7 +948,7 @@ def comparison_view(
     Store-wide by construction -- no `run_id` names all the rows a column
     needs, since each column may be backed by a different run of a different
     model. One entry per `suite_id` present in the quality store; within it,
-    one column per `(suite_id, roster_entry_id)` and one row per `item_id`
+    one column per `suite_id` + `COMPARISON_COLUMN_KEY` and one row per `item_id`
     the union of every column's suite carries. A column missing an item its
     suite union carries renders that cell `{"status": "not_compared"}` --
     never a blank or a zero.
@@ -930,15 +974,20 @@ def comparison_view(
                     cells.append({"status": "not_compared", "item_id": item_id})
                 else:
                     _, row = entry
+                    quality_entry = _quality_entry(
+                        row,
+                        fiche_registry_dir=fiche_registry_dir,
+                        roster_file=roster_file,
+                        suite_definitions_dir=suite_definitions_dir,
+                    )
                     cells.append(
                         {
                             "status": "compared",
-                            **_quality_entry(
-                                row,
-                                fiche_registry_dir=fiche_registry_dir,
-                                roster_file=roster_file,
-                                suite_definitions_dir=suite_definitions_dir,
-                            ),
+                            **{
+                                field: value
+                                for field, value in quality_entry.items()
+                                if field in COMPARISON_CELL_FIELDS
+                            },
                         }
                     )
             items.append({"item_id": item_id, "cells": cells})
@@ -949,6 +998,9 @@ def comparison_view(
                 "columns": [
                     {
                         "roster_entry_id": column.roster_entry_id,
+                        "provider": column.provider,
+                        "model_id": column.model_id,
+                        "fiche_hash": column.fiche_hash,
                         "run_id": column.run_id,
                         "suite_version": column.suite_version,
                         "prompt_set_hash": column.prompt_set_hash,

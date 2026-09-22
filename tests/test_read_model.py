@@ -815,41 +815,121 @@ def test_a_comparison_column_is_backed_by_only_the_later_run(
     assert cell["correct"] is True
 
 
-COMPARISON_ENTRY_FIELDS: frozenset[str] = (
+def test_a_cited_comparator_sharing_a_roster_entry_id_keeps_its_own_column(
+    bundle: dict[str, Path], tmp_path: Path
+) -> None:
+    # A cited cloud comparator row carries the local subject's roster entry;
+    # the later local run must not fold it away.
+    comparator = make_row(
+        "quality",
+        roster_entry_id=ROSTER_ENTRY_ID,
+        provider="google",
+        model_id="gemini-3.5-flash-lite",
+        suite_version="1",
+        item_id="item-01",
+        run_id="run-comparator",
+        captured_at="2026-01-01T00:00:00+00:00",
+    )
+    local = make_row(
+        "quality",
+        roster_entry_id=ROSTER_ENTRY_ID,
+        provider="local",
+        model_id="Qwen3.6-35B-A3B",
+        suite_version="2",
+        item_id="item-01",
+        run_id="run-local",
+        captured_at="2026-02-01T00:00:00+00:00",
+    )
+
+    view = build_comparison(
+        bundle, [comparator, local], two_entry_roster_path(tmp_path)
+    )
+
+    columns = view["suites"][0]["columns"]
+    assert len(columns) == 2
+    by_model = {column["model_id"]: column for column in columns}
+    assert by_model["gemini-3.5-flash-lite"]["provider"] == "google"
+    assert by_model["gemini-3.5-flash-lite"]["run_id"] == "run-comparator"
+    assert by_model["gemini-3.5-flash-lite"]["suite_version"] == "1"
+    assert by_model["Qwen3.6-35B-A3B"]["run_id"] == "run-local"
+    assert by_model["Qwen3.6-35B-A3B"]["suite_version"] == "2"
+    assert all(column["roster_entry_id"] == ROSTER_ENTRY_ID for column in columns)
+
+
+def test_the_same_model_on_two_machines_keeps_one_column_per_machine(
+    bundle: dict[str, Path], tmp_path: Path
+) -> None:
+    # Three-machine campaign: the later host's run must not hide the earlier
+    # host's run of the same model on the same suite.
+    first_host = make_row(
+        "quality",
+        roster_entry_id=ROSTER_ENTRY_ID,
+        fiche_hash="a" * 64,
+        item_id="item-01",
+        run_id="run-host-a",
+        captured_at="2026-01-01T00:00:00+00:00",
+    )
+    second_host = make_row(
+        "quality",
+        roster_entry_id=ROSTER_ENTRY_ID,
+        fiche_hash="b" * 64,
+        item_id="item-01",
+        run_id="run-host-b",
+        captured_at="2026-02-01T00:00:00+00:00",
+    )
+
+    view = build_comparison(
+        bundle, [first_host, second_host], two_entry_roster_path(tmp_path)
+    )
+
+    columns = view["suites"][0]["columns"]
+    assert len(columns) == 2
+    by_fiche = {column["fiche_hash"]: column["run_id"] for column in columns}
+    assert by_fiche == {"a" * 64: "run-host-a", "b" * 64: "run-host-b"}
+
+
+# Every field a quality row renders, in either score shape: the only place a
+# compared cell's fields may come from.
+QUALITY_OWNED_FIELDS: frozenset[str] = (
     read_model.RUNS_VIEW_FIELDS
     | read_model.QUALITY_VIEW_FIELDS
     | read_model.QUALITY_EXACT_MATCH_FIELDS
     | read_model.QUALITY_GRADED_FIELDS
-    | read_model.QUALITY_JUDGE_FIELDS
-    | frozenset(
-        {
-            "score_shape",
-            "roster_entry",
-            "fiche",
-            "suite_definition",
-            "score_breakdown",
-            "language_breakdown",
-            "status",
-        }
+    | frozenset({"score_shape", "language_breakdown", "score_breakdown"})
+)
+
+
+def test_a_comparison_cell_declares_no_runtime_energy_or_cost_field() -> None:
+    cell_fields = read_model.COMPARISON_CELL_FIELDS
+
+    assert cell_fields <= QUALITY_OWNED_FIELDS
+    # `verdict` is the one name a runtime row also carries: each row's own
+    # comparability verdict, not a runtime measurement. Every cost, pricing,
+    # token-total and energy field is shared or runtime-owned, so none is here.
+    assert cell_fields & (
+        read_model.RUNTIME_VIEW_FIELDS | read_model.ENERGY_VIEW_FIELDS
+    ) == frozenset({"verdict"})
+
+
+def test_a_comparison_cell_renders_only_its_declared_fields(
+    bundle: dict[str, Path], tmp_path: Path
+) -> None:
+    exact = make_row("quality", item_id="item-01")
+    graded = make_row(
+        "quality",
+        item_id="item-02",
+        correct=None,
+        suite_accuracy=None,
+        subject_output="une sortie",
+        **GRADED_VALUES,
     )
-)
 
+    view = build_comparison(bundle, [exact, graded], two_entry_roster_path(tmp_path))
 
-# The fields RUNTIME_VIEW_FIELDS owns that QUALITY_VIEW_FIELDS does not: the
-# runtime-exclusive measurements (ttft_ms, wall_clock_s, gen_tok_per_s, ...).
-# Identity/pricing fields (cost_total, roster_version, ...) legitimately
-# carry the same name on both row kinds and are not what "quality-only" means
-# here -- see RUNTIME_VIEW_FIELDS' own set for the full shared block.
-RUNTIME_EXCLUSIVE_FIELDS: frozenset[str] = (
-    read_model.RUNTIME_VIEW_FIELDS
-    - read_model.QUALITY_VIEW_FIELDS
-    - read_model.RUNS_VIEW_FIELDS
-)
-
-
-def test_no_runtime_or_energy_field_is_reachable_on_a_comparison_entry() -> None:
-    assert COMPARISON_ENTRY_FIELDS & RUNTIME_EXCLUSIVE_FIELDS == frozenset()
-    assert COMPARISON_ENTRY_FIELDS & read_model.ENERGY_VIEW_FIELDS == frozenset()
+    cells = [cell for item in view["suites"][0]["items"] for cell in item["cells"]]
+    assert {cell["score_shape"] for cell in cells} == {"exact_match", "graded"}
+    for cell in cells:
+        assert set(cell) - {"status"} <= read_model.COMPARISON_CELL_FIELDS
 
 
 # --------------------------------------------------------------------------

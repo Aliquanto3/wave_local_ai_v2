@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`GET /api/comparisons` and `views/comparison/`** — the quality store as
+  one column per model and machine per suite, reached from "Compare dense and
+  MoE" beside the runs list.
 - **Three read-model screens over the service's routes** —
   `frontend/src/views/quality/`, `views/runtime/`, `views/energy/` — each
   fetching its own route and rendering every field the PRD's Methodology

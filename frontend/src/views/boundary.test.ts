@@ -74,10 +74,12 @@ describe('the quality/runtime component boundary', () => {
   // added to `views/comparison/ComparisonView.tsx`, the test run to see it
   // fail ("imports ../runtime/types"), and the line removed -- same proof
   // method as the original pair above.
-  it('no file under views/comparison/ imports from views/runtime/', () => {
+  // `energy` too: the energy screen renders runtime-store data, which the
+  // quality-only comparison must not reach either.
+  it('no file under views/comparison/ imports from views/runtime/ or views/energy/', () => {
     for (const [path, text] of Object.entries(comparisonSources)) {
-      const violation = importedModuleSpecifiers(text).find((s) =>
-        s.includes('runtime'),
+      const violation = importedModuleSpecifiers(text).find(
+        (s) => s.includes('runtime') || s.includes('energy'),
       )
       expect(violation, `${path} imports ${String(violation)}`).toBeUndefined()
     }

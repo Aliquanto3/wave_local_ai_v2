@@ -13,6 +13,8 @@ import { qualityViewFixture } from './quality/fixtures/qualityView.fixture'
 import { QualityView } from './quality/QualityView'
 import { runtimeViewFixture } from './runtime/fixtures/runtimeView.fixture'
 import { RuntimeView } from './runtime/RuntimeView'
+import { comparisonViewFixture } from './comparison/fixtures/comparisonView.fixture'
+import { ComparisonView } from './comparison/ComparisonView'
 import { energyViewFixture } from './energy/fixtures/energyView.fixture'
 import { EnergyView } from './energy/EnergyView'
 
@@ -75,6 +77,18 @@ describe('no screen declares an element wider than 1280px', () => {
       </KeyGate>,
     )
     await findByText(/kWh \/.*kg CO2e/)
+
+    assertNoElementExceedsWidth(container)
+  })
+
+  it('ComparisonView', async () => {
+    vi.spyOn(client, 'apiFetch').mockResolvedValueOnce(comparisonViewFixture)
+    const { container, findByText } = render(
+      <KeyGate>
+        <ComparisonView />
+      </KeyGate>,
+    )
+    await findByText('Suite score')
 
     assertNoElementExceedsWidth(container)
   })
