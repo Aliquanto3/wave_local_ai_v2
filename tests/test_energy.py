@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from wave_local_ai_v2.energy import measure_energy
+from wave_local_ai_v2.energy import RepetitionEnergyTracker, measure_energy
 
 
 def _fake_emissions_data(
@@ -105,3 +105,90 @@ def test_measure_energy_propagates_the_measured_functions_exception() -> None:
         pytest.raises(ValueError, match="the request failed"),
     ):
         measure_energy(failing, country_iso_code="FRA")
+
+
+def test_repetition_energy_tracker_sums_task_deltas_into_one_result() -> None:
+    fake_tracker = MagicMock()
+    fake_tracker.stop_task.side_effect = [
+        _fake_emissions_data(
+            cpu_energy=0.0002, ram_energy=0.00003, energy_consumed=0.0003
+        ),
+        _fake_emissions_data(
+            cpu_energy=0.0003, ram_energy=0.00004, energy_consumed=0.0004
+        ),
+    ]
+    fake_tracker.final_emissions_data = _fake_emissions_data(gpu_count=0)
+
+    with patch("codecarbon.OfflineEmissionsTracker", return_value=fake_tracker):
+        tracker = RepetitionEnergyTracker(country_iso_code="FRA")
+        calls = []
+        for _ in range(2):
+            tracker.wrap(lambda: calls.append(1))()
+        result, window_method = tracker.finish()
+
+    assert calls == [1, 1]
+    assert fake_tracker.start_task.call_count == 2
+    assert result["cpu_energy_kwh"] == pytest.approx(0.0005)
+    assert result["ram_energy_kwh"] == pytest.approx(0.00007)
+    assert result["energy_kwh"] == pytest.approx(0.0007)
+    assert result["gpu_energy_kwh"] is None
+    assert result["gpu_energy_method"] == "unavailable"
+    assert window_method == "per_repetition_tasks"
+
+
+def test_repetition_energy_tracker_labels_gpu_from_final_gpu_count() -> None:
+    fake_tracker = MagicMock()
+    fake_tracker.stop_task.side_effect = [
+        _fake_emissions_data(gpu_energy=0.0004, energy_consumed=0.0006),
+    ]
+    fake_tracker.final_emissions_data = _fake_emissions_data(gpu_count=1)
+
+    with patch("codecarbon.OfflineEmissionsTracker", return_value=fake_tracker):
+        tracker = RepetitionEnergyTracker(country_iso_code="FRA")
+        tracker.wrap(lambda: "done")()
+        result, window_method = tracker.finish()
+
+    assert result["gpu_energy_kwh"] == pytest.approx(0.0004)
+    assert result["gpu_energy_method"] == "measured_nvml"
+    assert window_method == "per_repetition_tasks"
+
+
+def test_repetition_energy_tracker_construction_failure_still_runs_every_call() -> None:
+    with patch("codecarbon.OfflineEmissionsTracker", side_effect=RuntimeError("boom")):
+        tracker = RepetitionEnergyTracker(country_iso_code="FRA")
+        calls = []
+        for _ in range(3):
+            tracker.wrap(lambda: calls.append(1))()
+        result, window_method = tracker.finish()
+
+    assert calls == [1, 1, 1]
+    assert result["cpu_energy_kwh"] is None
+    assert result["gpu_energy_kwh"] is None
+    assert result["ram_energy_kwh"] is None
+    assert result["energy_kwh"] is None
+    assert window_method == "unavailable"
+
+
+def test_repetition_energy_tracker_one_failed_stop_task_makes_the_whole_row_unavailable() -> (
+    None
+):
+    fake_tracker = MagicMock()
+    fake_tracker.stop_task.side_effect = [
+        _fake_emissions_data(energy_consumed=0.0003),
+        None,
+        _fake_emissions_data(energy_consumed=0.0004),
+    ]
+    fake_tracker.final_emissions_data = _fake_emissions_data(gpu_count=0)
+
+    with patch("codecarbon.OfflineEmissionsTracker", return_value=fake_tracker):
+        tracker = RepetitionEnergyTracker(country_iso_code="FRA")
+        for _ in range(3):
+            tracker.wrap(lambda: "done")()
+        result, window_method = tracker.finish()
+
+    # A partial sum over two of the three repetitions would understate the
+    # row's energy without saying so -- one missing delta makes the whole
+    # figure unavailable (mirrors cost.total_or_none's all-or-nothing rule).
+    assert result["cpu_energy_kwh"] is None
+    assert result["energy_kwh"] is None
+    assert window_method == "unavailable"

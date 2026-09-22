@@ -15,6 +15,7 @@ from wave_local_ai_v2 import (
     build_probe,
     cost,
     emissions,
+    energy,
     fiche_registry,
     prompt_provenance,
     provenance,
@@ -24,7 +25,6 @@ from wave_local_ai_v2 import (
     server,
     verdict,
 )
-from wave_local_ai_v2.energy import measure_energy
 from wave_local_ai_v2.gpu import read_gpu_stats
 from wave_local_ai_v2.hardware import build_fiche, capture_fiche
 from wave_local_ai_v2.machine_state import read_machine_state
@@ -33,7 +33,6 @@ from wave_local_ai_v2.repetitions import (
     SLOT_RESET_METHOD,
     THERMAL_POSTURE_FIXED_COOLDOWN,
     RepetitionFailure,
-    RepetitionResult,
     run_repetition_set,
 )
 from wave_local_ai_v2.results import append_row, captured_at, new_run_id
@@ -334,28 +333,39 @@ def _run() -> None:
             cooldown_s=settings.runtime_cooldown_s,
         )
 
-        def _run_counted() -> tuple[list[RepetitionResult], list[RepetitionResult]]:
-            return run_repetition_set(
-                send=send_request,
-                read_gpu=read_gpu_stats,
-                read_rss=read_rss,
-                read_machine_state=read_machine_state,
-                sleep=time.sleep,
-                warmup_count=0,
-                count=settings.runtime_repetitions,
-                cooldown_s=settings.runtime_cooldown_s,
-            )
-
-        # The warm-up runs outside this tracker: energy spans only the counted
-        # repetitions and the cooldowns between them (plan.md's Decisions table).
-        (_, counted), energy = measure_energy(
-            _run_counted, country_iso_code=settings.emission_country_iso_code
+        # The warm-up runs outside this tracker; each counted repetition's own
+        # `start_task`/`stop_task` span excludes the cooldown that follows it, so
+        # energy is measured over each repetition's own generation only -- never
+        # the idle cooldowns between them (plan.md's Decisions table).
+        energy_tracker = energy.RepetitionEnergyTracker(
+            country_iso_code=settings.emission_country_iso_code
         )
+        _, counted = run_repetition_set(
+            send=energy_tracker.wrap(send_request),
+            read_gpu=read_gpu_stats,
+            read_rss=read_rss,
+            read_machine_state=read_machine_state,
+            sleep=time.sleep,
+            warmup_count=0,
+            count=settings.runtime_repetitions,
+            cooldown_s=settings.runtime_cooldown_s,
+        )
+        energy_result, energy_window_method = energy_tracker.finish()
 
     # The raw counted repetitions are kept on the row unmodified: a reader
     # recomputes these aggregates rather than trusting them.
     aggregated_timings = aggregation.aggregate_timings(
         counted, threshold=settings.runtime_spread_threshold
+    )
+    # Restated beside the energy block under its own name, not a new
+    # measurement stream: active_window_s is the same sum wall_clock_s already
+    # publishes below, and idle_window_s is deterministic from settings
+    # already on the row (plan.md's Decisions table).
+    active_window_s = sum(rep["wall_clock_s"] for rep in counted)
+    idle_window_s = (
+        (settings.runtime_repetitions - 1) * settings.runtime_cooldown_s
+        if settings.runtime_repetitions > 0
+        else 0.0
     )
     peaks = {
         metric: aggregation.peak([rep[metric] for rep in counted])  # type: ignore[literal-required]
@@ -367,9 +377,9 @@ def _run() -> None:
     wall_clock_s = sum(rep["wall_clock_s"] for rep in counted)
 
     emissions_kg = emissions.local_emissions(
-        energy["energy_kwh"], settings.emission_factor_kg_per_kwh
+        energy_result["energy_kwh"], settings.emission_factor_kg_per_kwh
     )
-    # Both totals span the counted set, the same window energy_kwh and
+    # Both totals span the counted set, the same active-window energy_kwh and
     # cost_total are measured over. tokens_evaluated is summed, not read off
     # the first repetition: cache_prompt=False forces a full prefill on every
     # request, so the set really did evaluate the prompt N times, and citing
@@ -377,7 +387,7 @@ def _run() -> None:
     # prompt.
     tokens_out_total = cost.total_or_none(rep["tokens_predicted"] for rep in counted)
     tokens_in_total = cost.total_or_none(rep["tokens_evaluated"] for rep in counted)
-    cost_total = cost.local_cost(energy["energy_kwh"], settings.kwh_price_eur)
+    cost_total = cost.local_cost(energy_result["energy_kwh"], settings.kwh_price_eur)
     total_tokens = (
         tokens_in_total + tokens_out_total
         if tokens_in_total is not None and tokens_out_total is not None
@@ -415,7 +425,10 @@ def _run() -> None:
         "ttft_source": counted[0]["ttft_source"],
         **peaks,
         "aggregation": dict(aggregation.AGGREGATION_LABELS),
-        **energy,
+        **energy_result,
+        "active_window_s": active_window_s,
+        "idle_window_s": idle_window_s,
+        "energy_window_method": energy_window_method,
         "emissions_kg": emissions_kg,
         "emission_factor_kg_per_kwh": settings.emission_factor_kg_per_kwh,
         "emission_region": settings.emission_region,

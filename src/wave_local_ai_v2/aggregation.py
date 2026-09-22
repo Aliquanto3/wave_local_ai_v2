@@ -57,14 +57,18 @@ AGGREGATION_LABELS: dict[str, str] = {
     "process_rss_bytes": "peak_over_counted_repetitions",
     "gpu_draw_w": "max_post_completion_sample_over_counted_repetitions",
     "wall_clock_s": "total_over_counted_repetitions",
-    "energy_kwh": "total_over_counted_repetitions_including_cooldowns",
-    # Same span as energy_kwh: measured by the same tracker over the same
-    # whole-run window (energy.py's per-channel EnergyResult). emissions_kg is
-    # deliberately not a member -- it is a downstream computation of
-    # energy_kwh, not an independent tracker measurement (plan.md's Decisions).
-    "cpu_energy_kwh": "total_over_counted_repetitions_including_cooldowns",
-    "gpu_energy_kwh": "total_over_counted_repetitions_including_cooldowns",
-    "ram_energy_kwh": "total_over_counted_repetitions_including_cooldowns",
+    "energy_kwh": "total_over_counted_repetitions_active_window",
+    # Same span as energy_kwh: each channel is summed from the same per-
+    # repetition `start_task`/`stop_task` deltas (energy.py's
+    # `RepetitionEnergyTracker`), excluding the idle cooldown between
+    # repetitions -- see the row's own `active_window_s`, `idle_window_s` and
+    # `energy_window_method` fields for the two window sizes and the method
+    # name. emissions_kg is deliberately not a member -- it is a downstream
+    # computation of energy_kwh, not an independent tracker measurement
+    # (plan.md's Decisions).
+    "cpu_energy_kwh": "total_over_counted_repetitions_active_window",
+    "gpu_energy_kwh": "total_over_counted_repetitions_active_window",
+    "ram_energy_kwh": "total_over_counted_repetitions_active_window",
 }
 
 MEASUREMENT_FIELDS = frozenset(AGGREGATION_LABELS)

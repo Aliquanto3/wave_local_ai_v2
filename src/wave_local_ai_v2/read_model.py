@@ -233,6 +233,9 @@ RUNTIME_VIEW_FIELDS: frozenset[str] = frozenset(
         "gen_tok_per_s_spread",
         "unreliable",
         "thermal_posture",
+        "active_window_s",
+        "idle_window_s",
+        "energy_window_method",
     }
 )
 
