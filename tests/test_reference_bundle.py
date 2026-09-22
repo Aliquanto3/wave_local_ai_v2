@@ -64,6 +64,18 @@ def test_every_row_resolves_its_fiche_hash() -> None:
         ), f"row {row['run_id']!r} cites unresolved fiche_hash {fiche_hash!r}"
 
 
+def test_every_cited_fiche_still_hashes_to_its_own_name() -> None:
+    # Existence is not integrity: a hand-edited fiche still resolves, but it
+    # is no longer the fiche the harness wrote.
+    fiche_registry_dir = Path(settings.DEFAULT_FICHE_REGISTRY_DIR)
+    for fiche_hash in sorted({str(row["fiche_hash"]) for row in _all_rows()}):
+        verification = fiche_registry.verify_fiche(fiche_hash, fiche_registry_dir)
+        assert verification["status"] == "ok", (
+            f"fiche {fiche_hash!r} is {verification['status']!r}: "
+            f"{verification['changed_fields']}"
+        )
+
+
 def test_every_row_resolves_its_roster_entry_id() -> None:
     loaded_roster = roster.load_roster(Path(settings.DEFAULT_ROSTER_PATH))
     for row in _all_rows():

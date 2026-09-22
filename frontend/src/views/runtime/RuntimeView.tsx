@@ -108,7 +108,9 @@ function RuntimeRow({ entry }: { entry: RuntimeEntry }) {
         <ThroughputCell
           value={entry.prompt_tok_per_s}
           spread={entry.prompt_tok_per_s_spread}
-          unreliable={entry.unreliable}
+          // `unreliable` is computed on gen_tok_per_s alone (aggregation.py),
+          // so the prompt column shows its spread and never the label.
+          unreliable={false}
           metric="prompt_tok_per_s"
         />
       </td>

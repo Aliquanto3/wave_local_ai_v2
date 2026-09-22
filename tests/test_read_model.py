@@ -765,6 +765,59 @@ def test_a_comparisons_columns_each_name_their_own_suite_version(
     assert _cell(suite, "item-01", newer_index)["status"] == "compared"
 
 
+def _two_runs_differing_in_one_row_field() -> list[dict[str, Any]]:
+    return [
+        make_row(
+            "quality",
+            roster_entry_id=ROSTER_ENTRY_ID,
+            run_id=run_id,
+            captured_at=captured_at,
+            thinking_policy=policy,
+            item_id="item-01",
+        )
+        for run_id, captured_at, policy in (
+            ("run-a", "2026-09-01T00:00:00+00:00", "off"),
+            ("run-b", "2026-09-02T00:00:00+00:00", "on"),
+        )
+    ]
+
+
+def test_todays_comparison_dimensions_leave_the_columns_unchanged(
+    bundle: dict[str, Path], tmp_path: Path
+) -> None:
+    assert read_model.COMPARISON_DIMENSIONS == ("architecture",)
+
+    view = build_comparison(
+        bundle, _two_runs_differing_in_one_row_field(), two_entry_roster_path(tmp_path)
+    )
+
+    # Architecture resolves from the roster entry, already in the key: the
+    # later run supersedes the earlier one, one column.
+    [column] = view["suites"][0]["columns"]
+    assert column["run_id"] == "run-b"
+
+
+def test_a_row_resolved_comparison_dimension_splits_columns_by_its_value(
+    bundle: dict[str, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        read_model,
+        "COMPARISON_DIMENSIONS",
+        (*read_model.COMPARISON_DIMENSIONS, "thinking_policy"),
+    )
+
+    view = build_comparison(
+        bundle, _two_runs_differing_in_one_row_field(), two_entry_roster_path(tmp_path)
+    )
+
+    columns = view["suites"][0]["columns"]
+    assert sorted(column["run_id"] for column in columns) == ["run-a", "run-b"]
+    assert sorted(column["dimensions"]["thinking_policy"] for column in columns) == [
+        "off",
+        "on",
+    ]
+
+
 def test_a_comparison_column_with_an_unresolved_roster_entry_id_still_appears(
     bundle: dict[str, Path], tmp_path: Path
 ) -> None:

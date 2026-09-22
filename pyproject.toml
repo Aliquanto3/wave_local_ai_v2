@@ -23,7 +23,7 @@ module = "pynvml"
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-addopts = "--cov=src/wave_local_ai_v2 --cov-report=term-missing --cov-report=xml --cov-fail-under=80"
+addopts = "--cov=src/wave_local_ai_v2 --cov-branch --cov-report=term-missing --cov-report=xml --cov-fail-under=80"
 
 [tool.coverage.run]
 source = ["src/wave_local_ai_v2"]

@@ -337,7 +337,10 @@ EXACT_MATCH_LANGUAGE_CELL_FIELDS: frozenset[str] = frozenset(
 
 
 # The ordered, extensible list of dimensions a comparison column's identity
-# is built from. Adding a dimension means appending a name here and, once it
+# is built from: `_comparison_columns` keys each group on
+# `COMPARISON_COLUMN_KEY` plus every value resolved here, so a dimension that
+# differs between two runs opens two columns. Adding a dimension means
+# appending a name here and, once it
 # resolves from the row rather than the roster entry, teaching
 # `_resolve_comparison_dimension` how to read it -- never reshaping the
 # column-assembly loop in `_comparison_columns`. Reserved future entries:
@@ -354,6 +357,8 @@ COMPARISON_DIMENSIONS: tuple[str, ...] = ("architecture",)
 # apart: the same model run on two hosts is two columns, never the later
 # host's run silently hiding the earlier one's. The fiche fingerprints the
 # whole setup, so a rebuilt llama.cpp on one host also opens a new column.
+# These fields are the key's fixed half; `COMPARISON_DIMENSIONS` is the
+# extensible half, appended after them.
 COMPARISON_COLUMN_KEY: tuple[str, ...] = (
     POINTER_ROSTER_ENTRY_ID,
     "provider",
@@ -527,9 +532,15 @@ def _dedup_key(value: Any) -> Any:
     Two `Absent`s with the same reason and detail dedupe together; two with
     different detail (e.g. a different unresolved id) stay distinct entries,
     matching "unresolved ids kept as their own absence rather than dropped".
+    A `dict` or `list` (a roster entry's `architecture`, say) becomes a tuple
+    of its deduped contents, so it can key a group too.
     """
     if isinstance(value, Absent):
         return ("absent", value.reason, tuple(sorted(value.detail.items())))
+    if isinstance(value, dict):
+        return ("dict", tuple(sorted((k, _dedup_key(v)) for k, v in value.items())))
+    if isinstance(value, list):
+        return ("list", tuple(_dedup_key(item) for item in value))
     return value
 
 
@@ -870,7 +881,10 @@ def _captured_at_sort_key(row: dict[str, Any]) -> tuple[str, str]:
 def _comparison_columns(
     store: StoreRead, roster_file: roster.RosterFile | None
 ) -> list[tuple[Any, list[_ComparisonColumn]]]:
-    """The quality store's rows, grouped by `suite_id` then `COMPARISON_COLUMN_KEY`.
+    """The quality store's rows, grouped by `suite_id` then column identity.
+
+    Column identity is `COMPARISON_COLUMN_KEY` plus each `COMPARISON_DIMENSIONS`
+    value, resolved per row.
 
     One column per group, backed only by the rows of the single run carrying
     the greatest `captured_at` in it -- a later run of the same model on the
@@ -882,8 +896,12 @@ def _comparison_columns(
     for row in store.rows:
         suite_id = resolve_field(row, "suite_id")
         suite_key = _dedup_key(suite_id)
+        row_roster_entry = resolve_roster_entry(row, roster_file)
         entry_key = tuple(
             _dedup_key(resolve_field(row, field)) for field in COMPARISON_COLUMN_KEY
+        ) + tuple(
+            _dedup_key(_resolve_comparison_dimension(row, dimension, row_roster_entry))
+            for dimension in COMPARISON_DIMENSIONS
         )
         run_id = row.get("run_id")
         run_key = "" if run_id is None else str(run_id)

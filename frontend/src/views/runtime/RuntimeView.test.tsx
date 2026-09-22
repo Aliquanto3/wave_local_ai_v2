@@ -64,6 +64,18 @@ describe('RuntimeView', () => {
     ).toBeInTheDocument()
   })
 
+  it('shows the unreliable label on gen_tok_per_s only, the metric it was computed on', async () => {
+    vi.spyOn(client, 'apiFetch').mockResolvedValueOnce(runtimeViewFixture)
+
+    renderWithGate()
+
+    const labels = await screen.findAllByText(/^unreliable \(/)
+    expect(labels).toHaveLength(1)
+    expect(labels[0].textContent).toMatch(/gen_tok_per_s/)
+    expect(screen.queryByText(/unreliable \(prompt_tok_per_s/)).toBeNull()
+    expect(screen.getAllByText(/spread 0\.0109387/).length).toBeGreaterThan(0)
+  })
+
   it('shows each throughput spread even on a row that is not flagged unreliable', async () => {
     vi.spyOn(client, 'apiFetch').mockResolvedValueOnce(runtimeViewFixture)
 

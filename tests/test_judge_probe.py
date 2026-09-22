@@ -13,7 +13,9 @@ from wave_local_ai_v2 import (
     judge_probe,
     judge_protocol,
     mistral_client,
+    quality_cli,
     row_contract,
+    scoring,
 )
 from wave_local_ai_v2.judge_probe import JUDGE_PROBE_ITEMS
 from wave_local_ai_v2.prompt_provenance import template_hash
@@ -127,7 +129,7 @@ def _fake_render(prompt: str) -> str:
     return "<|im_start|>user\n" + prompt + " <|im_end|>"
 
 
-def _local_post_router():
+def _local_post_router(finish_reason: str = "stop"):
     """Route a stubbed local POST by endpoint: render, then answer."""
 
     def route(url, *args, **kwargs):
@@ -139,7 +141,7 @@ def _local_post_router():
             payload = {
                 "choices": [
                     {
-                        "finish_reason": "stop",
+                        "finish_reason": finish_reason,
                         "message": {
                             "content": ("Here is a clearer, more considerate version.")
                         },
@@ -854,3 +856,44 @@ def test_a_row_written_by_the_probe_round_trips_through_append_row(
     append_row(elsewhere, "quality", row)
 
     assert read_rows(elsewhere) == [row]
+
+
+# --------------------------------------------------------------------------
+# Parity with the quality harness
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["LOCAL_SAMPLING", "GOOGLE_SAMPLING", "REQUEST_TIMEOUT_S", "_RETRY_BASE_DELAY_S"],
+)
+def test_the_probe_generates_under_the_quality_harness_own_settings(name) -> None:
+    # The two CLIs deliberately do not import each other, so this test is
+    # what holds the "same value, same role" comments to account.
+    assert getattr(judge_probe, name) == getattr(quality_cli, name), (
+        f"judge_probe.{name} drifted from quality_cli.{name}: change both or neither"
+    )
+
+
+def test_the_probe_seed_is_the_quality_seed() -> None:
+    assert judge_probe.PROBE_SEED == quality_cli.QUALITY_SEED, (
+        "judge_probe.PROBE_SEED drifted from quality_cli.QUALITY_SEED"
+    )
+
+
+def test_a_local_generation_cut_off_at_the_cap_is_recorded_as_truncated(
+    stubbed_probe,
+) -> None:
+    probe_path, _, started, _ = stubbed_probe
+    started["post"].side_effect = _local_post_router(finish_reason="length")
+
+    judge_probe._run()
+
+    local_rows = [
+        row
+        for row in read_rows(probe_path)
+        if row["provider"] == judge_probe.PROVIDER_LOCAL
+    ]
+    assert len(local_rows) == len(JUDGE_PROBE_ITEMS)
+    for row in local_rows:
+        assert row["failure_reason"] == scoring.FAILURE_REASON_TRUNCATED_MAX_TOKENS
