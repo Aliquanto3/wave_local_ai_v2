@@ -1,10 +1,10 @@
 # Review: Dense and MoE stand side by side on the same items
 
-- **Verdict**: blocked
-- **Diff**: `main...feat/dense-moe-view` (commits `02c9471`, `3f00c63`) plus uncommitted `CHANGELOG.md`, `aidd_docs/results/README.md`, `phase-3.md`, `evidence/`
+- **Verdict**: passed (re-review 2026-09-22; was blocked on 2026-09-21)
+- **Diff**: `main...feat/dense-moe-view` (commits `02c9471`, `3f00c63`, merged as #42), then `main...feat/dense-moe-phase-3` (`d2915c8` + the phase-3 evidence commit, PR #43)
 - **Axes run**: code, functional, relevancy
 - **Date**: 2026_09_21
-- **Findings**: 1 critical, 5 warning, 2 minor
+- **Findings**: 1 critical, 5 warning, 2 minor, all resolved (see Re-review)
 
 ## Phases
 
@@ -26,9 +26,9 @@
 
 ### Phase 3 — Evidence over the live store, `aidd_docs/results/README.md`, CHANGELOG
 
-- [ ] Two screenshots exist, captioned with run_ids and figures matching the README tables — screenshots exist, figures 0.45/0.60/0.70/1.00 and 0.5121/0.7107/0.7252/0.8002 match, but no caption names the run_ids, the `gemini-3.5-flash-lite` column the task requires is absent from both, no version caveat shows, and task 1.4's "every item shared" note is missing
+- [x] Two screenshots exist, captioned with run_ids and figures matching the README tables — recaptured 2026-09-22 with gemini (and mistral) columns, fiche + run_id per header, version caveat on both suites; `evidence/captions.md` names every run_id and figure and states no not-compared cell exists on live data. Original 2026-09-21 finding: screenshots existed, figures 0.45/0.60/0.70/1.00 and 0.5121/0.7107/0.7252/0.8002 match, but no caption names the run_ids, the `gemini-3.5-flash-lite` column the task requires is absent from both, no version caveat shows, and task 1.4's "every item shared" note is missing
 - [x] README note names the live route and does not restate the tables — `aidd_docs/results/README.md:543-547`
-- [ ] CHANGELOG `Unreleased/Added` names the route and the screen, not a restatement of the acceptance — it names both, but restates the acceptance ("never a blank or a zero", dimensions, boundary) and claims `boundary.test.ts` enforces "no import from `views/quality/`", which it does not
+- [x] CHANGELOG `Unreleased/Added` names the route and the screen, not a restatement of the acceptance — cut to route + screen + entry point in three lines, boundary claim dropped (`CHANGELOG.md:12-14`). Original finding: it named both, but restates the acceptance ("never a blank or a zero", dimensions, boundary) and claims `boundary.test.ts` enforces "no import from `views/quality/`", which it does not
 
 ## Findings
 
@@ -47,7 +47,26 @@
 
 | Metric        | Value |
 | ------------- | ----- |
-| Verified      | 85% (11/13) |
+| Verified      | 100% (13/13) after re-review |
 | Files checked | `src/wave_local_ai_v2/read_model.py`, `src/wave_local_ai_v2/service.py`, `tests/test_read_model.py`, `frontend/src/App.tsx`, `frontend/src/views/boundary.test.ts`, `frontend/src/views/comparison/ComparisonView.tsx`, `frontend/src/views/comparison/ComparisonView.test.tsx`, `frontend/src/views/comparison/types.ts`, `frontend/src/views/comparison/fixtures/comparisonView.fixture.ts`, `CHANGELOG.md`, `aidd_docs/results/README.md`, `evidence/*.png`, `aidd_docs/results/quality.jsonl` (read-only probe) |
-| Unchecked     | Phase 3 evidence captions/gemini column — fix; Phase 3 CHANGELOG restatement — fix |
+| Unchecked     | none after re-review |
 | Unplanned     | `service.py` module docstring "four" => "five" routes (consistent); 42 working-tree files under `frontend/src/` report modified with no content diff (line-ending stat noise, nothing to commit) |
+
+## Re-review (2026-09-22)
+
+Each finding above, against `feat/dense-moe-phase-3`:
+
+| Sev | Finding | Resolution | Proof |
+| --- | ------- | ---------- | ----- |
+| 🔴 | Column key merges different models | Key is `roster_entry_id` + `provider` + `model_id` + `fiche_hash` (`read_model.COMPARISON_COLUMN_KEY`); `fiche_hash` also keeps machines apart (audit 2026-09-22, W1). Header keys are index-based, so no `<th key>` collision | `test_a_cited_comparator_sharing_a_roster_entry_id_keeps_its_own_column`, `test_the_same_model_on_two_machines_keeps_one_column_per_machine`; live screen shows the gemini and mistral columns |
+| 🟡 | Cells ship cost/pricing/token totals | Cells project `COMPARISON_CELL_FIELDS` only | `test_a_comparison_cell_renders_only_its_declared_fields` |
+| 🟡 | Field-partition test over a hand-listed set | Test asserts over `COMPARISON_CELL_FIELDS`, the constant the cell builder uses, disjoint from runtime/energy fields except `verdict` | `test_a_comparison_cell_declares_no_runtime_energy_or_cost_field` |
+| 🟡 | No CSS, unreadable header, overflow | `comparison-*` styles in `index.css`, architecture as prose, published precision, `widthGuard.test.tsx` covers `ComparisonView` | Both recaptured screenshots |
+| 🟡 | Evidence criterion unmet | Recaptured over the live store, captions file added | `evidence/captions.md` |
+| 🟡 | CHANGELOG restates acceptance | Cut to three lines, no boundary claim | `CHANGELOG.md:12-14` |
+| 🟢 | Boundary check misses `energy` | Check matches `runtime` or `energy` | Fails on a temporary `../energy/types` import, passes clean; tech-debt row closed |
+| 🟢 | `types.ts` restates `QualityEntry` | Shrank with the cell projection (90 lines) | `frontend/src/views/comparison/types.ts` |
+
+New, not blocking: per-language cells render `indicative ()` with empty parentheses (`ComparisonView.tsx:143`), logged to tech-debt.
+
+Checks: `uv run pytest` 963 passed (96.64%); `npx vitest run` 96 passed; `tsc -b`, ruff, mypy clean.

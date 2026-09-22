@@ -1,6 +1,6 @@
 ---
 objective: "The quality store's roster models are readable as columns over the same suite items -- one column per model naming its roster_entry_id, architecture, quant and thinking_policy, each column carrying its own suite_version, items outside a column's suite_version shown as not compared rather than blank, and the comparison reachable and quality-only, over a new store-wide route and a new frontend screen."
-status: in-progress
+status: done
 ---
 
 # Plan: Dense and MoE stand side by side on the same items
