@@ -1,6 +1,6 @@
 ---
 objective: "A runtime row's energy, emissions and cost-per-token figures are measured over the counted repetitions' active windows only, never the cooldowns between them, and the row names the method and the two window sizes it measured."
-status: in-progress
+status: implemented
 ---
 
 <!-- Fill or omit these sections; never add, rename, or reorder one. -->
