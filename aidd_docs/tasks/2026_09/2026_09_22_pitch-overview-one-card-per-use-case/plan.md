@@ -1,6 +1,6 @@
 ---
 objective: "Opening the service's root shows one card per use case present in the quality store, each stating its leader set (or the honest absence of one), its cloud comparators, and its runtime/energy headlines through the same label components the detail views use — read from published rows only, over two store-separated routes, with the runs list one click away."
-status: in-progress
+status: implemented
 ---
 
 # Plan: The pitch opens on one card per use case, read from published rows

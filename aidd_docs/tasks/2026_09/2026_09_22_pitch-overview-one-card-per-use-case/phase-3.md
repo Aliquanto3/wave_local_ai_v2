@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Instruction: Evidence over the reference bundle and a leader-set fixture bundle, README note
