@@ -12,43 +12,12 @@
 // "edit a copy of a real row rather than fabricate one from nothing" the
 // quality fixture already does.
 
-import type { Absent, RosterEntry } from '../../../api/types'
 import type {
   ComparedCellFields,
   ComparisonCell,
   ComparisonColumn,
-  ComparisonJudgeBlock,
-  ComparisonSuiteDefinition,
   ComparisonView,
 } from '../types'
-
-function absent(reason: string, detail: Record<string, unknown> = {}): Absent {
-  return { absent: true, reason, detail }
-}
-
-const PREDATES_SCHEMA = () => absent('predates_schema', { row_schema_version: '11' })
-const NULL_ABSENT = absent('null_in_row')
-
-const PREDATES_SCHEMA_JUDGE: ComparisonJudgeBlock = {
-  judge_prompt_id: PREDATES_SCHEMA(),
-  judge_prompt_template_hash: PREDATES_SCHEMA(),
-  judge_prompt_language: PREDATES_SCHEMA(),
-  rubric_id: PREDATES_SCHEMA(),
-  rubric_version: PREDATES_SCHEMA(),
-  rubric_kind: PREDATES_SCHEMA(),
-  judges: PREDATES_SCHEMA(),
-  single_judge: PREDATES_SCHEMA(),
-  single_judge_reason: PREDATES_SCHEMA(),
-  agreement: PREDATES_SCHEMA(),
-  agreement_statistic: PREDATES_SCHEMA(),
-  contested: PREDATES_SCHEMA(),
-  contested_reason: PREDATES_SCHEMA(),
-  contested_threshold: PREDATES_SCHEMA(),
-  judged_headline_score: PREDATES_SCHEMA(),
-  judged_headline_excluded_n: PREDATES_SCHEMA(),
-  judge_egress: PREDATES_SCHEMA(),
-  judge_cost: PREDATES_SCHEMA(),
-}
 
 const DENSE_0_6B_ROSTER_ENTRY = {
   entry_id: 'qwen3-0.6b-q8',
@@ -102,34 +71,12 @@ const MOE_ROSTER_ENTRY = {
   roster_version: 2,
 }
 
-const SUITE_DEFINITION_V3 = {
-  snapshot_filename: 'classification-support-routing@3.json',
-  context_length: 32768,
-  max_output_tokens: 32,
-  prompt_set_hash: 'd41a2134274cf1c8036022d2b68396d04bfd14ff263d2f8699dbefd7a2e4596a', // pragma: allowlist secret
-  stop_sequences: [],
-  suite_id: 'classification-support-routing',
-  suite_version: '3',
-  thinking_policy: 'disabled',
-}
-
-// Hand-edited: the real snapshot is "@3", turned back to "@2" per this
-// fixture's own documented edit above.
-const SUITE_DEFINITION_V2 = {
-  ...SUITE_DEFINITION_V3,
-  snapshot_filename: 'classification-support-routing@2.json',
-  suite_version: '2',
-}
-
-const FICHE = {
-  cpu: 'AMD64 Family 25 Model 80 Stepping 0, AuthenticAMD',
-  gpu_name: 'NVIDIA GeForce RTX 3060 Laptop GPU',
-  os: 'Windows 11',
-}
-
 const COLUMNS: ComparisonColumn[] = [
   {
     roster_entry_id: 'qwen3-0.6b-q8',
+    provider: 'local',
+    model_id: 'Qwen3-0.6B',
+    fiche_hash: 'f804bee0d215c89c05289907fd2573fa722d290896775749f3c6d16329efca18', // pragma: allowlist secret
     run_id: 'e716ce86ddc7448b8583e0d24387649a',
     suite_version: '3',
     prompt_set_hash: 'd41a2134274cf1c8036022d2b68396d04bfd14ff263d2f8699dbefd7a2e4596a', // pragma: allowlist secret
@@ -139,6 +86,9 @@ const COLUMNS: ComparisonColumn[] = [
   },
   {
     roster_entry_id: 'qwen3-1.7b-q8',
+    provider: 'local',
+    model_id: 'Qwen3-1.7B',
+    fiche_hash: '067530efd6944e8bb09ddc91e61ce45364fcd6261bd22edeed9d33a82276a2f4', // pragma: allowlist secret
     run_id: '91ee67b104db49f89ef73c75dd0f9bd9',
     suite_version: '3',
     prompt_set_hash: 'd41a2134274cf1c8036022d2b68396d04bfd14ff263d2f8699dbefd7a2e4596a', // pragma: allowlist secret
@@ -148,6 +98,9 @@ const COLUMNS: ComparisonColumn[] = [
   },
   {
     roster_entry_id: 'qwen3-4b-q4km',
+    provider: 'local',
+    model_id: 'Qwen3-4B',
+    fiche_hash: 'dfd5a5eaa441cff2f7aee55b6d2206561eb9d19cb955bddc566d3e9d7fcb2ab2', // pragma: allowlist secret
     run_id: 'ebce4da610a04167827ef911d4a60e82',
     suite_version: '3',
     prompt_set_hash: 'd41a2134274cf1c8036022d2b68396d04bfd14ff263d2f8699dbefd7a2e4596a', // pragma: allowlist secret
@@ -159,6 +112,9 @@ const COLUMNS: ComparisonColumn[] = [
     // Hand-edited suite_version: "2", not the live store's current "3" --
     // see this file's own header.
     roster_entry_id: 'qwen3.6-35b-a3b-ud-iq4xs',
+    provider: 'local',
+    model_id: 'Qwen3.6-35B-A3B',
+    fiche_hash: 'b9d1af56db2b6a26bfb265842bfd757dc78ed2d95e4ad3fce0088b8396d9003a', // pragma: allowlist secret
     run_id: 'd4d2e0d5d9a94aa98d7c2eb1569fd60c',
     suite_version: '2',
     prompt_set_hash: 'd41a2134274cf1c8036022d2b68396d04bfd14ff263d2f8699dbefd7a2e4596a', // pragma: allowlist secret
@@ -169,79 +125,15 @@ const COLUMNS: ComparisonColumn[] = [
 ]
 
 function comparedCell(
-  overrides: Partial<ComparedCellFields> & {
-    run_id: string
-    roster_entry: RosterEntry
-    suite_definition: ComparisonSuiteDefinition
-    item_id: string
-    correct: boolean
-    suite_accuracy: number
-    language_breakdown: Record<
-      string,
-      { accuracy: number; indicative: boolean; n: number }
-    >
-  },
+  fields: Pick<
+    ComparedCellFields,
+    'run_id' | 'item_id' | 'correct' | 'suite_accuracy' | 'language_breakdown'
+  >,
 ): ComparisonCell & { status: 'compared' } {
   return {
     status: 'compared',
-    captured_at: '2026-09-06T15:03:45.512209+00:00',
-    commit_sha: 'f34e5b844099b16a6c856173a7a6a08d1d902693', // pragma: allowlist secret
-    release_version: '0.1.0+untagged',
-    schema_version: '11',
-    tree_dirty: true,
+    score_shape: 'exact_match',
     contamination_risk: false,
-    context_length: 32768,
-    cost_currency: 'EUR',
-    cost_per_million_tokens: 0.178,
-    cost_total: 0.000235,
-    endpoint: '/v1/chat/completions',
-    expected_label: 'account',
-    predicted_label: 'account',
-    failure_counts: {
-      empty: 0,
-      unparseable: 0,
-      truncated_max_tokens: 0,
-      truncated_context: 0,
-    },
-    failure_reason: NULL_ABSENT,
-    fiche_hash: 'b9d1af56db2b6a26bfb265842bfd757dc78ed2d95e4ad3fce0088b8396d9003a', // pragma: allowlist secret
-    indicative: false,
-    indicative_reasons: [],
-    kwh_price_currency: 'EUR',
-    kwh_price_eur: 0.194,
-    kwh_price_recorded_at: '2026-02-01',
-    language: 'en',
-    list_price_currency: NULL_ABSENT,
-    list_price_input_per_million: NULL_ABSENT,
-    list_price_output_per_million: NULL_ABSENT,
-    list_price_per_million_tokens: NULL_ABSENT,
-    list_price_retrieved_at: NULL_ABSENT,
-    max_output_tokens: 32,
-    model_id: 'Qwen3.6-35B-A3B',
-    normalization_unit: 'cost_per_million_total_tokens',
-    prompt_capture: 'reconstructed',
-    prompt_set_hash: 'd41a2134274cf1c8036022d2b68396d04bfd14ff263d2f8699dbefd7a2e4596a', // pragma: allowlist secret
-    prompt_template_hash:
-      '55d4931433fe502b794226ee7f4d206a6bdd436ac9f80eb7d8ebb4c639f9ea0c', // pragma: allowlist secret
-    prompt_template_id: 'llamacpp-model-chat-template',
-    provenance: 'hand_written',
-    provider: 'local',
-    resumed: false,
-    retries: 0,
-    roster_version: 2,
-    sampling: {
-      seed: 20260821,
-      temperature: 0,
-      top_k: 0,
-      top_p: 1.0,
-      presence_penalty: 0,
-    },
-    stop_sequences: [],
-    suite_id: 'classification-support-routing',
-    task_suite: 'classification',
-    thinking_policy: 'disabled',
-    tokens_in_total: 1279,
-    tokens_out_total: 40,
     verdict: {
       verdict: 'not_comparable',
       reference_run_id: null,
@@ -249,13 +141,7 @@ function comparedCell(
       reason:
         "no reference row shares this batch's task_suite/model_id/suite_version/seed",
     },
-    fiche: FICHE,
-    judge: PREDATES_SCHEMA_JUDGE,
-    score_shape: 'exact_match',
-    ...overrides,
-    roster_entry_id: overrides.roster_entry.entry_id,
-    run_id: overrides.run_id,
-    suite_version: overrides.suite_definition.suite_version,
+    ...fields,
   }
 }
 
@@ -265,10 +151,7 @@ function comparedCell(
 const ACCOUNT_01_CELLS: ComparisonCell[] = [
   comparedCell({
     run_id: 'e716ce86ddc7448b8583e0d24387649a',
-    roster_entry: DENSE_0_6B_ROSTER_ENTRY,
-    suite_definition: SUITE_DEFINITION_V3,
     item_id: 'account-01',
-    predicted_label: 'technical',
     correct: false,
     suite_accuracy: 0.45,
     language_breakdown: {
@@ -279,10 +162,7 @@ const ACCOUNT_01_CELLS: ComparisonCell[] = [
   }),
   comparedCell({
     run_id: '91ee67b104db49f89ef73c75dd0f9bd9',
-    roster_entry: DENSE_1_7B_ROSTER_ENTRY,
-    suite_definition: SUITE_DEFINITION_V3,
     item_id: 'account-01',
-    predicted_label: 'other',
     correct: false,
     suite_accuracy: 0.6,
     language_breakdown: {
@@ -293,10 +173,7 @@ const ACCOUNT_01_CELLS: ComparisonCell[] = [
   }),
   comparedCell({
     run_id: 'ebce4da610a04167827ef911d4a60e82',
-    roster_entry: DENSE_4B_ROSTER_ENTRY,
-    suite_definition: SUITE_DEFINITION_V3,
     item_id: 'account-01',
-    predicted_label: 'other',
     correct: false,
     suite_accuracy: 0.7,
     language_breakdown: {
@@ -307,10 +184,7 @@ const ACCOUNT_01_CELLS: ComparisonCell[] = [
   }),
   comparedCell({
     run_id: 'd4d2e0d5d9a94aa98d7c2eb1569fd60c',
-    roster_entry: MOE_ROSTER_ENTRY,
-    suite_definition: SUITE_DEFINITION_V2,
     item_id: 'account-01',
-    predicted_label: 'account',
     correct: true,
     suite_accuracy: 1.0,
     language_breakdown: {
@@ -327,10 +201,7 @@ const ACCOUNT_01_CELLS: ComparisonCell[] = [
 const ACCOUNT_02_CELLS: ComparisonCell[] = [
   comparedCell({
     run_id: 'e716ce86ddc7448b8583e0d24387649a',
-    roster_entry: DENSE_0_6B_ROSTER_ENTRY,
-    suite_definition: SUITE_DEFINITION_V3,
     item_id: 'account-02',
-    predicted_label: 'account',
     correct: true,
     suite_accuracy: 0.45,
     language_breakdown: {
@@ -341,10 +212,7 @@ const ACCOUNT_02_CELLS: ComparisonCell[] = [
   }),
   comparedCell({
     run_id: '91ee67b104db49f89ef73c75dd0f9bd9',
-    roster_entry: DENSE_1_7B_ROSTER_ENTRY,
-    suite_definition: SUITE_DEFINITION_V3,
     item_id: 'account-02',
-    predicted_label: 'account',
     correct: true,
     suite_accuracy: 0.6,
     language_breakdown: {
@@ -355,10 +223,7 @@ const ACCOUNT_02_CELLS: ComparisonCell[] = [
   }),
   comparedCell({
     run_id: 'ebce4da610a04167827ef911d4a60e82',
-    roster_entry: DENSE_4B_ROSTER_ENTRY,
-    suite_definition: SUITE_DEFINITION_V3,
     item_id: 'account-02',
-    predicted_label: 'account',
     correct: true,
     suite_accuracy: 0.7,
     language_breakdown: {

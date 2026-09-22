@@ -540,6 +540,12 @@ with no cloud quota spent (the `google` comparator rows were cited, not re-run).
 downloads are 4.63 GiB total. `wave-local-ai-v2-validate` exits `0` over both live stores,
 `checked 432 row(s)`, every `fiche_hash` resolving.
 
+> **This table now renders live.** `GET /api/comparisons` (the store-wide,
+> quality-only comparison route) and the dashboard's "Compare dense and MoE"
+> screen build the tables below from the same live store, one column per
+> roster model, so a reader can check these numbers against the running
+> service instead of trusting the transcript.
+
 ## The same eight batches, chat-templated (2026-09-06, later the same day)
 
 The four models above, re-run on both suites after the local subject path moved
