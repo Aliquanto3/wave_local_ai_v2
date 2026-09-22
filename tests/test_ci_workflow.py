@@ -8,12 +8,14 @@ structure they check.
 from __future__ import annotations
 
 import re
+import tomllib
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 WORKFLOW_PATH = Path(__file__).parent.parent / ".github" / "workflows" / "ci.yml"
+PYPROJECT_PATH = Path(__file__).parent.parent / "pyproject.toml"
 # actions/checkout@v4 stays readable as a comment naming the version, but the
 # pinned ref itself must be the 40-hex commit sha a tag could otherwise move.
 PINNED_USES_RE = re.compile(r"^[^/]+/[^@]+@[0-9a-f]{40}$")
@@ -79,6 +81,25 @@ def test_the_frontend_tests_step_asks_for_coverage() -> None:
 
     runs = " ".join(step["run"] for step in job["steps"] if step.get("run"))
     assert "--coverage" in runs
+
+
+def test_the_pytest_gate_measures_branch_coverage() -> None:
+    # CI runs bare `uv run pytest`, so the gate's coverage flags live in
+    # pyproject's addopts: metric code is mostly early-return branches, which
+    # line coverage alone counts as covered once the guard line runs.
+    workflow = _load_workflow()
+    runs = [
+        step["run"]
+        for job in workflow["jobs"].values()
+        for step in job.get("steps", [])
+        if "pytest" in step.get("run", "")
+    ]
+    assert runs == ["uv run pytest"], runs
+
+    pyproject = tomllib.loads(PYPROJECT_PATH.read_text(encoding="utf-8"))
+    addopts = pyproject["tool"]["pytest"]["ini_options"]["addopts"].split()
+    assert "--cov-branch" in addopts
+    assert any(opt.startswith("--cov-fail-under=") for opt in addopts)
 
 
 def test_frontend_is_wired_into_required() -> None:

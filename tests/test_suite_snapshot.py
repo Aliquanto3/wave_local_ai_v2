@@ -111,6 +111,21 @@ def test_every_shipped_suite_resolves_to_a_committed_definition_file() -> None:
         assert path.exists(), f"{path} is missing: re-export the snapshots"
 
 
+def test_every_committed_definition_equals_its_builders_output() -> None:
+    """Existence is not integrity: a suite's items cannot change under an
+    unchanged version, so the committed file must be what the builder emits."""
+    for builder in SNAPSHOT_BUILDERS:
+        snapshot = builder()
+        path = SUITE_DEFINITIONS_DIR / snapshot_filename(
+            snapshot["suite_id"], snapshot["suite_version"]
+        )
+        committed = json.loads(path.read_text(encoding="utf-8"))
+        assert committed == snapshot, (
+            f"{path} differs from its builder's output: bump the suite version "
+            "and re-export the snapshots, never edit either side alone"
+        )
+
+
 def test_a_version_bump_never_overwrites_its_predecessor() -> None:
     """The property the rename bought.
 

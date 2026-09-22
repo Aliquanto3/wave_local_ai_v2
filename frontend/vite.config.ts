@@ -28,6 +28,9 @@ export default defineConfig({
       ],
       thresholds: {
         lines: 80,
+        // The measured value rounded down (66.77% on 2026-09-22): a floor
+        // that only rises, never a target.
+        branches: 66,
       },
     },
   },
