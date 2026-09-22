@@ -58,6 +58,42 @@ already published here, not only to full-row regenerations. A reader can tell wh
 rows are affected by `schema_version` alone: any row below `"12"` measured the whole
 window.
 
+## Before/after: the active-window fix on a fast dense model and the MoE flagship (2026-09-22)
+
+Live re-run of the two models at either end of the audit's idle-share range, same default
+protocol (1 warm-up, 5 counted repetitions, 10 s cooldown, pinned seed, 128-token cap):
+`Qwen3-0.6B` (idle share 0.89 -- the model the C3 bug hit hardest) and `Qwen3.6-35B-A3B`
+(idle share 0.43 -- the comparison anchor, least affected). "Before" is the existing
+`### Runtime` table's row for each model (`run_id` `68a5e1df...`, `schema_version` `"10"`,
+`commit_sha` `feb0d892...`, live store; and `run_id` `f7faeef7...`, `schema_version` `"7"`,
+`commit_sha` `9bc9da88...`, committed `runtime-reference.jsonl`). "After" is a fresh run on
+this commit (`commit_sha` `5d9a0044...`, `schema_version` `"12"`), fiches
+`f804bee0d215c89c05289907fd2573fa722d290896775749f3c6d16329efca18` (0.6B) and
+`b9d1af56db2b6a26bfb265842bfd757dc78ed2d95e4ad3fce0088b8396d9003a` (MoE).
+
+| Model | `run_id` (after) | Energy before (kWh) | Energy after (kWh) | Cost/M tokens before (EUR) | Cost/M tokens after (EUR) | `active_window_s` | `idle_window_s` | `energy_window_method` |
+| ----- | ----------------- | -------------------- | -------------------- | ---------------------------- | ---------------------------- | ------------------ | ---------------- | ----------------------- |
+| `Qwen3-0.6B` | `45d2bf7d...` | 0.00078053 | 0.00015809 | 0.018775 | 0.003803 | 5.281 | 40.0 | `per_repetition_tasks` |
+| `Qwen3.6-35B-A3B` | `cc1efa34...` | 0.00264222 | 0.00182048 | 0.063361 | 0.043656 | 52.719 | 40.0 | `per_repetition_tasks` |
+
+The 0.6B-to-MoE cost-per-token ratio (0.6B's `cost_per_million_tokens` divided by the MoE's)
+went from **0.2963** before (0.018775 / 0.063361) to **0.0871** after (0.003803 / 0.043656)
+-- the same direction the energy ratio moves (0.2954 before, 0.0868 after). The gap between
+the two models **widens**, not narrows, once the whole-window bug is fixed: the audit's
+0.89 idle share for the 0.6B means the fixed 40 s cooldown -- the same absolute amount of
+idle draw the MoE run also carried -- was a large constant added on top of the 0.6B's own
+tiny 5.28 s active window, pulling its reported figure up toward the MoE's and compressing
+the true ratio toward 1. Removing that constant does not narrow the models' apparent
+difference; it reveals how much larger it actually is. A reader should expect this same
+direction (ratios moving further from 1, not closer) on any other fast-versus-slow
+comparison this bundle publishes below, since every one of them was measured under the
+superseded whole-window method.
+
+Caveat, same as every other before/after section in this file: `commit_sha` and
+`schema_version` differ between the before and after rows (feature-branch commits and
+schema "10"/"7" versus "12"), so the comparison is a same-hardware, same-protocol
+before/after on this method change specifically, not a byte-identical row diff.
+
 ## What the dashboard withholds, and why
 
 The three pitch screens (`frontend/src/views/quality/`, `views/runtime/`,
