@@ -1,6 +1,6 @@
 ---
 type: story
-status: proposed
+status: ready
 source: aidd_docs/backlog/epics/the-engine-and-the-prompt-variant-are-measured-not-assumed.md
 parent: aidd_docs/backlog/epics/the-engine-and-the-prompt-variant-are-measured-not-assumed.md
 depends_on:
@@ -18,16 +18,15 @@ Maps to: PRD Open Question "Whether prompt compression helps or hurts a small mo
 
 Needs: none for the code and tests (constructed responses); a real local model run only for the evidence.
 
-Blocked: Q24 (how TTFT, tokens and energy are measured per variant and per task family). The acceptance below is written to Q24's recommended default.
-
 Current state: quality rows are per item but carry `tokens_in_total`, `tokens_out_total` and every energy field as batch figures, and no TTFT; the runtime protocol measures TTFT and energy on one fixed prompt (`FIXED_PROMPT` in `__init__.py`), not on suite items.
 
 ## Acceptance
 
-- Every local quality row carries the item's own input and output token counts and the engine-reported first-token time for that generation, with a source label on the `ttft_source` discipline and a label stating it is a single per-item generation, not a Methodology 6 aggregate. A value the engine did not report is null with its reason, never zero.
+- The measurement follows Q24 in `aidd_docs/tasks/2026_10/2026_10_01_autonomous-slicing/owner-questions.md`: per-item engine-reported TTFT and per-item tokens in and out, so TTFT and tokens get paired tests over items; energy stays per batch.
+- Every local quality row carries the item's own input and output token counts and the engine-reported first-token time for that generation, with a source label on the `ttft_source` discipline and a label stating it is a single per-item generation, not a Methodology 6 aggregate (no warm-up exclusion, no repetitions). A value the engine did not report is null with its reason, never zero.
 - The batch's first generation is marked as such, so a reader can exclude a cold first item.
 - The paired-test analysis can take per-item tokens or per-item TTFT as the compared quantity over the same item ids, with the scoring-kind rule extended to name which test applies to a continuous per-item measurement.
-- Energy stays per batch; a per-variant energy difference is published as an observation, and the record says why it carries no paired test.
+- Energy stays per batch; a per-variant energy difference is published as an observation, and the record says why it carries no paired test: per-item energy on items of a few dozen tokens sits below what the tracker can resolve.
 
 ## Code it changes
 
