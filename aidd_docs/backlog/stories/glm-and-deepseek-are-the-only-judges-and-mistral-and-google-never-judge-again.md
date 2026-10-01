@@ -19,7 +19,7 @@ Maps to: PRD Goal "Judged (open-ended) scores carry inter-judge agreement betwee
 
 Needs: none. The binding change and the forced collision are proven with stubbed backends; the live calls belong to orders 8 and 9.
 
-Blocked: by owner question Q6 in `aidd_docs/tasks/2026_10/2026_10_01_autonomous-slicing/owner-questions.md`. Removing the Mistral and Google judge bindings breaks `judge_probe.py`, the only runner that binds judges today, and rebinding that runner is exactly the change whose home (a rewritten order 6, or a new story) the owner has not decided.
+Blocked: through `depends_on` on orders 8 and 9, which wait on the open spikes `aidd_docs/backlog/spikes/is-z-ai-glm-callable-as-a-pinned-judge-and-on-what-data-terms.md` and `aidd_docs/backlog/spikes/is-deepseek-callable-as-a-pinned-judge-and-on-what-data-terms.md`.
 
 Current state: `judge_backends.py` holds `mistral_judge_backend` and `google_judge_backend`; `judge_probe.py` binds both and judges the Google subject with Mistral alone, single-judge. `roster.KNOWN_FAMILIES` is `{"qwen", "mistral", "google"}`.
 
@@ -37,7 +37,7 @@ Current state: `judge_backends.py` holds `mistral_judge_backend` and `google_jud
 - `src/wave_local_ai_v2/judge_backends.py`: the Mistral and Google judge backends removed; its docstring names the pair.
 - `src/wave_local_ai_v2/judge.py`: the binding-time refusal of a subject-only family.
 - `src/wave_local_ai_v2/roster.py`: subject-only families declared as such beside `KNOWN_FAMILIES`.
-- `src/wave_local_ai_v2/judge_probe.py`: its judges rebound to the pair, within whatever acceptance Q6's answer gives the probe.
+- `src/wave_local_ai_v2/judge_probe.py`: its judges rebound to the pair; the probe's own acceptance is order 6's.
 - `README.md`, `aidd_docs/memory/architecture.md`: the pair and the retirement.
 
 ## Tests it needs
