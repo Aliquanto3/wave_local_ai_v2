@@ -1,6 +1,6 @@
 ---
 type: story
-status: ready
+status: done
 source: aidd_docs/backlog/epics/any-open-ended-output-carries-two-judges-or-an-honest-flag.md
 parent: aidd_docs/backlog/epics/any-open-ended-output-carries-two-judges-or-an-honest-flag.md
 depends_on: aidd_docs/backlog/stories/a-rate-limited-run-persists-resumes-and-never-re-pays.md
