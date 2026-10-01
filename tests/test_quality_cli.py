@@ -6,6 +6,7 @@ from unittest.mock import DEFAULT, MagicMock, patch
 
 import pytest
 import requests
+from conftest import mark_prompt
 
 from wave_local_ai_v2 import (
     chrf,
@@ -637,6 +638,66 @@ def test_cloud_call_made_once_per_item_with_the_shared_prompt(stubbed_run) -> No
     ]
     expected_prompts = [item["prompt"] for item in CLASSIFICATION_TASK_SUITE]
     assert called_prompts == expected_prompts
+
+
+def test_every_row_names_the_baseline_variant_and_its_authored_prompt(
+    stubbed_run,
+) -> None:
+    quality_results_path, _ = stubbed_run
+    _enable_google(stubbed_run[1])
+
+    quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    prompts_by_item = {
+        item["item_id"]: item["prompt"] for item in CLASSIFICATION_TASK_SUITE
+    }
+    assert {row["provider"] for row in rows} == {"local", "mistral", "google"}
+    for row in rows:
+        assert row["prompt_variant_id"] == "baseline"
+        assert row["prompt_variant_version"] == "1"
+        assert row["prompt_before_template"] == prompts_by_item[row["item_id"]]
+
+
+def test_the_variant_runs_before_templating_on_the_local_and_cloud_paths(
+    stubbed_run, marking_variant, monkeypatch
+) -> None:
+    quality_results_path, started = stubbed_run
+    _enable_google(started)
+    monkeypatch.setattr(quality_cli, "PROMPT_VARIANT_ID", marking_variant)
+
+    quality_cli._run()
+
+    marked = [mark_prompt(item["prompt"]) for item in CLASSIFICATION_TASK_SUITE]
+    local_bodies = [call.kwargs["json"] for call in started["post"].call_args_list]
+    rendered_inputs = [body["messages"][0]["content"] for body in local_bodies[0::2]]
+    chat_inputs = [body["messages"][0]["content"] for body in local_bodies[1::2]]
+    # The local engine templated the variant's output, and answered it.
+    assert rendered_inputs == marked
+    assert chat_inputs == marked
+    # Both cloud providers were sent the variant's output too.
+    assert [c.args[0] for c in started["complete_prompt"].call_args_list] == marked
+    assert [
+        c.args[0] for c in started["google_complete_prompt"].call_args_list
+    ] == marked
+    assert [
+        c.args[0] for c in started["google_check_context_fits"].call_args_list
+    ] == marked
+
+    rows = read_rows(quality_results_path)
+    marked_by_item = {
+        item["item_id"]: mark_prompt(item["prompt"])
+        for item in CLASSIFICATION_TASK_SUITE
+    }
+    for row in rows:
+        assert row["prompt_variant_id"] == marking_variant
+        assert row["prompt_before_template"] == marked_by_item[row["item_id"]]
+        expected = (
+            fake_render(row["prompt_before_template"])
+            if row["provider"] == "local"
+            else row["prompt_before_template"]
+        )
+        assert row["prompt"] == expected
 
 
 def test_run_skips_mistral_when_the_key_is_missing_but_still_runs_local(

@@ -9,6 +9,7 @@ from wave_local_ai_v2 import (
     google_client,
     judge,
     judge_backends,
+    judge_probe,
     mistral_client,
     retry,
     row_contract,
@@ -621,6 +622,23 @@ def test_a_reported_google_thoughts_count_is_recorded_apart_from_output() -> Non
     assert record["reasoning_tokens_null_reason"] is None
 
 
+def _baseline_probe_row() -> dict:
+    """A complete quality row over a real probe item, as a genuine baseline.
+
+    The gate checks a baseline row's pre-template prompt against the authored
+    text of the item it names, so a row the judge tests expect to reach the
+    judge-block checks has to name a real item.
+    """
+    item = judge_probe.JUDGE_PROBE_ITEMS[0]
+    return make_row(
+        "quality",
+        suite_id=judge_probe.SUITE_ID,
+        suite_version=judge_probe.SUITE_VERSION,
+        item_id=item["item_id"],
+        prompt_before_template=item["prompt"],
+    )
+
+
 def test_a_stubbed_response_naming_another_answering_provider_is_refused() -> None:
     substituted = judge.Judge(
         model_id="gemini-3.5-flash-lite",
@@ -639,7 +657,7 @@ def test_a_stubbed_response_naming_another_answering_provider_is_refused() -> No
     assert block["judges"][1]["answering_provider"] == "some-router-fallback"
 
     with pytest.raises(row_contract.RowContractError) as excinfo:
-        row_contract.validate_row("quality", {**make_row("quality"), **block})
+        row_contract.validate_row("quality", {**_baseline_probe_row(), **block})
 
     message = str(excinfo.value)
     assert "'some-router-fallback'" in message
@@ -649,4 +667,4 @@ def test_a_stubbed_response_naming_another_answering_provider_is_refused() -> No
 def test_a_judged_block_whose_judges_answered_as_bound_is_written() -> None:
     block = _judge_item("qwen", "local", [_mistral_judge(4), _google_judge(4)])
 
-    row_contract.validate_row("quality", {**make_row("quality"), **block})
+    row_contract.validate_row("quality", {**_baseline_probe_row(), **block})

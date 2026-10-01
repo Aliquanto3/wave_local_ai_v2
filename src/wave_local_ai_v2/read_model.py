@@ -264,6 +264,13 @@ RUNTIME_FIELDS_NOT_RENDERED: frozenset[str] = frozenset(
         # a recomputation in the browser, which is exactly the aggregate this
         # module refuses to produce.
         "repetitions",
+        # The prompt variant and what it made of the authored prompt (schema
+        # "14"). On the row so every number names the prompt shape that
+        # produced it; rendering the variant dimension to a decision-maker is
+        # the pitch epic's to decide, not this one's.
+        "prompt_variant_id",
+        "prompt_variant_version",
+        "prompt_before_template",
     }
 )
 
@@ -332,6 +339,13 @@ QUALITY_FIELDS_NOT_RENDERED: frozenset[str] = frozenset(
         # text is one hop away rather than duplicated on all 591 rows of a
         # store.
         "prompt",
+        # The prompt variant and what it made of the authored prompt (schema
+        # "14"). On the row so every number names the prompt shape that
+        # produced it; rendering the variant dimension to a decision-maker is
+        # the pitch epic's to decide, not this one's.
+        "prompt_variant_id",
+        "prompt_variant_version",
+        "prompt_before_template",
     }
 )
 

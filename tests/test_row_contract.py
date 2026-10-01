@@ -1,6 +1,12 @@
 import pytest
 
-from wave_local_ai_v2 import aggregation
+from wave_local_ai_v2 import (
+    FIXED_PROMPT,
+    aggregation,
+    classification_suite,
+    prompt_variants,
+    translation_suite,
+)
 from wave_local_ai_v2.row_contract import (
     GRADED_FIELDS,
     JUDGED_FIELDS,
@@ -8,6 +14,14 @@ from wave_local_ai_v2.row_contract import (
     SCHEMA_VERSION,
     RowContractError,
     validate_row,
+)
+
+# The authored text of the item the quality fixture names: a baseline
+# row carries it unchanged, and the gate checks that it does.
+_AUTHORED_PROMPT = next(
+    item["prompt"]
+    for item in classification_suite.CLASSIFICATION_TASK_SUITE
+    if item["item_id"] == "billing-01"
 )
 
 
@@ -41,6 +55,9 @@ COMPLETE_RUNTIME_ROW = {
     "prompt_template_id": "none",
     "prompt_template_hash": None,
     "prompt_capture": "captured",
+    "prompt_variant_id": "baseline",
+    "prompt_variant_version": "1",
+    "prompt_before_template": FIXED_PROMPT,
     "fiche_hash": "a" * 64,
     "verdict": {"verdict": "not_comparable", "reference_run_id": None},
     "prompt": "hello",
@@ -119,6 +136,9 @@ COMPLETE_QUALITY_ROW = {
     "prompt_template_id": "none",
     "prompt_template_hash": None,
     "prompt_capture": "captured",
+    "prompt_variant_id": "baseline",
+    "prompt_variant_version": "1",
+    "prompt_before_template": _AUTHORED_PROMPT,
     "model_id": "Qwen3.6-35B-A3B",
     "provider": "local",
     "fiche_hash": "a" * 64,
@@ -168,7 +188,7 @@ COMPLETE_QUALITY_ROW = {
     "thinking_policy": "disabled",
     "context_length": 32768,
     "suite_id": "classification-support-routing",
-    "suite_version": "1",
+    "suite_version": classification_suite.SUITE_VERSION,
     "prompt_set_hash": "deadbeef",
     "language": "en",
     "provenance": "hand_written",
@@ -308,7 +328,10 @@ COMPLETE_GRADED_QUALITY_ROW = {
     **COMPLETE_QUALITY_ROW,
     **GRADED_BLOCK,
     "task_suite": "translation",
+    "suite_id": translation_suite.SUITE_ID,
+    "suite_version": translation_suite.SUITE_VERSION,
     "item_id": "en-fr-01",
+    "prompt_before_template": translation_suite.TRANSLATION_TASK_SUITE[0]["prompt"],
     "expected_label": None,
     "predicted_label": None,
     "correct": None,
@@ -1017,14 +1040,14 @@ def test_the_schema_version_moved_once_for_the_thinking_policy() -> None:
     # `thinking_policy` is required on every quality row, because a score
     # produced with the subject allowed to reason and one produced without it
     # are not the same measurement and a row has to say which it is.
-    assert SCHEMA_VERSION == "13"
+    assert SCHEMA_VERSION == "14"
 
 
 def test_the_schema_version_moved_for_the_runtime_energy_window() -> None:
     # "12" fixes audit finding C3: the runtime row's energy figures used to
     # span the whole counted-repetition window, cooldowns included. Required
     # only on runtime rows -- quality rows carry no energy window at all.
-    assert SCHEMA_VERSION == "13"
+    assert SCHEMA_VERSION == "14"
     assert {"active_window_s", "idle_window_s", "energy_window_method"} <= (
         REQUIRED_FIELDS["runtime"]
     )
@@ -1037,7 +1060,129 @@ def test_the_schema_version_moved_for_the_judge_call_record_extension() -> None:
     # "13" adds five fields inside each judge call record. Additive inside the
     # conditional judge block: neither row kind's required set moves, so a
     # deterministic quality row validates unchanged.
-    assert SCHEMA_VERSION == "13"
+    assert SCHEMA_VERSION == "14"
     assert set(NEW_JUDGE_RECORD_FIELDS).isdisjoint(REQUIRED_FIELDS["quality"])
     assert set(NEW_JUDGE_RECORD_FIELDS).isdisjoint(JUDGED_FIELDS)
     validate_row("quality", COMPLETE_QUALITY_ROW)
+
+
+def test_the_schema_version_moved_for_the_prompt_variant() -> None:
+    # "14" makes both row kinds name the variant they ran under and carry the
+    # prompt as the variant left it. Not conditional: every row ran under some
+    # variant, and a row below "14" is never back-filled with `baseline`.
+    assert SCHEMA_VERSION == "14"
+    for kind in ("runtime", "quality"):
+        assert set(PROMPT_VARIANT_FIELDS) <= REQUIRED_FIELDS[kind]
+
+
+PROMPT_VARIANT_FIELDS = (
+    "prompt_variant_id",
+    "prompt_variant_version",
+    "prompt_before_template",
+)
+
+
+@pytest.mark.parametrize("kind", ["runtime", "quality"])
+@pytest.mark.parametrize("field", PROMPT_VARIANT_FIELDS)
+def test_a_row_missing_a_prompt_variant_field_is_refused_by_name(
+    kind: str, field: str
+) -> None:
+    complete = COMPLETE_RUNTIME_ROW if kind == "runtime" else COMPLETE_QUALITY_ROW
+    row = {key: value for key, value in complete.items() if key != field}
+
+    with pytest.raises(RowContractError, match=field):
+        validate_row(kind, row)
+
+
+def test_a_hand_built_baseline_row_with_a_transformed_prompt_is_refused() -> None:
+    # Epic success check 1, the variant half: the row claims `baseline` while
+    # the prompt it carries before templating was transformed -- here, the
+    # authored item with a terse-output instruction appended, which is what an
+    # output-compression variant would have sent.
+    hand_built = {
+        **COMPLETE_QUALITY_ROW,
+        "prompt_before_template": _AUTHORED_PROMPT + "\nAnswer in one word.",
+    }
+
+    with pytest.raises(RowContractError, match="prompt_before_template") as excinfo:
+        validate_row("quality", hand_built)
+
+    # Printed so `pytest -s` publishes the gate's own words as the evidence.
+    print(f"refused: {excinfo.value}")
+
+
+def test_a_baseline_runtime_row_with_a_transformed_fixed_prompt_is_refused() -> None:
+    hand_built = {
+        **COMPLETE_RUNTIME_ROW,
+        "prompt_before_template": FIXED_PROMPT.upper(),
+    }
+
+    with pytest.raises(RowContractError, match="prompt_before_template"):
+        validate_row("runtime", hand_built)
+
+
+def test_a_genuine_baseline_row_of_each_kind_passes() -> None:
+    assert COMPLETE_QUALITY_ROW["prompt_before_template"] == _AUTHORED_PROMPT
+    validate_row("quality", COMPLETE_QUALITY_ROW)
+    validate_row("runtime", COMPLETE_RUNTIME_ROW)
+
+
+def test_an_unregistered_prompt_variant_is_refused_naming_the_field() -> None:
+    row = {**COMPLETE_QUALITY_ROW, "prompt_variant_id": "output_compressed"}
+
+    with pytest.raises(RowContractError, match="prompt_variant_id 'output_compressed'"):
+        validate_row("quality", row)
+
+
+def test_an_unregistered_prompt_variant_version_is_refused_naming_the_field() -> None:
+    row = {**COMPLETE_RUNTIME_ROW, "prompt_variant_version": "2"}
+
+    with pytest.raises(RowContractError, match="prompt_variant_version '2'"):
+        validate_row("runtime", row)
+
+
+@pytest.mark.parametrize(
+    ("changes", "reason"),
+    [
+        ({"suite_id": "an-unknown-suite"}, "not a suite this code defines"),
+        ({"suite_version": "1"}, "is at version"),
+        ({"item_id": "no-such-item"}, "has no item 'no-such-item'"),
+    ],
+)
+def test_a_baseline_row_whose_authored_text_cannot_be_resolved_is_refused(
+    changes: dict, reason: str
+) -> None:
+    # An unresolvable item leaves the claim unchecked, and an unchecked
+    # `baseline` is the label this gate exists to stop trusting.
+    row = {**COMPLETE_QUALITY_ROW, **changes}
+
+    with pytest.raises(RowContractError, match="prompt_before_template") as excinfo:
+        validate_row("quality", row)
+    assert reason in str(excinfo.value)
+
+
+def test_a_registered_non_baseline_variant_is_not_held_to_the_authored_text(
+    monkeypatch,
+) -> None:
+    # The authored-text rule is baseline's own: another variant's job is to
+    # transform the prompt, so its pre-template string differs by design.
+    definition = {"transformation": "identity", "description": "test-only"}
+    registry = prompt_variants.load_registry(
+        [
+            *prompt_variants.REGISTERED_VARIANTS,
+            {
+                "variant_id": "test_variant",
+                "version": "1",
+                "definition": definition,
+                "definition_hash": prompt_variants.definition_hash(definition),
+            },
+        ]
+    )
+    monkeypatch.setattr(prompt_variants, "REGISTRY", registry)
+    row = {
+        **COMPLETE_QUALITY_ROW,
+        "prompt_variant_id": "test_variant",
+        "prompt_before_template": "anything at all",
+    }
+
+    validate_row("quality", row)

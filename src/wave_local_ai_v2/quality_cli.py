@@ -60,6 +60,7 @@ from wave_local_ai_v2 import (
     local_client,
     mistral_client,
     prompt_provenance,
+    prompt_variants,
     provenance,
     quality_rows,
     results,
@@ -91,6 +92,12 @@ from wave_local_ai_v2.suite_gate import SuiteGateError, SuiteGateResult
 from wave_local_ai_v2.translation_suite import TRANSLATION_TASK_SUITE
 
 REQUEST_TIMEOUT_S = 300
+
+# The prompt variant every row of an invocation runs under, resolved through
+# the registry once per run and applied to each item's authored prompt before
+# any provider's templating. A declaration, not a call-site choice: the
+# campaign declaration that will carry it as data is a later story.
+PROMPT_VARIANT_ID = prompt_variants.BASELINE_ID
 
 # A quality score is only meaningful if a second run reproduces it
 # (`aidd_docs/memory/architecture.md`: "quality scores are reproducible (model +
@@ -403,6 +410,14 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
     # Offline, cheap: a refused suite (missing/inconsistent tags) must abort
     # before the multi-minute local run, let alone any network call.
     gate_result = suite_gate.gate_suite(spec.items)
+    # Applied once, here, to every item: the local and both cloud paths send
+    # these strings, and every row publishes its own as
+    # `prompt_before_template`.
+    prompt_variant = prompt_variants.resolve(PROMPT_VARIANT_ID)
+    variant_prompts = [
+        prompt_variants.apply_variant(prompt_variant, item["prompt"])
+        for item in spec.items
+    ]
 
     # Refuses (roster.RosterError) before any process spawns when the
     # resolved n_cpu_moe cannot be applied to roster_entry -- the check lives
@@ -458,7 +473,7 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
         # over, and the same repeated-batch-value pattern `suite_accuracy`
         # already uses.
         local_batch, local_energy = measure_energy(
-            lambda: _run_local_suite(settings, flags, spec),
+            lambda: _run_local_suite(settings, flags, spec, variant_prompts),
             country_iso_code=settings.emission_country_iso_code,
         )
         local_completions = local_batch["completions"]
@@ -482,6 +497,8 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
             roster_entry=roster_entry,
             roster_version=loaded_roster.roster_version,
             call_path_fields=_local_call_path(local_batch["chat_template"]),
+            prompt_variant=prompt_variant,
+            variant_prompts=variant_prompts,
             fiche_hash=fiche_hash_value,
             batch_fields=quality_rows.local_batch_fields(
                 settings, local_energy, local_completions
@@ -505,11 +522,13 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
             roster_entry=roster_entry,
             roster_version=loaded_roster.roster_version,
             fiche_hash=fiche_hash_value,
+            prompt_variant=prompt_variant,
+            variant_prompts=variant_prompts,
         )
 
 
 def _mistral_batch(
-    settings: Settings, api_key: str, spec: SuiteSpec
+    settings: Settings, api_key: str, spec: SuiteSpec, prompts: list[str]
 ) -> tuple[
     str, dict[str, Any], list[_Completion], dict[str, Any], dict[str, Any], None
 ]:
@@ -522,7 +541,7 @@ def _mistral_batch(
     completions, call_path_fields, batch_fields, _ = _run_cloud_batch(
         settings,
         api_key,
-        spec,
+        prompts,
         mistral_client.MODEL,
         cost.PRICE_TABLES["mistral"],
         _make_mistral_complete_item(settings, spec.max_output_tokens),
@@ -539,7 +558,7 @@ def _mistral_batch(
 
 
 def _google_batch(
-    settings: Settings, api_key: str, spec: SuiteSpec
+    settings: Settings, api_key: str, spec: SuiteSpec, prompts: list[str]
 ) -> tuple[
     str,
     dict[str, Any],
@@ -552,7 +571,7 @@ def _google_batch(
     completions, call_path_fields, batch_fields, extra_row_fields = _run_cloud_batch(
         settings,
         api_key,
-        spec,
+        prompts,
         google_client.MODEL,
         cost.PRICE_TABLES["google"],
         _make_google_complete_item(model_info, settings, spec.max_output_tokens),
@@ -603,6 +622,8 @@ def _try_run_cloud_provider(
     roster_entry: roster.RosterEntry,
     roster_version: int,
     fiche_hash: str,
+    prompt_variant: prompt_variants.PromptVariant,
+    variant_prompts: list[str],
 ) -> None:
     """Run one cloud provider's batch, or skip it with one stderr line.
 
@@ -647,7 +668,7 @@ def _try_run_cloud_provider(
             call_path_fields,
             batch_fields,
             extra_row_fields,
-        ) = provider_spec["run_batch"](settings, api_key, spec)
+        ) = provider_spec["run_batch"](settings, api_key, spec, variant_prompts)
     except (
         provider_spec["error_type"],
         requests.RequestException,
@@ -673,6 +694,8 @@ def _try_run_cloud_provider(
         roster_entry=roster_entry,
         roster_version=roster_version,
         call_path_fields=call_path_fields,
+        prompt_variant=prompt_variant,
+        variant_prompts=variant_prompts,
         fiche_hash=fiche_hash,
         batch_fields=batch_fields,
         extra_row_fields=extra_row_fields,
@@ -742,7 +765,7 @@ def _local_model_path(settings: Settings, roster_entry: roster.RosterEntry) -> P
 
 
 def _run_local_suite(
-    settings: Settings, flags: list[str], spec: SuiteSpec
+    settings: Settings, flags: list[str], spec: SuiteSpec, prompts: list[str]
 ) -> _LocalBatch:
     """Answer every item through the loaded model's own chat template.
 
@@ -755,6 +778,9 @@ def _run_local_suite(
     The rendered prompt comes back beside each completion because the row
     publishes it: Methodology 2 asks for "the final prompt string as rendered
     for that provider", and on this path that string is not the item text.
+
+    `prompts` are the items' prompts as the declared variant left them, one
+    per item: what is rendered and sent, never the authored text directly.
     """
     completions: list[_Completion] = []
     rendered_prompts: list[str] = []
@@ -762,18 +788,18 @@ def _run_local_suite(
 
     with server.running_server(settings.llama_server_path, flags):
         template = local_client.chat_template(base_url, timeout=REQUEST_TIMEOUT_S)
-        for item in spec.items:
+        for prompt in prompts:
             rendered_prompts.append(
                 local_client.render_prompt(
                     base_url,
-                    item["prompt"],
+                    prompt,
                     thinking_policy=spec.thinking_policy,
                     timeout=REQUEST_TIMEOUT_S,
                 )
             )
             response = local_client.complete_chat(
                 base_url,
-                item["prompt"],
+                prompt,
                 max_tokens=spec.max_output_tokens,
                 sampling=LOCAL_SAMPLING,
                 thinking_policy=spec.thinking_policy,
@@ -804,7 +830,7 @@ def _run_local_suite(
 
 def _make_mistral_complete_item(
     settings: Settings, max_output_tokens: int
-) -> Callable[[SuiteItem, str], tuple[_Completion, MistralCompletion]]:
+) -> Callable[[str, str], tuple[_Completion, MistralCompletion]]:
     """Build this batch's per-item completion function, closed over one Pacer/RetryBudget pair.
 
     A closure, not a plain function: a `Pacer` and a `RetryBudget` are built
@@ -826,7 +852,7 @@ def _make_mistral_complete_item(
         )
 
     def complete_item(
-        item: SuiteItem, api_key: str
+        prompt: str, api_key: str
     ) -> tuple[_Completion, MistralCompletion]:
         pacer.wait()
         # The same cap the local half runs under (`n_predict` above): the
@@ -836,7 +862,7 @@ def _make_mistral_complete_item(
         # claim about a limit that was never applied.
         response, retries_taken = retry.call_with_retry(
             lambda: mistral_client.complete_prompt(
-                item["prompt"],
+                prompt,
                 api_key,
                 temperature=CLOUD_SAMPLING["temperature"],
                 random_seed=CLOUD_SAMPLING["random_seed"],
@@ -868,9 +894,7 @@ def _make_google_complete_item(
     model_info: google_client.GoogleModelInfo,
     settings: Settings,
     max_output_tokens: int,
-) -> Callable[
-    [SuiteItem, str], tuple[_Completion, google_client.GoogleCompletion | None]
-]:
+) -> Callable[[str, str], tuple[_Completion, google_client.GoogleCompletion | None]]:
     """Build this batch's per-item completion function, closed over `model_info`.
 
     A closure, not a plain function, because Google's per-item call needs the
@@ -894,14 +918,14 @@ def _make_google_complete_item(
         )
 
     def complete_item(
-        item: SuiteItem, api_key: str
+        prompt: str, api_key: str
     ) -> tuple[_Completion, google_client.GoogleCompletion | None]:
         pacer.wait()
         context_retries = 0
         try:
             _, context_retries = retry.call_with_retry(
                 lambda: google_client.check_context_fits(
-                    item["prompt"], api_key, model_info["input_token_limit"]
+                    prompt, api_key, model_info["input_token_limit"]
                 ),
                 is_retryable=_is_retryable,
                 retry_hint_s=_retry_hint_s,
@@ -933,7 +957,7 @@ def _make_google_complete_item(
         pacer.wait()
         response, generate_retries = retry.call_with_retry(
             lambda: google_client.complete_prompt(
-                item["prompt"],
+                prompt,
                 api_key,
                 temperature=GOOGLE_SAMPLING["temperature"],
                 top_p=GOOGLE_SAMPLING["top_p"],
@@ -989,10 +1013,10 @@ def _google_extra_fields(
 def _run_cloud_batch(
     settings: Settings,
     api_key: str,
-    spec: SuiteSpec,
+    prompts: list[str],
     model: str,
     price_table: dict[str, cost.Price],
-    complete_item: Callable[[SuiteItem, str], tuple[_Completion, Any]],
+    complete_item: Callable[[str, str], tuple[_Completion, Any]],
     call_path_fields_fn: Callable[[list[Any]], dict[str, Any]],
     extra_row_fields_fn: Callable[[Any], dict[str, Any]] = lambda _response: {},
 ) -> tuple[list[_Completion], dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
@@ -1007,8 +1031,8 @@ def _run_cloud_batch(
     """
     completions: list[_Completion] = []
     responses: list[Any] = []
-    for item in spec.items:
-        completion, response = complete_item(item, api_key)
+    for prompt in prompts:
+        completion, response = complete_item(prompt, api_key)
         completions.append(completion)
         responses.append(response)
 
@@ -1042,6 +1066,8 @@ def _score_and_write(
     roster_entry: roster.RosterEntry,
     roster_version: int,
     call_path_fields: dict[str, Any],
+    prompt_variant: prompt_variants.PromptVariant,
+    variant_prompts: list[str],
     fiche_hash: str,
     batch_fields: dict[str, Any],
     resumed: bool,
@@ -1049,11 +1075,11 @@ def _score_and_write(
     prompts: list[str] | None = None,
 ) -> None:
     per_item_fields, batch_score_fields = spec.score_batch(spec.items, completions)
-    # What each row publishes as `prompt`. The two cloud paths send the item
-    # text and declare the wrapper their template applies, so the item text is
-    # the rendered string for them; the local chat path renders the item into
+    # What each row publishes as `prompt`. The two cloud paths send the
+    # variant's output and declare the wrapper their template applies, so that
+    # string is the rendered one for them; the local chat path renders it into
     # something else and supplies it here.
-    row_prompts = prompts or [item["prompt"] for item in spec.items]
+    row_prompts = prompts or variant_prompts
 
     rows: list[dict[str, Any]] = []
     for index, (item, item_score_fields) in enumerate(
@@ -1074,6 +1100,9 @@ def _score_and_write(
             "task_suite": spec.task_suite,
             "item_id": item["item_id"],
             "prompt": row_prompts[index],
+            "prompt_variant_id": prompt_variant.variant_id,
+            "prompt_variant_version": prompt_variant.version,
+            "prompt_before_template": variant_prompts[index],
             # Everything the suite's own scorer decided: the exact-match
             # fields on one suite, the graded block on the other, each
             # nulling the shape it does not publish so a reader never meets

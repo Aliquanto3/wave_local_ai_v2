@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from conftest import mark_prompt
 
 from wave_local_ai_v2 import (
     agreement,
@@ -545,6 +546,65 @@ def test_the_local_probe_row_publishes_the_rendered_prompt_and_the_policy(
         assert row["prompt"] != item_prompt
     for row in rows:
         assert row["thinking_policy"] == "disabled"
+
+
+def test_every_probe_row_names_the_baseline_variant_and_its_authored_prompt(
+    stubbed_probe,
+) -> None:
+    probe_path, _, _, _ = stubbed_probe
+
+    judge_probe._run()
+
+    prompts_by_item = {item["item_id"]: item["prompt"] for item in JUDGE_PROBE_ITEMS}
+    rows = read_rows(probe_path)
+    assert {row["provider"] for row in rows} == {"local", "google"}
+    for row in rows:
+        assert row["prompt_variant_id"] == "baseline"
+        assert row["prompt_variant_version"] == "1"
+        assert row["prompt_before_template"] == prompts_by_item[row["item_id"]]
+
+
+def test_the_probe_subject_is_sent_the_variant_and_the_judges_the_authored_text(
+    stubbed_probe, marking_variant, monkeypatch
+) -> None:
+    probe_path, _, started, _ = stubbed_probe
+    monkeypatch.setattr(judge_probe, "PROMPT_VARIANT_ID", marking_variant)
+
+    judge_probe._run()
+
+    marked = [mark_prompt(item["prompt"]) for item in JUDGE_PROBE_ITEMS]
+    local_inputs = [
+        call.kwargs["json"]["messages"][0]["content"]
+        for call in started["post"].call_args_list
+    ]
+    # Rendered, then answered: each marked prompt reaches both local calls.
+    assert local_inputs[0::2] == marked
+    assert local_inputs[1::2] == marked
+    subject_calls = [
+        call
+        for call in started["google_complete"].call_args_list
+        if call.kwargs["max_tokens"] != judge_probe.JUDGE_MAX_TOKENS
+    ]
+    cloud_item = judge_probe._item_by_id(judge_probe.CLOUD_SUBJECT_ITEM_ID)
+    assert [call.args[0] for call in subject_calls] == [
+        mark_prompt(cloud_item["prompt"])
+    ]
+    # The scorer is untouched: no judge was handed the variant's output.
+    judge_calls = [
+        *started["mistral_complete"].call_args_list,
+        *(
+            call
+            for call in started["google_complete"].call_args_list
+            if call.kwargs["max_tokens"] == judge_probe.JUDGE_MAX_TOKENS
+        ),
+    ]
+    assert judge_calls
+    assert all("[marked]" not in call.args[0] for call in judge_calls)
+    assert any(cloud_item["prompt"] in call.args[0] for call in judge_calls)
+
+    for row in read_rows(probe_path):
+        assert row["prompt_variant_id"] == marking_variant
+        assert row["prompt_before_template"].startswith("[marked] ")
 
 
 def test_every_generation_asks_for_open_ended_prose_not_a_label(

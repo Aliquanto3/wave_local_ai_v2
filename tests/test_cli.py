@@ -6,7 +6,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+from conftest import mark_prompt
 
+import wave_local_ai_v2
 from wave_local_ai_v2 import FIXED_MAX_TOKENS, FIXED_PROMPT, _run, main
 from wave_local_ai_v2.aggregation import AGGREGATION_LABELS
 from wave_local_ai_v2.fiche_registry import read_fiche
@@ -701,6 +703,38 @@ def test_run_sends_one_warmup_and_five_counted_requests_by_default(
         assert body["n_predict"] == FIXED_MAX_TOKENS
         assert body["cache_prompt"] is False
         assert body["seed"]
+
+
+def test_the_runtime_row_names_the_baseline_variant_and_the_fixed_prompt(
+    stubbed_run,
+) -> None:
+    results_path, _ = stubbed_run
+
+    _run()
+
+    (row,) = read_rows(results_path)
+    assert row["prompt_variant_id"] == "baseline"
+    assert row["prompt_variant_version"] == "1"
+    # `/completion` applies no template: before and after are one string.
+    assert row["prompt_before_template"] == FIXED_PROMPT
+    assert row["prompt"] == FIXED_PROMPT
+
+
+def test_the_fixed_prompt_passes_through_the_declared_variant(
+    stubbed_run, marking_variant, monkeypatch
+) -> None:
+    results_path, started = stubbed_run
+    monkeypatch.setattr(wave_local_ai_v2, "PROMPT_VARIANT_ID", marking_variant)
+
+    _run()
+
+    # Warm-up and counted requests alike carry the variant's output.
+    for call in started["post"].call_args_list:
+        assert call.kwargs["json"]["prompt"] == mark_prompt(FIXED_PROMPT)
+    (row,) = read_rows(results_path)
+    assert row["prompt_variant_id"] == marking_variant
+    assert row["prompt_before_template"] == mark_prompt(FIXED_PROMPT)
+    assert row["prompt"] == mark_prompt(FIXED_PROMPT)
 
 
 def test_run_applies_the_cooldown_between_repetitions(stubbed_run) -> None:

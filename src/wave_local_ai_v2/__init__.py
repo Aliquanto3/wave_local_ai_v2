@@ -18,6 +18,7 @@ from wave_local_ai_v2 import (
     energy,
     fiche_registry,
     prompt_provenance,
+    prompt_variants,
     provenance,
     results,
     roster,
@@ -174,6 +175,11 @@ FIXED_PROMPT = (
 FIXED_MAX_TOKENS = 128
 REQUEST_TIMEOUT_S = 300
 
+# The prompt variant every runtime row runs under, resolved through the
+# registry once per run. A declaration, not a call-site choice: the campaign
+# declaration that will carry it as data is a later story.
+PROMPT_VARIANT_ID = prompt_variants.BASELINE_ID
+
 
 def _is_exceed_context_refusal(response: requests.Response) -> bool:
     """True only for llama-server's documented refusal of an over-long prompt.
@@ -249,6 +255,12 @@ def _run() -> None:
     # unreadable build is an explicit None, never a fallback string.
     llama_cpp_build = build_probe.probe_build(settings.llama_server_path)
 
+    # The fixed prompt passes through the declared variant like every suite
+    # item does. `/completion` applies no template, so what the variant
+    # returns is also the string the engine receives and the row publishes.
+    prompt_variant = prompt_variants.resolve(PROMPT_VARIANT_ID)
+    sent_prompt = prompt_variants.apply_variant(prompt_variant, FIXED_PROMPT)
+
     run_fiche = build_fiche(
         fiche,
         llama_cpp_build=llama_cpp_build,
@@ -300,7 +312,7 @@ def _run() -> None:
             response = requests.post(
                 f"http://{server.HOST}:{server.PORT}/completion",
                 json={
-                    "prompt": FIXED_PROMPT,
+                    "prompt": sent_prompt,
                     "n_predict": FIXED_MAX_TOKENS,
                     "cache_prompt": False,
                     "seed": RUNTIME_SEED,
@@ -403,8 +415,11 @@ def _run() -> None:
         "prompt_template_id": prompt_provenance.TEMPLATE_ID_NONE,
         "prompt_template_hash": None,
         "prompt_capture": prompt_provenance.PROMPT_CAPTURE_CAPTURED,
+        "prompt_variant_id": prompt_variant.variant_id,
+        "prompt_variant_version": prompt_variant.version,
+        "prompt_before_template": sent_prompt,
         "fiche_hash": fiche_hash_value,
-        "prompt": FIXED_PROMPT,
+        "prompt": sent_prompt,
         "max_tokens": FIXED_MAX_TOKENS,
         "sampling": dict(runtime_sampling),
         "seed_pinned": True,

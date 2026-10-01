@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A prompt variant on every row (row schema "14")** — `prompt_variants.py`
+  is the tracked variant registry, holding one entry today, `baseline`
+  version `1`, the identity transformation. Each entry carries its id,
+  version, definition and the definition's content hash, and an edited
+  definition at an unchanged version fails the module's import, naming the
+  variant. The declared variant is applied to the authored prompt through
+  `prompt_variants.apply_variant` before any engine's templating, on the
+  runtime fixed prompt, both suites' local and cloud paths, and the judge
+  probe's subject calls (the judges still see the authored item). Every
+  quality and runtime row now carries `prompt_variant_id`,
+  `prompt_variant_version` and `prompt_before_template`; `prompt` stays the
+  string the engine finally received. The writer gate refuses a row missing
+  either variant field, naming a variant or version the registry lacks, or
+  declaring `baseline` while its `prompt_before_template` differs from the
+  item's authored text (or names an item whose text cannot be resolved).
+  Rows below "14" are read under their own version and never back-filled
+  with `baseline`.
+
 - **`GET /api/overview/quality` and `GET /api/overview/runtime`, and
   `views/overview/`** — the service root, replacing the runs list as
   `App.tsx`'s landing screen (the runs list stays one click away). One card

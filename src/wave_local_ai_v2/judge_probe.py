@@ -52,6 +52,7 @@ from wave_local_ai_v2 import (
     local_client,
     mistral_client,
     prompt_provenance,
+    prompt_variants,
     provenance,
     quality_rows,
     results,
@@ -70,6 +71,12 @@ from wave_local_ai_v2.settings import Settings, SettingsError, load_settings
 from wave_local_ai_v2.suite_gate import SuiteGateResult
 
 REQUEST_TIMEOUT_S = 300
+
+# The prompt variant every probe row runs under, applied to the item's
+# authored prompt before any templating (`prompt_variants`). The judges are
+# still handed the authored item text: a variant transforms the subject's
+# prompt and never the scorer.
+PROMPT_VARIANT_ID = prompt_variants.BASELINE_ID
 
 # The exponential-backoff base for a retryable cloud failure with no
 # provider-supplied retry hint. Same value and same role as
@@ -551,7 +558,7 @@ def _item_by_id(item_id: str) -> ProbeItem:
 
 
 def _generate_local_outputs(
-    settings: Settings, flags: list[str]
+    settings: Settings, flags: list[str], prompts: list[str]
 ) -> tuple[list[_ProbeCompletion], list[str], str]:
     """One llama-server launch, one chat completion per probe item.
 
@@ -559,7 +566,8 @@ def _generate_local_outputs(
     sends the prompt byte-for-byte, so a chat-tuned model continues the item
     text rather than answering it. Returns the completions, the string each
     item was rendered to, and the template that rendered them -- the row
-    publishes the first two and the hash of the third.
+    publishes the first two and the hash of the third. `prompts` are the
+    items' prompts as the declared variant left them, one per item.
     """
     completions: list[_ProbeCompletion] = []
     rendered_prompts: list[str] = []
@@ -567,18 +575,18 @@ def _generate_local_outputs(
 
     with server.running_server(settings.llama_server_path, flags):
         template = local_client.chat_template(base_url, timeout=REQUEST_TIMEOUT_S)
-        for item in JUDGE_PROBE_ITEMS:
+        for prompt in prompts:
             rendered_prompts.append(
                 local_client.render_prompt(
                     base_url,
-                    item["prompt"],
+                    prompt,
                     thinking_policy=THINKING_POLICY,
                     timeout=REQUEST_TIMEOUT_S,
                 )
             )
             response = local_client.complete_chat(
                 base_url,
-                item["prompt"],
+                prompt,
                 max_tokens=MAX_OUTPUT_TOKENS,
                 sampling=LOCAL_SAMPLING,
                 thinking_policy=THINKING_POLICY,
@@ -678,9 +686,14 @@ def _build_row(
     failure_reason: str | None,
     failure_counts: dict[str, int],
     retries: int,
-    # What the row publishes as `prompt`. The local chat path renders the item
-    # into something else and passes it here (Methodology 2); the cloud path
-    # sends the item text and declares its wrapper, so it passes nothing.
+    # The declared variant and what it made of the item's authored prompt,
+    # before any templating.
+    prompt_variant: prompt_variants.PromptVariant,
+    prompt_before_template: str,
+    # What the row publishes as `prompt`. The local chat path renders the
+    # variant's output into something else and passes it here (Methodology 2);
+    # the cloud path sends the variant's output and declares its wrapper, so
+    # it passes nothing.
     prompt: str | None = None,
 ) -> dict[str, Any]:
     """One probe row: the quality contract's key set, the judge block, the output.
@@ -714,7 +727,10 @@ def _build_row(
         **batch_fields,
         "task_suite": TASK_SUITE,
         "item_id": item["item_id"],
-        "prompt": prompt if prompt is not None else item["prompt"],
+        "prompt": prompt if prompt is not None else prompt_before_template,
+        "prompt_variant_id": prompt_variant.variant_id,
+        "prompt_variant_version": prompt_variant.version,
+        "prompt_before_template": prompt_before_template,
         "expected_label": None,
         "predicted_label": None,
         "correct": None,
@@ -773,8 +789,13 @@ def _run_local_batch(
         print(f"local skipped: {skip_reason}", file=sys.stderr)
         return None
 
+    prompt_variant = prompt_variants.resolve(PROMPT_VARIANT_ID)
+    variant_prompts = [
+        prompt_variants.apply_variant(prompt_variant, item["prompt"])
+        for item in JUDGE_PROBE_ITEMS
+    ]
     local_batch, energy = measure_energy(
-        lambda: _generate_local_outputs(settings, flags),
+        lambda: _generate_local_outputs(settings, flags, variant_prompts),
         country_iso_code=settings.emission_country_iso_code,
     )
     completions, rendered_prompts, chat_template = local_batch
@@ -834,11 +855,19 @@ def _run_local_batch(
     batch_fields = quality_rows.local_batch_fields(settings, energy, completions)
     model_id = context.roster_entry.display_id
 
-    for item, completion, block, failure_reason, rendered_prompt in zip(
+    for (
+        item,
+        completion,
+        block,
+        failure_reason,
+        variant_prompt,
+        rendered_prompt,
+    ) in zip(
         JUDGE_PROBE_ITEMS,
         completions,
         blocks,
         failure_reasons,
+        variant_prompts,
         rendered_prompts,
         strict=True,
     ):
@@ -850,6 +879,8 @@ def _run_local_batch(
             provider=PROVIDER_LOCAL,
             sampling=LOCAL_SAMPLING,
             call_path_fields=_local_call_path(chat_template),
+            prompt_variant=prompt_variant,
+            prompt_before_template=variant_prompt,
             prompt=rendered_prompt,
             batch_fields=batch_fields,
             judge_block=block,
@@ -899,11 +930,13 @@ def _run_cloud_subject_item(
 
     item = _item_by_id(CLOUD_SUBJECT_ITEM_ID)
     api_key = settings.google_api_key
+    prompt_variant = prompt_variants.resolve(PROMPT_VARIANT_ID)
+    variant_prompt = prompt_variants.apply_variant(prompt_variant, item["prompt"])
 
     pacer.wait()
     _, context_retries = retry.call_with_retry(
         lambda: google_client.check_context_fits(
-            item["prompt"], api_key, model_info["input_token_limit"]
+            variant_prompt, api_key, model_info["input_token_limit"]
         ),
         is_retryable=_is_google_retryable,
         retry_hint_s=_google_retry_hint_s,
@@ -914,7 +947,7 @@ def _run_cloud_subject_item(
     pacer.wait()
     response, generate_retries = retry.call_with_retry(
         lambda: google_client.complete_prompt(
-            item["prompt"],
+            variant_prompt,
             api_key,
             temperature=GOOGLE_SAMPLING["temperature"],
             top_p=GOOGLE_SAMPLING["top_p"],
@@ -959,6 +992,8 @@ def _run_cloud_subject_item(
         provider=judge_backends.PROVIDER_GOOGLE,
         sampling=GOOGLE_SAMPLING,
         call_path_fields=_google_call_path(),
+        prompt_variant=prompt_variant,
+        prompt_before_template=variant_prompt,
         batch_fields=batch_fields,
         judge_block=block,
         failure_reason=failure_reason,

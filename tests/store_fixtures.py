@@ -33,6 +33,8 @@ NAMED_VALUES: dict[str, Any] = {
     "fiche_hash": FICHE_HASH,
     "suite_id": SUITE_ID,
     "suite_version": SUITE_VERSION,
+    "prompt_variant_id": "baseline",
+    "prompt_variant_version": "1",
     "cpu_energy_kwh": 0.0003,
     "cpu_energy_method": "estimated_tdp",
     "gpu_energy_kwh": 0.0009,

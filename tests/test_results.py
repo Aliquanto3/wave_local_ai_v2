@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from wave_local_ai_v2 import classification_suite
 from wave_local_ai_v2.results import (
     UNREADABLE_BELOW_FLOOR,
     UNREADABLE_NO_SCHEMA_VERSION,
@@ -19,6 +20,15 @@ from wave_local_ai_v2.results import (
 )
 from wave_local_ai_v2.row_contract import RowContractError
 
+# The authored text of the item the quality fixture names: a baseline
+# row carries it unchanged, and the gate checks that it does.
+_AUTHORED_PROMPT = next(
+    item["prompt"]
+    for item in classification_suite.CLASSIFICATION_TASK_SUITE
+    if item["item_id"] == "billing-01"
+)
+
+
 COMPLETE_QUALITY_ROW = {
     "schema_version": "1",
     "run_id": "run-1",
@@ -32,6 +42,9 @@ COMPLETE_QUALITY_ROW = {
     "prompt_template_id": "none",
     "prompt_template_hash": None,
     "prompt_capture": "captured",
+    "prompt_variant_id": "baseline",
+    "prompt_variant_version": "1",
+    "prompt_before_template": _AUTHORED_PROMPT,
     "model_id": "Qwen3.6-35B-A3B",
     "provider": "local",
     "fiche_hash": "a" * 64,
@@ -81,7 +94,7 @@ COMPLETE_QUALITY_ROW = {
     "thinking_policy": "disabled",
     "context_length": 32768,
     "suite_id": "classification-support-routing",
-    "suite_version": "1",
+    "suite_version": classification_suite.SUITE_VERSION,
     "prompt_set_hash": "deadbeef",
     "language": "en",
     "provenance": "hand_written",
@@ -196,10 +209,12 @@ def _write_items(
     path: Path,
     run_id: str,
     provider: str,
-    item_ids: list[str],
+    item_count: int,
     task_suite: str = "classification",
 ) -> None:
-    for item_id in item_ids:
+    # Real items, not placeholder ids: the writer gate checks a baseline row's
+    # pre-template prompt against the authored text of the item it names.
+    for item in classification_suite.CLASSIFICATION_TASK_SUITE[:item_count]:
         append_row(
             path,
             "quality",
@@ -207,7 +222,8 @@ def _write_items(
                 **COMPLETE_QUALITY_ROW,
                 "run_id": run_id,
                 "provider": provider,
-                "item_id": item_id,
+                "item_id": item["item_id"],
+                "prompt_before_template": item["prompt"],
                 "task_suite": task_suite,
             },
         )
@@ -215,7 +231,7 @@ def _write_items(
 
 def test_resume_skip_reason_runs_a_batch_that_wrote_nothing(tmp_path: Path) -> None:
     path = tmp_path / "quality.jsonl"
-    _write_items(path, "run-1", "local", ["a", "b", "c"])
+    _write_items(path, "run-1", "local", 3)
 
     # Another provider's completed batch says nothing about this one.
     assert (
@@ -238,7 +254,7 @@ def test_resume_skip_reason_runs_a_batch_that_wrote_nothing(tmp_path: Path) -> N
 
 def test_resume_skip_reason_skips_a_complete_batch_by_name(tmp_path: Path) -> None:
     path = tmp_path / "quality.jsonl"
-    _write_items(path, "run-1", "local", ["a", "b", "c"])
+    _write_items(path, "run-1", "local", 3)
 
     assert (
         resume_skip_reason(path, "run-1", "local", 3, task_suite="classification")
@@ -248,7 +264,7 @@ def test_resume_skip_reason_skips_a_complete_batch_by_name(tmp_path: Path) -> No
 
 def test_resume_skip_reason_refuses_a_partially_written_batch(tmp_path: Path) -> None:
     path = tmp_path / "quality.jsonl"
-    _write_items(path, "run-1", "local", ["a", "b"])
+    _write_items(path, "run-1", "local", 2)
 
     assert resume_skip_reason(
         path, "run-1", "local", 5, task_suite="classification"
@@ -262,7 +278,7 @@ def test_resume_skip_reason_decides_against_the_callers_own_item_count(
     # partial one for a five-item caller: the count is the caller's, not a
     # suite length read from a module.
     path = tmp_path / "probe.jsonl"
-    _write_items(path, "run-1", "google", ["a", "b"])
+    _write_items(path, "run-1", "google", 2)
 
     assert resume_skip_reason(
         path, "run-1", "google", 2, task_suite="classification"
@@ -280,7 +296,7 @@ def test_resume_never_skips_a_batch_on_the_strength_of_another_suites_rows(
     # task_suite filter, `--resume <id> --suite translation` would skip a
     # batch that was never run and publish nothing for it.
     path = tmp_path / "quality.jsonl"
-    _write_items(path, "run-1", "local", ["a", "b", "c"], task_suite="classification")
+    _write_items(path, "run-1", "local", 3, task_suite="classification")
 
     assert (
         resume_skip_reason(path, "run-1", "local", 3, task_suite="translation") is None

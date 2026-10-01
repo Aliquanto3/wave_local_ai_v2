@@ -1,0 +1,7 @@
+$ uv run pytest tests/test_row_contract.py -k "hand_built_baseline or unregistered_prompt_variant or genuine_baseline" -s -v --no-cov
+tests/test_row_contract.py::test_a_hand_built_baseline_row_with_a_transformed_prompt_is_refused refused: row of kind 'quality' declares prompt variant 'baseline' but its prompt_before_template differs from the item's authored text: a baseline row carries the authored prompt unchanged
+PASSED
+tests/test_row_contract.py::test_a_genuine_baseline_row_of_each_kind_passes PASSED
+tests/test_row_contract.py::test_an_unregistered_prompt_variant_is_refused_naming_the_field PASSED
+tests/test_row_contract.py::test_an_unregistered_prompt_variant_version_is_refused_naming_the_field PASSED
+====================== 4 passed, 141 deselected in 0.04s ======================

@@ -17,6 +17,7 @@ from wave_local_ai_v2 import (
     judge,
     judge_protocol,
     prompt_provenance,
+    prompt_variants,
     suite_gate,
     timings,
 )
@@ -89,7 +90,15 @@ from wave_local_ai_v2 import (
 # provider differs from its bound one is refused. Additive inside
 # the judge block only: a deterministic quality row and every runtime row
 # validate unchanged.
-SCHEMA_VERSION = "13"
+# "14": `prompt_variant_id`, `prompt_variant_version` and
+# `prompt_before_template` (the prompt as the variant left it, before the
+# engine's templating) became required on both row kinds (Story: every row
+# names its prompt variant, and a baseline row carries the authored prompt).
+# The variant must be registered at that version (`prompt_variants`), and a
+# row declaring `baseline` must carry the item's authored text unchanged. A
+# row below "14" is read under its own version and never back-filled with
+# `baseline`: nothing on it says which prompt shape produced it.
+SCHEMA_VERSION = "14"
 
 # The two values `thinking_policy` may take. This is the **suite's** declared
 # policy, not a report of what each provider did with it: it is published on
@@ -135,6 +144,12 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "prompt_template_id",
             "prompt_template_hash",
             "prompt_capture",
+            # prompt_variants: which transformation the authored prompt went
+            # through before the engine's templating, and its output
+            # (schema "14")
+            "prompt_variant_id",
+            "prompt_variant_version",
+            "prompt_before_template",
             # fiche_registry: the hardware + run-specific fiche, cited by hash
             "fiche_hash",
             # verdict.runtime_verdict
@@ -231,6 +246,12 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "prompt_template_id",
             "prompt_template_hash",
             "prompt_capture",
+            # prompt_variants: which transformation the authored prompt went
+            # through before the engine's templating, and its output
+            # (schema "14")
+            "prompt_variant_id",
+            "prompt_variant_version",
+            "prompt_before_template",
             "model_id",
             "provider",
             "fiche_hash",
@@ -449,6 +470,8 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
             f"applies a template cannot declare 'none'"
         )
 
+    _validate_prompt_variant(kind, row)
+
     cost_total = row["cost_total"]
     # The two bases are the values the cost was actually computed from: a kWh
     # price for a local run, the table's own input rate for a cloud one.
@@ -481,6 +504,80 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
     if kind == "quality":
         _validate_judged_fields(row)
         _validate_graded_fields(row)
+
+
+def _validate_prompt_variant(kind: RowKind, row: dict[str, Any]) -> None:
+    """Refuse a variant the registry does not hold, and an unchecked `baseline`.
+
+    `baseline` is a claim this gate checks rather than a label it trusts: the
+    row's `prompt_before_template` must equal the authored text of the item
+    it names, resolved from the code that owns that text -- never from a
+    field on the row, which a hand-built row could forge alongside the
+    transformed prompt.
+    """
+    variant_id = row["prompt_variant_id"]
+    version = row["prompt_variant_version"]
+    if not any(key[0] == variant_id for key in prompt_variants.REGISTRY):
+        raise RowContractError(
+            f"row of kind {kind!r} has prompt_variant_id {variant_id!r}: not a "
+            "registered prompt variant"
+        )
+    if (variant_id, version) not in prompt_variants.REGISTRY:
+        raise RowContractError(
+            f"row of kind {kind!r} has prompt_variant_version {version!r}: "
+            f"prompt variant {variant_id!r} has no such registered version"
+        )
+
+    if variant_id != prompt_variants.BASELINE_ID:
+        return
+    authored, unresolved_reason = _authored_prompt(kind, row)
+    if authored is None:
+        raise RowContractError(
+            f"row of kind {kind!r} declares prompt variant 'baseline' but its "
+            f"prompt_before_template cannot be checked: {unresolved_reason}"
+        )
+    if row["prompt_before_template"] != authored:
+        raise RowContractError(
+            f"row of kind {kind!r} declares prompt variant 'baseline' but its "
+            "prompt_before_template differs from the item's authored text: a "
+            "baseline row carries the authored prompt unchanged"
+        )
+
+
+def _authored_prompt(kind: RowKind, row: dict[str, Any]) -> tuple[str | None, str]:
+    """The authored text the row's prompt started from, or None and why not.
+
+    Imported here rather than at module level: every module below imports
+    this one, so a top-level import would be a cycle.
+    """
+    if kind == "runtime":
+        from wave_local_ai_v2 import FIXED_PROMPT
+
+        return FIXED_PROMPT, ""
+
+    from wave_local_ai_v2 import classification_suite, judge_probe, translation_suite
+
+    suites = {
+        module.SUITE_ID: (module.SUITE_VERSION, items)
+        for module, items in (
+            (classification_suite, classification_suite.CLASSIFICATION_TASK_SUITE),
+            (translation_suite, translation_suite.TRANSLATION_TASK_SUITE),
+            (judge_probe, judge_probe.JUDGE_PROBE_ITEMS),
+        )
+    }
+    suite_id = row["suite_id"]
+    if suite_id not in suites:
+        return None, f"suite_id {suite_id!r} is not a suite this code defines"
+    suite_version, items = suites[suite_id]
+    if row["suite_version"] != suite_version:
+        return None, (
+            f"suite {suite_id!r} is at version {suite_version!r} in this code, "
+            f"not {row['suite_version']!r}"
+        )
+    for item in items:
+        if item["item_id"] == row["item_id"]:
+            return str(item["prompt"]), ""
+    return None, f"suite {suite_id!r} has no item {row['item_id']!r}"
 
 
 def _validate_judged_fields(row: dict[str, Any]) -> None:
