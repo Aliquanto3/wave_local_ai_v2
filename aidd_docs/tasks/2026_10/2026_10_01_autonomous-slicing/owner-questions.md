@@ -198,3 +198,39 @@ Epic: `aidd_docs/backlog/epics/no-use-case-is-silently-absent.md`. New stories a
 - Options: (a) pipeline-first: web research is independent of the tool-calling spike, sits outside the harness comparison this release, and records harness `direct`; an agentic variant is deferred until the tool-calling spike reports; (b) agentic from the start, sharing order 6's transcript capture and the spike's risk; (c) both, as two scoring rules over one query set.
 - Recommended default: (a). It keeps the heaviest suite off the riskiest gate and makes every archived response a function of the query alone, which is what makes offline recompute straightforward. Cost: the suite measures answer writing over search results, not a model's search strategy.
 - Blocks: orders 9 and 10 (`proposed`).
+
+## Bundle, licences and citation
+
+Epic: `aidd_docs/backlog/epics/one-download-holds-the-tables-their-licences-and-how-to-cite-them.md`. New stories are orders 1 to 7. Whether model outputs in the rows may be redistributed is an open spike (`aidd_docs/backlog/spikes/may-the-model-outputs-in-the-published-rows-be-redistributed-and-on-what-terms.md`), not a question here. A fifth export table for comparison and family records is Q2's; no story here duplicates it. The `CITATION.cff` author identity is deferred by the epic to the owner at release and is not asked here.
+
+### Q40. Is the Zenodo procedure proven against the Zenodo sandbox or by a real deposit?
+
+- Artifact: `aidd_docs/backlog/stories/the-zenodo-deposit-is-a-written-optional-procedure-proven-once.md` (order 6).
+- Question: the epic resolves Zenodo's metadata and licence vocabulary "by performing the deposit once against a real release rather than describing it from memory". A real deposit mints a permanent public DOI, which the PRD makes optional and the epic keeps manual. Is the one proving run a real deposit of the next release, or a deposit on the Zenodo sandbox of that release's archive?
+- Options: (a) the sandbox, with the real deposit left to the day a venue asks for a DOI; (b) a real deposit of the next release, so the first release carrying the archive also carries a DOI; (c) write the procedure without performing it.
+- Recommended default: (a). It exercises the same form without a permanent public act the PRD calls optional; (c) contradicts the epic's own resolution of the unknown. Cost: the sandbox may differ from production in small ways, so the first real deposit can still need one correction.
+- Blocks: order 6 (`proposed`).
+
+### Q41. What does the download give a reader for a drawn item whose text may not be redistributed?
+
+- Artifact: `aidd_docs/backlog/stories/a-drawn-item-reaches-the-download-under-its-own-terms-or-as-a-visible-hole.md` (order 7).
+- Question: this epic still writes "the statistics epic's manifest-plus-fetch-script fallback" and a "fetch instruction". The interval epic has since replaced the manifest with a three-rung ladder: on the no-redistribution rung the rows carry `prompt`, `expected_label` and `reference_output` redacted to the per-item content hash, and it names no fetch mechanism. What does the exported row give the reader to obtain the text?
+- Options: (a) per item the source, its revision and the stable source key, plus one written instruction per source in the archive README; the content hash proves a fetched item is the scored one; (b) a fetch script shipped in the archive that downloads the source and verifies each item by hash; (c) the source identity and the hash only, no instruction.
+- Recommended default: (a). It meets the epic's "visible absence with its source and a fetch instruction" without the repository shipping code that pulls a third party's corpus, which a no-redistribution licence may itself restrict; (c) falls short of the epic's success check 5. Cost: the reader performs the join to the source by hand.
+- Blocks: order 7 (`proposed`), together with the two public-benchmark spikes.
+
+### Q42. Who computes the published leader set, given the PRD names the export tooling?
+
+- Artifact: the epic, and `aidd_docs/backlog/stories/the-pitch-opens-on-one-card-per-use-case-read-from-published-rows.md` (which shows a stated absence until a leader set is published).
+- Question: the PRD Non-goals say the leader set "is a published derived output, computed from the reference bundle by the export tooling and recomputable by anyone holding that bundle". This epic's export "computes no number the rows do not already carry", and the interval epic records the derivation as unowned. Which epic computes it, and is it a table in the download?
+- Options: (a) the interval epic computes the leader set into the bundle as its own records beside the comparison records, and this export flattens them like any other record (which then falls under Q2's table split); (b) a story here derives it in the export as an extra table, which amends this epic's "computes no number" boundary; (c) leave it unowned for this release.
+- Recommended default: (a). It keeps the export a pure projection, the epic's "derived, never authoritative" decision, and puts a statistical derivation with the epic that owns the paired tests; it still satisfies the PRD's "recomputable by anyone holding that bundle". Cost: the PRD's literal wording ("by the export tooling") is read loosely, which only the owner can accept.
+- Blocks: no story in this epic. It decides whether the pitch's leader-set cards can ever show a model.
+
+### Q43. Do the hand-written item literals inside `src/` also fall under `LICENSE-DATA`?
+
+- Artifact: `aidd_docs/backlog/stories/the-data-is-cc-by-4-0-the-code-stays-mit-and-each-says-so-where-it-lives.md` (order 1).
+- Question: the hand-written items live as `_item(...)` literals in `src/wave_local_ai_v2/classification_suite.py` and `translation_suite.py`, files `LICENSE` covers as MIT code. Order 1 covers the items as published (suite-definition snapshots and rows) and leaves the source files as they are. Should `LICENSE-DATA` also claim the literals in `src/`?
+- Options: (a) yes: a header notice in each suite module states the item literals are CC-BY 4.0 while the code around them is MIT; (b) no: the literals stay MIT as part of the code, so the items are effectively available under both; (c) wait for Q1's answer and move the items out of `src/` into data first.
+- Recommended default: (a). The PRD AC says the suite items carry CC-BY 4.0 while the code stays MIT, and under (b) anyone can take the items under MIT without the attribution CC-BY requires. Cost: two files with mixed terms until Q1 moves items into data.
+- Blocks: nothing `ready`. Answering (a) or (c) adds one acceptance line to order 1 or a later story.
