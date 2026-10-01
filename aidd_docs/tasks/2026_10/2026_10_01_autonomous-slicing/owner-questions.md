@@ -402,3 +402,74 @@ Epic: `aidd_docs/backlog/epics/a-release-is-called-credible-only-by-its-logged-c
 - Options: (a) done once the record, rule and verdict work and one real session is logged and read back; (b) done only once a release is actually validated; (c) done once the mechanism works on planted records, before any real session.
 - Recommended default: (a). One real session proves the record survives contact with reality; tying `done` to three sessions would leave the epic open on a calendar outside the project. Cost: the epic can close with no release yet validated, which its done note must then say.
 - Blocks: the epic's done gate, not its slicing.
+
+## Backlog health pass (read-only)
+
+Read-only review of `aidd_docs/backlog/` (12 epics, 107 stories, 14 spikes, 1 task, 1 defect) after this run's slicing steps. Nothing under `aidd_docs/backlog/` was changed. Checked: frontmatter parses for every artifact; no frontmatter relation path and no backlog path cited in a body is dangling; no relation is stored on both ends and no `depends_on` duplicates a spike's `parents`; story orders are unique within every epic; every `Blocked:` line that cites a Q number cites one that exists here; no `ready` story or task carries a frontmatter `depends_on` chain reaching a `proposed` story, a `proposed` task or an open spike. Two `ready` stories are blocked in prose only and are already logged: `the-judged-probe-runs-both-paths-in-three-languages.md` (Q6) and `judge-scoring-with-inter-judge-agreement-proves-judged-machinery.md` (Q51). The engine and use-case harness split is consistent: `a-campaign-is-declared-as-data-and-an-empty-cell-fails-it.md` adds no harness field and `the-same-tool-calling-items-run-under-each-compared-harness.md` adds the list and the three-harness refusal; only the harness task's wording disagrees (see Mechanical findings).
+
+### Q70. Does the interval epic wire its suite stories to the suite seam story that now exists?
+
+- Artifact: `aidd_docs/backlog/stories/a-suite-is-data-resolved-by-its-id-not-an-import-in-the-cli.md` (`no-use-case-is-silently-absent` order 1, `ready`); interval epic orders 4, 7 and 8; the interval epic's epic-wide `depends_on` on `no-use-case-is-silently-absent`.
+- Question: Q1 was asked before the seam story existed; it now implements Q1's default (a). Orders 7 and 8 cite "an owner question" without its number and declare no edge to the seam story. Order 4 (`a-suite-is-certified-to-its-declared-level-and-every-item-names-its-licence-and-source.md`, `ready`) adds the level and per-item licence as literals in `classification_suite.py` and `translation_suite.py`, the same files the seam story turns into data; neither declares the other, so whichever lands second rewrites the first's change.
+- Options: (a) if Q1 is answered (a): orders 4, 7 and 8 declare `depends_on` on the seam story, the interval epic's epic-wide `depends_on` on `no-use-case-is-silently-absent` is dropped, and the `Blocked:` lines of 7 and 8 cite Q1 and Q3 by number; (b) only orders 7 and 8 declare the edge, and order 4 lands on literals and is migrated by the seam story; (c) leave relations as they are until Q1 is answered.
+- Recommended default: (a). It replaces an epic-wide edge that overstates the coupling with the one story-level edge the work needs, and avoids writing order 4's fields twice. Cost: order 4 waits on one `ready`, unblocked story in another epic.
+- Blocks: nothing new; it settles the edges Q1 leaves implicit.
+
+### Q71. Who owns Methodology 8's cloud-subject branch for deterministic batches?
+
+- Artifact: PRD Methodology 8 (per-item divergence tolerance, "single-run indicative") and PRD AC "Given a cloud subject re-run, its quality reproduction verdict is decided per item under the declared divergence tolerance ...; given a cloud subject that cannot be re-run deterministically, its row is marked single-run indicative"; `aidd_docs/backlog/stories/a-judged-re-run-receives-a-reproduction-verdict-that-separates-the-subject-from-its-judges.md` (quality epic order 6, `proposed`).
+- Question: the judged re-run story is the only artifact that maps this AC, and only for judged batches; it states "a deterministic quality batch's verdict is unchanged". A cloud subject on the classification or translation suite (Mistral, Google today) therefore has no owner for the per-item tolerance, the diverging-item list or the single-run-indicative mark, and no story adds the suite-declared tolerance field. Q59 noted the gap; it is still open.
+- Options: (a) a new story under `every-published-row-explains-and-reproduces-itself` (the Methodology 8 owner) adding the suite-declared per-item tolerance and the cloud-subject verdict to every quality batch, which the judged re-run story's subject component then reuses through `depends_on`; (b) widen the judged re-run story to all quality batches; (c) a new story under `quality-scored-comparison-first-three-use-cases`.
+- Recommended default: (a). It keeps one verdict rule for all batches in the epic that owns Methodology 8, and keeps the judged story to its judged component. Cost: a new story under an epic whose existing stories are all `done` (see Q75), and a tolerance value the PRD does not state.
+- Blocks: the AC above; quality epic order 6 under option (a).
+
+### Q72. Who owns "every row records whether its prompt left the machine"?
+
+- Artifact: PRD AC "Given no client-provided document or prompt in a suite, no request leaving the machine ever contains one, and every row records whether its prompt left the machine."
+- Question: egress is recorded only per surface: judged rows (`judge_egress` in `row_contract.py`, shipped), and the planned web-research and RAG rows. Local subject rows, cloud-subject quality rows and runtime rows carry no egress field, and no epic or story maps this AC.
+- Options: (a) a new story under `every-published-row-explains-and-reproduces-itself`: a row-contract field on every row (subject egress: none, or the provider), the writer gate refusing a row without it, the judge and search egress blocks kept as they are; (b) treat the cloud-subject `provider` field as the record and amend nothing; (c) a story under `any-open-ended-output-carries-two-judges-or-an-honest-flag`, which already owns judge egress.
+- Recommended default: (a). The AC says "every row", and the row contract is where "every row" is enforced. Cost: one more `SCHEMA_VERSION` bump.
+- Blocks: the AC above.
+
+### Q73. Must each new use-case suite publish a MoE and a tiny dense model side by side?
+
+- Artifact: PRD AC "Given the model roster, for each in-scope use case it includes at least one MoE candidate and at least one tiny dense candidate, run over the same items with results shown side by side"; the six suite stories of `no-use-case-is-silently-absent` (orders 3, 4, 5, 6, 8, 9).
+- Question: the AC is owned for classification and translation (`tiny-dense-models-compared-alongside-moe.md`, `done`) and rewriting (`the-rewriting-suite-scores-dense-and-moe-side-by-side-under-the-judge-pair.md`). None of the six new suite stories, and not their epic, mentions MoE or dense.
+- Options: (a) each new suite story's published evidence requires one MoE and one tiny dense roster entry over the same items, side by side, or a recorded refusal (for example a model the tool-calling spike finds unable to emit tool calls); (b) one closing story under `no-use-case-is-silently-absent` runs the dense and MoE pair across all six suites; (c) the AC is met by roster composition alone.
+- Recommended default: (a). It matches the route the first three use cases took and keeps the evidence with the suite that produces it. Cost: two batches per suite instead of one; the MoE flagship is the slowest entry on the laptop.
+- Blocks: the AC above; adds one evidence bullet to each of the six stories.
+
+### Q74. Engine order 1 and machine order 1 both change the fiche's hashed projection with no relation between them
+
+- Artifact: `aidd_docs/backlog/stories/every-row-names-the-engine-that-produced-it-and-the-fiche-hashes-it.md` (engine order 1, `ready`) and `aidd_docs/backlog/stories/a-gpu-run-and-a-cpu-only-run-never-share-a-fiche.md` (machine order 1, `ready`).
+- Question: both add keys to `hardware._NORMALISED_KEYS`, both keep a legacy projection selected by the citing row's `schema_version`, and both bump the schema. Only `a-campaign-is-declared-as-data-and-an-empty-cell-fails-it.md` depends on both. Built in parallel they produce two independent projection versions over one file.
+- Options: (a) `related_to` on `a-gpu-run-and-a-cpu-only-run-never-share-a-fiche.md` (the path that sorts first), and the second to land rebases onto the first's projection version; (b) engine order 1 `depends_on` machine order 1; (c) machine order 1 `depends_on` engine order 1.
+- Recommended default: (a). Neither needs the other's fields, and (b) would hold a code-only story behind machine order 0, which needs operator access to the professional PC. Cost: whoever lands second does the rebase.
+- Blocks: nothing; it prevents a projection conflict.
+
+### Q75. Two epics have every story `done` but stay `ready`, and other epics depend on them
+
+- Artifact: `aidd_docs/backlog/epics/every-published-row-explains-and-reproduces-itself.md` (20 of 20 stories `done`; six epics declare `depends_on` on it) and `aidd_docs/backlog/epics/clean-machine-runs-it-and-nothing-reaches-main-unchecked.md` (6 of 6 `done`; two epics depend on it).
+- Question: a child status never completes an epic without success evidence, and neither epic records whether its Success Evidence held. Until each is closed or explicitly kept open, every epic-level `depends_on` on it reads as an open blocker.
+- Options: (a) the owner checks each epic's Success Evidence and closes it with its done note (via `aidd-pm:07-epic`), with Q71 and Q72 adding new stories under a follow-up home; (b) keep both `ready` and read the epic-level edges as ordering only; (c) keep both open as the home for Q71 and Q72.
+- Recommended default: (a). It turns eight epic-level edges into satisfied ones and leaves no ambiguity about whether the row contract is finished. Cost: Q71 and Q72, if answered (a), then need a home: a new story under a `done` epic is a lifecycle question only the owner can settle.
+- Blocks: the meaning of eight epic-level `depends_on` edges.
+
+### Q76. Which story waits on the model-output redistribution spike?
+
+- Artifact: `aidd_docs/backlog/spikes/may-the-model-outputs-in-the-published-rows-be-redistributed-and-on-what-terms.md` (open; `parents`: the bundle epic only).
+- Question: the spike blocks the bundle epic as a whole, while all five of that epic's `ready` stories can proceed. No story names the release at which its answer must be in.
+- Options: (a) keep it epic-level, and state in `each-release-attaches-one-archive-that-needs-no-clone.md`'s scope that the first archive carrying open-ended model output (rewriting, document comparison) waits on the spike; (b) add `each-release-attaches-one-archive-that-needs-no-clone.md` to the spike's `parents`, which moves that story off `ready`; (c) leave it as is.
+- Recommended default: (a). Today's rows carry only `predicted_label`, which the licence story already scopes out as a separate part; the risk starts with open-ended output. Cost: one scope line.
+- Blocks: nothing `ready` under (a).
+
+### Mechanical findings
+
+- `aidd_docs/backlog/stories/the-tabular-export-carries-the-interval-and-the-comparison-record.md`: the `Blocked:` line says the bundle epic "has no story"; it now has seven. Rewrite it to cite Q2 and `the-published-bundle-reads-as-four-flat-tables-and-their-column-dictionary.md`.
+- `aidd_docs/backlog/stories/a-publication-level-classification-suite-stands-beside-the-hand-written-one.md` and `a-publication-level-translation-suite-stands-beside-the-hand-written-one.md`: the `Blocked:` lines cite unnumbered owner questions; name Q1 (suite seam) and Q3 (retry budget).
+- This file, Q1: says `no-use-case-is-silently-absent` "has no stories yet"; annotate that its order 1 now implements option (a) (see Q70).
+- `aidd_docs/backlog/tasks/register-the-closed-harness-candidate-set-and-its-three-row-fields.md`: Scope Excludes gives "the three-harness cap's declaration" to the engine epic's campaign declaration, but `a-campaign-is-declared-as-data-and-an-empty-cell-fails-it.md` adds no harness field and `the-same-tool-calling-items-run-under-each-compared-harness.md` adds the list and the cap refusal; point the Excludes at the latter.
+- `aidd_docs/backlog/tasks/register-the-closed-harness-candidate-set-and-its-three-row-fields.md`: no `order`; add `order: 1` (the only task under its parent).
+- `aidd_docs/backlog/epics/the-pitch-runs-from-a-browser-and-only-with-the-key.md`: its three `related_to` entries sit on the end whose path sorts later; move each to `clean-machine-runs-it-and-nothing-reaches-main-unchecked.md`, `every-published-row-explains-and-reproduces-itself.md` and `quality-scored-comparison-first-three-use-cases.md` respectively.
+- `aidd_docs/backlog/epics/quality-scored-comparison-first-three-use-cases.md`: a `ready` epic with no `goal`; add `goal: aidd_docs/product/wave-local-ai-v2.md`, as every sibling epic has.
+- `aidd_docs/backlog/stories/google-ai-studio-api-surface-is-confirmed-live.md`: a `done` spike filed under `stories/` with story fields `parent` and `order: 1`; move it to `spikes/`, replace `parent` with `parents`, drop `order`, and update the `depends_on` path in `a-second-cloud-provider-answers-suite-items-as-a-subject.md`.
