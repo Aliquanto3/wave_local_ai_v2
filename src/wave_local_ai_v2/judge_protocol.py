@@ -45,6 +45,12 @@ _SLOT_PATTERN = re.compile(
 # framing and the "answer in the form the rubric asks for" instruction; the
 # criteria and the answer form itself belong to the rubric, which is why the
 # two are versioned separately.
+#
+# The rubric slot comes before both item slots in every shell, so for one
+# language and rubric version every rendered prompt shares a byte-identical
+# prefix (instructions plus rubric) and only the item text varies after it.
+# That stable prefix is what lets a provider's input cache apply;
+# `tests/test_judge_protocol.py` fails a shell that breaks the order.
 JUDGE_PROMPT_TEMPLATES: dict[JudgeLanguage, str] = {
     "en": (
         "You are grading one answer produced by a language model. Apply the "

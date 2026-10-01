@@ -84,6 +84,34 @@ PRICE_TABLES: dict[str, dict[str, Price]] = {
     "google": GOOGLE_PRICE_TABLE,
 }
 
+# Whether a provider bills reasoning tokens inside its reported output count
+# or beside it. Keyed like PRICE_TABLES, and declared rather than inferred:
+# getting this wrong either prices a reasoning token twice or not at all.
+#
+# - mistral: ASSUMED, not confirmed against a live reasoning call or
+#   Mistral's billing documentation. Inferred from the usage block carrying
+#   prompt/completion/total and no reasoning counter (`mistral_client`'s
+#   docstring): if Mistral bills any reasoning, the only count it could be
+#   billed under is `completion_tokens`. Revisit if a Mistral judge or
+#   subject is ever sent a reasoning-effort control.
+# - google: `thoughtsTokenCount` is billed on top of `candidatesTokenCount`
+#   (aidd_docs/memory/external/google-ai-studio-api.md: the cost input
+#   becomes `candidatesTokenCount + thoughtsTokenCount`). On the pinned
+#   model, which reports no `thoughtsTokenCount`, the count is derived from
+#   the response's own totals (`google_client._reasoning_tokens`), so the
+#   cost stays reportable.
+REASONING_BILLED_INSIDE_OUTPUT = "inside_output"
+REASONING_BILLED_BESIDE_OUTPUT = "beside_output"
+REASONING_TOKEN_BILLING_BASES = (
+    REASONING_BILLED_INSIDE_OUTPUT,
+    REASONING_BILLED_BESIDE_OUTPUT,
+)
+
+REASONING_TOKEN_BILLING: dict[str, str] = {
+    "mistral": REASONING_BILLED_INSIDE_OUTPUT,
+    "google": REASONING_BILLED_BESIDE_OUTPUT,
+}
+
 
 def total_or_none(values: Iterable[int | None]) -> int | None:
     """Sum `values`, or `None` if any one of them is absent.
@@ -152,6 +180,14 @@ def judge_cost_fields(records: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     the contract rule that a non-null `cost_total` is recomputable from the
     row's own `list_price_*` rates.
 
+    Reasoning tokens are reported per provider beside output tokens, with
+    the basis that provider bills them on, and priced exactly once: under
+    `inside_output` they are already in `tokens_out` and add nothing; under
+    `beside_output` they are added to the output tokens charged. A null
+    reasoning count billed beside output makes that provider's cost `None`,
+    the same unknown-not-smaller rule as a missing token count; billed inside
+    output it moves nothing.
+
     A model id absent from its provider's price table raises `CostTableError`
     naming it -- never a default-costed zero, the same rule the import-time
     guards above already enforce. One missing token count makes that
@@ -180,12 +216,35 @@ def judge_cost_fields(records: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
                 f"{model_id!r} -- add one before costing a judged row"
             )
 
+        billing = REASONING_TOKEN_BILLING.get(provider)
+        if billing is None:
+            raise CostTableError(
+                f"no reasoning-token billing basis for judge provider "
+                f"{provider!r} -- declare whether it bills reasoning inside "
+                "or beside its output count before costing a judged row"
+            )
+
         tokens_in = total_or_none(record["tokens_in"] for record in group)
         tokens_out = total_or_none(record["tokens_out"] for record in group)
+        reasoning_tokens = total_or_none(record["reasoning_tokens"] for record in group)
+        null_reasons = sorted(
+            {
+                record["reasoning_tokens_null_reason"]
+                for record in group
+                if record["reasoning_tokens"] is None
+            }
+        )
+        billed_out: int | None
+        if billing == REASONING_BILLED_INSIDE_OUTPUT or tokens_out is None:
+            billed_out = tokens_out
+        elif reasoning_tokens is None:
+            billed_out = None
+        else:
+            billed_out = tokens_out + reasoning_tokens
         provider_cost = (
             None
-            if tokens_in is None or tokens_out is None
-            else cloud_cost(tokens_in, tokens_out, price)
+            if tokens_in is None or billed_out is None
+            else cloud_cost(tokens_in, billed_out, price)
         )
         currencies.add(price["currency"])
         per_provider.append(
@@ -194,6 +253,11 @@ def judge_cost_fields(records: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
                 "model_id": model_id,
                 "tokens_in": tokens_in,
                 "tokens_out": tokens_out,
+                "reasoning_tokens": reasoning_tokens,
+                "reasoning_tokens_null_reason": (
+                    ", ".join(null_reasons) if null_reasons else None
+                ),
+                "reasoning_tokens_billing": billing,
                 "cost_total": provider_cost,
                 "list_price_input_per_million": price["input_per_million"],
                 "list_price_output_per_million": price["output_per_million"],

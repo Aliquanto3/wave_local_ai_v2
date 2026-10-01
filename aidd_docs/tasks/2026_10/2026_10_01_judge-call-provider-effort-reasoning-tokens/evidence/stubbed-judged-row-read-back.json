@@ -1,0 +1,59 @@
+{
+  "schema_version": "13",
+  "judges": [
+    {
+      "provider": "mistral",
+      "answering_provider": "mistral",
+      "answering_provider_source": "direct_endpoint",
+      "reasoning_effort": "not_sent",
+      "tokens_out": 1,
+      "reasoning_tokens": null,
+      "reasoning_tokens_source": null,
+      "reasoning_tokens_null_reason": "provider_reports_no_reasoning_count"
+    },
+    {
+      "provider": "google",
+      "answering_provider": "google",
+      "answering_provider_source": "direct_endpoint",
+      "reasoning_effort": "not_sent",
+      "tokens_out": 1,
+      "reasoning_tokens": 0,
+      "reasoning_tokens_source": "derived_from_totals",
+      "reasoning_tokens_null_reason": null
+    }
+  ],
+  "judge_cost": {
+    "tokens_in_total": 400,
+    "tokens_out_total": 2,
+    "cost_total": 9.16e-05,
+    "cost_currency": "USD",
+    "per_provider": [
+      {
+        "provider": "google",
+        "model_id": "gemini-3.5-flash-lite",
+        "tokens_in": 190,
+        "tokens_out": 1,
+        "reasoning_tokens": 0,
+        "reasoning_tokens_null_reason": null,
+        "reasoning_tokens_billing": "beside_output",
+        "cost_total": 5.95e-05,
+        "list_price_input_per_million": 0.3,
+        "list_price_output_per_million": 2.5,
+        "list_price_retrieved_at": "2026-08-27"
+      },
+      {
+        "provider": "mistral",
+        "model_id": "mistral-small-2603",
+        "tokens_in": 210,
+        "tokens_out": 1,
+        "reasoning_tokens": null,
+        "reasoning_tokens_null_reason": "provider_reports_no_reasoning_count",
+        "reasoning_tokens_billing": "inside_output",
+        "cost_total": 3.21e-05,
+        "list_price_input_per_million": 0.15,
+        "list_price_output_per_million": 0.6,
+        "list_price_retrieved_at": "2026-08-27"
+      }
+    ]
+  }
+}

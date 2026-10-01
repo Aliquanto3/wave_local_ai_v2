@@ -13,6 +13,7 @@ from typing import Any, Literal
 
 from wave_local_ai_v2 import (
     aggregation,
+    cost,
     judge,
     judge_protocol,
     prompt_provenance,
@@ -77,7 +78,18 @@ from wave_local_ai_v2 import (
 # measured, so a reader does not have to guess which span a row's numbers
 # cover. Quality rows are untouched: the quality-side energy window (server
 # launch plus model load) is a separate, still-open finding (W4).
-SCHEMA_VERSION = "12"
+# "13": every judge call record on a judged row carries six more fields --
+# the provider that actually answered and where that was read from, the
+# reasoning effort as the request carried it, and the reasoning-token count
+# apart from the output tokens with where it came from (reported or derived
+# from the response's totals), or null with its reason -- and each
+# `judge_cost.per_provider` entry carries the reasoning tokens and the basis
+# the provider bills them on (Story: every judge call names who answered,
+# its reasoning effort, and its reasoning tokens). A record whose answering
+# provider differs from its bound one is refused. Additive inside
+# the judge block only: a deterministic quality row and every runtime row
+# validate unchanged.
+SCHEMA_VERSION = "13"
 
 # The two values `thinking_policy` may take. This is the **suite's** declared
 # policy, not a report of what each provider did with it: it is published on
@@ -354,6 +366,25 @@ JUDGE_COST_FIELDS: frozenset[str] = frozenset(
     }
 )
 
+# The keys each `judge_cost.per_provider` entry carries
+# (`cost.judge_cost_fields`): the provider's own tokens, reasoning apart from
+# output with the basis it is billed on, and the rates it was charged at.
+JUDGE_COST_PROVIDER_FIELDS: frozenset[str] = frozenset(
+    {
+        "provider",
+        "model_id",
+        "tokens_in",
+        "tokens_out",
+        "reasoning_tokens",
+        "reasoning_tokens_null_reason",
+        "reasoning_tokens_billing",
+        "cost_total",
+        "list_price_input_per_million",
+        "list_price_output_per_million",
+        "list_price_retrieved_at",
+    }
+)
+
 
 # The complete graded block, the same conditional shape as `JUDGED_FIELDS`: a
 # quality row carrying none of these is an exact-match row and validates
@@ -493,6 +524,7 @@ def _validate_judged_structure(row: dict[str, Any]) -> None:
                 f"row of kind 'quality' has judges[{index}] missing "
                 f"field(s): {', '.join(sorted(missing_keys))}"
             )
+        _validate_judge_call_record(index, record)
 
     language = row["judge_prompt_language"]
     if language not in judge_protocol.JUDGE_LANGUAGES:
@@ -529,6 +561,7 @@ def _validate_judged_structure(row: dict[str, Any]) -> None:
 
     _require_block_fields(row, "judge_egress", JUDGE_EGRESS_FIELDS)
     _require_block_fields(row, "judge_cost", JUDGE_COST_FIELDS)
+    _validate_judge_cost_providers(row["judge_cost"]["per_provider"])
 
     egress = row["judge_egress"]
     if not egress["providers"]:
@@ -543,6 +576,105 @@ def _validate_judged_structure(row: dict[str, Any]) -> None:
             "call record(s): an egress record that disagrees with the calls "
             "on the row is worse than no record"
         )
+
+
+def _validate_judge_call_record(index: int, record: dict[str, Any]) -> None:
+    """Raise on a judge call record whose provenance cannot back its score.
+
+    No fallback routing: a judge bound to one provider and answered by
+    another is a silently substituted judgement, so it is refused naming
+    both rather than published under either name.
+    """
+    bound = record["provider"]
+    answering = record["answering_provider"]
+    if answering != bound:
+        raise RowContractError(
+            f"row of kind 'quality' has judges[{index}] answered by provider "
+            f"{answering!r} but bound to provider {bound!r}: a judge call is "
+            "never re-routed to another provider"
+        )
+
+    source = record["answering_provider_source"]
+    if source not in judge.ANSWERING_PROVIDER_SOURCES:
+        raise RowContractError(
+            f"row of kind 'quality' has judges[{index}] "
+            f"answering_provider_source {source!r}: must be one of "
+            f"{', '.join(judge.ANSWERING_PROVIDER_SOURCES)}"
+        )
+
+    effort = record["reasoning_effort"]
+    if not isinstance(effort, str) or not effort:
+        raise RowContractError(
+            f"row of kind 'quality' has judges[{index}] reasoning_effort "
+            f"{effort!r}: the effort sent, or "
+            f"{judge.REASONING_EFFORT_NOT_SENT!r} when none was"
+        )
+
+    tokens = record["reasoning_tokens"]
+    if tokens is not None and (
+        isinstance(tokens, bool) or not isinstance(tokens, int) or tokens < 0
+    ):
+        raise RowContractError(
+            f"row of kind 'quality' has judges[{index}] reasoning_tokens="
+            f"{tokens!r}: a reasoning count is a non-negative integer or null"
+        )
+
+    # A count carries where it came from and no null reason; a null count
+    # carries a reason and no source.
+    source = record["reasoning_tokens_source"]
+    if tokens is not None and source not in judge.REASONING_TOKENS_SOURCES:
+        raise RowContractError(
+            f"row of kind 'quality' has judges[{index}] reasoning_tokens="
+            f"{tokens!r} with reasoning_tokens_source {source!r}: a count names "
+            f"one of {', '.join(judge.REASONING_TOKENS_SOURCES)}"
+        )
+    if tokens is None and source is not None:
+        raise RowContractError(
+            f"row of kind 'quality' has judges[{index}] reasoning_tokens=None "
+            f"alongside reasoning_tokens_source {source!r}: a null count has "
+            "no source"
+        )
+    reason = record["reasoning_tokens_null_reason"]
+    if tokens is None and reason not in judge.REASONING_TOKENS_NULL_REASONS:
+        raise RowContractError(
+            f"row of kind 'quality' has judges[{index}] reasoning_tokens=None "
+            f"with reasoning_tokens_null_reason {reason!r}: a null count names "
+            f"one of {', '.join(judge.REASONING_TOKENS_NULL_REASONS)}"
+        )
+    if tokens is not None and reason is not None:
+        raise RowContractError(
+            f"row of kind 'quality' has judges[{index}] reasoning_tokens="
+            f"{tokens!r} alongside reasoning_tokens_null_reason {reason!r}: a "
+            "reported count carries no null reason"
+        )
+
+
+def _validate_judge_cost_providers(per_provider: Any) -> None:
+    """Raise unless every `per_provider` entry is complete and states its basis."""
+    if not isinstance(per_provider, list):
+        raise RowContractError(
+            f"row of kind 'quality' has a non-list judge_cost per_provider: "
+            f"{per_provider!r}"
+        )
+    for index, entry in enumerate(per_provider):
+        if not isinstance(entry, dict):
+            raise RowContractError(
+                f"row of kind 'quality' has a non-object judge_cost "
+                f"per_provider[{index}]: {entry!r}"
+            )
+        missing = JUDGE_COST_PROVIDER_FIELDS - entry.keys()
+        if missing:
+            raise RowContractError(
+                f"row of kind 'quality' has judge_cost per_provider[{index}] "
+                f"missing field(s): {', '.join(sorted(missing))}"
+            )
+        billing = entry["reasoning_tokens_billing"]
+        if billing not in cost.REASONING_TOKEN_BILLING_BASES:
+            raise RowContractError(
+                f"row of kind 'quality' has judge_cost per_provider[{index}] "
+                f"reasoning_tokens_billing {billing!r}: must be one of "
+                f"{', '.join(cost.REASONING_TOKEN_BILLING_BASES)}"
+            )
 
 
 def _validate_graded_fields(row: dict[str, Any]) -> None:

@@ -198,7 +198,42 @@ def _judge_record(provider: str, family: str, model_id: str, score: int) -> dict
         "tokens_in": 120,
         "tokens_out": 2,
         "retries": 0,
+        "answering_provider": provider,
+        "answering_provider_source": "direct_endpoint",
+        "reasoning_effort": "not_sent",
+        "reasoning_tokens": None,
+        "reasoning_tokens_source": None,
+        "reasoning_tokens_null_reason": "provider_reports_no_reasoning_count",
     }
+
+
+# The six fields schema "13" added to every judge call record.
+NEW_JUDGE_RECORD_FIELDS = (
+    "answering_provider",
+    "answering_provider_source",
+    "reasoning_effort",
+    "reasoning_tokens",
+    "reasoning_tokens_source",
+    "reasoning_tokens_null_reason",
+)
+
+
+def _cost_entry(**changes) -> dict:
+    entry = {
+        "provider": "mistral",
+        "model_id": "mistral-small-2603",
+        "tokens_in": 120,
+        "tokens_out": 2,
+        "reasoning_tokens": None,
+        "reasoning_tokens_null_reason": "provider_reports_no_reasoning_count",
+        "reasoning_tokens_billing": "inside_output",
+        "cost_total": 0.00003,
+        "list_price_input_per_million": 0.15,
+        "list_price_output_per_million": 0.60,
+        "list_price_retrieved_at": "2026-08-27",
+    }
+    entry.update(changes)
+    return entry
 
 
 JUDGE_BLOCK = {
@@ -528,6 +563,169 @@ def test_a_judge_record_missing_raw_text_is_refused_by_name() -> None:
         validate_row("quality", row)
 
 
+@pytest.mark.parametrize("field", NEW_JUDGE_RECORD_FIELDS)
+def test_a_judge_record_missing_a_schema_13_field_is_refused_by_name(
+    field: str,
+) -> None:
+    first, second = COMPLETE_JUDGED_QUALITY_ROW["judges"]
+    stripped = {k: v for k, v in first.items() if k != field}
+    row = {**COMPLETE_JUDGED_QUALITY_ROW, "judges": [stripped, second]}
+
+    with pytest.raises(
+        RowContractError, match=rf"judges\[0\] missing field\(s\): {field}$"
+    ):
+        validate_row("quality", row)
+
+
+def _with_first_record(**changes) -> dict:
+    first, second = COMPLETE_JUDGED_QUALITY_ROW["judges"]
+    return {**COMPLETE_JUDGED_QUALITY_ROW, "judges": [{**first, **changes}, second]}
+
+
+def test_a_record_answered_by_another_provider_is_refused_naming_both() -> None:
+    row = _with_first_record(answering_provider="deepinfra")
+
+    with pytest.raises(RowContractError) as excinfo:
+        validate_row("quality", row)
+
+    message = str(excinfo.value)
+    assert "'deepinfra'" in message
+    assert "'mistral'" in message
+
+
+def test_a_record_answered_as_bound_read_from_the_response_validates() -> None:
+    validate_row("quality", _with_first_record(answering_provider_source="response"))
+
+
+def test_an_unknown_answering_provider_source_is_refused_by_value() -> None:
+    with pytest.raises(RowContractError, match="'guessed'"):
+        validate_row("quality", _with_first_record(answering_provider_source="guessed"))
+
+
+@pytest.mark.parametrize("effort", ["", None])
+def test_a_record_with_no_stated_reasoning_effort_is_refused(effort) -> None:
+    with pytest.raises(RowContractError, match="reasoning_effort"):
+        validate_row("quality", _with_first_record(reasoning_effort=effort))
+
+
+@pytest.mark.parametrize("tokens", ["12", -1, True, 1.5])
+def test_a_reasoning_count_that_is_not_a_non_negative_integer_is_refused(
+    tokens,
+) -> None:
+    row = _with_first_record(
+        reasoning_tokens=tokens,
+        reasoning_tokens_source="reported",
+        reasoning_tokens_null_reason=None,
+    )
+
+    with pytest.raises(RowContractError, match="non-negative integer"):
+        validate_row("quality", row)
+
+
+def test_a_reasoning_count_with_no_source_is_refused() -> None:
+    row = _with_first_record(
+        reasoning_tokens=0,
+        reasoning_tokens_source=None,
+        reasoning_tokens_null_reason=None,
+    )
+
+    with pytest.raises(RowContractError, match="reasoning_tokens_source None"):
+        validate_row("quality", row)
+
+
+def test_a_null_reasoning_count_with_a_source_is_refused() -> None:
+    row = _with_first_record(reasoning_tokens_source="derived_from_totals")
+
+    with pytest.raises(RowContractError, match="a null count has no source"):
+        validate_row("quality", row)
+
+
+def test_a_derived_zero_reasoning_count_validates() -> None:
+    row = _with_first_record(
+        reasoning_tokens=0,
+        reasoning_tokens_source="derived_from_totals",
+        reasoning_tokens_null_reason=None,
+    )
+
+    validate_row("quality", row)
+
+
+def _with_cost_entries(*entries) -> dict:
+    return {
+        **COMPLETE_JUDGED_QUALITY_ROW,
+        "judge_cost": {
+            **COMPLETE_JUDGED_QUALITY_ROW["judge_cost"],
+            "per_provider": list(entries),
+        },
+    }
+
+
+def test_a_complete_per_provider_cost_entry_validates() -> None:
+    validate_row("quality", _with_cost_entries(_cost_entry()))
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["reasoning_tokens", "reasoning_tokens_null_reason", "reasoning_tokens_billing"],
+)
+def test_a_per_provider_cost_entry_missing_a_reasoning_field_is_refused_by_name(
+    field,
+) -> None:
+    entry = {k: v for k, v in _cost_entry().items() if k != field}
+
+    with pytest.raises(RowContractError, match=rf"per_provider\[0\].*{field}"):
+        validate_row("quality", _with_cost_entries(entry))
+
+
+def test_a_per_provider_cost_entry_with_an_unknown_billing_basis_is_refused() -> None:
+    entry = _cost_entry(reasoning_tokens_billing="unknown")
+
+    with pytest.raises(RowContractError, match="'unknown'"):
+        validate_row("quality", _with_cost_entries(entry))
+
+
+@pytest.mark.parametrize("per_provider", [None, ["not-an-object"]])
+def test_a_malformed_per_provider_cost_record_is_refused(per_provider) -> None:
+    row = {
+        **COMPLETE_JUDGED_QUALITY_ROW,
+        "judge_cost": {
+            **COMPLETE_JUDGED_QUALITY_ROW["judge_cost"],
+            "per_provider": per_provider,
+        },
+    }
+
+    with pytest.raises(RowContractError, match="per_provider"):
+        validate_row("quality", row)
+
+
+def test_a_null_reasoning_count_without_a_reason_is_refused() -> None:
+    row = _with_first_record(reasoning_tokens=None, reasoning_tokens_null_reason=None)
+
+    with pytest.raises(RowContractError, match="reasoning_tokens=None"):
+        validate_row("quality", row)
+
+
+def test_a_reported_reasoning_count_carrying_a_null_reason_is_refused() -> None:
+    row = _with_first_record(
+        reasoning_tokens=12,
+        reasoning_tokens_source="reported",
+        reasoning_tokens_null_reason="provider_reports_no_reasoning_count",
+    )
+
+    with pytest.raises(RowContractError, match="reasoning_tokens=12"):
+        validate_row("quality", row)
+
+
+def test_a_reported_reasoning_count_validates() -> None:
+    row = _with_first_record(
+        reasoning_tokens=12,
+        reasoning_tokens_source="reported",
+        reasoning_tokens_null_reason=None,
+    )
+
+    validate_row("quality", row)
+
+
 def test_a_judged_row_in_an_unsupported_language_is_refused_by_value() -> None:
     row = {**COMPLETE_JUDGED_QUALITY_ROW, "judge_prompt_language": "es"}
 
@@ -819,17 +1017,27 @@ def test_the_schema_version_moved_once_for_the_thinking_policy() -> None:
     # `thinking_policy` is required on every quality row, because a score
     # produced with the subject allowed to reason and one produced without it
     # are not the same measurement and a row has to say which it is.
-    assert SCHEMA_VERSION == "12"
+    assert SCHEMA_VERSION == "13"
 
 
 def test_the_schema_version_moved_for_the_runtime_energy_window() -> None:
     # "12" fixes audit finding C3: the runtime row's energy figures used to
     # span the whole counted-repetition window, cooldowns included. Required
     # only on runtime rows -- quality rows carry no energy window at all.
-    assert SCHEMA_VERSION == "12"
+    assert SCHEMA_VERSION == "13"
     assert {"active_window_s", "idle_window_s", "energy_window_method"} <= (
         REQUIRED_FIELDS["runtime"]
     )
     assert {"active_window_s", "idle_window_s", "energy_window_method"}.isdisjoint(
         REQUIRED_FIELDS["quality"]
     )
+
+
+def test_the_schema_version_moved_for_the_judge_call_record_extension() -> None:
+    # "13" adds five fields inside each judge call record. Additive inside the
+    # conditional judge block: neither row kind's required set moves, so a
+    # deterministic quality row validates unchanged.
+    assert SCHEMA_VERSION == "13"
+    assert set(NEW_JUDGE_RECORD_FIELDS).isdisjoint(REQUIRED_FIELDS["quality"])
+    assert set(NEW_JUDGE_RECORD_FIELDS).isdisjoint(JUDGED_FIELDS)
+    validate_row("quality", COMPLETE_QUALITY_ROW)

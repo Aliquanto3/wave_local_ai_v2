@@ -136,7 +136,14 @@ def test_total_or_none_is_none_when_any_sample_is_absent() -> None:
     assert total_or_none([1, None, 2]) is None
 
 
-def _judge_record(provider: str, model_id: str, tokens_in, tokens_out) -> dict:
+def _judge_record(
+    provider: str,
+    model_id: str,
+    tokens_in,
+    tokens_out,
+    reasoning_tokens: int | None = 0,
+    reasoning_tokens_null_reason: str | None = None,
+) -> dict:
     return {
         "model_id": model_id,
         "provider": provider,
@@ -147,6 +154,12 @@ def _judge_record(provider: str, model_id: str, tokens_in, tokens_out) -> dict:
         "tokens_in": tokens_in,
         "tokens_out": tokens_out,
         "retries": 0,
+        "answering_provider": provider,
+        "answering_provider_source": "direct_endpoint",
+        "reasoning_effort": "not_sent",
+        "reasoning_tokens": reasoning_tokens,
+        "reasoning_tokens_source": None if reasoning_tokens is None else "reported",
+        "reasoning_tokens_null_reason": reasoning_tokens_null_reason,
     }
 
 
@@ -214,3 +227,96 @@ def test_judge_cost_over_no_calls_is_unknown_rather_than_free() -> None:
     assert result["cost_total"] is None
     assert result["cost_currency"] is None
     assert result["per_provider"] == []
+
+
+def test_reasoning_billed_inside_the_output_count_is_not_added_twice() -> None:
+    # Mistral bills reasoning inside `completion_tokens`, so a reasoning count
+    # on the record must not move the cost a second time.
+    result = cost.judge_cost_fields(
+        [_judge_record("mistral", "mistral-small-2603", 200, 40, 30)]
+    )
+    entry = result["per_provider"][0]
+
+    assert entry["reasoning_tokens_billing"] == "inside_output"
+    assert entry["reasoning_tokens"] == 30
+    assert entry["tokens_out"] == 40
+    assert entry["cost_total"] == cloud_cost(
+        200, 40, MISTRAL_PRICE_TABLE["mistral-small-2603"]
+    )
+
+
+def test_reasoning_billed_beside_the_output_count_is_priced_once() -> None:
+    # Google bills `thoughtsTokenCount` on top of `candidatesTokenCount`.
+    result = cost.judge_cost_fields(
+        [_judge_record("google", "gemini-3.5-flash-lite", 180, 1, 86)]
+    )
+    entry = result["per_provider"][0]
+    price = GOOGLE_PRICE_TABLE["gemini-3.5-flash-lite"]
+
+    assert entry["reasoning_tokens_billing"] == "beside_output"
+    assert entry["reasoning_tokens"] == 86
+    assert entry["tokens_out"] == 1
+    assert entry["cost_total"] == cloud_cost(180, 1 + 86, price)
+    assert entry["cost_total"] != cloud_cost(180, 1 + 86 + 86, price)
+    assert entry["cost_total"] != cloud_cost(180, 1, price)
+    # The aggregate output count stays output only; reasoning is not folded in.
+    assert result["tokens_out_total"] == 1
+
+
+def test_a_null_reasoning_count_billed_beside_output_makes_the_cost_unknown() -> None:
+    result = cost.judge_cost_fields(
+        [
+            _judge_record(
+                "google",
+                "gemini-3.5-flash-lite",
+                180,
+                1,
+                None,
+                "reasoning_count_absent_from_response",
+            )
+        ]
+    )
+    entry = result["per_provider"][0]
+
+    assert entry["reasoning_tokens"] is None
+    assert entry["reasoning_tokens_null_reason"] == (
+        "reasoning_count_absent_from_response"
+    )
+    assert entry["cost_total"] is None
+    assert result["cost_total"] is None
+
+
+def test_a_null_reasoning_count_billed_inside_output_moves_nothing() -> None:
+    result = cost.judge_cost_fields(
+        [
+            _judge_record(
+                "mistral",
+                "mistral-small-2603",
+                200,
+                1,
+                None,
+                "provider_reports_no_reasoning_count",
+            )
+        ]
+    )
+    entry = result["per_provider"][0]
+
+    assert entry["reasoning_tokens"] is None
+    assert entry["reasoning_tokens_null_reason"] == (
+        "provider_reports_no_reasoning_count"
+    )
+    assert entry["cost_total"] == cloud_cost(
+        200, 1, MISTRAL_PRICE_TABLE["mistral-small-2603"]
+    )
+
+
+def test_a_provider_with_no_declared_billing_basis_is_refused_by_name() -> None:
+    with (
+        patch.dict(cost.REASONING_TOKEN_BILLING, clear=True),
+        pytest.raises(cost.CostTableError, match="billing basis.*mistral"),
+    ):
+        cost.judge_cost_fields([_judge_record("mistral", "mistral-small-2603", 10, 1)])
+
+
+def test_every_priced_provider_declares_a_reasoning_billing_basis() -> None:
+    assert set(cost.REASONING_TOKEN_BILLING) == set(cost.PRICE_TABLES)

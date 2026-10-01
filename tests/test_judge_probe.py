@@ -119,6 +119,10 @@ def _google_reply(content: str, generated_tokens: int = 1) -> dict[str, object]:
         "prompt_tokens": 130,
         "total_tokens": 130 + generated_tokens,
         "model_version": GOOGLE_MODEL_INFO["version"],
+        # The pinned model's real shape: no thoughtsTokenCount and a total of
+        # prompt + candidates, so the client derives 0 from the totals.
+        "reasoning_tokens": 0,
+        "reasoning_tokens_derived": True,
     }
 
 
@@ -754,7 +758,8 @@ def test_resume_against_a_complete_run_makes_no_call_and_appends_nothing(
     run_id = "probe-resume-complete"
 
     judge_probe._run(resume_run_id=run_id)
-    assert len(read_rows(probe_path)) == 11
+    written = read_rows(probe_path)
+    assert len(written) == 11
     started["mistral_complete"].reset_mock()
     started["google_complete"].reset_mock()
     started["running_server"].reset_mock()
@@ -768,6 +773,42 @@ def test_resume_against_a_complete_run_makes_no_call_and_appends_nothing(
     assert f"local skipped: run {run_id} already complete" in stderr
     assert f"google skipped: run {run_id} already complete" in stderr
     assert len(read_rows(probe_path)) == 11
+
+
+def test_a_resume_reads_the_judge_call_provenance_back_unchanged(
+    stubbed_probe,
+) -> None:
+    probe_path, _, started, _ = stubbed_probe
+    run_id = "probe-resume-provenance"
+    judge_probe._run(resume_run_id=run_id)
+    written = read_rows(probe_path)
+    started["mistral_complete"].reset_mock()
+    started["google_complete"].reset_mock()
+
+    judge_probe._run(resume_run_id=run_id)
+
+    # No judge call is re-issued, and every record keeps its five fields.
+    assert started["mistral_complete"].call_count == 0
+    assert started["google_complete"].call_count == 0
+    read_back = read_rows(probe_path)
+    assert read_back == written
+    by_provider = {
+        record["provider"]: record
+        for row in read_back
+        if row["provider"] == "local"
+        for record in row["judges"]
+    }
+    assert by_provider["mistral"]["answering_provider"] == "mistral"
+    assert by_provider["google"]["answering_provider"] == "google"
+    for record in by_provider.values():
+        assert record["answering_provider_source"] == "direct_endpoint"
+        assert record["reasoning_effort"] == "not_sent"
+    assert by_provider["mistral"]["reasoning_tokens"] is None
+    assert by_provider["mistral"]["reasoning_tokens_null_reason"] == (
+        "provider_reports_no_reasoning_count"
+    )
+    assert by_provider["google"]["reasoning_tokens"] == 0
+    assert by_provider["google"]["reasoning_tokens_source"] == "derived_from_totals"
 
 
 def test_resume_with_a_never_used_run_id_behaves_like_a_fresh_run(

@@ -109,6 +109,16 @@ class GoogleCompletion(TypedDict):
     prompt_tokens: int | None
     total_tokens: int | None
     model_version: str | None
+    # The thinking tokens, billed beside `candidatesTokenCount` rather than
+    # inside it. `usageMetadata.thoughtsTokenCount` when the response carries
+    # it (`reasoning_tokens_derived` False). The pinned model never does, but
+    # its `totalTokenCount` still states every token the call was billed for,
+    # so when the three counts are all present the hidden count is
+    # `total - prompt - candidates` (`reasoning_tokens_derived` True) -- read
+    # off the response's own arithmetic, never an assumed zero. `None` when
+    # neither is available: an unreported count is unknown.
+    reasoning_tokens: int | None
+    reasoning_tokens_derived: bool
 
 
 class GoogleModelInfo(TypedDict):
@@ -234,6 +244,8 @@ def complete_prompt(
             f"unexpected Google totalTokenCount type: {total_tokens!r}"
         )
 
+    reasoning_tokens, reasoning_tokens_derived = _reasoning_tokens(usage)
+
     model_version: Any = response_json.get("modelVersion")
     if model_version is not None and not isinstance(model_version, str):
         raise GoogleRequestError(
@@ -248,7 +260,44 @@ def complete_prompt(
         prompt_tokens=prompt_tokens,
         total_tokens=total_tokens,
         model_version=model_version,
+        reasoning_tokens=reasoning_tokens,
+        reasoning_tokens_derived=reasoning_tokens_derived,
     )
+
+
+def _reasoning_tokens(usage: dict[str, Any]) -> tuple[int | None, bool]:
+    """The call's thinking-token count and whether it was derived.
+
+    Reported when `thoughtsTokenCount` is present. Otherwise derived from
+    `totalTokenCount - promptTokenCount - candidatesTokenCount`, but only when
+    all three are present in the body: `candidatesTokenCount` read as absent
+    (`complete_prompt`'s default of `0`) is not evidence enough to derive
+    from. A derivation that comes out negative is a response whose totals
+    contradict themselves, refused at the provider boundary rather than
+    published as a count.
+    """
+    reported: Any = usage.get("thoughtsTokenCount")
+    if reported is not None:
+        if not isinstance(reported, int) or isinstance(reported, bool):
+            raise GoogleRequestError(
+                f"unexpected Google thoughtsTokenCount type: {reported!r}"
+            )
+        return reported, False
+
+    # All three already type-checked by `complete_prompt` when present.
+    total: Any = usage.get("totalTokenCount")
+    prompt: Any = usage.get("promptTokenCount")
+    candidates: Any = usage.get("candidatesTokenCount")
+    if total is None or prompt is None or candidates is None:
+        return None, False
+    derived: int = total - prompt - candidates
+    if derived < 0:
+        raise GoogleRequestError(
+            f"Google usageMetadata totals contradict themselves: "
+            f"totalTokenCount={total!r} is below promptTokenCount={prompt!r} + "
+            f"candidatesTokenCount={candidates!r}"
+        )
+    return derived, True
 
 
 def check_model_available(api_key: str, model: str = MODEL) -> GoogleModelInfo:
