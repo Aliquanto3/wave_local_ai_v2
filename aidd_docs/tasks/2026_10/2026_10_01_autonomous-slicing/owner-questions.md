@@ -46,3 +46,39 @@ Epic: `aidd_docs/backlog/epics/a-score-is-published-with-its-interval-a-differen
 - Options: (a) one epic, two gates, with the downstream epic depending on gate one; (b) split into two epics; (c) one gate.
 - Recommended default: (a), the epic's own recommendation; it unblocks the engine and variant epic without waiting on a licence answer.
 - Blocks: no story here; it decides when the downstream epic may start.
+
+## Judge amendment
+
+Epic: `aidd_docs/backlog/epics/any-open-ended-output-carries-two-judges-or-an-honest-flag.md`. New stories are orders 7 to 11; the three API-surface unknowns (Z.ai, DeepSeek, the calibration endpoint) are open spikes under `aidd_docs/backlog/spikes/`, not questions here.
+
+### Q6. What happens to the judged probe story written for the retired Mistral and Google judges?
+
+- Artifact: `aidd_docs/backlog/stories/the-judged-probe-runs-both-paths-in-three-languages.md` (order 6, `ready`), and transitively `aidd_docs/backlog/stories/glm-and-deepseek-are-the-only-judges-and-mistral-and-google-never-judge-again.md` (order 10).
+- Question: order 6 is `ready` but cannot produce a row: its acceptance binds Mistral and Google as judges and requires one cloud-subject row judged by the other family alone and flagged single-judge, a path the new pair leaves with no live trigger. Its runner `judge_probe.py` exists and imports both retired judge backends, so retiring them (order 10) and rebinding the probe land together. The epic says order 6's acceptance "is rewritten with it, as a story change". Is it rewritten in place, cancelled and superseded, or left as it is?
+- Options: (a) rewrite order 6 in place: two-judge rows under GLM and DeepSeek for every item, the single-judge path proven by order 10's forced collision rather than by a row, one item in ten also calibrated once order 11 lands, its `depends_on` moved to orders 10 and 11, and its README answers extended to the calibration figure and the actual campaign cost; (b) cancel order 6 with the reason recorded and create a new story that `supersedes` it with that acceptance; (c) leave order 6 unchanged and blocked until the owner revisits.
+- Recommended default: (a). The epic already states the acceptance is rewritten as a story change, the story is not `done` so no completed work is overwritten, and its runner and ten items are provider-agnostic and survive. Cost: order 6's history no longer shows the single-judge row it once promised; the epic's success check 2 already replaces it with the forced collision.
+- Blocks: order 6, order 10 (`proposed`), and through them order 11 and the epic's Success Evidence run.
+
+### Q7. Which endpoint serves the calibration judge, GPT-5.6 Luna?
+
+- Artifact: `aidd_docs/backlog/stories/a-calibration-judge-scores-one-judged-item-in-ten-and-never-moves-a-score.md` (order 11), and its spike `aidd_docs/backlog/spikes/which-endpoint-serves-gpt-5-6-luna-as-a-pinned-calibration-judge-and-on-what-terms.md`.
+- Question: Methodology 11 names the pair's providers and requires each to be called through its own direct API, but names only the calibration model, not its provider; its router clause ("where a router is used its provider order is fixed, fallbacks disabled") leaves a router open. Is GPT-5.6 Luna called through its vendor's direct API, or through a router?
+- Options: (a) the vendor's direct API (OpenAI), the same rule the pair follows; (b) a router with a fixed provider order, fallbacks disabled and the answering provider on the row; (c) whichever the spike finds cheaper.
+- Recommended default: (a). It matches the pair's rule, keeps the calibration judge at one egress destination rather than a router plus an upstream, and makes "the provider that actually answered" true by construction. Cost: one more provider account and key to hold.
+- Blocks: order 11 (`proposed`); the spike can investigate the direct API first under this default.
+
+### Q8. How is the 10% calibration subsample drawn, and what is its floor?
+
+- Artifact: `aidd_docs/backlog/stories/a-calibration-judge-scores-one-judged-item-in-ten-and-never-moves-a-score.md` (order 11).
+- Question: Methodology 11 sets "a 10% subsample of judged items" to test for a shared bias "in particular on FR and DE items", but not the unit (per batch, per suite, per campaign), the draw, or a floor. A plain 10% of the ten-item probe is one item, which cannot carry an agreement figure nor an EN versus FR/DE split, and a uniform draw over a small suite can contain no FR or DE item at all.
+- Options: (a) per suite and batch, a seeded draw stratified by language, rounded up, with at least one item per language present; the n is published beside each figure and an undefined statistic publishes a null with its reason (on the probe this is 3 items of 10, above 10%); (b) a plain seeded 10% rounded up, uniform over the items, accepting that a small suite may calibrate no FR or DE item; (c) a fixed minimum count per language (for example 5) regardless of suite size, at a higher calibration cost.
+- Recommended default: (a). It is the smallest rule that can answer the FR/DE question the PRD gives the calibration judge, and it keeps the 10% rate on publication-size suites where stratified rounding is negligible. Cost: a deviation above 10% on small suites, which the PRD's revisable-threshold clause allows but only the owner can accept.
+- Blocks: order 11 (`proposed`).
+
+### Q9. What happens when the found catalogue prices put a judged campaign over the ten-dollar estimate?
+
+- Artifact: orders 8, 9 and 11, and the spikes behind them, which each return a list price.
+- Question: the PRD accepts "a small judging budget, on the order of ten dollars per campaign at catalogue rates" and states cost is reported, never optimised. Nothing says what a run does if the projected or actual spend exceeds it, for example if the calibration judge's rate is far above the pair's.
+- Options: (a) no cap: every judged row reports its judge cost, the first campaign's actual total is compared against the estimate in the results README, and the owner revisits the budget then; (b) a per-campaign spend ceiling that stops issuing paid calls when reached and marks the run partial, through the shipped partial-and-resume machinery; (c) shrink the calibration subsample when its share of the budget passes a set fraction.
+- Recommended default: (a). It follows the PRD's "reported, never optimised" rule and the epic's own closing question about actual versus estimated cost; (b) is a budget control the PRD does not ask for, and (c) changes a methodology threshold for cost reasons. Cost: a mispriced campaign is noticed after it is paid for, bounded by one campaign.
+- Blocks: nothing today. Answering (b) or (c) adds a story under this epic.
