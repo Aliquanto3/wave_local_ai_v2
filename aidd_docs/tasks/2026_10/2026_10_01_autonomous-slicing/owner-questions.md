@@ -154,3 +154,47 @@ Epic: `aidd_docs/backlog/epics/the-engine-and-the-prompt-variant-are-measured-no
 - Options: (a) quality rows gain per-item engine-reported TTFT (with its `ttft_source`) and per-item tokens in and out, so TTFT and tokens get paired tests over items; energy stays measured per batch, and per-variant energy differences are published as observations; (b) as (a), plus the energy tracker started and stopped around each item so energy is paired too; (c) per-item tokens on quality rows, while TTFT and energy come from the runtime protocol run per variant on a declared representative item per task family, with no paired test on either.
 - Recommended default: (a). Paired tests need per-item values, the engine already reports per-generation timings, and per-item energy on items of a few dozen tokens sits below what the tracker can resolve, so (b) would publish noise as a paired result. Cost: per-item TTFT on a quality batch is not the Methodology 6 runtime figure (no warm-up exclusion, no repetitions) and must be labelled as a distinct measurement; no paired energy claim is possible.
 - Blocks: order 10 (`proposed`) and through it order 12.
+
+## No use case silently absent
+
+Epic: `aidd_docs/backlog/epics/no-use-case-is-silently-absent.md`. New stories are orders 1 to 10, plus one task (`aidd_docs/backlog/tasks/register-the-closed-harness-candidate-set-and-its-three-row-fields.md`). The epic's two named spikes (tool-calling maturity per model and harness; search-tool selection) are open spikes under `aidd_docs/backlog/spikes/`, not questions here. Q1's recommended default (a) is written as order 1, `a-suite-is-data-resolved-by-its-id-not-an-import-in-the-cli.md`: the epic's own Boundaries already state a suite is "data plus a named scoring rule", so the story stores items as data. Which harnesses a campaign compares, and whether the comparison runs on every agentic model, are not repeated here: the epic defers both to the campaign declaration of `the-engine-and-the-prompt-variant-are-measured-not-assumed`.
+
+### Q30. Is an incomplete coverage record ever published, or only refused until every entry resolves?
+
+- Artifact: `aidd_docs/backlog/stories/every-prd-use-case-carries-a-coverage-state-or-the-record-refuses-to-publish.md` (order 2).
+- Question: the epic says a record with a use case missing or stateless "is not a shape the harness can publish". Read strictly, no coverage record is published until the last of the six new suites lands (or is marked out of scope), and until then the pitch overview states the record's absence. Should interim bundles instead publish a partial record?
+- Options: (a) strict: the record is refused until every entry resolves, and the refusal output is the interim coverage reading; (b) interim entries are published as `out-of-scope-this-release` with the reason "not yet built" and the owning story, flipped as suites land; (c) add a fourth state such as `planned`.
+- Recommended default: (a). It is the epic's own wording, and (b) puts an "out of scope this release" label on use cases the epic intends to ship, which a reader cannot tell from a real scoping decision; (c) widens a three-state set the epic and PRD fix. Cost: the pitch shows no coverage card state until the epic is nearly done.
+- Blocks: nothing. Order 2 is written to the default and is `ready`; (b) or (c) changes one acceptance bullet and the pitch epic's rendering.
+
+### Q31. What sandbox posture runs model-generated code?
+
+- Artifact: `aidd_docs/backlog/stories/generated-code-is-scored-by-its-tests-in-a-sandbox-or-not-run-at-all.md` (order 4).
+- Question: the epic's Sequence makes "sandbox posture decided" the gate before the code-generation story, and its unknowns table recommends one posture without deciding it. Which posture is adopted?
+- Options: (a) container-based, no network, no host mount, wall-clock and memory caps, refusing to run where no container runtime is present, sharing the runtime the published image already uses; (b) a host subprocess under OS-level limits, with no container dependency; (c) a WebAssembly or language-level sandbox per programming language.
+- Recommended default: (a), the epic's recommendation. The project already ships a container image, so the runtime is not a new dependency, and refusing rather than falling back is the only posture that never runs untrusted code on the host. Cost: an operator must have a container runtime on each bench machine for this suite, and the no-GPU professional PC may not.
+- Blocks: order 4 (`proposed`).
+
+### Q32. Which programming language joins Python in the code-generation suite?
+
+- Artifact: `aidd_docs/backlog/stories/generated-code-is-scored-by-its-tests-in-a-sandbox-or-not-run-at-all.md` (order 4).
+- Question: the epic requires "Python plus at least one other language, named on the item and on the row" and names none. Which one?
+- Options: (a) JavaScript (Node, its built-in test runner); (b) TypeScript; (c) a compiled language such as Java, C# or Go; (d) more than one.
+- Recommended default: (a). It is the most common second language in client codebases, needs no compile step in the sandbox, and its test runner ships with the runtime. Cost: no claim about a typed or compiled language is publishable; (b) or (c) adds a compile step and a build failure mode to the scoring.
+- Blocks: order 4 (`proposed`).
+
+### Q33. How is a harness's per-call prompt overhead measured?
+
+- Artifact: `aidd_docs/backlog/tasks/register-the-closed-harness-candidate-set-and-its-three-row-fields.md`, and through it orders 5, 6, 7, 8 and 9.
+- Question: Methodology 23 requires every agentic row to report "the tokens the framework adds around the user prompt" but does not define the subtraction; the epic records a recommendation open to contradiction. Which rule is adopted, and are an item's own tool definitions part of the item or of the overhead?
+- Options: (a) per call, the token count of what the engine finally received minus the token count of the item's own rendered prompt (including the item's tool definitions as rendered under `direct`), under the tokenizer the row already names; a framework that rewrites rather than wraps the item's prompt is recorded unmeasurable, not zero; (b) the framework's own reported prompt-token count minus `direct`'s for the same item; (c) report the total only and drop the separate field.
+- Recommended default: (a), the epic's recommendation. It reads what the engine actually received rather than trusting a framework's self-report, and counting tool definitions as item content keeps `direct`'s overhead from being inflated by the task itself. Cost: it needs the engine-side prompt to be readable per call, which the tool-calling spike checks per framework; (c) contradicts the PRD acceptance criterion.
+- Blocks: the harness task (`proposed`), hence orders 5, 6, 7, 8 and 9.
+
+### Q34. Is web research a retrieve-then-answer pipeline, or agentic tool use?
+
+- Artifact: `aidd_docs/backlog/stories/a-web-research-score-recomputes-offline-from-its-archived-search-responses.md` (order 9), and order 10.
+- Question: the epic recommends pipeline-first, open to contradiction: the harness issues the search, archives the response, and the model answers over it. The alternative lets the model decide when and what to search through a tool call.
+- Options: (a) pipeline-first: web research is independent of the tool-calling spike, sits outside the harness comparison this release, and records harness `direct`; an agentic variant is deferred until the tool-calling spike reports; (b) agentic from the start, sharing order 6's transcript capture and the spike's risk; (c) both, as two scoring rules over one query set.
+- Recommended default: (a). It keeps the heaviest suite off the riskiest gate and makes every archived response a function of the query alone, which is what makes offline recompute straightforward. Cost: the suite measures answer writing over search results, not a model's search strategy.
+- Blocks: orders 9 and 10 (`proposed`).
