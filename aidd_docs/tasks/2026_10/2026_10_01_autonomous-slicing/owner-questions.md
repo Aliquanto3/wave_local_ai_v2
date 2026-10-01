@@ -14,6 +14,7 @@ Epic: `aidd_docs/backlog/epics/a-score-is-published-with-its-interval-a-differen
 - Options: (a) one seam story in `no-use-case-is-silently-absent`, declared by both epics, items stored as data; (b) keep the epic-wide `depends_on` and let the first suite story settle storage; (c) this epic builds the seam itself.
 - Recommended default: (a). The epic itself says only the seam is on its path and the epic-wide edge overstates it; storing a seeded subset as generated source makes the selection-rule replay a code-generation step.
 - Blocks: orders 7 and 8 (both `proposed`), hence order 9.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q2. Confirm the tabular-export split, and whether comparison records get their own export table
 
@@ -38,6 +39,7 @@ Epic: `aidd_docs/backlog/epics/a-score-is-published-with-its-interval-a-differen
 - Options: (a) refuse, applying Methodology 8's "two unknown values never count as a match"; (b) publish as an observation, never as a test, naming the absent field.
 - Recommended default: (a). It is the rule the PRD already applies to comparability, and the bundle regeneration (`the-laptop-proves-both-modes-and-republishes-the-bundle-once`) removes the case. Cost: until then, the epic's zero-cost demonstration on the two committed pairs publishes refusals, not p-values.
 - Blocks: nothing. Order 2 is written to the default and is `ready`; a different answer changes one Evidence bullet.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q5. One epic with two done gates, or two epics?
 
@@ -102,6 +104,7 @@ Epic: `aidd_docs/backlog/epics/every-size-class-spans-two-families-or-says-it-do
 - Options: (a) vendor lineage, reusing the existing values: Gemma resolves to `google`, Ministral to `mistral`, and `ibm` (Granite), `liquid` (LFM2) and `microsoft` (Phi) are added; `display_id` keeps the model line visible; (b) model line: `gemma`, `granite`, `ministral`, `lfm2`, `phi`, with a separate vendor mapping for the independence guard; (c) model line for the composition rule and vendor for judging, as two fields.
 - Recommended default: (a). It matches the judge epic's reading, keeps one field with one meaning, and needs no second mapping; for the composition rule, two vendors are two families either way. Cost: a published family column reads `google` beside a Gemma model, which the `display_id` column beside it disambiguates.
 - Blocks: nothing. Order 1 is written to the default and is `ready`; a different answer changes literal family values before any non-Qwen row is published, which is when changing them is still free.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q12. Which candidate models does each size class take, in which order, and at which quant?
 
@@ -122,6 +125,7 @@ Epic: `aidd_docs/backlog/epics/the-engine-and-the-prompt-variant-are-measured-no
 - Options: (a) the engine configuration hash enters the projection for both engines now, llama.cpp's computed over its normalised flag list; the raw `flags` stay outside the projection as evidence; (b) only the comparator's configuration hash enters the projection, llama.cpp's is recorded on the fiche as evidence until the row epic decides; (c) neither enters the projection; both are evidence only.
 - Recommended default: (a). It is the epic's own decision applied without exception, and Methodology 8 already lists "the server flag set" as verdict-blocking (`verdict._RUNTIME_BLOCKING_FIELDS` carries `flags`), so hashing the normalised set aligns the hash with the verdict instead of creating a new rule. Cost: an operator thread-count override moves the fiche hash, so a re-run under a different override becomes `not comparable` rather than `reproduced`, which is the M8 reading anyway; and (b) would make the two engines' identities asymmetric.
 - Blocks: nothing. Order 1 is written to the default and is `ready`; a different answer changes one acceptance bullet.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q21. Which roster model does the "what the defaults cost" side-run use?
 
@@ -166,6 +170,7 @@ Epic: `aidd_docs/backlog/epics/no-use-case-is-silently-absent.md`. New stories a
 - Options: (a) strict: the record is refused until every entry resolves, and the refusal output is the interim coverage reading; (b) interim entries are published as `out-of-scope-this-release` with the reason "not yet built" and the owning story, flipped as suites land; (c) add a fourth state such as `planned`.
 - Recommended default: (a). It is the epic's own wording, and (b) puts an "out of scope this release" label on use cases the epic intends to ship, which a reader cannot tell from a real scoping decision; (c) widens a three-state set the epic and PRD fix. Cost: the pitch shows no coverage card state until the epic is nearly done.
 - Blocks: nothing. Order 2 is written to the default and is `ready`; (b) or (c) changes one acceptance bullet and the pitch epic's rendering.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q31. What sandbox posture runs model-generated code?
 
@@ -234,6 +239,7 @@ Epic: `aidd_docs/backlog/epics/one-download-holds-the-tables-their-licences-and-
 - Options: (a) yes: a header notice in each suite module states the item literals are CC-BY 4.0 while the code around them is MIT; (b) no: the literals stay MIT as part of the code, so the items are effectively available under both; (c) wait for Q1's answer and move the items out of `src/` into data first.
 - Recommended default: (a). The PRD AC says the suite items carry CC-BY 4.0 while the code stays MIT, and under (b) anyone can take the items under MIT without the attribution CC-BY requires. Cost: two files with mixed terms until Q1 moves items into data.
 - Blocks: nothing `ready`. Answering (a) or (c) adds one acceptance line to order 1 or a later story.
+- Owner answer: (a), the recommended default (2026-10-01). Consequence: the story gains one acceptance line: each suite module in `src/` that holds hand-written item literals carries a header notice stating the items are CC-BY 4.0 (see `LICENSE-DATA`) while the surrounding code is MIT.
 
 ## Quality-scored first three use cases
 
@@ -414,6 +420,7 @@ Read-only review of `aidd_docs/backlog/` (12 epics, 107 stories, 14 spikes, 1 ta
 - Options: (a) if Q1 is answered (a): orders 4, 7 and 8 declare `depends_on` on the seam story, the interval epic's epic-wide `depends_on` on `no-use-case-is-silently-absent` is dropped, and the `Blocked:` lines of 7 and 8 cite Q1 and Q3 by number; (b) only orders 7 and 8 declare the edge, and order 4 lands on literals and is migrated by the seam story; (c) leave relations as they are until Q1 is answered.
 - Recommended default: (a). It replaces an epic-wide edge that overstates the coupling with the one story-level edge the work needs, and avoids writing order 4's fields twice. Cost: order 4 waits on one `ready`, unblocked story in another epic.
 - Blocks: nothing new; it settles the edges Q1 leaves implicit.
+- Owner answer: (a), the recommended default (2026-10-01). Consequence: interval orders 4, 7 and 8 declare `depends_on` on the seam story; the interval epic's epic-wide edge to `no-use-case-is-silently-absent` is dropped; the `Blocked:` lines of 7 and 8 cite Q1 and Q3.
 
 ### Q71. Who owns Methodology 8's cloud-subject branch for deterministic batches?
 
@@ -446,6 +453,7 @@ Read-only review of `aidd_docs/backlog/` (12 epics, 107 stories, 14 spikes, 1 ta
 - Options: (a) `related_to` on `a-gpu-run-and-a-cpu-only-run-never-share-a-fiche.md` (the path that sorts first), and the second to land rebases onto the first's projection version; (b) engine order 1 `depends_on` machine order 1; (c) machine order 1 `depends_on` engine order 1.
 - Recommended default: (a). Neither needs the other's fields, and (b) would hold a code-only story behind machine order 0, which needs operator access to the professional PC. Cost: whoever lands second does the rebase.
 - Blocks: nothing; it prevents a projection conflict.
+- Owner answer: (a), the recommended default (2026-10-01). Consequence: `related_to` on `a-gpu-run-and-a-cpu-only-run-never-share-a-fiche.md`; whichever story lands second rebases onto the first's projection version.
 
 ### Q75. Two epics have every story `done` but stay `ready`, and other epics depend on them
 

@@ -3,6 +3,8 @@ type: story
 status: ready
 source: aidd_docs/backlog/epics/a-score-is-published-with-its-interval-a-difference-with-its-test.md
 parent: aidd_docs/backlog/epics/a-score-is-published-with-its-interval-a-difference-with-its-test.md
+depends_on:
+  - aidd_docs/backlog/stories/a-suite-is-data-resolved-by-its-id-not-an-import-in-the-cli.md
 order: 4
 ---
 
