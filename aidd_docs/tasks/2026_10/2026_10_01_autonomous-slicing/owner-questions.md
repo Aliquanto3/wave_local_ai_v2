@@ -234,3 +234,87 @@ Epic: `aidd_docs/backlog/epics/one-download-holds-the-tables-their-licences-and-
 - Options: (a) yes: a header notice in each suite module states the item literals are CC-BY 4.0 while the code around them is MIT; (b) no: the literals stay MIT as part of the code, so the items are effectively available under both; (c) wait for Q1's answer and move the items out of `src/` into data first.
 - Recommended default: (a). The PRD AC says the suite items carry CC-BY 4.0 while the code stays MIT, and under (b) anyone can take the items under MIT without the attribution CC-BY requires. Cost: two files with mixed terms until Q1 moves items into data.
 - Blocks: nothing `ready`. Answering (a) or (c) adds one acceptance line to order 1 or a later story.
+
+## Quality-scored first three use cases
+
+Epic: `aidd_docs/backlog/epics/quality-scored-comparison-first-three-use-cases.md`. Orders 1, 3 and 4 are `done`; order 2 (`judge-scoring-with-inter-judge-agreement-proves-judged-machinery`) is the epic's only open story and was checked against the amended judge epic (`any-open-ended-output-carries-two-judges-or-an-honest-flag`, PRD Methodology 10 and 11). It was not rewritten: Q50 to Q56 are its mismatches, each logged for the owner. New stories are orders 5 and 6. The chat-template finding in the epic's Progress section is closed by the `done` defect `local-subject-prompts-are-never-chat-templated` and is not asked here. The calibration draw and the judge budget are Q8 and Q9 and are not repeated.
+
+### Q50. How is order 2 brought in line with the amended judge pair?
+
+- Artifact: `aidd_docs/backlog/stories/judge-scoring-with-inter-judge-agreement-proves-judged-machinery.md` (order 2, `ready`).
+- Question: its first acceptance bullet names the judges as "two independent cloud judges (e.g. Mistral + Google AI)". Methodology 11 now fixes the pair as Z.ai's GLM and DeepSeek, each through its own direct API, and states that Google and Mistral "are benchmark subjects and are never judges". The judge epic says order 2 "is `ready` and still cannot start" for exactly this reason. Q51 to Q56 list the story's other mismatches; this question decides how all of them are applied: in place, by supersession, or not yet.
+- Options: (a) rewrite order 2 in place under the amended methodology, folding in the answers to Q51 to Q56 (the same route Q6 recommends for the judged probe), and keep its subject scope at one local and one cloud subject so the roster-wide rewriting run stays with order 5; (b) cancel order 2 with its reason recorded and create a new story that `supersedes` it; (c) leave order 2 unchanged until the judge epic's orders 8 to 10 are `done`, then revisit.
+- Recommended default: (a). Order 2 is not `done`, so no completed work is overwritten; the judge epic already treats it as the rewriting suite's owner and the machinery's first consumer, and Q6 recommends the same in-place route for the sibling story, so the two judged stories stay consistent. Cost: order 2's history no longer shows its Mistral and Google wording, and its slug keeps "proves judged machinery", which Q56 questions.
+- Blocks: order 2, and through it orders 5 and 6 (`proposed`) and the epic's done gate.
+
+### Q51. Order 2 is `ready` with no declared predecessor on the judge pair: does it return to `proposed` with `depends_on`?
+
+- Artifact: order 2.
+- Question: order 2 carries no `depends_on`. It cannot produce a judged row until the GLM and DeepSeek judges exist and the retired bindings are gone (judge epic orders 8, 9 and 10, all `proposed` and blocked on two spikes and Q6), and its rows will carry the per-call fields of judge epic order 7. Its `ready` status therefore overstates readiness, the condition the readiness rule refuses ("relations are known, and no blocking question remains").
+- Options: (a) declare `depends_on` on judge epic orders 7 and 10 (order 10 already depends on 8 and 9) and move order 2 from `ready` to `proposed`, a transition the lifecycle allows, until they are `done`; (b) declare the `depends_on` but keep `ready`, reading the edge as sequencing only; (c) leave the relation epic-wide, as today.
+- Recommended default: (a). It makes the blocker visible on the story a delivery agent would pick up, instead of only in the judge epic's prose. Cost: one more `proposed` story in this epic until the judge pair answers a live call.
+- Blocks: whether order 2 can be picked up for delivery today; nothing else.
+
+### Q52. Order 2 forbids any judged score without agreement; the PRD keeps a flagged single-judge branch
+
+- Artifact: order 2, second acceptance bullet.
+- Question: order 2 says "Every judged result is shown with both judges' scores and their agreement level, never a judged score without it." The PRD AC has two branches: a subject independent of both judge families carries both scores and agreement; a subject sharing a family with one judge carries the other judge's score only, "visibly flagged single-judge". No subject on today's roster collides with `glm` or `deepseek`, so the branch has no live trigger, but the story as written would make a future colliding subject unpublishable rather than flagged.
+- Options: (a) restate the bullet as the PRD AC's two branches, adding that on the current roster every rewriting row is a two-judge row; (b) keep the stricter wording, so a colliding subject is excluded from the rewriting suite rather than flagged; (c) drop the bullet and rely on the row contract's `JUDGED_FIELDS` alone.
+- Recommended default: (a). It is the PRD's own wording and the judge epic's shipped invariant (the writer refuses a judged row carrying neither an agreement figure nor the flag). Cost: none on the current roster.
+- Blocks: nothing beyond Q50.
+
+### Q53. Order 2 is silent on the per-judge-call fields and on judge cost
+
+- Artifact: order 2.
+- Question: Methodology 11 and the PRD AC require every judged item's row to name the provider that actually answered, the reasoning effort issued and reasoning tokens apart from output tokens (judge epic order 7), and the judge epic keeps `judge_cost` apart from `cost_total`. Order 2 names none of these. Once order 7 lands, the row contract refuses a judged row missing them, so the rewriting rows inherit them either way; the question is whether order 2 states them.
+- Options: (a) cite them in order 2's "Maps to" line and its `depends_on` (Q51) without new acceptance bullets, since the contract enforces them; (b) add one acceptance bullet per field to order 2; (c) leave order 2 silent.
+- Recommended default: (a). The contract is the enforcement point and order 7 owns it; repeating its bullets would put the same rule in two stories. Cost: a reader of order 2 alone has to follow the link to see the per-call fields.
+- Blocks: nothing beyond Q50.
+
+### Q54. Must the rewriting suite's first published batch carry the calibration judge?
+
+- Artifact: order 2, and `aidd_docs/backlog/stories/a-calibration-judge-scores-one-judged-item-in-ten-and-never-moves-a-score.md` (judge epic order 11, `proposed`).
+- Question: Methodology 11 has GPT-5.6 Luna score "a 10% subsample of judged items", and the rewriting suite is the first real suite whose items are judged. Order 2 does not mention calibration, and order 11 is blocked on a spike, Q7 and Q8. Does order 2's `done` wait for the calibration figure on the rewriting batch?
+- Options: (a) no: order 2 publishes its rewriting batch under the pair alone, its results README section states that the calibration subsample has not yet run, and order 11's first figure is computed over that batch's judged items once it lands; (b) yes: order 2 declares `depends_on` on order 11 and its batch is published with the calibration figure; (c) calibration is exercised on the judged probe only, and never on a suite batch this release.
+- Recommended default: (a). Methodology 11 forbids folding the calibration result into any suite score, so the rewriting score does not depend on it, and making it wait would put a third provider's spike on the critical path of the epic's last use case. Cost: the first rewriting publication carries a stated absence where its calibration figure belongs; (c) contradicts Methodology 11's "judged items".
+- Blocks: order 2's dependency set; nothing else.
+
+### Q55. Order 2 does not state its rubric, its contested threshold or the judge prompt's language
+
+- Artifact: order 2.
+- Question: the judge epic excludes "the rewriting suite's items and its rubric text" because order 2 owns them, sets the contested default (more than 1 point on a 1-5 rubric) as "configured per suite", and the `no-use-case-is-silently-absent` epic copies that split for its three judged suites. Order 2's acceptance names no rubric, no rubric kind or version, no contested threshold, nothing about contested items being excluded from the headline (PRD AC), and nothing about the judge prompt being issued in the item's own language (Methodology 10). The probe's code says the same: "The rewriting suite owns its own" rubric.
+- Options: (a) order 2's rewrite adds its own versioned rubric (1-5 ordinal, so quadratic-weighted kappa with raw agreement beside it, the epic's decision), the shipped default threshold of more than 1 point unless the suite argues otherwise in writing, contested items kept visible and excluded from the headline with their count, and judge prompts in the item's language; (b) the rewriting suite reuses the probe's generic shipped rubric; (c) a separate story under this epic authors the rubric before order 2.
+- Recommended default: (a). It is the ownership the judge epic already wrote, and the probe's own source refuses to be a draft of the rewriting rubric. Cost: order 2 grows by four acceptance bullets; it stays one story because rubric and suite are versioned together.
+- Blocks: nothing beyond Q50.
+
+### Q56. Does order 2 still prove the judged machinery, or only consume it?
+
+- Artifact: order 2 (title and "So that"), and the epic's Progress section, which says order 2 carries "both the rewriting task suite ... and the two-independent-judge machinery".
+- Question: order 2's outcome is "proof the open-ended judging path works before extending it to more use cases". Under the amended judge epic that proof is the judged probe's (judge epic order 6, "exists to drive the machinery end to end"), and the machinery is built by judge epic orders 1 to 11; order 2 is called the machinery's "first real consumer". The two epics now describe order 2 differently.
+- Options: (a) order 2's rewrite restates its value as the third use case's quality score (a consultant compares local and cloud rewriting quality under two independent judges), with `depends_on` on the probe, and the epic's Progress text is updated by the owner to match; (b) keep "proves the machinery" as order 2's outcome and treat the probe as a rehearsal; (c) leave both texts as they are.
+- Recommended default: (a). It removes a double claim to the same proof, and it is the reading the judge epic's Boundaries already state. Cost: the story's slug no longer describes its outcome; renaming a file is the owner's call.
+- Blocks: nothing beyond Q50.
+
+### Q57. Does order 2 have to be born compliant with Methodology 2 to 5, and as a data-defined suite?
+
+- Artifact: order 2.
+- Question: the row epic excludes authoring the translation and rewriting suites because "their stories cite criteria 4 and 5 as acceptance and are born compliant". Order 2 cites neither: nothing about at least 20 items, each of EN, FR and DE at 25% or more with per-language n and indicative marks (Methodology 4), per-item provenance (5), suite id, version and prompt-set hash (2), or caps and `thinking_policy` declared by the suite (3), the field the done chat-template defect made required. Separately, `a-suite-is-data-resolved-by-its-id-not-an-import-in-the-cli.md` (`no-use-case-is-silently-absent` order 1, `ready`) makes a suite data resolved by id; a rewriting suite written as `_item(...)` source before it lands would be migrated right after.
+- Options: (a) order 2's rewrite cites Methodology 2 to 5 as acceptance and declares `depends_on` on the suite-as-data story, so the rewriting suite is born as data and gate-compliant; (b) as (a) without the suite-as-data dependency, migrating later; (c) a separate story under this epic, mirroring `the-classification-suite-reaches-twenty-items-across-three-languages`, brings the suite to compliance after order 2.
+- Recommended default: (a). It is what the row epic already expects, and it avoids authoring the third suite in a shape the next story replaces. Cost: order 2 waits on one more `ready` story in another epic.
+- Blocks: nothing beyond Q50.
+
+### Q58. The epic's own Boundaries and Dependencies still name Mistral and Google as judges on the free tier
+
+- Artifact: `aidd_docs/backlog/epics/quality-scored-comparison-first-three-use-cases.md` (Boundaries, Dependencies and Unknowns, Progress).
+- Question: the epic includes "two independent cloud judges, e.g. Mistral + Google AI" and lists "Free-tier access to ≥2 independent cloud LLM judges (Mistral, Google AI Studio)" as a dependency "already assumed available". Methodology 11 retires both as judges and the PRD Dependencies now accept a paid judging budget for Z.ai, DeepSeek and the calibration judge's provider. Its Progress section also still describes the chat-template finding as open, though the defect is `done`. This run may not edit an epic's Boundaries or Dependencies.
+- Options: (a) the owner amends those two rows and appends a dated Progress note (via `aidd-pm:07-epic`), leaving Success Evidence untouched; (b) leave the epic as history and let the judge epic's text govern; (c) cancel this epic and move order 2 and the new stories under the judge epic.
+- Recommended default: (a). An epic that names retired judges invites a delivery agent to wire them back, which is the exact failure Methodology 11 forbids. Cost: one owner edit.
+- Blocks: nothing directly.
+
+### Q59. What is the reproduction verdict of a judged score, and which epic owns it?
+
+- Artifact: `aidd_docs/backlog/stories/a-judged-re-run-receives-a-reproduction-verdict-that-separates-the-subject-from-its-judges.md` (order 6, new, `proposed`).
+- Question: the epic's Success Evidence asks that a client's engineer "rerun the ... rewriting suites ... get the same quality scores back" and "record ... whether reproduction actually held". Methodology 8 decides quality reproduction on identical per-item labels or scores, with a per-item divergence tolerance for a cloud subject, and says nothing about a judged score: a local subject can reproduce its output byte for byte while either cloud judge scores it differently on the re-run. In code, `verdict.quality_verdict` compares `item_score` when no label exists, and `judge_probe.py` writes `not_comparable` by hand. The row epic owns Methodology 8 but excludes criteria 10 and 11; the judge epic excludes criteria 1 to 9; no story owns this. Related and outside this epic: Methodology 8's cloud-subject branch (per-item divergence tolerance, single-run indicative) has no story in any epic either.
+- Options: (a) a two-part verdict under this epic: the subject component compares the subject's per-item outputs (local: identical; cloud: Methodology 8's tolerance), the judged component recomputes scores, agreement, contested set and headline offline from the recorded judge records and must match exactly, and a live re-judge is compared per item under a suite-declared judge tolerance defaulting to the contested threshold (1 point on a 1-5 rubric), naming divergent items and judges; a changed judge model id, judge prompt hash or rubric version makes the pair not comparable naming the field; (b) one verdict on the per-item judged score under the suite's tolerance only, with no subject component; (c) every judged row is published single-run indicative and never reproduced; (d) the row epic owns it as a Methodology 8 amendment.
+- Recommended default: (a), owned here. It is the only option that tells a reader whether a non-reproduction came from the model or from a judge, and the offline recompute is the same property Methodology 17 demands of web research. Cost: one more verdict shape in `verdict.py` and a tolerance figure the PRD does not state yet, which only the owner can accept; the Z.ai and DeepSeek spikes' determinism answers are the evidence for whether 1 point is too loose or too tight.
+- Blocks: order 6 (`proposed`).
