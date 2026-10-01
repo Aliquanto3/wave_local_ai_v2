@@ -27,11 +27,11 @@ Current state: `LICENSE` is MIT and names the code. Nothing states terms for `ai
 - The two assumptions the epic names are disclosed in the file, not buried: the hand-written items are stated to be the owner's to license, unverified against any employment or client agreement, and the output declaration above is stated as unverified.
 - A short notice sits in each covered directory (`aidd_docs/results/`, `aidd_docs/results/fiches/`, `aidd_docs/results/suite-definitions/`, `aidd_docs/roster/`) stating the terms and pointing to `LICENSE-DATA`, so a directory copied out of a clone carries its terms with it.
 - `README.md` gains a licence section stating the split in plain words (code MIT, data CC-BY 4.0 with the named exclusions) and linking both files. The attribution string a reuser reproduces lands in that section with order 2; until then the section says where it will be.
-- The item literals inside `src/wave_local_ai_v2/*_suite.py` are left as they are. Whether `LICENSE-DATA` also claims them there is owner question Q43 and changes nothing above.
+- Each module in `src/wave_local_ai_v2/` that holds hand-written item literals (today `classification_suite.py` and `translation_suite.py`) carries a header notice stating that its item literals are CC-BY 4.0 under `LICENSE-DATA` while the surrounding code is MIT, and `LICENSE-DATA`'s scope section names those modules (owner answer to Q43, option a).
 
 ## Code it changes
 
-- `LICENSE-DATA` (new), one notice file per covered directory (new), `README.md` (licence section). No production module.
+- `LICENSE-DATA` (new), one notice file per covered directory (new), `README.md` (licence section), and a header notice in each suite module holding item literals. No behaviour change.
 
 ## Tests it needs
 

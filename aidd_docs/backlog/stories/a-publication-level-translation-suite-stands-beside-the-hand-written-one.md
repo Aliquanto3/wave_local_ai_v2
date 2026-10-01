@@ -4,6 +4,7 @@ status: proposed
 source: aidd_docs/backlog/epics/a-score-is-published-with-its-interval-a-difference-with-its-test.md
 parent: aidd_docs/backlog/epics/a-score-is-published-with-its-interval-a-difference-with-its-test.md
 depends_on:
+  - aidd_docs/backlog/stories/a-suite-is-data-resolved-by-its-id-not-an-import-in-the-cli.md
   - aidd_docs/backlog/stories/a-suite-is-certified-to-its-declared-level-and-every-item-names-its-licence-and-source.md
   - aidd_docs/backlog/stories/a-publication-subset-redraws-to-the-same-items-from-its-recorded-rule.md
   - aidd_docs/backlog/stories/every-quality-batch-publishes-its-interval-and-what-it-could-resolve.md
@@ -20,7 +21,7 @@ Maps to: PRD AC "Given a published suite, its rows state whether it was built to
 
 Needs: a real local model run (one published batch on the bench machine), after the licence spike has returned its verdict.
 
-Blocked: by the spike `aidd_docs/backlog/spikes/which-public-translation-benchmark-seeds-the-publication-suite-and-on-what-terms.md`, and by the same suite-seam owner question as order 7 in `aidd_docs/tasks/2026_10/2026_10_01_autonomous-slicing/owner-questions.md`. A cloud batch at this scale additionally waits on the retry-budget owner question; the one required batch can be local.
+Blocked: by the spike `aidd_docs/backlog/spikes/which-public-translation-benchmark-seeds-the-publication-suite-and-on-what-terms.md`, and by owner question Q3 (cloud retry budget and per-item resume at this scale, cloud batches only) in `aidd_docs/tasks/2026_10/2026_10_01_autonomous-slicing/owner-questions.md`. Q1 is answered (a): the suite seam is `aidd_docs/backlog/stories/a-suite-is-data-resolved-by-its-id-not-an-import-in-the-cli.md`, declared in `depends_on`.
 
 ## Acceptance
 
