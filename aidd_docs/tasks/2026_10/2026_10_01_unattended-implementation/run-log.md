@@ -17,3 +17,4 @@ _Pending: written at the end of the run._
 
 | # | Story | Outcome | Commits | Evidence |
 | - | ----- | ------- | ------- | -------- |
+| 1 | every-quality-batch-publishes-its-interval-and-what-it-could-resolve | skipped: acceptance wrong against the math | none | The acceptance requires the bootstrap to agree with Wilson 95% within 0.01 on each bound at n=20, p=0.80. Wilson(16/20) = [0.5840, 0.9193]. A bootstrap quantile over 20 binary items lies on the 0.05 grid, so the upper bound misses by at least 0.019. Checked with a stdlib percentile bootstrap (10 000 resamples, seeds 1/2/3 => [0.60, 0.95]). n=100 passes or fails depending on the seed (upper bound 0.87 or 0.88 vs 0.8666). Owner fix options: widen the tolerance at n=20, check Wilson only at n>=100, or use exact binomial quantiles as the reference. Also open: the story does not define the minimum detectable effect beyond "read off the same resample". No in-scope story depends on it. |
