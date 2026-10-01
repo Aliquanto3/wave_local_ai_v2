@@ -318,3 +318,87 @@ Epic: `aidd_docs/backlog/epics/quality-scored-comparison-first-three-use-cases.m
 - Options: (a) a two-part verdict under this epic: the subject component compares the subject's per-item outputs (local: identical; cloud: Methodology 8's tolerance), the judged component recomputes scores, agreement, contested set and headline offline from the recorded judge records and must match exactly, and a live re-judge is compared per item under a suite-declared judge tolerance defaulting to the contested threshold (1 point on a 1-5 rubric), naming divergent items and judges; a changed judge model id, judge prompt hash or rubric version makes the pair not comparable naming the field; (b) one verdict on the per-item judged score under the suite's tolerance only, with no subject component; (c) every judged row is published single-run indicative and never reproduced; (d) the row epic owns it as a Methodology 8 amendment.
 - Recommended default: (a), owned here. It is the only option that tells a reader whether a non-reproduction came from the model or from a judge, and the offline recompute is the same property Methodology 17 demands of web research. Cost: one more verdict shape in `verdict.py` and a tolerance figure the PRD does not state yet, which only the owner can accept; the Z.ai and DeepSeek spikes' determinism answers are the evidence for whether 1 point is too loose or too tight.
 - Blocks: order 6 (`proposed`).
+
+## Result reception log epic
+
+Epic: `aidd_docs/backlog/epics/a-release-is-called-credible-only-by-its-logged-client-sessions.md` (`proposed`, no stories). It owns the PRD acceptance criterion "Given a benchmark result shown to a client or their engineer, the consultant logs in a tracked file whether it was challenged, dismissed, or accepted...", which no epic or story owned before this step. The epic stays `proposed` until the questions marked as blocking slicing are answered.
+
+### Q60. Where does the tracked reception record live, and in what form?
+
+- Artifact: the epic's reception record boundary.
+- Question: the PRD says only "a tracked file", and the PRD shadow scan flagged the log as "never named or located". Which path, and is it prose or structured data?
+- Options: (a) one append-only structured file (one record per session, for example JSONL or YAML) under `aidd_docs/results/`, beside the result stores it judges; (b) one Markdown file with a table per release under `aidd_docs/`; (c) a file outside the public repo, referenced from it.
+- Recommended default: (a). A structured record lets the verdict be recomputed rather than counted by hand, and sitting next to the results makes "which release did this judge" a local lookup. Cost: a schema to maintain.
+- Blocks: every story of the epic.
+
+### Q61. May a client organisation be named in the tracked record?
+
+- Artifact: the epic's reception record and its client-identity success check.
+- Question: the repo is published (MIT code, CC-BY results), so a tracked file is public. The PRD requires the challenger's role, not the client's identity. Is the client named, pseudonymised, or omitted?
+- Options: (a) no client name; role plus an opaque session id only; (b) a pseudonymous client id, with the mapping kept outside the repo; (c) the client named, with their consent.
+- Recommended default: (b). It keeps the record confidential while still letting "three sessions" be told apart from "one client seen three times", which (a) cannot. Cost: a private mapping the consultant must keep.
+- Blocks: the record's schema (Q60) and the epic's client-identity check.
+
+### Q62. Who decides that a challenge was "resolved by evidence within that session"?
+
+- Artifact: the epic's sustained rule.
+- Question: the shadow scan calls the consultant "the weakest possible arbiter for a credibility claim". The PRD defines sustained by evidence but names no arbiter.
+- Options: (a) the consultant records the resolution and must name the evidence that resolved it, so it is checkable afterwards; (b) a resolution counts only if the challenger agreed in the session, recorded as such; (c) a second consultant reviews each record before it counts.
+- Recommended default: (a). It is the PRD's own definition made auditable and needs nothing from the client. Cost: still self-reported; the epic records that limit as an accepted assumption.
+- Blocks: the sustained rule and the verdict.
+
+### Q63. What counts as a session toward the three?
+
+- Artifact: the epic's validation verdict.
+- Question: the PRD says "shown to a client or their engineer". Does an internal Wavestone review count, and do repeat showings to the same client count separately?
+- Options: (a) only showings to a party outside the consultant's own firm count; repeats with one client count, and the verdict also states the number of distinct clients; (b) only distinct clients count; (c) any showing, internal or external, counts.
+- Recommended default: (a). It follows the PRD's wording literally and surfaces the distinct-client count instead of hiding it. Cost: three sessions with one client can validate a release, which (b) would forbid.
+- Blocks: the verdict.
+
+### Q64. How does a sustained challenge interact with a release's verdict?
+
+- Artifact: the epic's validation verdict.
+- Question: "After at least 3 such logged sessions with no sustained challenge" is ambiguous once a sustained challenge to fiche disclosure, table separation or judge agreement occurs. Does it block that release for good, reset its count, or revoke a verdict already reached?
+- Options: (a) it blocks that release's verdict permanently and revokes one already reached; the fix ships in a later release whose count starts at zero; (b) it resets the count within the same release; (c) it only blocks if it happens before the third clean session.
+- Recommended default: (a). The PRD scopes the verdict "for that release", and a sustained challenge to one of the three claims means that release's artifact failed on it. Cost: a single bad session can cost a release its verdict.
+- Blocks: the verdict.
+
+### Q65. Where does a sustained challenge's follow-up item live?
+
+- Artifact: the epic's follow-up obligation.
+- Question: the PRD requires a sustained challenge to be "logged as a follow-up item rather than silently accepted", but not where.
+- Options: (a) a backlog item under `aidd_docs/backlog/` (a defect when a claim is shown wrong, a spike when it is merely unresolved), linked from the record; (b) an entry in `aidd_docs/backlog/tech-debt.md`; (c) an open/closed state inside the record itself.
+- Recommended default: (a). It puts the follow-up in the flow that already gets worked and gives the owning epic a link to it. Cost: client-session context becomes a backlog item, which must respect Q61.
+- Blocks: the follow-up story.
+
+### Q66. Is the verdict computed by a check or written by hand, and where is it published?
+
+- Artifact: the epic's validation verdict.
+- Question: a derived verdict needs a small tool or test reading the record; a hand-written one needs none but can drift from the records.
+- Options: (a) a check reads the record and states each release's verdict, and the verdict is published in that release's `CHANGELOG.md` entry; (b) the consultant writes the verdict by hand in the record; (c) a check, published in `aidd_docs/results/README.md`.
+- Recommended default: (a). Derived from the records it cannot contradict them, and the changelog is where a client already reads "which version produced the numbers". Cost: this epic then ships code and a test, not only a document.
+- Blocks: whether the epic has a code story at all.
+
+### Q67. Are showings that happened before the record existed backfilled?
+
+- Artifact: the reception record.
+- Question: results may already have been shown to a client (the brief's "first time results are shown" note). Do such showings count?
+- Options: (a) backfill only showings that can still name the release, the challenger's role, the evidence offered and the criterion disputed; others are not counted; (b) no backfill, counting starts with the record; (c) backfill everything from memory.
+- Recommended default: (a). It keeps every counted record held to the same fields without throwing away a showing that can meet them. Cost: a memory-based record looks like a contemporaneous one unless marked as backfilled.
+- Blocks: the first verdict, not the record.
+
+### Q68. Is a product-wide check-in cadence added beyond the per-session log?
+
+- Artifact: the epic, and the PRD Open Question "Whether 'credible artifact' validation ... needs a firmer, product-wide check-in cadence beyond the per-session log" (also the brief's Open Decision on staying unmeasured).
+- Question: with no showing in a period, the release stays not validated indefinitely. Is a periodic review added?
+- Options: (a) no cadence this release; an unvalidated release simply reads as unvalidated; (b) a review at each release cut that states the count reached; (c) a fixed calendar review.
+- Recommended default: (b). It costs nothing new (a release is cut anyway), keeps the count visible, and never validates by elapsed time, which the PRD forbids. Cost: a line per release in the release procedure.
+- Blocks: nothing in slicing; it adds at most one acceptance line.
+
+### Q69. When is this epic `done`?
+
+- Artifact: the epic's lifecycle.
+- Question: the record and rule can work on one real session, but a validated release depends on client access the project does not control.
+- Options: (a) done once the record, rule and verdict work and one real session is logged and read back; (b) done only once a release is actually validated; (c) done once the mechanism works on planted records, before any real session.
+- Recommended default: (a). One real session proves the record survives contact with reality; tying `done` to three sessions would leave the epic open on a calendar outside the project. Cost: the epic can close with no release yet validated, which its done note must then say.
+- Blocks: the epic's done gate, not its slicing.

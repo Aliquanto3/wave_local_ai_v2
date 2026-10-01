@@ -11,4 +11,5 @@
 | 4 | epics/the-engine-and-the-prompt-variant-are-measured-not-assumed.md | 12 stories (5 ready, 7 proposed), 4 spikes, 5 questions (Q20-Q24) | baa9184 |
 | 5 | epics/no-use-case-is-silently-absent.md | 10 stories (2 ready, 8 proposed), 1 task (proposed), 2 spikes, 5 questions (Q30-Q34) | 18d6362 |
 | 6 | epics/one-download-holds-the-tables-their-licences-and-how-to-cite-them.md | 7 stories (5 ready, 2 proposed), 1 spike, 4 questions (Q40-Q43) | 3e97e5c |
-| 7 | epics/quality-scored-comparison-first-three-use-cases.md | 2 stories (0 ready, 2 proposed), 0 spikes, 10 questions (Q50-Q59); judge story order 2 mismatches the amended judge epic on 8 points (Q50-Q56, Q58), logged, not rewritten | pending |
+| 7 | epics/quality-scored-comparison-first-three-use-cases.md | 2 stories (0 ready, 2 proposed), 0 spikes, 10 questions (Q50-Q59); judge story order 2 mismatches the amended judge epic on 8 points (Q50-Q56, Q58), logged, not rewritten | 9f15db4 |
+| 8 | epics/a-release-is-called-credible-only-by-its-logged-client-sessions.md (new, proposed, no stories) | 1 epic, 10 questions (Q60-Q69) | pending |
