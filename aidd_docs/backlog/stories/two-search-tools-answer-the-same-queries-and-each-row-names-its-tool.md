@@ -23,7 +23,7 @@ Blocked: the open spike `aidd_docs/backlog/spikes/which-two-search-tools-are-obt
 ## Acceptance
 
 - A second implementation of order 9's adapter interface exists for the other tool the spike names, so the two are one self-hosted and one hosted.
-- The same queries, under the same model and caps, are run through both tools; two rows for the same query differ only by the tool that produced them, and each names its tool (epic success check 5).
+- The same queries, under the same model and caps and through order 9's retrieve-then-answer pipeline under harness `direct`, are run through both tools; two rows for the same query differ only by the tool that produced them, and each names its tool (epic success check 5).
 - Both tools' responses are archived and recompute offline exactly as order 9 requires.
 - The published tool comparison shows, per tool, the items each tool failed (no results, error, rate limit) with their outcome, while those items stay out of the model's score (epic success check 6).
 - Each row records its own egress destination, per the spike's finding for that tool.

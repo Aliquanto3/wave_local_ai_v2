@@ -98,6 +98,10 @@ Six checks confirm or challenge it, each able to fail. The first four are code-l
 
 Once `done`, record here what a real client engineer's audit of a row actually surfaced, and whether any of the four thresholds moved on contact with the first full-roster run.
 
+## Progress (2026-10-01)
+
+All twenty stories through order 20 are `done`, and the epic stays open by owner decision (Q75, `aidd_docs/tasks/2026_10/2026_10_01_autonomous-slicing/owner-questions.md`): an acceptance criterion it owns is not yet met, so it is the home of two new stories rather than closed. Order 21, `a-cloud-subject-re-run-is-decided-per-item-under-its-suites-declared-tolerance.md` (Q71), adds the suite-declared per-item divergence tolerance and the cloud-subject verdict, including the single-run-indicative mark, to every quality batch. Order 22, `every-row-records-whether-its-prompt-left-the-machine.md` (Q72), adds a subject egress field to every row with the writer gate refusing a row without it. The Success Evidence check is not yet recorded here.
+
 ## Dependencies and Unknowns
 
 | Item | Kind | Handling |

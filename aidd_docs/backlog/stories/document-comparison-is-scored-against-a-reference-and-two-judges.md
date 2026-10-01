@@ -16,11 +16,11 @@ order: 3
 **I want** a document-comparison suite scored by a reference-based metric and by the GLM and DeepSeek judge pair, local and cloud models side by side on the same items
 **So that** the first use case beyond the three shipped ones has published rows, and the suite seam is proven on a new suite at the lowest cost
 
-Maps to: PRD AC "Given the full use-case list, each of the nine task use cases ... has at least one task suite exercising it"; PRD AC "Given an open-ended task result from a subject independent of both judge families, it is never presented without both judges' scores and their agreement level"; PRD AC "Given a judged item whose two judges disagree beyond the suite's stated threshold, the item is published as contested and excluded from that suite's headline score"; Methodology 3, 4, 5, 9, 10, 11; epic Boundaries "six suites" (document comparison), "per-suite rubric text and per-suite contested threshold"; epic Sequence step 2; epic success check 2.
+Maps to: PRD AC "Given the full use-case list, each of the nine task use cases ... has at least one task suite exercising it"; PRD AC "Given an open-ended task result from a subject independent of both judge families, it is never presented without both judges' scores and their agreement level"; PRD AC "Given a judged item whose two judges disagree beyond the suite's stated threshold, the item is published as contested and excluded from that suite's headline score"; PRD AC "Given the model roster, for each in-scope use case it includes at least one MoE candidate and at least one tiny dense candidate, run over the same items with results shown side by side"; Methodology 3, 4, 5, 9, 10, 11; epic Boundaries "six suites" (document comparison), "per-suite rubric text and per-suite contested threshold"; epic Sequence step 2; epic success check 2.
 
 Needs: a real local model run, and paid API keys for Z.ai (GLM judge) and DeepSeek (DeepSeek judge); a cloud subject key already configured (Mistral or Google AI Studio) for the cloud rows.
 
-Blocked: through `depends_on` on `glm-and-deepseek-are-the-only-judges-and-mistral-and-google-never-judge-again.md`, which waits on owner question Q6 and on the two open judge-provider spikes (`is-z-ai-glm-callable-as-a-pinned-judge-and-on-what-data-terms.md`, `is-deepseek-callable-as-a-pinned-judge-and-on-what-data-terms.md`). The items, caps and reference metric can be authored before then; no judged score is published until the pair lands.
+Blocked: through `depends_on` on `glm-and-deepseek-are-the-only-judges-and-mistral-and-google-never-judge-again.md` (`proposed`), which waits on the two open judge-provider spikes (`is-z-ai-glm-callable-as-a-pinned-judge-and-on-what-data-terms.md`, `is-deepseek-callable-as-a-pinned-judge-and-on-what-data-terms.md`). The items, caps and reference metric can be authored before then; no judged score is published until the pair lands.
 
 ## Acceptance
 
@@ -46,6 +46,7 @@ Blocked: through `depends_on` on `glm-and-deepseek-are-the-only-judges-and-mistr
 ## Evidence it publishes
 
 - The local and cloud batches, the suite snapshot, and the coverage entry.
+- One MoE and one tiny dense roster entry run over the same items at one suite version and published side by side, each citing its roster entry; or, for an entry that cannot run this suite, a recorded refusal naming the entry and why.
 
 ## Cancellation
 

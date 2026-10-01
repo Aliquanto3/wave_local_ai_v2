@@ -15,7 +15,7 @@ order: 8
 **I want** an agentic-planning suite whose score comes from the transcript against an expected step set authored and versioned with each item, under `direct` and the campaign's compared harnesses
 **So that** a disagreement about a plan's quality is a visible suite-version question rather than a judge's opinion moving a score
 
-Maps to: PRD AC "Given an agentic planning or tool-calling item, its score comes from a deterministic transcript check (expected tool, expected arguments, call count, task success) and never from a judge's opinion ..."; PRD AC "Given the full use-case list, each of the nine task use cases ... has at least one task suite exercising it"; Methodology 3, 4, 5, 9, 23; epic Boundaries "six suites" (agentic planning), "the agentic pair scored deterministically from the transcript"; epic Sequence step 6; epic success check 8.
+Maps to: PRD AC "Given an agentic planning or tool-calling item, its score comes from a deterministic transcript check (expected tool, expected arguments, call count, task success) and never from a judge's opinion ..."; PRD AC "Given the full use-case list, each of the nine task use cases ... has at least one task suite exercising it"; PRD AC "Given the model roster, for each in-scope use case it includes at least one MoE candidate and at least one tiny dense candidate, run over the same items with results shown side by side"; Methodology 3, 4, 5, 9, 23; epic Boundaries "six suites" (agentic planning), "the agentic pair scored deterministically from the transcript"; epic Sequence step 6; epic success check 8.
 
 Needs: a real local model run; a cloud subject key already configured (Mistral or Google AI Studio) for the cloud rows.
 
@@ -42,6 +42,7 @@ Blocked: the open spike `aidd_docs/backlog/spikes/does-each-roster-model-emit-pa
 ## Evidence it publishes
 
 - The batches with their transcripts, the suite snapshot, and the coverage entry.
+- One MoE and one tiny dense roster entry run over the same items at one suite version and published side by side, each citing its roster entry; or, for an entry the tool-calling spike finds unable to emit parseable tool calls, a recorded refusal naming the entry and the finding.
 
 ## Cancellation
 

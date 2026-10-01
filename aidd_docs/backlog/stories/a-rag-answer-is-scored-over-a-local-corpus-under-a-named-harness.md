@@ -17,11 +17,11 @@ order: 5
 **I want** a RAG answer-generation suite whose retrieval runs locally over a repo-owned corpus under `llamaindex`, with every row naming that harness, its version read at run time, and the prompt tokens it added before the task began
 **So that** I can show what a local model writes over locally retrieved context, and the harness dimension exists on real rows before the agentic suites compare harnesses on it
 
-Maps to: PRD AC "Given the full use-case list, each of the nine task use cases ... has at least one task suite exercising it"; PRD AC "Given an agentic planning or tool-calling item, ... the row names the harness used and its version, reports that harness's per-call prompt overhead separately from the task's own tokens ...; a RAG answer-generation campaign includes `llamaindex` among them"; PRD AC "Given no client-provided document or prompt in a suite, no request leaving the machine ever contains one, and every row records whether its prompt left the machine"; Methodology 3, 4, 5, 9, 10, 11, 23; epic Boundaries "six suites" (RAG), "the agentic harness as a recorded row dimension", "a small repo-owned retrieval corpus and a retriever", "egress recorded"; epic Sequence step 4.
+Maps to: PRD AC "Given the full use-case list, each of the nine task use cases ... has at least one task suite exercising it"; PRD AC "Given an agentic planning or tool-calling item, ... the row names the harness used and its version, reports that harness's per-call prompt overhead separately from the task's own tokens ...; a RAG answer-generation campaign includes `llamaindex` among them"; PRD AC "Given no client-provided document or prompt in a suite, no request leaving the machine ever contains one, and every row records whether its prompt left the machine"; PRD AC "Given the model roster, for each in-scope use case it includes at least one MoE candidate and at least one tiny dense candidate, run over the same items with results shown side by side"; Methodology 3, 4, 5, 9, 10, 11, 23; epic Boundaries "six suites" (RAG), "the agentic harness as a recorded row dimension", "a small repo-owned retrieval corpus and a retriever", "egress recorded"; epic Sequence step 4.
 
 Needs: a real local model run (including a one-time download of the pinned embedding model), and paid API keys for Z.ai (GLM judge) and DeepSeek (DeepSeek judge).
 
-Blocked: owner question Q33 (how per-call harness prompt overhead is measured), through the harness task it depends on, and, through `depends_on` on `glm-and-deepseek-are-the-only-judges-and-mistral-and-google-never-judge-again.md`, owner question Q6 and the two open judge-provider spikes. The corpus, retriever and harness fields can be built before the judges land; no judged score is published until they do.
+Blocked: through `depends_on` on `glm-and-deepseek-are-the-only-judges-and-mistral-and-google-never-judge-again.md` (`proposed`), the two open judge-provider spikes. The corpus, retriever and harness fields can be built before the judges land; no judged score is published until they do.
 
 ## Acceptance
 
@@ -50,6 +50,7 @@ Blocked: owner question Q33 (how per-call harness prompt overhead is measured), 
 ## Evidence it publishes
 
 - The local and cloud batches, the corpus and suite snapshots, the embedding entry, and the coverage entry.
+- One MoE and one tiny dense roster entry run over the same items at one suite version and published side by side, each citing its roster entry; or, for an entry that cannot run this suite, a recorded refusal naming the entry and why.
 
 ## Cancellation
 
