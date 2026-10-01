@@ -66,7 +66,7 @@ The value is the difference between a repository someone may inspect and a datas
 
 Hand someone a machine with no clone, no Python and no access to this repository, and one URL: the latest release asset.
 
-- They unpack it and read the four tables in a spreadsheet, R or DuckDB with nothing installed.
+- They unpack it and read the five tables (four before the 2026-10-01 Q2 (a) amendment, owner-approved) in a spreadsheet, R or DuckDB with nothing installed.
 - From the per-item quality table alone they recompute each published run's headline accuracy and get the number the published table states; where an interval is published they recompute it from the same per-item rows using the recorded seed, method and resample count and land on the same interval.
 - For every part of the download they can say under what terms they may republish it, and reproduce the attribution string without asking anyone.
 - They produce a citation for that exact release — version, commit, author, year — without visiting the repository.

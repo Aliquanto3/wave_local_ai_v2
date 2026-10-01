@@ -21,7 +21,7 @@ Maps to: PRD AC "Given an open-ended task result from a subject independent of b
 
 Needs: a real local model run of one roster entry on the development laptop, paid API keys for Z.ai and DeepSeek (the judge pair), and the chosen cloud subject's key (Mistral or Google).
 
-Blocked: through `depends_on` on `glm-and-deepseek-are-the-only-judges-and-mistral-and-google-never-judge-again.md`, which waits on the GLM and DeepSeek judge stories and their open spikes (`aidd_docs/backlog/spikes/is-z-ai-glm-callable-as-a-pinned-judge-and-on-what-data-terms.md`, `aidd_docs/backlog/spikes/is-deepseek-callable-as-a-pinned-judge-and-on-what-data-terms.md`), and on `the-judged-probe-runs-both-paths-in-three-languages.md`, which also waits on the calibration story and its open spike `aidd_docs/backlog/spikes/which-endpoint-serves-gpt-5-6-luna-as-a-pinned-calibration-judge-and-on-what-terms.md`.
+Blocked: through `depends_on` on `glm-and-deepseek-are-the-only-judges-and-mistral-and-google-never-judge-again.md`, which waits on the GLM and DeepSeek judge stories and their open spikes (`aidd_docs/backlog/spikes/is-z-ai-glm-callable-as-a-pinned-judge-and-on-what-data-terms.md`, `aidd_docs/backlog/spikes/is-deepseek-callable-as-a-pinned-judge-and-on-what-data-terms.md`), and on `the-judged-probe-runs-both-paths-in-three-languages.md`, which waits on the same judge chain. Neither waits on calibration (Q54).
 
 ## Acceptance
 

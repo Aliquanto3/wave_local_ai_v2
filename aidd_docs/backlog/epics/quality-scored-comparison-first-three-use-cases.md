@@ -2,6 +2,9 @@
 type: epic
 status: ready
 source: aidd_docs/tasks/2026_08/2026_08_21-wave-local-ai-v2-benchmark-suite-prd.md
+goal: aidd_docs/product/wave-local-ai-v2.md
+related_to:
+  - aidd_docs/backlog/epics/the-pitch-runs-from-a-browser-and-only-with-the-key.md
 ---
 
 # Epic: Quality-scored local-vs-cloud comparison for the first three use cases

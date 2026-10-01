@@ -2,8 +2,8 @@
 type: spike
 status: done
 source: aidd_docs/backlog/epics/any-open-ended-output-carries-two-judges-or-an-honest-flag.md
-parent: aidd_docs/backlog/epics/any-open-ended-output-carries-two-judges-or-an-honest-flag.md
-order: 1
+parents:
+  - aidd_docs/backlog/epics/any-open-ended-output-carries-two-judges-or-an-honest-flag.md
 ---
 
 # Spike: Google AI Studio's API surface is confirmed against the live API
