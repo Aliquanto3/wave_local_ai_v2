@@ -110,3 +110,47 @@ Epic: `aidd_docs/backlog/epics/every-size-class-spans-two-families-or-says-it-do
 - Options: (a) take the spike's per-class shortlist, restricted to the epic's families: Granite 350M and the smallest LFM2 at ~0.5B; Granite 1B and LFM2 at ~2B; Ministral 3B and the Phi mini model at ~4B; Gemma 4 26B-A4B (MoE) and Gemma 4 12B (dense) at the top; any sub-4B MoE the spike finds is taken at its class; candidates tried smallest download first; one passing non-Qwen family per class suffices; each taken at the quant matching the Qwen entry of its class where its publisher ships it, otherwise the nearest one with the difference stated; (b) the same shortlist, but every passing candidate enters rather than stopping at the first second family; (c) (a) plus GPT-OSS 20B and Mellum2 at the top class as further MoE families.
 - Recommended default: (a). It is the epic's own stopping rule applied literally (the outcome is the composition, not a count of models), it bounds bench time and disk, and quant matching keeps a family comparison from being read as a quant comparison, the confusion this epic exists to remove. Cost: a class satisfied by its first passing family reports one rival, not the best one; (b) is the option that answers "which small model is best", at several times the bench cost.
 - Blocks: orders 5 to 8 (`proposed`), together with the spike.
+
+## Engine and prompt variant
+
+Epic: `aidd_docs/backlog/epics/the-engine-and-the-prompt-variant-are-measured-not-assumed.md`. The epic's four Ollama and compressor unknowns that evidence can settle are open spikes under `aidd_docs/backlog/spikes/`, not questions here. This epic depends on the interval and paired-test epic through its stories orders 1, 2 and 3 only, which is Q5's option (a) taken as the working assumption.
+
+### Q20. Does llama.cpp's own configuration hash enter the fiche's hashed projection in this epic?
+
+- Artifact: `aidd_docs/backlog/stories/every-row-names-the-engine-that-produced-it-and-the-fiche-hashes-it.md` (order 1).
+- Question: the epic decides that "the engine's effective configuration carries a content hash over a path-free normalisation, and that hash enters the projection", and its Boundaries name llama.cpp's normalisation (the flag list with the absolute model path replaced by the roster entry reference). The same decision row then hands "whether llama.cpp's own flags should therefore be hashed through a normalised digest" back to the row epic, unanswered. Applied to llama.cpp, the first sentence answers the handed-back question. Which reading holds?
+- Options: (a) the engine configuration hash enters the projection for both engines now, llama.cpp's computed over its normalised flag list; the raw `flags` stay outside the projection as evidence; (b) only the comparator's configuration hash enters the projection, llama.cpp's is recorded on the fiche as evidence until the row epic decides; (c) neither enters the projection; both are evidence only.
+- Recommended default: (a). It is the epic's own decision applied without exception, and Methodology 8 already lists "the server flag set" as verdict-blocking (`verdict._RUNTIME_BLOCKING_FIELDS` carries `flags`), so hashing the normalised set aligns the hash with the verdict instead of creating a new rule. Cost: an operator thread-count override moves the fiche hash, so a re-run under a different override becomes `not comparable` rather than `reproduced`, which is the M8 reading anyway; and (b) would make the two engines' identities asymmetric.
+- Blocks: nothing. Order 1 is written to the default and is `ready`; a different answer changes one acceptance bullet.
+
+### Q21. Which roster model does the "what the defaults cost" side-run use?
+
+- Artifact: `aidd_docs/backlog/stories/what-a-default-ollama-install-costs-is-published-as-its-own-figure.md` (order 11).
+- Question: the epic fixes the side-run to "one named roster model" and does not name it. The choice decides what the figure can say: a small dense entry is cheap and fits any machine; the MoE flagship is where Ollama's own offload and context defaults would cost a laptop user the most, but whether the Ollama library carries a matching tag is unverified.
+- Options: (a) `qwen3-0.6b-q8` (roster quant `Q8_0`), the machine epic's proving model; (b) the MoE flagship `qwen3.6-35b-a3b-ud-iq4xs`; (c) `qwen3-4b-q4km` (roster quant `Q4_K_M`).
+- Recommended default: (a). Cheapest to run under the full runtime protocol, runnable on every reference-machine candidate, and its roster quant is pinned explicitly so any different quant Ollama chooses is readable on the figure. Cost: the figure says nothing about MoE offload defaults, the case a consultant is most likely asked about; (b) can follow as a second side-run if spike `can-a-pinned-ollama-build-serve-the-roster-gguf-under-the-runtime-protocol` finds a matching library tag.
+- Blocks: order 11 (`proposed`).
+
+### Q22. Which machine is the campaign's declared reference machine?
+
+- Artifact: `aidd_docs/backlog/stories/the-campaign-answers-whether-each-variant-helps-or-hurts-a-small-model.md` (order 12), and the bounds of spike `which-llmlingua-2-class-compressor-fits-the-reference-machine-and-in-which-placement`.
+- Question: the epic runs the full 2 engines x 4 variants campaign "on one declared reference machine" and every claim names it, but never names the machine; its compressor unknown reasons about "a 6 GB laptop", which implies the laptop without stating it.
+- Options: (a) the laptop (RTX 3060 Laptop, 6 GB VRAM, about 5.1 GB allocatable, per `context_input/hardware.md`), in its `gpu` mode; (b) the tower (RTX 3050, 8 GB VRAM); (c) the laptop in `cpu_only` mode.
+- Recommended default: (a). It is the development machine where every command is agent-executable, the existing bundle and the machine epic's proving runs are taken there, and it is the machine the epic's VRAM-pressure reasoning names. Cost: the tightest VRAM of the GPU machines, so the compressor's placement is most likely forced to CPU or a separate phase.
+- Blocks: order 12 (`proposed`); the compressor spike can proceed on the laptop under this default.
+
+### Q23. May the input compressor bring a heavy ML dependency into the project, and how?
+
+- Artifact: `aidd_docs/backlog/stories/the-input-compression-variant-records-its-compressor-as-a-step-of-its-own.md` (order 9).
+- Question: an LLMLingua-2-class compressor is a neural token classifier; the reference implementation's package depends on a deep-learning runtime that the project does not carry today. The container image ships no weights and the reproduction path is documented around llama.cpp alone. How may the compressor enter the project?
+- Options: (a) an optional, pinned dependency group used only by the `input_compressed` variant, excluded from the default install and the published container, its weights downloaded by revision with a checksum like a roster entry; (b) the compressor runs out of process in its own pinned environment, called by the harness through a narrow interface; (c) a required dependency of the project.
+- Recommended default: (a). It keeps the default install and the container unchanged for every reader who does not reproduce the compression cells, and reuses the pin-and-checksum discipline the roster already applies. Cost: a reproduction of the `input_compressed` cells needs one extra documented install step, and the dependency scan must cover the optional group.
+- Blocks: order 9 (`proposed`), together with its spike.
+
+### Q24. How are TTFT, tokens and energy measured per variant and per task family?
+
+- Artifact: `aidd_docs/backlog/stories/each-quality-item-records-the-tokens-and-the-first-token-time-its-generation-took.md` (order 10), and order 12.
+- Question: the epic's statement reports each variant's effect "per task family, on quality, TTFT, tokens and energy", each difference carrying a paired test. Today a quality row is per item but carries tokens and energy only as batch totals and no TTFT, and the runtime protocol (Methodology 6) measures TTFT and energy on one fixed prompt, not on suite items. No row today could supply a per-item paired test on any of the three.
+- Options: (a) quality rows gain per-item engine-reported TTFT (with its `ttft_source`) and per-item tokens in and out, so TTFT and tokens get paired tests over items; energy stays measured per batch, and per-variant energy differences are published as observations; (b) as (a), plus the energy tracker started and stopped around each item so energy is paired too; (c) per-item tokens on quality rows, while TTFT and energy come from the runtime protocol run per variant on a declared representative item per task family, with no paired test on either.
+- Recommended default: (a). Paired tests need per-item values, the engine already reports per-generation timings, and per-item energy on items of a few dozen tokens sits below what the tracker can resolve, so (b) would publish noise as a paired result. Cost: per-item TTFT on a quality batch is not the Methodology 6 runtime figure (no warm-up exclusion, no repetitions) and must be labelled as a distinct measurement; no paired energy claim is possible.
+- Blocks: order 10 (`proposed`) and through it order 12.
