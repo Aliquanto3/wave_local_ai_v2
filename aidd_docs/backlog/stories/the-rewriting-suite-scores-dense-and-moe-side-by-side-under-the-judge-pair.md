@@ -17,7 +17,7 @@ Maps to: PRD AC "Given the model roster, for each in-scope use case it includes 
 
 Needs: a real local model run of every local roster entry on the development laptop, and paid API keys for Z.ai and DeepSeek (the judge pair). The cloud columns reuse order 2's Mistral and Google rows where they match, and otherwise need those subjects' keys.
 
-Blocked: by owner question Q50 (how order 2, this story's predecessor, is brought in line with the amended judge pair, and whether its subject scope stays at one local and one cloud subject). Transitively by Q6 and the Z.ai and DeepSeek spikes, through order 2's own predecessors.
+Blocked: through `depends_on` on `aidd_docs/backlog/stories/judge-scoring-with-inter-judge-agreement-proves-judged-machinery.md` (order 2, `proposed`), which waits on the GLM and DeepSeek judge stories and their open spikes and on the judged probe and its calibration-judge spike.
 
 Current state: the roster (`aidd_docs/roster/models.json`, `roster_version` 2) holds one MoE entry (`Qwen3.6-35B-A3B`) and a dense ladder (`Qwen3-0.6B`, `Qwen3-1.7B`, `Qwen3-4B`). `tiny-dense-models-compared-alongside-moe` is `done` for classification and translation only. The comparison surface of `dense-and-moe-stand-side-by-side-on-the-same-items` (`done`) builds one column per roster entry for any suite in the store, so a rewriting batch reaches it without a change to that surface. Order 2 scores the rewriting suite against one local subject and one cloud subject.
 

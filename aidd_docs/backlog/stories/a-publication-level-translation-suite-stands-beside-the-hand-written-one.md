@@ -21,7 +21,9 @@ Maps to: PRD AC "Given a published suite, its rows state whether it was built to
 
 Needs: a real local model run (one published batch on the bench machine), after the licence spike has returned its verdict.
 
-Blocked: by the spike `aidd_docs/backlog/spikes/which-public-translation-benchmark-seeds-the-publication-suite-and-on-what-terms.md`, and by owner question Q3 (cloud retry budget and per-item resume at this scale, cloud batches only) in `aidd_docs/tasks/2026_10/2026_10_01_autonomous-slicing/owner-questions.md`. Q1 is answered (a): the suite seam is `aidd_docs/backlog/stories/a-suite-is-data-resolved-by-its-id-not-an-import-in-the-cli.md`, declared in `depends_on`.
+Blocked: by the spike `aidd_docs/backlog/spikes/which-public-translation-benchmark-seeds-the-publication-suite-and-on-what-terms.md`. The suite seam is `aidd_docs/backlog/stories/a-suite-is-data-resolved-by-its-id-not-an-import-in-the-cli.md`, declared in `depends_on`.
+
+Scope note: a cloud batch on this suite waits on `aidd_docs/backlog/stories/a-publication-size-cloud-batch-survives-its-rate-limits-and-resumes-per-item.md` (retry budget and per-item resume at publication size). It is not a `depends_on`, because the published batch this story requires can be a local one.
 
 ## Acceptance
 

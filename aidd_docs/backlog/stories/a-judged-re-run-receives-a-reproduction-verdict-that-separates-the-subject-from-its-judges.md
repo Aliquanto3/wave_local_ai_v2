@@ -3,7 +3,9 @@ type: story
 status: proposed
 source: aidd_docs/backlog/epics/quality-scored-comparison-first-three-use-cases.md
 parent: aidd_docs/backlog/epics/quality-scored-comparison-first-three-use-cases.md
-depends_on: aidd_docs/backlog/stories/judge-scoring-with-inter-judge-agreement-proves-judged-machinery.md
+depends_on:
+  - aidd_docs/backlog/stories/judge-scoring-with-inter-judge-agreement-proves-judged-machinery.md
+  - aidd_docs/backlog/stories/a-cloud-subject-re-run-is-decided-per-item-under-its-suites-declared-tolerance.md
 order: 6
 ---
 
