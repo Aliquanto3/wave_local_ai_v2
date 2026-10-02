@@ -86,6 +86,14 @@ The command-line interface for running benchmarks.
   computed `prompt_set_hash`, without the scoring-rule name or `task_suite`),
   not what a run resolves through; re-run after any suite edit.
   No `pyproject.toml` entry point — invoked as a module, not a CLI command.
+- `uv run python -m wave_local_ai_v2.use_case_coverage` — publishes the
+  use-case coverage record (`src/wave_local_ai_v2/use_case_coverage.json`,
+  one declared state per PRD use case) to
+  `aidd_docs/results/use-case-coverage.json`, only when every entry
+  resolves; otherwise exits `1`, writes nothing and names every failing
+  entry (missing, no state, a suite id `suite_registry` does not resolve,
+  an out-of-scope entry without a reason). `--record`/`--output` override
+  the two paths. Module invocation, like `suite_snapshot`.
 - `wave-local-ai-v2-validate` — invalidation validator: checks every row of
   one or more results files (default: the two live stores,
   `RUNTIME_RESULTS_PATH`/`QUALITY_RESULTS_PATH`) against the stored fiche

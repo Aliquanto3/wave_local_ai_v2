@@ -232,6 +232,33 @@ leader-set mechanism.
   `CoverageRecord`, rendered once at the overview page level rather than
   once per card.
 
+## The use-case coverage record, and why it is not here yet
+
+`use-case-coverage.json` is the published coverage record: one entry for each
+of the PRD's nine task use cases and one for multilingual EN/FR/DE coverage,
+each in exactly one declared state -- `exercised` (naming the suite ids that
+exercise it), `covered-by-dimension` (naming the suite ids that carry it;
+multilingual is a language dimension of the classification, translation and
+rewriting suites) or `out-of-scope-this-release` (with its reason). The record
+is declared as data in `src/wave_local_ai_v2/use_case_coverage.json`; a state
+is never inferred from which suites happen to be registered.
+
+`uv run python -m wave_local_ai_v2.use_case_coverage` writes it here, and only
+when every entry resolves: an entry missing, an entry with no state, a named
+suite id the suite registry does not resolve, or an out-of-scope entry with no
+reason refuses the whole record, names every failing entry on stderr, exits
+`1` and writes nothing. No partial record is ever published.
+
+The file is therefore absent today, deliberately. Run against the committed
+record, the command refuses naming eight entries: the six use cases with no
+suite yet (document comparison, code generation, agentic planning, agentic
+tool calling, web research, RAG answer generation), text rewriting, whose
+`rewriting-business-email` suite is not registered yet, and multilingual,
+which names that same suite. That refusal is the current coverage reading
+(`aidd_docs/tasks/2026_10/2026_10_01_use-case-coverage-state-or-refusal/evidence/coverage-refusal.txt`);
+the record appears here once the last entry resolves, and until then the
+overview's coverage absence above stays true.
+
 ## This regeneration (Story 19 + Story 20, 2026-08-27)
 
 Both files were regenerated from scratch under the current schema (`schema_version` `"7"`),
