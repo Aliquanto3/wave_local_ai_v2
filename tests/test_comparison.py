@@ -744,19 +744,24 @@ def test_a_published_record_recomputes_or_is_unedited(
     assert output.read_text(encoding="utf-8") == published.read_text(encoding="utf-8")
 
 
-def test_the_bundle_publishes_one_current_family_holding_both_pairs() -> None:
+def test_the_bundle_publishes_one_current_family_holding_every_pair() -> None:
+    # Both committed pairs, then grown by the leader set's comparison of the
+    # two local batches (order 10): each growth supersedes the last head.
     records = [_load(path) for path in PUBLISHED_RECORDS]
     current = [
         record for record in records if record["family_id"] in comparison.heads(records)
     ]
     (head,) = current
     assert head["record_version"] == comparison.RECORD_VERSION
-    assert head["family_size"] == 2
-    assert (head["tested_count"], head["refused_count"]) == (0, 2)
+    assert head["family_size"] == 3
+    assert (head["tested_count"], head["refused_count"]) == (0, 3)
+    (both_pairs,) = comparison.superseded_ids(head)
+    first = next(record for record in records if record["family_id"] == both_pairs)
+    assert first["family_size"] == 2
     superseded = sorted(
         record["family_id"] for record in records if record["record_version"] == "1"
     )
-    assert comparison.superseded_ids(head) == superseded
+    assert comparison.superseded_ids(first) == superseded
     assert len(superseded) == 2
 
 

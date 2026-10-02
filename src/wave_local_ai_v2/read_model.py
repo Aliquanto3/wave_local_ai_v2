@@ -33,6 +33,11 @@ from typing import Any
 
 from wave_local_ai_v2 import path_guard, roster, row_contract, scoring
 from wave_local_ai_v2.fiche_registry import read_fiche
+from wave_local_ai_v2.leader_set import (
+    STATUS_MEMBER,
+    LeaderSetError,
+    current_leader_sets,
+)
 from wave_local_ai_v2.results import StoreRead, UnreadableRows, read_rows_from_floor
 from wave_local_ai_v2.suite_snapshot import snapshot_filename
 
@@ -57,13 +62,12 @@ POINTER_FICHE_HASH = "fiche_hash"
 POINTER_ROSTER_ENTRY_ID = "roster_entry_id"
 POINTER_SUITE = "suite_id/suite_version"
 
-# The leader set is anticipated, not owned here: nothing in the repo writes
-# this field today (the stats epic records its derivation as unowned, per
-# `a-score-is-published-with-its-interval-a-difference-with-its-test.md`'s
-# own Dependencies table). It is resolved through the existing `resolve_field`
-# like any other row field -- a row that does not carry it reports the
-# ordinary `predates_schema` absence, never a new absence reason.
-LEADER_SET_MEMBER_FIELD = "leader_set_member"
+# The leader set is its own published record, written by the analysis
+# command (`leader_set.py`, owner answer Q42 (a)), never a row field and never
+# derived here: a use case resolves its suites' current leader-set records the
+# way a row resolves its fiche, and a suite without one reports the ordinary
+# `pointer_unresolved` absence, never a new absence reason.
+POINTER_LEADER_SET = "leader_set"
 
 # Mirrors `judge_probe.PROVIDER_LOCAL`, duplicated as a one-line literal
 # rather than imported: `judge_probe` pulls in the Mistral/Google client
@@ -1180,37 +1184,78 @@ def _quality_subject_entry(
 
 def _leader_membership(
     rows: list[dict[str, Any]],
+    leader_sets: list[dict[str, Any]] | None,
     *,
     fiche_registry_dir: Path,
     roster_file: roster.RosterFile | None,
     suite_definitions_dir: Path,
 ) -> Any | dict[str, Any]:
-    """The suite's leader set, or the absence that says the field is unowned.
+    """The use case's current leader-set records, or why none resolves.
 
-    A row resolving `leader_set_member` to `False` is a real "evaluated, not
-    a member" fact, excluded from `members` without affecting whether the
-    suite counted as having a leader set at all -- only "every row resolves
-    to `Absent`" means unpublished. One member per subject (`run_id`), not
-    per item row: `_group_rows_by_run` folds a member's item rows together
-    before `_quality_subject_entry` renders the run's suite-level score.
+    A record is a use case's when it names a suite (id and version) the use
+    case's rows carry. Its members are rendered from the store's own rows,
+    one entry per subject (`run_id` and `model_id`), exactly as a cloud
+    comparator is: nothing is ranked or derived here. No record for the
+    suites, an unreadable record directory (`leader_sets` is `None`), or a
+    member whose rows the store does not hold is `pointer_unresolved`.
     """
-    resolved = [resolve_field(row, LEADER_SET_MEMBER_FIELD) for row in rows]
-    if all(isinstance(value, Absent) for value in resolved):
-        return resolved[0]
-    member_rows = [
-        row for row, value in zip(rows, resolved, strict=True) if value is True
+    suites = sorted(
+        {
+            (str(row.get("suite_id")), str(row.get("suite_version")))
+            for row in rows
+            if row.get("suite_id") is not None
+        }
+    )
+    named = [f"{suite_id}@{version}" for suite_id, version in suites]
+    if leader_sets is None:
+        return _unresolved(POINTER_LEADER_SET, named)
+    records = [
+        record
+        for record in leader_sets
+        if (str(record.get("suite_id")), str(record.get("suite_version"))) in suites
     ]
-    return {
-        "members": [
-            _quality_subject_entry(
-                group,
-                fiche_registry_dir=fiche_registry_dir,
-                roster_file=roster_file,
-                suite_definitions_dir=suite_definitions_dir,
+    if not records:
+        return _unresolved(POINTER_LEADER_SET, named)
+    members = []
+    summaries = []
+    for record in records:
+        # A record missing a field it must carry is a pointer that did not
+        # resolve, never a 500 and never a partly read set.
+        try:
+            member_ids = [
+                (subject["run_id"], subject["model_id"])
+                for subject in record["subjects"]
+                if subject["status"] == STATUS_MEMBER
+            ]
+            summaries.append(
+                {
+                    "leader_set_id": record["leader_set_id"],
+                    "suite_id": record["suite_id"],
+                    "suite_version": record["suite_version"],
+                    "grouping_values": record["grouping_values"],
+                    "grouping_not_recorded": record["grouping_not_recorded"],
+                    "incomplete": record["incomplete"],
+                }
             )
-            for group in _group_rows_by_run(member_rows)
-        ]
-    }
+        except (KeyError, TypeError):
+            return _unresolved(POINTER_LEADER_SET, record.get("leader_set_id"))
+        for run_id, model_id in member_ids:
+            subject_rows = [
+                row
+                for row in rows
+                if row.get("run_id") == run_id and row.get("model_id") == model_id
+            ]
+            if not subject_rows:
+                return _unresolved(POINTER_LEADER_SET, record["leader_set_id"])
+            members.append(
+                _quality_subject_entry(
+                    subject_rows,
+                    fiche_registry_dir=fiche_registry_dir,
+                    roster_file=roster_file,
+                    suite_definitions_dir=suite_definitions_dir,
+                )
+            )
+    return {"members": members, "leader_sets": summaries}
 
 
 def _cloud_comparators(
@@ -1248,6 +1293,7 @@ def overview_quality_view(
     roster_file: roster.RosterFile | None,
     suite_definitions_dir: Path,
     fiche_registry_dir: Path,
+    leader_sets_dir: Path,
 ) -> dict[str, Any]:
     """One entry per use case (`task_suite`) present in the quality store.
 
@@ -1258,6 +1304,11 @@ def overview_quality_view(
     that no response composes the two stores.
     """
     store = read_rows_from_floor(quality_path, floor)
+    leader_sets: list[dict[str, Any]] | None
+    try:
+        leader_sets = current_leader_sets(leader_sets_dir)
+    except (LeaderSetError, OSError, KeyError, TypeError):
+        leader_sets = None
     groups: dict[Any, tuple[Any, list[dict[str, Any]]]] = {}
     for row in store.rows:
         task_suite = resolve_field(row, "task_suite")
@@ -1273,6 +1324,7 @@ def overview_quality_view(
                 "task_suite": task_suite,
                 "leader": _leader_membership(
                     rows,
+                    leader_sets,
                     fiche_registry_dir=fiche_registry_dir,
                     roster_file=roster_file,
                     suite_definitions_dir=suite_definitions_dir,

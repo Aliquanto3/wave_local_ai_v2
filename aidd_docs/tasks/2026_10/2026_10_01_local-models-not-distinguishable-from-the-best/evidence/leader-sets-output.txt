@@ -1,0 +1,9 @@
+$ uv run wave-local-ai-v2-compare --leader-sets
+aidd_docs\results\comparisons\classification-support-routing@2.model.837e5355b954.json unchanged: family 837e5355b954 of 3 (0 tested, 3 refused); supersedes 1e1658cbe073
+aidd_docs\results\leader-sets\classification-support-routing@2.053c65354ff8.json written: leader set 053c65354ff8: members 5e13166d Qwen3.6-35B-A3B; 0 excluded, 1 not compared; incomplete
+exit 0
+
+$ uv run wave-local-ai-v2-compare --leader-sets   # re-run over the published bundle
+aidd_docs\results\comparisons\classification-support-routing@2.model.837e5355b954.json unchanged: family 837e5355b954 of 3 (0 tested, 3 refused); supersedes 1e1658cbe073
+aidd_docs\results\leader-sets\classification-support-routing@2.053c65354ff8.json unchanged: leader set 053c65354ff8: members 5e13166d Qwen3.6-35B-A3B; 0 excluded, 1 not compared; incomplete
+exit 0

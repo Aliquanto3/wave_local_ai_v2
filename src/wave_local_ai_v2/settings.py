@@ -30,6 +30,7 @@ DEFAULT_FICHE_REGISTRY_DIR = "aidd_docs/results/fiches"
 # `fiche_registry.py` states about its own directory: an artifact path is
 # configuration, never hardcoded in the module that writes it.
 DEFAULT_SUITE_DEFINITIONS_DIR = "aidd_docs/results/suite-definitions"
+DEFAULT_LEADER_SETS_DIR = "aidd_docs/results/leader-sets"
 # Where `use_case_coverage` publishes the coverage record, and only once every
 # PRD use case in it carries a resolvable state.
 DEFAULT_USE_CASE_COVERAGE_PATH = "aidd_docs/results/use-case-coverage.json"
@@ -234,6 +235,7 @@ class ServiceSettings:
     fiche_registry_dir: Path
     roster_path: Path
     suite_definitions_dir: Path
+    leader_sets_dir: Path
     dashboard_bundle_dir: Path
     dashboard_origin: str
     tls_certfile: Path
@@ -298,6 +300,9 @@ def load_service_settings() -> ServiceSettings:
         roster_path=Path(os.environ.get("ROSTER_PATH", DEFAULT_ROSTER_PATH)),
         suite_definitions_dir=Path(
             os.environ.get("SUITE_DEFINITIONS_DIR", DEFAULT_SUITE_DEFINITIONS_DIR)
+        ),
+        leader_sets_dir=Path(
+            os.environ.get("LEADER_SETS_DIR", DEFAULT_LEADER_SETS_DIR)
         ),
         dashboard_bundle_dir=Path(
             os.environ.get("DASHBOARD_BUNDLE_DIR", DEFAULT_DASHBOARD_BUNDLE_DIR)

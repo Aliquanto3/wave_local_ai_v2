@@ -15,6 +15,7 @@ from wave_local_ai_v2.settings import (
     DEFAULT_JUDGE_PROBE_REFERENCE_PATH,
     DEFAULT_KWH_PRICE_EUR,
     DEFAULT_KWH_PRICE_RECORDED_AT,
+    DEFAULT_LEADER_SETS_DIR,
     DEFAULT_MISTRAL_REQUEST_PACING_S,
     DEFAULT_QUALITY_REFERENCE_PATH,
     DEFAULT_QUALITY_RESULTS_PATH,
@@ -679,6 +680,7 @@ SERVICE_ENV_VARS = (
     "FICHE_REGISTRY_DIR",
     "ROSTER_PATH",
     "SUITE_DEFINITIONS_DIR",
+    "LEADER_SETS_DIR",
     "DASHBOARD_BUNDLE_DIR",
     "DASHBOARD_ORIGIN",
     "SERVICE_TLS_CERTFILE",
@@ -726,6 +728,7 @@ def test_load_service_settings_defaults_everything_but_the_key_and_tls(
     assert settings.fiche_registry_dir == Path(DEFAULT_FICHE_REGISTRY_DIR)
     assert settings.roster_path == Path(DEFAULT_ROSTER_PATH)
     assert settings.suite_definitions_dir == Path(DEFAULT_SUITE_DEFINITIONS_DIR)
+    assert settings.leader_sets_dir == Path(DEFAULT_LEADER_SETS_DIR)
     assert settings.dashboard_bundle_dir == Path(DEFAULT_DASHBOARD_BUNDLE_DIR)
     # Not a separate hardcoded default: computed from the bound host/port so
     # it cannot drift from the address the service actually binds. https,
@@ -759,6 +762,7 @@ def test_load_service_settings_reads_every_override(
     monkeypatch.setenv("FICHE_REGISTRY_DIR", str(tmp_path / "fiches"))
     monkeypatch.setenv("ROSTER_PATH", str(tmp_path / "models.json"))
     monkeypatch.setenv("SUITE_DEFINITIONS_DIR", str(tmp_path / "suites"))
+    monkeypatch.setenv("LEADER_SETS_DIR", str(tmp_path / "leader-sets"))
     monkeypatch.setenv("DASHBOARD_BUNDLE_DIR", str(tmp_path / "dashboard-dist"))
     monkeypatch.setenv("DASHBOARD_ORIGIN", "https://dashboard.example")
 
@@ -774,6 +778,7 @@ def test_load_service_settings_reads_every_override(
     assert settings.fiche_registry_dir == tmp_path / "fiches"
     assert settings.roster_path == tmp_path / "models.json"
     assert settings.suite_definitions_dir == tmp_path / "suites"
+    assert settings.leader_sets_dir == tmp_path / "leader-sets"
     assert settings.dashboard_bundle_dir == tmp_path / "dashboard-dist"
     assert settings.dashboard_origin == "https://dashboard.example"
 
@@ -873,6 +878,7 @@ def test_service_settings_repr_omits_the_api_key(tmp_path: Path) -> None:
         fiche_registry_dir=tmp_path / "fiches",
         roster_path=tmp_path / "models.json",
         suite_definitions_dir=tmp_path / "suites",
+        leader_sets_dir=tmp_path / "leader-sets",
         dashboard_bundle_dir=tmp_path / "dashboard-dist",
         dashboard_origin="https://127.0.0.1:8000",
         tls_certfile=tmp_path / "cert.pem",

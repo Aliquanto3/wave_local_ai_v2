@@ -185,4 +185,5 @@ def build_bundle(tmp_path: Path) -> dict[str, Path]:
         "fiches": fiches,
         "roster": roster_path,
         "suites": suites,
+        "leader_sets": tmp_path / "leader-sets",
     }

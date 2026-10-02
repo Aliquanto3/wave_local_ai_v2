@@ -18,7 +18,14 @@ from store_fixtures import (
     write_store,
 )
 
-from wave_local_ai_v2 import read_model, results, row_contract, settings, suite_snapshot
+from wave_local_ai_v2 import (
+    leader_set,
+    read_model,
+    results,
+    row_contract,
+    settings,
+    suite_snapshot,
+)
 from wave_local_ai_v2.read_model import (
     ABSENCE_REASONS,
     ABSENT_NULL_IN_ROW,
@@ -36,6 +43,7 @@ RUNTIME_REFERENCE_PATH = Path(settings.DEFAULT_RUNTIME_REFERENCE_PATH)
 SUITE_DEFINITIONS_DIR = Path(settings.DEFAULT_SUITE_DEFINITIONS_DIR)
 FICHE_REGISTRY_DIR = Path(settings.DEFAULT_FICHE_REGISTRY_DIR)
 ROSTER_PATH = Path(settings.DEFAULT_ROSTER_PATH)
+LEADER_SETS_DIR = Path(settings.DEFAULT_LEADER_SETS_DIR)
 
 
 def reference_bundle_quality_view() -> dict[str, Any]:
@@ -1095,6 +1103,7 @@ def build_overview_quality(
         loaded_roster(bundle),
         bundle["suites"],
         bundle["fiches"],
+        bundle["leader_sets"],
     )
 
 
@@ -1114,16 +1123,34 @@ def test_overview_quality_view_over_the_reference_bundle_names_every_suites_lead
         read_model.load_roster_file(ROSTER_PATH),
         SUITE_DEFINITIONS_DIR,
         FICHE_REGISTRY_DIR,
+        LEADER_SETS_DIR,
     )
 
     assert view["use_cases"], "the reference bundle should carry at least one use case"
+    published = leader_set.current_leader_sets(LEADER_SETS_DIR)
+    assert published, "the committed bundle publishes a leader set"
     for use_case in view["use_cases"]:
         leader = use_case["leader"]
-        assert isinstance(leader, Absent), (
-            "leader_set_member is unowned today -- no row of the reference "
-            "bundle carries it"
-        )
-        assert leader.reason == ABSENT_PREDATES_SCHEMA
+        records = [
+            record
+            for record in published
+            if record["task_suite"] == use_case["task_suite"]
+        ]
+        if not records:
+            assert isinstance(leader, Absent)
+            assert leader.reason == ABSENT_POINTER_UNRESOLVED
+            continue
+        # The card names exactly the record's members, read from the rows.
+        expected = [
+            subject["run_id"]
+            for record in records
+            for subject in record["subjects"]
+            if subject["status"] == leader_set.STATUS_MEMBER
+        ]
+        assert [member["run_id"] for member in leader["members"]] == expected
+        assert [entry["leader_set_id"] for entry in leader["leader_sets"]] == [
+            record["leader_set_id"] for record in records
+        ]
         # The bundle does carry a cloud (mistral) provider alongside local
         # rows, so cloud_comparators is not vacuously empty here -- every
         # rendered comparator is drawn from a non-local provider.
@@ -1163,42 +1190,65 @@ def test_a_cloud_batch_completed_by_resume_shows_its_completing_score(
     assert comparator["suite_accuracy"] == 0.5
 
 
+def _write_leader_set(
+    directory: Path, subjects: list[tuple[str, str, str]], **fields: Any
+) -> dict[str, Any]:
+    """A leader-set record on disk: (run_id, model_id, status) per subject."""
+    record: dict[str, Any] = {
+        "record_type": leader_set.RECORD_TYPE,
+        "record_version": leader_set.RECORD_VERSION,
+        "suite_id": SUITE_ID,
+        "suite_version": "1",
+        "grouping_values": {"cpu": "a cpu"},
+        "grouping_not_recorded": ["machine_id", "compute_mode"],
+        "incomplete": False,
+        "subjects": [
+            {"run_id": run_id, "model_id": model_id, "status": status}
+            for run_id, model_id, status in subjects
+        ],
+        "supersedes": [],
+        "leader_set_id": "a" * 64,
+        **fields,
+    }
+    directory.mkdir(exist_ok=True)
+    (directory / f"{record['leader_set_id'][:12]}.json").write_text(
+        json.dumps(record), encoding="utf-8"
+    )
+    return record
+
+
 def test_overview_quality_view_groups_by_task_suite_leader_and_cloud_provider(
     bundle: dict[str, Path],
 ) -> None:
-    # Two distinct subjects (`run_a`, `run_b`), each with two item rows, so
-    # the leader set proves it collapses to one member per subject -- never
-    # one member per item row -- and carries the run's own suite_accuracy
-    # rather than either item's `correct`.
+    # Two members (`run_a`, `run_b`), each with item rows, so the leader set
+    # proves it collapses to one member per subject -- never one member per
+    # item row -- and carries the run's own suite_accuracy rather than either
+    # item's `correct`. The members come from the leader-set record, never
+    # from a row field and never from ranking scores here.
+    local = {"task_suite": "suite-a", "provider": "local", "model_id": "model-x"}
     leader_run_a_item_1 = make_row(
         "quality",
-        task_suite="suite-a",
-        provider="local",
         run_id="run-a",
         item_id="item-1",
-        leader_set_member=True,
         suite_accuracy=0.9,
         correct=True,
+        **local,
     )
     leader_run_a_item_2 = make_row(
         "quality",
-        task_suite="suite-a",
-        provider="local",
         run_id="run-a",
         item_id="item-2",
-        leader_set_member=True,
         suite_accuracy=0.9,
         correct=False,
+        **local,
     )
     leader_run_b_item_1 = make_row(
-        "quality",
-        task_suite="suite-a",
-        provider="local",
-        run_id="run-b",
-        item_id="item-1",
-        leader_set_member=True,
-        suite_accuracy=0.75,
-        correct=False,
+        "quality", run_id="run-b", item_id="item-1", suite_accuracy=0.75, **local
+    )
+    # Excluded by the record, although its score is the highest: the view
+    # renders the record and ranks nothing.
+    excluded_run_e = make_row(
+        "quality", run_id="run-e", item_id="item-1", suite_accuracy=0.99, **local
     )
     # A cloud subject with two item rows -- also one subject, not two.
     cloud_run_c_item_1 = make_row(
@@ -1217,7 +1267,17 @@ def test_overview_quality_view_groups_by_task_suite_leader_and_cloud_provider(
         item_id="item-2",
         suite_accuracy=0.5,
     )
-    other_suite_row = make_row("quality", task_suite="suite-b", provider="local")
+    other_suite_row = make_row(
+        "quality", task_suite="suite-b", provider="local", suite_id="suite-b-id"
+    )
+    record = _write_leader_set(
+        bundle["leader_sets"],
+        [
+            ("run-a", "model-x", "member"),
+            ("run-b", "model-x", "member"),
+            ("run-e", "model-x", "excluded"),
+        ],
+    )
 
     view = build_overview_quality(
         bundle,
@@ -1225,6 +1285,7 @@ def test_overview_quality_view_groups_by_task_suite_leader_and_cloud_provider(
             leader_run_a_item_1,
             leader_run_a_item_2,
             leader_run_b_item_1,
+            excluded_run_e,
             cloud_run_c_item_1,
             cloud_run_c_item_2,
             other_suite_row,
@@ -1244,6 +1305,16 @@ def test_overview_quality_view_groups_by_task_suite_leader_and_cloud_provider(
     for member in members:
         assert "item_id" not in member
         assert "correct" not in member
+    assert suite_a["leader"]["leader_sets"] == [
+        {
+            "leader_set_id": record["leader_set_id"],
+            "suite_id": SUITE_ID,
+            "suite_version": "1",
+            "grouping_values": {"cpu": "a cpu"},
+            "grouping_not_recorded": ["machine_id", "compute_mode"],
+            "incomplete": False,
+        }
+    ]
 
     comparators = suite_a["cloud_comparators"]
     assert len(comparators) == 1, "the cloud subject's two item rows are one entry"
@@ -1252,10 +1323,43 @@ def test_overview_quality_view_groups_by_task_suite_leader_and_cloud_provider(
     assert comparators[0]["suite_accuracy"] == 0.5
     assert "item_id" not in comparators[0]
 
+    # A suite with no leader-set record keeps its stated absence.
     suite_b = use_cases["suite-b"]
     assert isinstance(suite_b["leader"], Absent)
-    assert suite_b["leader"].reason == ABSENT_PREDATES_SCHEMA
+    assert suite_b["leader"].reason == ABSENT_POINTER_UNRESOLVED
+    assert suite_b["leader"].detail == {
+        "pointer": read_model.POINTER_LEADER_SET,
+        "value": ["suite-b-id@1"],
+    }
     assert suite_b["cloud_comparators"] == []
+
+
+def test_a_leader_set_member_the_store_does_not_hold_is_unresolved(
+    bundle: dict[str, Path],
+) -> None:
+    record = _write_leader_set(
+        bundle["leader_sets"], [("run-gone", "model-x", "member")]
+    )
+
+    view = build_overview_quality(bundle, [make_row("quality", provider="local")])
+
+    (use_case,) = view["use_cases"]
+    assert use_case["leader"] == Absent(
+        ABSENT_POINTER_UNRESOLVED,
+        {"pointer": read_model.POINTER_LEADER_SET, "value": record["leader_set_id"]},
+    )
+
+
+def test_an_unreadable_leader_set_directory_is_unresolved_not_a_failure(
+    bundle: dict[str, Path],
+) -> None:
+    bundle["leader_sets"].mkdir()
+    (bundle["leader_sets"] / "broken.json").write_text("{", encoding="utf-8")
+
+    view = build_overview_quality(bundle, [make_row("quality")])
+
+    (use_case,) = view["use_cases"]
+    assert use_case["leader"].reason == ABSENT_POINTER_UNRESOLVED
 
 
 def test_overview_quality_view_never_carries_a_runtime_only_field(
@@ -1336,6 +1440,7 @@ def test_overview_quality_and_runtime_views_share_no_stores_identity(
         loaded_roster(bundle),
         bundle["suites"],
         bundle["fiches"],
+        bundle["leader_sets"],
     )
     runtime = read_model.overview_runtime_view(
         bundle["runtime"], FLOOR, bundle["fiches"]
@@ -1343,3 +1448,47 @@ def test_overview_quality_and_runtime_views_share_no_stores_identity(
 
     assert "only-runtime" not in json.dumps(read_model.to_jsonable(quality))
     assert ROSTER_ENTRY_ID not in json.dumps(read_model.to_jsonable(runtime))
+
+
+@pytest.mark.parametrize(
+    "broken",
+    [
+        {"subjects": None},
+        {"subjects": [{"run_id": "run-a"}]},
+        {"incomplete": None, "grouping_values": None, "subjects": "x"},
+    ],
+    ids=["subjects-null", "subject-without-status", "subjects-not-a-list"],
+)
+def test_a_malformed_leader_set_record_is_unresolved_not_a_failure(
+    bundle: dict[str, Path], broken: dict[str, Any]
+) -> None:
+    record = _write_leader_set(bundle["leader_sets"], [("run-a", "model-x", "member")])
+    record.update(broken)
+    (bundle["leader_sets"] / f"{record['leader_set_id'][:12]}.json").write_text(
+        json.dumps(record), encoding="utf-8"
+    )
+
+    view = build_overview_quality(bundle, [make_row("quality", provider="local")])
+
+    (use_case,) = view["use_cases"]
+    assert use_case["leader"] == Absent(
+        ABSENT_POINTER_UNRESOLVED,
+        {"pointer": read_model.POINTER_LEADER_SET, "value": record["leader_set_id"]},
+    )
+
+
+def test_a_leader_set_record_missing_its_incomplete_flag_is_unresolved(
+    bundle: dict[str, Path],
+) -> None:
+    record = _write_leader_set(bundle["leader_sets"], [("run-a", "model-x", "member")])
+    path = bundle["leader_sets"] / f"{record['leader_set_id'][:12]}.json"
+    del record["incomplete"]
+    path.write_text(json.dumps(record), encoding="utf-8")
+
+    view = build_overview_quality(
+        bundle,
+        [make_row("quality", provider="local", run_id="run-a", model_id="model-x")],
+    )
+
+    (use_case,) = view["use_cases"]
+    assert use_case["leader"].reason == ABSENT_POINTER_UNRESOLVED

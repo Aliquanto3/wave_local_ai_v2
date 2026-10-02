@@ -205,27 +205,24 @@ The pitch overview (`views/overview/`, `GET /api/overview/quality`,
 carry through to it unchanged; a third is specific to the overview's own
 leader-set mechanism.
 
-- **The leader set.** `read_model.LEADER_SET_MEMBER_FIELD`
-  (`leader_set_member`) resolves against every row of this bundle via the
-  ordinary `resolve_field` machinery -- no new absence reason, no field
-  stubbed into `row_contract.py`. Nothing in the repo writes it today: the
-  stats epic records its derivation as unowned (see
-  `a-score-is-published-with-its-interval-a-difference-with-its-test.md`'s
-  own Dependencies table). `overview/quality/QualityPanel.tsx` renders
-  `DeclaredAbsenceLabel` naming "no leader set published for this suite and
-  machine class" on every card of this bundle rather than a substituted
-  highest score. `cloud_comparators` is not part of this withholding -- the
-  reference bundle does carry `provider != "local"` rows (a real mistral
-  comparator alongside the local ones), so every card's cloud-comparator list
-  is populated, not empty.
-- **The runtime/energy headline, following from having no leader.**
+- **The leader set.** Read from the current leader-set record of the card's suites
+  (`leader-sets/`, see "The leader set" below), never from a row field: its members
+  are rendered from the store's own rows, and `leader.leader_sets` names each record
+  read with its machine class and whether it is `incomplete`. A suite with no record
+  resolves to the ordinary `pointer_unresolved` absence naming `leader_set`, and
+  `overview/quality/QualityPanel.tsx` renders `DeclaredAbsenceLabel` naming "no
+  leader set published for this suite and machine class" rather than a substituted
+  highest score. In this bundle the classification card names one member
+  (`5e13166d`, from an incomplete record). `cloud_comparators` is not part of this --
+  the reference bundle does carry `provider != "local"` rows (a real mistral
+  comparator alongside the local ones), so every card's cloud-comparator list is
+  populated, not empty. The frontend does not show `incomplete` yet.
+- **The runtime/energy headline, following from the leader.**
   `overview/runtime/RuntimeEnergyPanel.tsx` receives `leaderRosterEntryIds`
   from `OverviewView`, derived from `leader.members` when a leader set
-  exists. With no leader set (every card of this bundle), that list is empty
-  and the panel renders the same class of `DeclaredAbsenceLabel` ("no model
-  to take a headline from") rather than guessing a headline from an
-  unranked row. This is a structural consequence of the leader-set absence
-  above, not a second, independently missing construct.
+  exists. With no leader set, that list is empty and the panel renders the
+  same class of `DeclaredAbsenceLabel` ("no model to take a headline from")
+  rather than guessing a headline from an unranked row.
 - **The coverage record.** `overview/CoverageAbsence.tsx` is the same
   `no-use-case-is-silently-absent` declared absence as `QualityView`'s
   `CoverageRecord`, rendered once at the overview page level rather than
@@ -405,6 +402,51 @@ Both members are still refused on `thinking_policy`, for the reason above, so th
 adjusts nothing: it publishes the family, not a finding. `tests/test_comparison.py`
 recomputes it from `quality-reference.jsonl` with only the two records it supersedes on
 file and requires identical bytes.
+
+## The leader set: the local models not distinguishable from the best (2026-10-02)
+
+The leader set of a suite on a machine class is a published derived output (PRD Non-goals,
+owner answer Q42 (a)): the best local subject plus every local subject the paired tests
+cannot tell from it. It is its own record in `leader-sets/`, written by the analysis
+command, never a row field and never computed at read time, so no published row is
+rewritten when a set changes.
+
+```
+uv run wave-local-ai-v2-compare --leader-sets
+```
+
+The command groups the local subjects (a `run_id` and its `model_id`; cloud subjects are
+never members) by suite id and version and by machine class, read from each row's fiche:
+`machine_id`, `compute_mode`, `cpu`, `ram_gb`, `gpu_name`, `os`. A field the fiche does not
+carry is listed in `grouping_not_recorded`; today's fiches carry neither `machine_id` nor
+`compute_mode` (story `a-gpu-run-and-a-cpu-only-run-never-share-a-fiche` adds them), so a
+`gpu` and a `cpu_only` fiche of one machine fall into two groups as soon as fiches record
+the mode. The reference is the subject with the highest published suite score
+(`suite_accuracy` or `suite_score`); a tie names the subject whose `(run_id, model_id)`
+sorts first, and the record states the rule and every subject tied at the top. Every other
+local subject is compared against it inside the suite's `model` family, which the command
+grows by those comparisons (keeping every comparison it already held), so Holm runs over
+the whole closed family. A subject reads `member` on `not distinguishable`, `excluded` on
+`distinguishable`, and `not compared` on any `not comparable` (a refusal, naming the
+refused fields, or an observation, naming its reason); one `not compared` subject makes
+the record `incomplete`. A group of one local subject is a set of one stating that no
+comparison ran. A changed group is a new record superseding the old by
+`leader_set_id`; a re-run over the same bundle reports every record `unchanged`.
+
+| Record | Group | Reference | Members | Excluded | Not compared | Family |
+| --- | --- | --- | --- | --- | --- | --- |
+| `leader-sets/classification-support-routing@2.053c65354ff8.json` | `classification-support-routing@2`, the RTX 3060 laptop (`machine_id`, `compute_mode` not recorded) | `5e13166d` `Qwen3.6-35B-A3B`, 0.8 (tied with `d20afbda`) | 1 | 0 | 1 (`thinking_policy` absent) | `837e5355b954` |
+| `comparisons/classification-support-routing@2.model.837e5355b954.json` | the family grown by the leader comparison: 3 members, 0 tested, 3 refused | | | | | supersedes `1e1658cbe073` |
+
+The bundle's two local batches are the same model at the same score, and their comparison
+is refused on `thinking_policy` like both committed pairs, so the first real leader set
+names one member and says it is incomplete. The three earlier family records are
+unchanged. `tests/test_leader_set.py` recomputes the leader-set record from
+`quality-reference.jsonl` with the family it cites removed from file and requires
+identical bytes. Command output:
+`aidd_docs/tasks/2026_10/2026_10_01_local-models-not-distinguishable-from-the-best/evidence/leader-sets-output.txt`.
+The fifth export table that will flatten these records is not built yet
+(`comparison-family-and-leader-set-records-read-as-a-fifth-table`).
 
 ## The use-case coverage record, and why it is not here yet
 

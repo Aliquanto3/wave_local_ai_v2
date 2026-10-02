@@ -8,6 +8,8 @@ candidate side) and writes one immutable family record
 refusal naming why its two sides cannot be compared, with Holm-adjusted
 p-values over that closed family (PRD Methodology 24). A family that grows is
 a new record superseding the old one by id; no published record is rewritten.
+`--leader-sets` runs the leader-set derivation (`leader_set.py`) instead of
+a declared family.
 
 The test is chosen by the rows' scoring kind, never by the caller: a binary
 exact-match score (`correct`) gets McNemar's exact test over the discordant
@@ -1543,6 +1545,26 @@ def _parser() -> argparse.ArgumentParser:
         default=None,
         help="record path (default: <records-dir>/<name>.json)",
     )
+    parser.add_argument(
+        "--leader-sets",
+        action="store_true",
+        help=(
+            "publish the leader set of every suite and machine class: grow "
+            "each suite's model family by the comparisons against its best "
+            "local subject and write one leader-set record per group; "
+            "replaces the declared comparisons"
+        ),
+    )
+    parser.add_argument(
+        "--leader-sets-dir",
+        default=None,
+        help="leader-set records (default: aidd_docs/results/leader-sets/)",
+    )
+    parser.add_argument(
+        "--fiche-registry-dir",
+        default=settings.DEFAULT_FICHE_REGISTRY_DIR,
+        help="fiches the rows cite, read for the machine class",
+    )
     return parser
 
 
@@ -1585,6 +1607,57 @@ def _member_line(member: Mapping[str, Any]) -> str:
     )
 
 
+def _leader_sets(args: argparse.Namespace) -> int:
+    """`--leader-sets`: the families and leader-set records over the rows."""
+    # Imported here: `leader_set` builds on this module.
+    from wave_local_ai_v2 import leader_set
+
+    try:
+        if not 0 < args.alpha < 1:
+            raise ComparisonInputError(f"--alpha {args.alpha} is not in (0, 1)")
+        named = [
+            flag
+            for flag, value in (
+                ("--reference", args.reference),
+                ("--candidate", args.candidate),
+                ("--reference-where", args.reference_where or None),
+                ("--candidate-where", args.candidate_where or None),
+                ("--comparisons", args.comparisons),
+                ("--output", args.output),
+            )
+            if value is not None
+        ]
+        if args.dimension != leader_set.LEADER_DIMENSION:
+            named.append("--dimension")
+        if args.quantity != QUANTITY_SCORE:
+            named.append("--quantity")
+        if named:
+            raise ComparisonInputError(
+                "--leader-sets declares its own comparisons on the model score: "
+                + ", ".join(named)
+                + " cannot be given with it"
+            )
+        rows_path = Path(args.rows)
+        rows = _read_rows(rows_path)
+    except ComparisonInputError as error:
+        print(str(error), file=sys.stderr)
+        return 1
+    return leader_set.publish(
+        rows,
+        rows_source=rows_source_name(rows_path),
+        records_dir=(
+            Path(args.records_dir) if args.records_dir is not None else COMPARISONS_DIR
+        ),
+        leader_sets_dir=(
+            Path(args.leader_sets_dir)
+            if args.leader_sets_dir is not None
+            else leader_set.LEADER_SETS_DIR
+        ),
+        fiche_registry_dir=Path(args.fiche_registry_dir),
+        alpha=args.alpha,
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the declared comparisons and write their one family record.
 
@@ -1594,6 +1667,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     content. No published record is ever rewritten.
     """
     args = _parser().parse_args(argv)
+    if args.leader_sets:
+        return _leader_sets(args)
     try:
         if not 0 < args.alpha < 1:
             raise ComparisonInputError(f"--alpha {args.alpha} is not in (0, 1)")

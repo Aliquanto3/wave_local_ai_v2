@@ -198,6 +198,17 @@ The command-line interface for running benchmarks.
   item_first_in_batch=false`. No timestamp: a
   re-run is byte-identical; a different existing file is refused (exit `1`);
   no published record is rewritten.
+  - `--leader-sets [--leader-sets-dir <dir>] [--fiche-registry-dir <dir>]`
+    replaces the declared comparisons (`leader_set.py`): per suite and machine
+    class (the fiche's `machine_id`, `compute_mode`, `cpu`, `ram_gb`,
+    `gpu_name`, `os`, absent ones listed as not recorded) it takes the local
+    subject (`run_id` + `model_id`) with the highest published suite score
+    (tie: first `(run_id, model_id)`), grows the suite's `model` family by the
+    comparisons against it, and writes one leader-set record per group to
+    `aidd_docs/results/leader-sets/<suite>@<version>.<id[:12]>.json`: each
+    subject `member`, `excluded` or `not compared` (record `incomplete`). Cloud
+    subjects never enter. Superseded by `leader_set_id`, never edited; a
+    re-run reports every record `unchanged`.
 - `wave-local-ai-v2-candidate-gate --candidate <declaration.json> [--records
   <jsonl>]` — the roster's verification gate (`candidate_gate.py`): one
   declared candidate through seven steps, cheapest first, first failure stops
@@ -261,7 +272,8 @@ The command-line interface for running benchmarks.
     store, roster, fiche-registry and suite-definition paths come from the same
     env vars the benchmark CLIs use. A row below the floor is counted in
     `unreadable` naming its version, never rendered half-populated and never
-    dropped. Pointing `RUNTIME_RESULTS_PATH`/`QUALITY_RESULTS_PATH` at
+    dropped. `LEADER_SETS_DIR` (default `aidd_docs/results/leader-sets`) is
+    where the overview reads each suite's current leader-set record. Pointing `RUNTIME_RESULTS_PATH`/`QUALITY_RESULTS_PATH` at
     `aidd_docs/results/*-reference.jsonl` serves the committed bundle with no
     code change.
   - Plain HTTP. TLS and the browser's own side of the key are a later story in

@@ -1,0 +1,90 @@
+{
+  "alpha": 0.05,
+  "comparison_ran": true,
+  "excluded_count": 0,
+  "family_id": "837e5355b95434d3f325b0d18a260e4c9cd978e477f33b71ec98f2a4f828d49b",
+  "grouping_fields": [
+    "suite_id",
+    "suite_version",
+    "machine_id",
+    "compute_mode",
+    "cpu",
+    "ram_gb",
+    "gpu_name",
+    "os"
+  ],
+  "grouping_not_recorded": [
+    "machine_id",
+    "compute_mode"
+  ],
+  "grouping_values": {
+    "cpu": "AMD64 Family 25 Model 80 Stepping 0, AuthenticAMD",
+    "gpu_name": "NVIDIA GeForce RTX 3060 Laptop GPU",
+    "os": "Windows 11",
+    "ram_gb": 31.4
+  },
+  "incomplete": true,
+  "incomplete_reason": "1 subject(s) not compared: whether they belong to the set is unknown",
+  "leader_set_id": "053c65354ff8ecab6b9c696dda9e2f2c5d711677c9824c76843a3f08ad4394d6",
+  "local_only_rule": "only local subjects enter a leader set: cloud subjects stay the pitch's comparators and are never members, excluded or compared here",
+  "machine_class_rule": "a group is one suite (id and version) on one machine class: the subjects whose fiches carry equal values for every grouping field, a field the fiche does not carry being listed as not recorded; a gpu and a cpu_only fiche of one machine differ on compute_mode, so they never share a group",
+  "member_count": 1,
+  "membership_rule": "members are the reference plus every local subject whose comparison against it reads 'not distinguishable' at alpha on the family's Holm-adjusted p; 'distinguishable' is excluded; any 'not comparable' (a refusal, or an observation that is not a test) is not compared, so the record is incomplete",
+  "no_comparison_reason": null,
+  "not_compared_count": 1,
+  "record_type": "leader_set",
+  "record_version": "1",
+  "reference": {
+    "model_id": "Qwen3.6-35B-A3B",
+    "run_id": "5e13166da0654390a7d63f346ea5d4f1",
+    "suite_score": 0.8
+  },
+  "rows_source": "aidd_docs/results/quality-reference.jsonl",
+  "score_field": "suite_accuracy",
+  "subjects": [
+    {
+      "adjusted_p_value": null,
+      "comparison_kind": null,
+      "model_id": "Qwen3.6-35B-A3B",
+      "not_compared_reason": null,
+      "refused_fields": [],
+      "role": "reference",
+      "roster_entry_id": "qwen3.6-35b-a3b-ud-iq4xs",
+      "run_id": "5e13166da0654390a7d63f346ea5d4f1",
+      "status": "member",
+      "suite_score": 0.8,
+      "verdict": null
+    },
+    {
+      "adjusted_p_value": null,
+      "comparison_kind": "refusal",
+      "model_id": "Qwen3.6-35B-A3B",
+      "not_compared_reason": "refused on thinking_policy (absent)",
+      "refused_fields": [
+        "thinking_policy"
+      ],
+      "role": "compared",
+      "roster_entry_id": "qwen3.6-35b-a3b-ud-iq4xs",
+      "run_id": "d20afbda710c40378e6ad5ca8d9b6558",
+      "status": "not compared",
+      "suite_score": 0.8,
+      "verdict": "not comparable"
+    }
+  ],
+  "suite_id": "classification-support-routing",
+  "suite_level": null,
+  "suite_version": "2",
+  "supersedes": [],
+  "task_suite": "classification",
+  "tie_rule": "the reference is the local subject with the highest published suite score in the group; among subjects tied at that score, the one whose (run_id, model_id) sorts first",
+  "tied_at_top": [
+    {
+      "model_id": "Qwen3.6-35B-A3B",
+      "run_id": "5e13166da0654390a7d63f346ea5d4f1"
+    },
+    {
+      "model_id": "Qwen3.6-35B-A3B",
+      "run_id": "d20afbda710c40378e6ad5ca8d9b6558"
+    }
+  ]
+}

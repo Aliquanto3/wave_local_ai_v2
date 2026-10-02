@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Each suite and machine class publishes the local models not
+  distinguishable from the best** -- `wave-local-ai-v2-compare --leader-sets`
+  groups the published rows' local subjects by suite and by the machine class
+  their fiche records (`machine_id`, `compute_mode`, `cpu`, `ram_gb`,
+  `gpu_name`, `os`; a field the fiche lacks is listed as not recorded), names
+  the subject with the highest published suite score (a tie goes to the
+  `(run_id, model_id)` that sorts first), grows the suite's `model` family by
+  the comparisons against it, and writes one immutable leader-set record per
+  group to `aidd_docs/results/leader-sets/`: each subject `member`
+  (`not distinguishable` on the Holm-adjusted p), `excluded`
+  (`distinguishable`) or `not compared` (a refusal or an observation, which
+  marks the record `incomplete`). A changed group supersedes its record by
+  `leader_set_id`; a re-run is byte-identical. The pitch overview's `leader`
+  now resolves from the current record (`LEADER_SETS_DIR`) instead of the
+  never-written `leader_set_member` row field, and a suite without a record
+  reads `pointer_unresolved`. The committed bundle publishes the first one:
+  `classification-support-routing@2` on the laptop, one member, incomplete
+  (the second batch is refused on `thinking_policy`).
+
 - **The roster composition check names every size class and refuses an
   unlabelled single-family one (row schema "19", `roster_version` 4)** --
   `wave-local-ai-v2-composition-check` reports per size class (`~0.5B`,

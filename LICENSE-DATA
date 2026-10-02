@@ -35,6 +35,7 @@ them is MIT, and the module's header says so.
 - `aidd_docs/results/fiches/`: the hardware fiches the rows cite by `fiche_hash`.
 - `aidd_docs/results/suite-definitions/`: the published suite-definition snapshots the rows cite by `suite_id` and `suite_version`, including the hand-written suite items as published.
 - `aidd_docs/results/comparisons/`: the paired-comparison family records computed over the published rows.
+- `aidd_docs/results/leader-sets/`: the leader-set records derived from the published rows and the comparison family records.
 - `aidd_docs/roster/`: the model roster's directory.
 - `aidd_docs/roster/models.json`: the model roster the rows cite by `roster_entry_id`, including each entry's licence block and language claim as records. The licences those blocks record are not granted here; see 1.2.
 - `src/wave_local_ai_v2/suite_data/`: the hand-written suite items as stored in the source tree, one suite definition per file.
