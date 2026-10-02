@@ -449,6 +449,21 @@ def test_the_cloud_subject_row_is_flagged_single_judge_with_its_reason(
     assert row["judge_egress"]["judge_call_count"] == 1
 
 
+def test_each_probe_row_records_its_subject_egress_apart_from_the_judges(
+    stubbed_probe,
+) -> None:
+    probe_path, _, _, _ = stubbed_probe
+
+    judge_probe._run()
+
+    for row in read_rows(probe_path):
+        expected = "none" if row["provider"] == "local" else row["provider"]
+        assert row["subject_egress"] == expected
+        # Judging sent the item off the machine either way: recorded in the
+        # judge block's own egress record, never folded into the subject's.
+        assert row["judge_egress"]["item_left_machine"] is True
+
+
 def test_every_row_publishes_null_labels_and_a_real_subject_output(
     stubbed_probe,
 ) -> None:

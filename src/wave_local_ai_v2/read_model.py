@@ -271,6 +271,9 @@ RUNTIME_FIELDS_NOT_RENDERED: frozenset[str] = frozenset(
         "prompt_variant_id",
         "prompt_variant_version",
         "prompt_before_template",
+        # Where the subject prompt went (schema "16"); always `none` on a
+        # runtime row. Whether the pitch renders it is the pitch epic's call.
+        "subject_egress",
     }
 )
 
@@ -354,6 +357,11 @@ QUALITY_FIELDS_NOT_RENDERED: frozenset[str] = frozenset(
         "item_licence",
         "item_source",
         "item_source_revision",
+        # Where the subject prompt went, `none` or the cloud provider that
+        # received it (schema "16"). On the row so "nothing left the machine"
+        # is a property every row carries; whether the pitch renders it is the
+        # pitch epic's call, not this one's.
+        "subject_egress",
     }
 )
 

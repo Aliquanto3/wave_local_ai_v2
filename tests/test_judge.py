@@ -636,6 +636,8 @@ def _baseline_probe_row() -> dict:
         suite_version=judge_probe.SUITE_VERSION,
         item_id=item["item_id"],
         prompt_before_template=item["prompt"],
+        provider="local",
+        subject_egress="none",
     )
 
 

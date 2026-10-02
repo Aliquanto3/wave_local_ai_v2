@@ -18,7 +18,7 @@ from wave_local_ai_v2.results import (
     resume_skip_reason,
     rows_for_run,
 )
-from wave_local_ai_v2.row_contract import RowContractError
+from wave_local_ai_v2.row_contract import RowContractError, subject_egress_for
 
 # The authored text of the item the quality fixture names: a baseline
 # row carries it unchanged, and the gate checks that it does.
@@ -47,6 +47,7 @@ COMPLETE_QUALITY_ROW = {
     "prompt_before_template": _AUTHORED_PROMPT,
     "model_id": "Qwen3.6-35B-A3B",
     "provider": "local",
+    "subject_egress": "none",
     "fiche_hash": "a" * 64,
     "cpu_energy_kwh": 0.0003,
     "cpu_energy_method": "estimated_tdp",
@@ -230,6 +231,7 @@ def _write_items(
                 **COMPLETE_QUALITY_ROW,
                 "run_id": run_id,
                 "provider": provider,
+                "subject_egress": subject_egress_for(provider),
                 "item_id": item["item_id"],
                 "prompt_before_template": item["prompt"],
                 "task_suite": task_suite,

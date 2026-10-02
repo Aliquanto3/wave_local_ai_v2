@@ -449,6 +449,25 @@ def test_a_confound_outside_the_dimension_makes_an_observation() -> None:
     assert member["verdict"] == comparison.VERDICT_NOT_COMPARABLE
 
 
+def test_a_local_and_a_cloud_subject_differ_on_egress_without_a_confound() -> None:
+    # `subject_egress` is a function of `provider`: it moves with the model
+    # axis, so a local-versus-cloud comparison stays a clean test.
+    ref, cand = _pairs_outcomes(14, 1, 4, 1)
+    member = _compare(
+        _binary_rows("run-ref", "model-a", ref, subject_egress="none"),
+        _binary_rows(
+            "run-cand",
+            "model-b",
+            cand,
+            provider="mistral",
+            subject_egress="mistral",
+        ),
+    )
+    assert member["comparison_kind"] == comparison.KIND_TEST
+    assert "subject_egress" in member["differing_fields"]
+    assert member["confounds"] == []
+
+
 def test_a_prompt_variant_dimension_is_a_clean_test() -> None:
     ref, cand = _pairs_outcomes(14, 1, 4, 1)
     member = compare_sides(

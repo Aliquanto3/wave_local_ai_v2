@@ -744,6 +744,8 @@ def _build_row(
         **call_path_fields,
         "model_id": model_id,
         "provider": provider,
+        # The subject call alone; what judging sent stays in `judge_egress`.
+        "subject_egress": row_contract.subject_egress_for(provider),
         "fiche_hash": context.fiche_hash,
         **batch_fields,
         "task_suite": TASK_SUITE,

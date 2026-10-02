@@ -232,6 +232,9 @@ DIMENSIONS: dict[str, Dimension] = {
             {
                 "model_id",
                 "provider",
+                # A function of `provider` (`row_contract.subject_egress_for`),
+                # so it moves with the model axis and is never a confound.
+                "subject_egress",
                 "roster_entry_id",
                 "roster_version",
                 "endpoint",

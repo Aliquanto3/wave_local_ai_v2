@@ -72,7 +72,7 @@ its table and every header has one entry (`tests/test_bundle_export.py`). `carri
 entries name what the bundle read does not hold, with an owner: the row-contract fields
 added after `"7"` (`retries`, `resumed`, `thinking_policy`, the prompt-variant, graded and
 judge blocks, the energy-window fields, the suite level and the item licence, source and
-source revision), the per-repetition arrays, and two blocks owned elsewhere -- the
+source revision, the subject egress), the per-repetition arrays, and two blocks owned elsewhere -- the
 interval block (`a-score-is-published-with-its-interval-a-difference-with-its-test`) and the
 comparison and family records, which are the fifth table of
 `comparison-family-and-leader-set-records-read-as-a-fifth-table` rather than a table here.
@@ -260,6 +260,27 @@ each is a non-empty string; it does not check that the licence is the source's a
 licence, that the item came from that source, or that the revision exists.
 `contamination_risk` stays forced to `provenance == "public"` and is likewise a
 declaration. A reader who needs the claim checked has to check it against the named source.
+
+## Where a row's subject prompt went (2026-10-02)
+
+From schema `"16"` every runtime and quality row carries `subject_egress`: `none` when the
+subject prompt was served on the machine, else the id of the cloud provider that received
+it (`mistral`, `google`). A runtime row always records `none`, since the runtime benchmark
+serves its prompt from the local llama-server only. The writer gate refuses a row without
+the field or with it `null`, refuses a runtime row recording anything but `none`, and
+refuses a quality row whose value contradicts its
+`provider`: a `local` row recording a provider, a cloud row recording `none` or another
+provider's id.
+
+The field describes the subject call alone. A judged row also sends its item and the
+subject's output to the judges, and that is recorded, unchanged, in its `judge_egress`
+block: a local subject judged by two cloud judges carries `subject_egress` `none` beside a
+`judge_egress` saying the item left the machine. Read both before calling a row
+"nothing left the machine".
+
+No committed row carries the field: every row in this directory predates `"16"`, is read
+under its own version and is never back-filled with `none`. The reference rows carry it
+from their next regeneration, which nothing has scheduled yet.
 
 ## Paired comparisons: both committed pairs are refused (2026-10-02)
 

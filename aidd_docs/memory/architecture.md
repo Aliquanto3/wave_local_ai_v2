@@ -135,3 +135,9 @@ flowchart LR
   Wh-per-token formula since no on-machine energy exists to attribute to a network
   call) — the two are not directly comparable, and every Scope-3 row states that in
   its own `scope_comparability` field. See `docs/setup.md` section 5.
+- Egress is recorded per call, not per row. `subject_egress` (schema "16", both
+  row kinds) says where the subject prompt went: `none`, or the cloud provider
+  id, held equal to `row_contract.subject_egress_for(provider)` on quality
+  rows. A judged row's `judge_egress` separately records that the item and the
+  subject output left the machine for judging. "Nothing left the machine"
+  holds for a row only when both say so; the two are never merged.

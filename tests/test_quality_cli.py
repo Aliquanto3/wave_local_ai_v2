@@ -1198,6 +1198,25 @@ def test_full_run_writes_one_row_per_item_per_provider_in_order(stubbed_run) -> 
     assert write_order[2 * n :] == ["google"] * n
 
 
+def test_every_row_records_where_its_subject_prompt_went(stubbed_run) -> None:
+    quality_results_path, started = stubbed_run
+    _enable_google(started)
+
+    quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    egress_by_provider = {row["provider"]: set() for row in rows}
+    for row in rows:
+        egress_by_provider[row["provider"]].add(row["subject_egress"])
+    # The local subject's prompt never left the machine; each cloud subject's
+    # went to its own provider, and to no other.
+    assert egress_by_provider == {
+        "local": {"none"},
+        "mistral": {"mistral"},
+        "google": {"google"},
+    }
+
+
 def test_google_batch_paces_every_request_under_the_free_tier_rpm_cap(
     stubbed_run,
 ) -> None:

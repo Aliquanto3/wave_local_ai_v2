@@ -109,7 +109,22 @@ from wave_local_ai_v2 import (
 # declarations are the author's: nothing checks that a licence or a source is
 # the true one. A row below "15" is read under its own version and never
 # back-filled with `development`.
-SCHEMA_VERSION = "15"
+# "16": `subject_egress` became required on both row kinds (Story: every row
+# records whether its prompt left the machine; owner decision Q72): `none`
+# when the subject prompt was served on the machine, else the id of the cloud
+# provider that received it. Never null -- a writer always knows where it
+# sent a prompt -- held to `none` on a runtime row, and on a quality row
+# never in contradiction with `provider`. It describes the subject call alone: the judge block's
+# `judge_egress` stays as it is and is not merged into it. A row below "16"
+# is read under its own version and never back-filled with `none`.
+SCHEMA_VERSION = "16"
+
+# The value `subject_egress` takes when the subject prompt never left the
+# machine, and the `provider` a quality row names for a subject served by the
+# local llama-server. Every other provider is a cloud one, and its id is the
+# egress value.
+SUBJECT_EGRESS_NONE = "none"
+SUBJECT_PROVIDER_LOCAL = "local"
 
 # The two values `thinking_policy` may take. This is the **suite's** declared
 # policy, not a report of what each provider did with it: it is published on
@@ -161,6 +176,10 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "prompt_variant_id",
             "prompt_variant_version",
             "prompt_before_template",
+            # Where the subject prompt went: always `none` for a runtime row,
+            # which serves its prompt from the local llama-server only
+            # (schema "16")
+            "subject_egress",
             # fiche_registry: the hardware + run-specific fiche, cited by hash
             "fiche_hash",
             # verdict.runtime_verdict
@@ -265,6 +284,10 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "prompt_before_template",
             "model_id",
             "provider",
+            # Where the subject prompt went: `none` for a local subject, the
+            # provider id for a cloud one; checked against `provider`
+            # (schema "16")
+            "subject_egress",
             "fiche_hash",
             # energy.EnergyResult / emissions.local_emissions / scope3_cloud_emissions
             # -- same twelve fields as the runtime row (plan.md's Decisions:
@@ -488,6 +511,7 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
         )
 
     _validate_prompt_variant(kind, row)
+    _validate_subject_egress(kind, row)
 
     cost_total = row["cost_total"]
     # The two bases are the values the cost was actually computed from: a kWh
@@ -522,6 +546,57 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
         _validate_suite_level(row)
         _validate_judged_fields(row)
         _validate_graded_fields(row)
+
+
+def subject_egress_for(provider: str) -> str:
+    """The `subject_egress` value a subject served by `provider` records.
+
+    The one mapping both the writers and the gate use, so a writer cannot
+    stamp a value the gate would read differently: the local llama-server
+    sends nothing off the machine, any other provider received the prompt.
+    """
+    if provider == SUBJECT_PROVIDER_LOCAL:
+        return SUBJECT_EGRESS_NONE
+    return provider
+
+
+def _validate_subject_egress(kind: RowKind, row: dict[str, Any]) -> None:
+    """Refuse a null or malformed `subject_egress`, a runtime one other than
+    `none`, and a quality one that contradicts `provider`.
+
+    A null is refused here, unlike the contract's general "present as None is
+    complete" rule: a capture can fail, but a writer always knows where it
+    sent a prompt. A runtime row carries no `provider`, but the runtime
+    benchmark serves its prompt from the local llama-server only, so it is
+    held to `none`.
+    """
+    egress = row["subject_egress"]
+    if egress is None:
+        raise RowContractError(
+            f"row of kind {kind!r} has subject_egress null: a row states where "
+            f"its subject prompt went, {SUBJECT_EGRESS_NONE!r} or the provider "
+            "that received it"
+        )
+    if not (isinstance(egress, str) and egress.strip()):
+        raise RowContractError(
+            f"row of kind {kind!r} has a malformed subject_egress: {egress!r}"
+        )
+    if kind == "runtime":
+        if egress != SUBJECT_EGRESS_NONE:
+            raise RowContractError(
+                f"row of kind 'runtime' has subject_egress {egress!r}: the "
+                "runtime benchmark serves its prompt from the local "
+                f"llama-server only, so it records {SUBJECT_EGRESS_NONE!r}"
+            )
+        return
+    provider = row["provider"]
+    expected = subject_egress_for(provider)
+    if egress != expected:
+        raise RowContractError(
+            f"row of kind 'quality' has subject_egress {egress!r} but provider "
+            f"{provider!r}: a subject served by {provider!r} records "
+            f"subject_egress {expected!r}"
+        )
 
 
 _ITEM_SOURCE_FIELDS = ("item_licence", "item_source", "item_source_revision")

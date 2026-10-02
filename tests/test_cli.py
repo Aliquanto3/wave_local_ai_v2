@@ -720,6 +720,18 @@ def test_the_runtime_row_names_the_baseline_variant_and_the_fixed_prompt(
     assert row["prompt"] == FIXED_PROMPT
 
 
+def test_the_runtime_row_records_that_its_prompt_never_left_the_machine(
+    stubbed_run,
+) -> None:
+    results_path, _ = stubbed_run
+
+    _run()
+
+    (row,) = read_rows(results_path)
+    # The runtime benchmark serves its prompt from the local llama-server only.
+    assert row["subject_egress"] == "none"
+
+
 def test_the_fixed_prompt_passes_through_the_declared_variant(
     stubbed_run, marking_variant, monkeypatch
 ) -> None:

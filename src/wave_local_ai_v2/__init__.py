@@ -418,6 +418,9 @@ def _run() -> None:
         "prompt_variant_id": prompt_variant.variant_id,
         "prompt_variant_version": prompt_variant.version,
         "prompt_before_template": sent_prompt,
+        # The runtime benchmark serves its prompt from the local llama-server
+        # only: nothing left the machine.
+        "subject_egress": row_contract.SUBJECT_EGRESS_NONE,
         "fiche_hash": fiche_hash_value,
         "prompt": sent_prompt,
         "max_tokens": FIXED_MAX_TOKENS,

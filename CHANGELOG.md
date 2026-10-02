@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Every row records whether its prompt left the machine (row schema
+  "16")** -- every runtime and quality row carries `subject_egress`: `none`
+  when the subject prompt was served on the machine, or the id of the cloud
+  provider that received it. The runtime writer stamps `none`; the quality
+  CLI and the judge probe stamp `none` for a local subject and the provider
+  id for a cloud one, through one mapping, `row_contract.subject_egress_for`.
+  The writer gate refuses a row of either kind without the field or with it
+  `null`, naming it, refuses a runtime row recording anything but `none`,
+  and refuses a quality row whose value contradicts its `provider`. The judge block's `judge_egress` is unchanged and describes the
+  judge calls apart from the subject call. The field joins the comparison's
+  `model` dimension, the read model's not-rendered sets and the export's
+  column dictionary. Rows already written keep their schema version and are
+  not rewritten.
+
 - **Every roster entry states its family, its licence and its language
   claim (`roster_version` 3)** — `roster.KNOWN_FAMILIES` grows to the
   candidate vendors (`ibm`, `liquid`, `microsoft` beside `qwen`, `mistral`,

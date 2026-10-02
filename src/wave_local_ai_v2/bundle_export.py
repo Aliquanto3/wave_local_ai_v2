@@ -196,6 +196,12 @@ _COMMON_FIELDS: dict[tuple[str, ...], FieldDoc] = {
         "Prompt variant applied to the authored prompt before templating.", _ID
     ),
     ("prompt_variant_version",): FieldDoc("Version of that variant.", _ID),
+    ("subject_egress",): FieldDoc(
+        "Where the subject prompt went: 'none' when it was served on the "
+        "machine, else the id of the cloud provider that received it. The "
+        "subject call only; judge calls are described by judge_egress.",
+        _ID,
+    ),
     ("prompt_before_template",): FieldDoc(
         "The prompt as the variant left it, before the engine's templating.", _TEXT
     ),

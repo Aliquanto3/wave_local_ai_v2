@@ -252,6 +252,8 @@ def test_blocks_owned_elsewhere_are_named_with_their_owner(
         "item_licence",
         "item_source",
         "item_source_revision",
+        # Schema "16": where the subject prompt went.
+        "subject_egress",
     } <= set(owners)
 
 
