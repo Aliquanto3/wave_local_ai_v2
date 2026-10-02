@@ -232,7 +232,11 @@ def test_blocks_owned_elsewhere_are_named_with_their_owner(
         if entry["carried"] == "false"
     }
 
-    assert "a-score-is-published-with-its-interval" in owners["interval block"]
+    # No row of the committed bundle carries the interval (schema "21"): the
+    # contract field is named, with the epic that defines it, and no
+    # owned-elsewhere "interval block" entry contradicts a bundle that has it.
+    assert "a-score-is-published-with-its-interval" in owners["score_interval"]
+    assert "interval block" not in owners
     # The roster licence block is carried now, as roster-table columns.
     assert "roster licence block" not in owners
     roster_header = set(_header(committed_export / "roster.csv"))
@@ -973,7 +977,168 @@ def test_every_member_field_the_analysis_writes_is_described() -> None:
 
     for member in [energy, *({**energy, "result": result} for result in results)]:
         for path in bundle_export._leaf_paths(member, (), frozenset(), frozenset()):
-            assert bundle_export.lookup_doc(bundle_export.COMPARISON_FIELDS, path), path
+            assert bundle_export.lookup_doc(
+                comparison.COMPARISON_RECORD_FIELDS, path
+            ), path
+
+
+_RECORD_DEFINITIONS = {
+    "family": comparison.FAMILY_RECORD_FIELDS,
+    "comparison": comparison.COMPARISON_RECORD_FIELDS,
+    "leader_set": leader_set.LEADER_SET_RECORD_FIELDS,
+    "subject": leader_set.SUBJECT_RECORD_FIELDS,
+}
+
+
+def _disagreements(dictionary: list[dict[str, str]]) -> list[str]:
+    """Record columns whose dictionary entry differs from the record definition."""
+    columns = _record_columns(dictionary)
+    wrong: list[str] = []
+    for entry in dictionary:
+        if entry["table"] != "comparison_records" or entry["column"] not in columns:
+            continue
+        part, *path = columns[entry["column"]]
+        definition = bundle_export.lookup_doc(_RECORD_DEFINITIONS[part], tuple(path))
+        module = "comparison.py" if part in ("family", "comparison") else "leader_set"
+        if (
+            definition is None
+            or entry["meaning"] != definition.meaning
+            or entry["unit"] != definition.unit
+            or (definition.empty or "Otherwise the record holds null.")
+            not in entry["empty_cell"]
+            or module not in entry["owner"]
+            or "a-score-is-published-with-its-interval" not in entry["owner"]
+        ):
+            wrong.append(entry["column"])
+    return wrong
+
+
+def test_record_columns_state_the_record_definitions(tmp_path: Path) -> None:
+    paths, _ = _constructed_records_bundle(tmp_path)
+    dictionary = [
+        dict(zip(bundle_export.DICTIONARY_HEADER, entry, strict=True))
+        for entry in bundle_export.build_export(paths)[DICTIONARY_FILE][1:]
+    ]
+    columns = _record_columns(dictionary)
+
+    assert {part for part, *_ in columns.values()} == set(_RECORD_DEFINITIONS)
+    assert _disagreements(dictionary) == []
+    # A null reason is stated beside the row-kind case, not in place of it.
+    entry = next(e for e in dictionary if e["column"] == "comparison_result_p_value")
+    assert entry["empty_cell"].startswith("Not a comparison row")
+    assert "p_value_null_reason" in entry["empty_cell"]
+    # An entry redefined in the export would be caught, whichever cell moved.
+    for cell in ("meaning", "unit", "empty_cell", "owner"):
+        altered = [dict(e) for e in dictionary]
+        target = next(e for e in altered if e["column"] == "comparison_verdict")
+        target[cell] = "redefined in the export"
+        assert _disagreements(altered) == ["comparison_verdict"], cell
+
+
+def test_the_export_reads_the_record_definitions_it_does_not_redefine() -> None:
+    sources = bundle_export._record_row("comparison", "f.json")[1:]
+    assert all(
+        source.registry is registry
+        for source, registry in zip(sources, _RECORD_DEFINITIONS.values(), strict=True)
+    )
+
+
+def _named(module: object, prefix: str) -> set[str]:
+    return {
+        value
+        for name, value in vars(module).items()
+        if name.startswith(prefix) and isinstance(value, str)
+    }
+
+
+@pytest.mark.parametrize(
+    ("registry", "path", "values"),
+    [
+        (
+            comparison.COMPARISON_RECORD_FIELDS,
+            ("refusal",),
+            _named(comparison, "REFUSAL_"),
+        ),
+        (
+            comparison.COMPARISON_RECORD_FIELDS,
+            ("comparison_kind",),
+            _named(comparison, "KIND_"),
+        ),
+        (
+            comparison.COMPARISON_RECORD_FIELDS,
+            ("verdict",),
+            _named(comparison, "VERDICT_") - {comparison.VERDICT_RULE},
+        ),
+        (
+            comparison.COMPARISON_RECORD_FIELDS,
+            ("result", "direction"),
+            _named(comparison, "DIRECTION_"),
+        ),
+        (comparison.COMPARISON_RECORD_FIELDS, ("test",), _named(comparison, "TEST_")),
+        (
+            comparison.COMPARISON_RECORD_FIELDS,
+            ("scoring_kind",),
+            _named(comparison, "SCORING_KIND_"),
+        ),
+        (
+            comparison.COMPARISON_RECORD_FIELDS,
+            ("result", "p_value_null_reason"),
+            {
+                comparison.NULL_PAIRED_N_BELOW_MINIMUM,
+                comparison.NULL_NO_DISCORDANT_PAIRS,
+                comparison.NULL_ALL_DIFFERENCES_ZERO,
+            },
+        ),
+        (
+            comparison.COMPARISON_RECORD_FIELDS,
+            ("result", "effect_size_null_reason"),
+            {
+                comparison.NULL_PAIRED_N_BELOW_MINIMUM,
+                comparison.NULL_ODDS_RATIO_EMPTY_CELL,
+                comparison.NULL_ALL_DIFFERENCES_ZERO,
+            },
+        ),
+        (
+            comparison.COMPARISON_RECORD_FIELDS,
+            ("adjusted_p_value_null_reason",),
+            {comparison.NULL_COMPARISON_REFUSED, comparison.NULL_NO_PAIRED_TEST},
+        ),
+        (
+            comparison.COMPARISON_RECORD_FIELDS,
+            ("batch_values", "difference_null_reason"),
+            {comparison.NULL_NO_SINGLE_BATCH_VALUE},
+        ),
+        (
+            comparison.COMPARISON_RECORD_FIELDS,
+            ("compared_quantity",),
+            set(comparison.QUANTITIES) - {comparison.QUANTITY_SCORE},
+        ),
+        (
+            leader_set.SUBJECT_RECORD_FIELDS,
+            ("status",),
+            _named(leader_set, "STATUS_"),
+        ),
+        (leader_set.SUBJECT_RECORD_FIELDS, ("role",), _named(leader_set, "ROLE_")),
+    ],
+)
+def test_every_value_a_record_field_takes_is_named_in_its_definition(
+    registry: dict[tuple[str, ...], FieldDoc],
+    path: tuple[str, ...],
+    values: set[str],
+) -> None:
+    assert values
+    meaning = registry[path].meaning
+    assert not [value for value in values if value not in meaning]
+
+
+def test_every_null_reason_the_analysis_writes_is_defined() -> None:
+    reasons = _named(comparison, "NULL_")
+    defined = " ".join(
+        doc.meaning
+        for path, doc in comparison.COMPARISON_RECORD_FIELDS.items()
+        if path[-1].endswith("null_reason")
+    )
+    assert not [reason for reason in reasons if reason not in defined]
 
 
 def test_a_bundle_without_record_directories_holds_no_record(tmp_path: Path) -> None:
@@ -1033,21 +1198,25 @@ def test_a_malformed_record_is_refused_by_name(
 def test_a_row_carrying_its_interval_exports_every_cell_described(
     tmp_path: Path,
 ) -> None:
-    first, second = _committed_rows(COMMITTED.quality_rows)[:2]
+    first, second, third = _committed_rows(COMMITTED.quality_rows)[:3]
     items = [{"item_id": f"i{index}", "language": "en"} for index in range(20)]
     block = score_interval.interval_block(items, [1.0] * 16 + [0.0] * 4)
     first["score_interval"] = block
+    # A partial batch records the block as null; a row written before schema
+    # "21" (the committed rows) does not carry it at all.
     second["score_interval"] = None
+    assert "score_interval" not in third
 
     bundle_export.export_bundle(
-        _bundle(tmp_path, quality=[first, second]), tmp_path / "out"
+        _bundle(tmp_path, quality=[first, second, third]), tmp_path / "out"
     )
     rows = _read_csv(tmp_path / "out" / "quality_items.csv")
     dictionary = {
-        entry["column"]
+        entry["column"]: entry
         for entry in _read_csv(tmp_path / "out" / DICTIONARY_FILE)
         if entry["table"] == "quality_items"
     }
+    interval_columns = [c for c in rows[0] if c.startswith("score_interval_")]
 
     for column in (
         "score_interval_seed",
@@ -1061,4 +1230,55 @@ def test_a_row_carrying_its_interval_exports_every_cell_described(
         assert column in dictionary, column
     assert float(rows[0]["score_interval_suite_lower"]) == block["suite"]["lower"]
     assert rows[0]["score_interval_by_language_de_null_reason"] == "no_items"
-    assert rows[1]["score_interval_suite_lower"] == ""
+    assert json.loads(rows[0][NOT_CARRIED_COLUMN]) == []
+    # Empty, never zero, on both interval-less rows; only the row that does
+    # not carry the field lists its columns as not carried.
+    for row in rows[1:]:
+        assert {row[column] for column in interval_columns} == {""}
+    assert not set(interval_columns) & set(json.loads(rows[1][NOT_CARRIED_COLUMN]))
+    assert set(interval_columns) <= set(json.loads(rows[2][NOT_CARRIED_COLUMN]))
+    for column in interval_columns:
+        empty_cell = dictionary[column]["empty_cell"]
+        assert "before schema 21" in empty_cell, column
+        assert "never back-filled" in empty_cell.lower(), column
+    # The block is carried, so nothing in the dictionary calls it absent.
+    assert not [
+        entry
+        for entry in dictionary.values()
+        if entry["carried"] == "false" and "interval" in entry["column"]
+    ]
+
+
+def test_the_interval_columns_agree_with_the_block_they_describe() -> None:
+    registry = bundle_export.ROW_FIELDS
+    paths = [
+        *((key,) for key in score_interval.HEADER_KEYS - {"generator"}),
+        *(("generator", key) for key in score_interval.GENERATOR_KEYS),
+        *(("suite", key) for key in score_interval.CELL_KEYS),
+        *(("by_language", "en", key) for key in score_interval.CELL_KEYS),
+    ]
+
+    for path in paths:
+        assert bundle_export.lookup_doc(registry, ("score_interval", *path)), path
+    assert str(score_interval.CONFIDENCE_LEVEL) in (
+        registry[("score_interval", "confidence_level")].meaning
+    )
+    assert str(score_interval.RESAMPLES) in (
+        registry[("score_interval", "resamples")].meaning
+    )
+    assert score_interval.METHOD_PERCENTILE in (
+        registry[("score_interval", "method")].meaning
+    )
+    assert score_interval.DRAW_PROCEDURE_ID in (
+        registry[("score_interval", "draw_procedure_id")].meaning
+    )
+    for cell in (("suite",), ("by_language", "en")):
+        doc = bundle_export.lookup_doc(
+            registry, ("score_interval", *cell, "null_reason")
+        )
+        assert doc is not None
+        assert not [
+            reason
+            for reason in score_interval.NULL_REASONS
+            if reason not in doc.meaning
+        ]

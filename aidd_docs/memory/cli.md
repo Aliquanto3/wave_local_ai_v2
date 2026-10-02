@@ -161,7 +161,14 @@ The command-line interface for running benchmarks.
   columns, nothing is computed, absence stays an empty cell listed in the
   row's `fields_not_carried`, and the manifest declares the `schema_version`
   the rows carry, not the live constant. A row field the dictionary does not
-  describe refuses the export; see `aidd_docs/results/README.md`.
+  describe refuses the export; see `aidd_docs/results/README.md`. The record
+  columns' meaning, unit and null reasons are read from `comparison.py` and
+  `leader_set.py`, never defined in the export.
+- `uv run python scripts/recompute_from_export.py <export-dir>` — the
+  third-party check over an export directory alone (standard library, imports
+  nothing from the package): recomputes every interval block, every
+  `mcnemar_exact` comparison and each family's Holm-adjusted p from the CSVs,
+  prints each value beside the published cell, exits `1` on any difference.
 - `wave-local-ai-v2-compare (--reference <run_id> --candidate <run_id>
   [--reference-where field=value ...] [--candidate-where field=value ...] |
   --comparisons <declaration.json>) [--dimension model|prompt_variant]

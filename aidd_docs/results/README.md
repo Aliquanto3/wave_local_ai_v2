@@ -75,9 +75,13 @@ its table and every header has one entry (`tests/test_bundle_export.py`). `carri
 entries name what the bundle read does not hold, with an owner: the row-contract fields
 added after `"7"` (`retries`, `resumed`, `thinking_policy`, the prompt-variant, graded and
 judge blocks, the energy-window fields, the suite level and the item licence, source and
-source revision, the subject egress), the per-repetition arrays, the interval block
-(`a-score-is-published-with-its-interval-a-difference-with-its-test`), and each record kind
-(`comparison_family`, `comparison`, `leader_set`) the record directories read do not hold.
+source revision, the subject egress, and `score_interval` from `"21"`, whose owner cell names
+`a-score-is-published-with-its-interval-a-difference-with-its-test`), the per-repetition
+arrays, and each record kind (`comparison_family`, `comparison`, `leader_set`) the record
+directories read do not hold. A bundle whose rows carry the interval has its block as
+`score_interval_*` columns (header, then `suite_*` and `by_language_<lang>_*` cells); a row
+written before `"21"` shows them empty and listed in its `fields_not_carried`, a partial or
+judge-probe row shows them empty as a recorded null: never a zero, never back-filled.
 A row field the dictionary does not describe, an unresolved pointer or a non-finite float
 refuses the whole export before anything is written.
 
@@ -91,9 +95,13 @@ superseded family record stays a row: the record superseding it lists its id in
 `family_supersedes`, and the current family is the one no row lists there. Lists
 (`refusal`, `paired_values`, `supersedes`, ...) are compact JSON cells; columns a row's kind
 does not carry are empty and listed in its `fields_not_carried`. The meaning, unit and null
-reasons of the record fields are the statistics epic's to define (its story
-`the-tabular-export-carries-the-interval-and-the-comparison-record`), so each record column
-names that epic in its dictionary `owner` cell. A record citing a `run_id` the quality rows
+reasons of the record fields are defined by the statistics epic beside the code that writes
+the records (`comparison.FAMILY_RECORD_FIELDS`, `comparison.COMPARISON_RECORD_FIELDS`,
+`leader_set.LEADER_SET_RECORD_FIELDS`, `leader_set.SUBJECT_RECORD_FIELDS`) and read by the
+export, never redefined there: each record column's `owner` cell names that epic and module,
+and its `empty_cell` states the row-kind case followed by the field's own null reasons
+(`tests/test_bundle_export.py` fails on a dictionary entry that differs from the
+definition). A record citing a `run_id` the quality rows
 read do not hold, a leader set citing a family record not read, a `supersedes` id naming no
 record read, a malformed record, or a file in a record directory that is not a record of that
 directory's type refuses the export. A record directory that does not exist holds no record
@@ -108,6 +116,40 @@ breaks inside quoted cells kept as written; floats as Python's shortest round-tr
 (`8.553058931896319e-05` reads back as the same double); booleans `true`/`false`; lists, and
 the judge block's nested records, as compact JSON. Two runs over the same bundle are byte
 identical.
+
+### Recomputing the intervals and the paired tests from the tables alone (2026-10-02)
+
+`scripts/recompute_from_export.py <export-dir>` is a third party holding only the download:
+standard library, nothing imported from this project, reading `quality_items.csv` and
+`comparison_records.csv`. It recomputes every batch's interval block (suite and language
+cells) from the per-item `correct` / `item_score` columns with the block's own seed,
+resample count and confidence level, drawing as the dictionary entry of
+`score_interval_draw_procedure_id` states; every `mcnemar_exact` comparison's contingency,
+paired n and exact p from the two sides' per-item columns joined on `item_id`; and each
+family's Holm-adjusted p from its raw p-values. It prints each value beside the published
+cell and exits `1` on any difference.
+
+Over the committed bundle it has nothing to recompute (`0 values recomputed`): the rows are
+at `"7"`, before `score_interval`, and all four family records refuse on `thinking_policy`.
+So the check was run against ourselves over a bundle built from the committed rows by the
+writers' own code (`tests/published_bundle_fixtures.py`: `thinking_policy` set,
+`score_interval.interval_block` per batch, one family of both local-vs-cloud pairs from
+`comparison`), exported by `wave-local-ai-v2-export`:
+
+| Batch or comparison | Published = recomputed |
+| ------------------- | ---------------------- |
+| `5e13166d...` `Qwen3.6-35B-A3B`, suite | [0.6, 0.95], MDE 0.175 |
+| `5e13166d...` `mistral-small-2603`, suite | [0.85, 1.0], MDE 0.07500000000000001 |
+| `d20afbda...` `Qwen3.6-35B-A3B`, suite | [0.6, 0.95], MDE 0.175 |
+| `d20afbda...` `mistral-small-2603`, suite | [0.75, 1.0], MDE 0.125 |
+| McNemar, run `5e13166d...`, local vs cloud | b=1, c=4, n=20, p=0.375, Holm-adjusted 0.75 |
+| McNemar, run `d20afbda...`, local vs cloud | b=2, c=4, n=20, p=0.6875, Holm-adjusted 0.75 |
+
+96 values in all (every language cell's `n`, bounds, MDE and null reason included), 0
+differ, exit `0`. These intervals are not published results: the committed rows carry
+none. The check is re-run as it stands once a schema-21 batch and a tested comparison are
+committed. Commands and full output:
+`aidd_docs/tasks/2026_10/2026_10_01_tabular-export-carries-interval-and-comparison/evidence/`.
 
 ### Recomputation from the quality table alone (2026-10-01)
 

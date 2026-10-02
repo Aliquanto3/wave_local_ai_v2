@@ -23,8 +23,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from wave_local_ai_v2 import comparison, settings
+from wave_local_ai_v2 import comparison, field_doc, settings
 from wave_local_ai_v2.fiche_registry import read_fiche
+from wave_local_ai_v2.field_doc import FieldDoc
 
 RECORD_TYPE = "leader_set"
 RECORD_VERSION = "1"
@@ -411,6 +412,174 @@ def build_record(
         "rows_source": rows_source,
     }
     return _identified(body, supersedes)
+
+
+# --------------------------------------------------------------------------
+# The record's field definitions
+#
+# What each field of a leader-set record, and of each subject it lists,
+# means, its unit, and what a null in it means: the definitions the published
+# tables read (`bundle_export` reads them into its column dictionary and
+# never redefines them). `empty` says when, and why, a field holds null.
+
+_STATUSES = f"{STATUS_MEMBER}, {STATUS_EXCLUDED}, {STATUS_NOT_COMPARED}"
+_NO_COMPARISON = "Null when no comparison ran (a set of one subject)."
+_REFERENCE_SUBJECT = "Null for the reference subject, which is compared to none."
+
+LEADER_SET_RECORD_FIELDS: dict[tuple[str, ...], FieldDoc] = {
+    ("record_type",): FieldDoc(
+        f"Record type the file declares: {RECORD_TYPE}.", field_doc.ID
+    ),
+    ("record_version",): FieldDoc(
+        "Version of the leader-set record shape.", field_doc.ID
+    ),
+    ("leader_set_id",): FieldDoc(
+        "SHA-256 of the record's canonical JSON, the ids it supersedes "
+        "included: the record's identity. A subject row carries the id of the "
+        "record listing it.",
+        field_doc.SHA,
+    ),
+    ("suite_id",): FieldDoc("Suite the leader set is over.", field_doc.ID),
+    ("suite_version",): FieldDoc("Version of that suite.", field_doc.ID),
+    ("suite_level",): FieldDoc(
+        "Suite level the group's rows carry.",
+        field_doc.ID,
+        "Null when the rows do not carry one single level.",
+    ),
+    ("task_suite",): FieldDoc(
+        "Task kind of the suite.",
+        field_doc.ID,
+        "Null when the rows do not carry one single task kind.",
+    ),
+    ("grouping_fields",): FieldDoc(
+        "Fields that define the group: the suite and the machine class's fiche fields.",
+        field_doc.JSON_ARRAY,
+    ),
+    ("grouping_values",): FieldDoc(
+        "Machine-class values of the group; {} when its fiches record none.",
+        field_doc.JSON_OBJECT,
+    ),
+    ("grouping_values", "*"): FieldDoc(
+        "The group's value for the fiche field the column suffix names.",
+        "as the fiche field",
+    ),
+    ("grouping_not_recorded",): FieldDoc(
+        "Grouping fields the group's fiches do not carry.", field_doc.JSON_ARRAY
+    ),
+    ("machine_class_rule",): FieldDoc(
+        "How subjects are grouped, as the record states it.", field_doc.TEXT
+    ),
+    ("local_only_rule",): FieldDoc(
+        "Which subjects may enter, as the record states it.", field_doc.TEXT
+    ),
+    ("score_field",): FieldDoc(
+        "Row field the suite score is read from: "
+        + ", ".join(SCORE_FIELD_BY_SCORING_KIND.values())
+        + ".",
+        field_doc.ID,
+    ),
+    ("reference", "run_id"): FieldDoc(
+        "run_id of the best local subject.", field_doc.ID
+    ),
+    ("reference", "model_id"): FieldDoc(
+        "model_id of the best local subject.", field_doc.ID
+    ),
+    ("reference", "suite_score"): FieldDoc(
+        "Published suite score of the best local subject.", field_doc.SUITE_SCORE
+    ),
+    ("tied_at_top",): FieldDoc(
+        "Subjects tied at the top score (run_id, model_id).", field_doc.JSON_ARRAY
+    ),
+    ("tie_rule",): FieldDoc("How a tie at the top is broken.", field_doc.TEXT),
+    ("membership_rule",): FieldDoc(
+        "How a subject becomes a member, as the record states it.", field_doc.TEXT
+    ),
+    ("comparison_ran",): FieldDoc(
+        "Whether any comparison against the reference ran.", field_doc.BOOL
+    ),
+    ("no_comparison_reason",): FieldDoc(
+        "Why no comparison ran.",
+        field_doc.TEXT,
+        "Null when a comparison ran.",
+    ),
+    ("family_id",): FieldDoc(
+        "Family record the comparisons were read from; the family_family_id of "
+        "its comparison_family row.",
+        field_doc.SHA,
+        _NO_COMPARISON,
+    ),
+    ("alpha",): FieldDoc(
+        "Significance level of the family the verdicts were read against.",
+        field_doc.PROBABILITY,
+        _NO_COMPARISON,
+    ),
+    ("member_count",): FieldDoc("Subjects in the set.", field_doc.COUNT),
+    ("excluded_count",): FieldDoc(
+        "Subjects distinguishable from the best.", field_doc.COUNT
+    ),
+    ("not_compared_count",): FieldDoc("Subjects not compared.", field_doc.COUNT),
+    ("incomplete",): FieldDoc(
+        "Whether some subject was not compared, so membership is unknown.",
+        field_doc.BOOL,
+    ),
+    ("incomplete_reason",): FieldDoc(
+        "Why the set is incomplete.",
+        field_doc.TEXT,
+        "Null when every subject was compared.",
+    ),
+    ("rows_source",): FieldDoc(
+        "Quality rows file the set was computed from, as the record names it.",
+        field_doc.TEXT,
+    ),
+    ("supersedes",): FieldDoc(
+        "Leader-set records this one supersedes, as the record lists them "
+        '([{"leader_set_id": ...}]); each named record stays published.',
+        field_doc.JSON_ARRAY,
+    ),
+}
+
+SUBJECT_RECORD_FIELDS: dict[tuple[str, ...], FieldDoc] = {
+    ("run_id",): FieldDoc("run_id of the subject's batch.", field_doc.ID),
+    ("model_id",): FieldDoc("model_id of the subject.", field_doc.ID),
+    ("roster_entry_id",): FieldDoc(
+        "Roster entry the subject's rows cite.",
+        field_doc.ID,
+        "Null when the rows do not cite one single entry.",
+    ),
+    ("suite_score",): FieldDoc(
+        "The subject's published suite score.",
+        field_doc.SUITE_SCORE,
+        "Null for a batch that publishes none.",
+    ),
+    ("role",): FieldDoc(
+        f"{ROLE_REFERENCE} (the best subject) or {ROLE_COMPARED}.", field_doc.ID
+    ),
+    ("status",): FieldDoc(_STATUSES + ".", field_doc.ID),
+    ("verdict",): FieldDoc(
+        "Verdict of the subject's comparison against the reference.",
+        field_doc.ID,
+        _REFERENCE_SUBJECT,
+    ),
+    ("comparison_kind",): FieldDoc(
+        "Kind of that comparison: test, observation or refusal.",
+        field_doc.ID,
+        _REFERENCE_SUBJECT,
+    ),
+    ("adjusted_p_value",): FieldDoc(
+        "Family-adjusted p-value of that comparison.",
+        field_doc.PROBABILITY,
+        f"{_REFERENCE_SUBJECT} Otherwise null as the comparison's is.",
+    ),
+    ("refused_fields",): FieldDoc(
+        "Fields that comparison was refused on; [] when not refused.",
+        field_doc.JSON_ARRAY,
+    ),
+    ("not_compared_reason",): FieldDoc(
+        "Why the subject's membership is unknown.",
+        field_doc.TEXT,
+        f"Null unless the status is {STATUS_NOT_COMPARED}.",
+    ),
+}
 
 
 def _canonical(record: Mapping[str, Any]) -> str:

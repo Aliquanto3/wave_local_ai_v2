@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The tabular export carries the interval and the comparison record, and a
+  reader recomputes them from the tables alone** -- the meaning, unit and null
+  reasons of every comparison-family, comparison, leader-set and subject field
+  are now defined beside the code that writes them
+  (`comparison.FAMILY_RECORD_FIELDS`, `comparison.COMPARISON_RECORD_FIELDS`,
+  `leader_set.LEADER_SET_RECORD_FIELDS`, `leader_set.SUBJECT_RECORD_FIELDS`,
+  on the shared `field_doc.FieldDoc`) and read by `wave-local-ai-v2-export`,
+  never redefined there; a dictionary entry that differs from its definition
+  fails a test. The interval columns state the draw procedure in full, and a
+  row written before schema "21" shows them empty, listed in its
+  `fields_not_carried`, never zero or back-filled; the stale "interval block
+  not in the bundle" dictionary entry is gone. `scripts/recompute_from_export.py`
+  (standard library, imports nothing from the package) recomputes every
+  interval, every McNemar comparison and each family's Holm-adjusted p from
+  the exported CSVs and exits 1 on any difference.
+
 - **Every quality batch publishes its interval and what it could resolve
   (row schema "21")** -- `score_interval.py` computes, once per batch and over
   the same items as the score, a 95% percentile bootstrap interval (10 000

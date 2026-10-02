@@ -41,7 +41,8 @@ from pathlib import Path
 from statistics import NormalDist
 from typing import Any
 
-from wave_local_ai_v2 import harness, settings
+from wave_local_ai_v2 import field_doc, harness, settings
+from wave_local_ai_v2.field_doc import FieldDoc
 
 RECORD_TYPE = "comparison_family"
 RECORD_VERSION = "2"
@@ -133,6 +134,8 @@ NULL_ALL_DIFFERENCES_ZERO = "all_differences_zero"
 NULL_COMPARISON_REFUSED = "comparison_refused"
 # A per-batch quantity has nothing to pair, so no test ran.
 NULL_NO_PAIRED_TEST = "no_paired_test"
+# A side whose rows repeat no single per-batch value has no batch value.
+NULL_NO_SINGLE_BATCH_VALUE = "no_single_batch_value_on_a_side"
 
 # Both tests' own minimum: one paired item. Below it nothing is compared.
 MIN_PAIRED_N = 1
@@ -1069,9 +1072,7 @@ def _batch_observation(
             "reference": _shown(reference_value),
             "candidate": _shown(candidate_value),
             "difference": candidate_value - reference_value if known else None,
-            "difference_null_reason": (
-                None if known else "no_single_batch_value_on_a_side"
-            ),
+            "difference_null_reason": None if known else NULL_NO_SINGLE_BATCH_VALUE,
         },
         "paired_item_ids": None,
         "paired_n": None,
@@ -1493,6 +1494,409 @@ def resolve_family_record(
         members, alpha=alpha, rows_source=rows_source, supersedes=current
     )
     return superseding, None
+
+
+# --------------------------------------------------------------------------
+# The record's field definitions
+#
+# What each field of a family record, and of each comparison it holds, means,
+# its unit, and what a null in it means: the definitions the published tables
+# read (`bundle_export` reads them into its column dictionary and never
+# redefines them). `empty` says when, and why, a field holds null.
+
+
+def _listed(*values: str) -> str:
+    return ", ".join(values)
+
+
+_KINDS = _listed(KIND_TEST, KIND_OBSERVATION, KIND_REFUSAL)
+_VERDICTS = _listed(
+    VERDICT_DISTINGUISHABLE, VERDICT_NOT_DISTINGUISHABLE, VERDICT_NOT_COMPARABLE
+)
+_SCORING_KINDS = _listed(
+    SCORING_KIND_BINARY,
+    SCORING_KIND_GRADED,
+    SCORING_KIND_CONTINUOUS,
+    SCORING_KIND_BATCH,
+)
+_DIRECTIONS = _listed(
+    DIRECTION_CANDIDATE_HIGHER, DIRECTION_REFERENCE_HIGHER, DIRECTION_NONE
+)
+_REFUSAL_REASONS = _listed(REFUSAL_DIFFERS, REFUSAL_ABSENT, REFUSAL_VARIES_WITHIN_SIDE)
+_OTHER_QUANTITIES = _listed(*MEASUREMENT_QUANTITIES, QUANTITY_ENERGY)
+_NO_RESULT = (
+    "Null when no test ran: a refusal, or a per-batch quantity "
+    f"(adjusted_p_value_null_reason {NULL_COMPARISON_REFUSED} or "
+    f"{NULL_NO_PAIRED_TEST})."
+)
+_NO_PAIRS = "Null when nothing was paired: a refusal or a per-batch quantity."
+_BELOW_MINIMUM = (
+    f"Null when the paired n is below the minimum ({NULL_PAIRED_N_BELOW_MINIMUM})."
+)
+_SHARED_NULL = "Null when the two sides differ on it or either does not carry it."
+_COMPARED_UNIT = "compared field's unit"
+
+FAMILY_RECORD_FIELDS: dict[tuple[str, ...], FieldDoc] = {
+    ("record_type",): FieldDoc(
+        f"Record type the file declares: {RECORD_TYPE}.", field_doc.ID
+    ),
+    ("record_version",): FieldDoc(
+        "Version of the family-record shape. Version 1 predates tested_count, "
+        "refused_count, raw_p_value and a refusal's adjusted p-value reason.",
+        field_doc.ID,
+    ),
+    ("family_id",): FieldDoc(
+        "SHA-256 of the record's canonical JSON, the ids it supersedes "
+        "included: the record's identity. A comparison row carries the id of "
+        "the family holding it.",
+        field_doc.SHA,
+    ),
+    ("family_definition", "suite_id"): FieldDoc(
+        "Suite the family covers: one suite per family.",
+        field_doc.ID,
+        "Null when every member is refused on suite identity.",
+    ),
+    ("family_definition", "suite_version"): FieldDoc(
+        "Version of the suite the family covers.",
+        field_doc.ID,
+        "Null when every member is refused on suite identity.",
+    ),
+    ("family_definition", "compared_dimension"): FieldDoc(
+        f"Configuration axis the family compares along: {_listed(*DIMENSIONS)}.",
+        field_doc.ID,
+    ),
+    ("family_definition", "compared_quantity"): FieldDoc(
+        f"Quantity compared when it is not the score: {_OTHER_QUANTITIES}. A "
+        "score family does not carry the field.",
+        field_doc.ID,
+    ),
+    ("family_definition", "rule"): FieldDoc(
+        "The family rule, as the record states it: one suite by one "
+        "dimension, closed at analysis time, grown only by supersession.",
+        field_doc.TEXT,
+    ),
+    ("family_size",): FieldDoc(
+        "Comparisons the family holds, refused ones included.", field_doc.COUNT
+    ),
+    ("tested_count",): FieldDoc(
+        "Comparisons not refused (tests and observations): the ones the "
+        "multiplicity correction runs over.",
+        field_doc.COUNT,
+    ),
+    ("refused_count",): FieldDoc(
+        "Comparisons refused: listed, and in no adjustment.", field_doc.COUNT
+    ),
+    ("alpha",): FieldDoc(
+        "Significance level every verdict is read against.", field_doc.PROBABILITY
+    ),
+    ("multiplicity_correction", "method"): FieldDoc(
+        "Multiplicity correction applied over the family: holm (Holm's step-down).",
+        field_doc.ID,
+    ),
+    ("multiplicity_correction", "formula"): FieldDoc(
+        "The correction's formula, as the record states it.", field_doc.TEXT
+    ),
+    ("multiplicity_correction", "adjusted_over"): FieldDoc(
+        "Which comparisons the adjustment runs over and how a null p enters "
+        "it (as p = 1), as the record states it.",
+        field_doc.TEXT,
+    ),
+    ("multiplicity_correction", "adjustment_size"): FieldDoc(
+        "Number of p-values the adjustment ran over (m); equals tested_count.",
+        field_doc.COUNT,
+    ),
+    ("multiplicity_correction", "note"): FieldDoc(
+        "A note an earlier record version adds on the correction.", field_doc.TEXT
+    ),
+    ("verdict_rule",): FieldDoc(
+        "How each comparison's verdict is read from its adjusted p-value, as "
+        "the record states it.",
+        field_doc.TEXT,
+    ),
+    ("rows_source",): FieldDoc(
+        "Quality rows file the family was computed from, as the record names it.",
+        field_doc.TEXT,
+    ),
+    ("supersedes",): FieldDoc(
+        "Family records this one supersedes, as the record lists them "
+        '([{"family_id": ...}]). Each named record is an earlier version of '
+        "the same family and stays published; a record no other record names "
+        "here is current.",
+        field_doc.JSON_ARRAY,
+    ),
+}
+
+COMPARISON_RECORD_FIELDS: dict[tuple[str, ...], FieldDoc] = {
+    ("reference_run_id",): FieldDoc(
+        "run_id of the reference side's rows.", field_doc.ID
+    ),
+    ("reference_selector",): FieldDoc(
+        "Row fields selecting the reference side within its run; {} when the "
+        "run id alone selects it.",
+        field_doc.JSON_OBJECT,
+    ),
+    ("reference_selector", "*"): FieldDoc(
+        "Value, as text, a reference-side row carries in the field the column "
+        "suffix names.",
+        field_doc.TEXT,
+    ),
+    ("reference_row_count",): FieldDoc(
+        "Rows the reference side selects.", field_doc.COUNT
+    ),
+    ("candidate_run_id",): FieldDoc(
+        "run_id of the candidate side's rows.", field_doc.ID
+    ),
+    ("candidate_selector",): FieldDoc(
+        "Row fields selecting the candidate side within its run; {} when the "
+        "run id alone selects it.",
+        field_doc.JSON_OBJECT,
+    ),
+    ("candidate_selector", "*"): FieldDoc(
+        "Value, as text, a candidate-side row carries in the field the column "
+        "suffix names.",
+        field_doc.TEXT,
+    ),
+    ("candidate_row_count",): FieldDoc(
+        "Rows the candidate side selects.", field_doc.COUNT
+    ),
+    ("suite_id",): FieldDoc("Suite both sides share.", field_doc.ID, _SHARED_NULL),
+    ("suite_version",): FieldDoc(
+        "Suite version both sides share.", field_doc.ID, _SHARED_NULL
+    ),
+    ("suite_level",): FieldDoc(
+        "Suite level both sides share.", field_doc.ID, _SHARED_NULL
+    ),
+    ("compared_dimension",): FieldDoc(
+        f"Axis this comparison is along: {_listed(*DIMENSIONS)}.", field_doc.ID
+    ),
+    ("scoring_kind",): FieldDoc(
+        f"Kind of the compared value: {_SCORING_KINDS}.",
+        field_doc.ID,
+        "Null when the two sides' rows do not agree on one scoring kind.",
+    ),
+    ("compared_field",): FieldDoc(
+        "Row field compared: correct, item_score, or the measurement field.",
+        field_doc.ID,
+        "Null when the scoring kind is null.",
+    ),
+    ("compared_quantity",): FieldDoc(
+        f"Quantity compared when it is not the score: {_OTHER_QUANTITIES}. A "
+        "score comparison does not carry the field.",
+        field_doc.ID,
+    ),
+    ("refusal",): FieldDoc(
+        "Why the comparison is refused, one entry per field: field, reason "
+        f"({_REFUSAL_REASONS}), reference_value, candidate_value; [] when not "
+        "refused.",
+        field_doc.JSON_ARRAY,
+    ),
+    ("differing_fields",): FieldDoc(
+        "Row fields on which the two sides differ.", field_doc.JSON_ARRAY
+    ),
+    ("difference_convention",): FieldDoc(
+        "Sign convention of every difference: candidate minus reference.",
+        field_doc.TEXT,
+    ),
+    ("comparison_kind",): FieldDoc(
+        f"{_KINDS}. An observation attributes no difference: the sides differ "
+        "outside the compared dimension or not on it, a side's batch is "
+        "partial, or the quantity is per batch.",
+        field_doc.ID,
+    ),
+    ("confounds",): FieldDoc(
+        "Fields outside the compared dimension on which the sides differ.",
+        field_doc.JSON_ARRAY,
+    ),
+    ("observation_reason",): FieldDoc(
+        "Why the comparison is an observation.",
+        field_doc.TEXT,
+        "Null when the comparison is a test or a refusal.",
+    ),
+    ("paired_item_ids",): FieldDoc(
+        "Item ids both sides answered with a value.", field_doc.JSON_ARRAY, _NO_PAIRS
+    ),
+    ("paired_n",): FieldDoc("Number of paired items.", field_doc.COUNT, _NO_PAIRS),
+    ("paired_values",): FieldDoc(
+        "Each paired item's compared value on both sides (item_id, reference, "
+        "candidate): the data the test ran over.",
+        field_doc.JSON_ARRAY,
+        _NO_PAIRS,
+    ),
+    ("unpaired_items",): FieldDoc(
+        "Items only one side answered with a value (item_id, missing_from).",
+        field_doc.JSON_ARRAY,
+        _NO_PAIRS,
+    ),
+    ("unpaired_count",): FieldDoc(
+        "Number of unpaired items.", field_doc.COUNT, _NO_PAIRS
+    ),
+    ("test",): FieldDoc(
+        f"Paired test run: {TEST_MCNEMAR} for a binary score, {TEST_WILCOXON} "
+        "for a graded score or a per-item measurement; chosen from the rows' "
+        "shape, never by flag.",
+        field_doc.ID,
+        _NO_RESULT,
+    ),
+    ("test_chosen_because",): FieldDoc(
+        "Why that test, as the record states it.", field_doc.TEXT, _NO_RESULT
+    ),
+    ("result",): FieldDoc(
+        "The test's result block.", field_doc.JSON_OBJECT, _NO_RESULT
+    ),
+    ("result", "test"): FieldDoc("Test the result block belongs to.", field_doc.ID),
+    ("result", "contingency", "both_correct"): FieldDoc(
+        "McNemar: paired items both sides got right.", field_doc.COUNT
+    ),
+    ("result", "contingency", "reference_only_correct"): FieldDoc(
+        "McNemar: paired items only the reference got right (b).", field_doc.COUNT
+    ),
+    ("result", "contingency", "candidate_only_correct"): FieldDoc(
+        "McNemar: paired items only the candidate got right (c).", field_doc.COUNT
+    ),
+    ("result", "contingency", "both_wrong"): FieldDoc(
+        "McNemar: paired items both sides got wrong.", field_doc.COUNT
+    ),
+    ("result", "discordant_n"): FieldDoc(
+        "McNemar: discordant pairs (b + c).", field_doc.COUNT
+    ),
+    ("result", "conventions", "zero_method"): FieldDoc(
+        f"Wilcoxon: how zero differences are handled ({WILCOXON_ZERO_METHOD}).",
+        field_doc.ID,
+    ),
+    ("result", "conventions", "zero_method_definition"): FieldDoc(
+        "Wilcoxon: the zero method, as the record states it.", field_doc.TEXT
+    ),
+    ("result", "conventions", "exact_rule"): FieldDoc(
+        "Wilcoxon: when the exact p is used, as the record states it.",
+        field_doc.TEXT,
+    ),
+    ("result", "conventions", "exact_max_nonzero"): FieldDoc(
+        "Wilcoxon: largest non-zero difference count given an exact p.",
+        field_doc.COUNT,
+    ),
+    ("result", "conventions", "continuity_correction"): FieldDoc(
+        "Wilcoxon: whether a continuity correction is applied.", field_doc.BOOL
+    ),
+    ("result", "conventions", "tie_handling"): FieldDoc(
+        "Wilcoxon: how tied magnitudes are ranked.", field_doc.TEXT
+    ),
+    ("result", "statistic_name"): FieldDoc(
+        "What the statistic is: min(b, c) for McNemar, W+ for Wilcoxon.",
+        field_doc.TEXT,
+    ),
+    ("result", "statistic"): FieldDoc(
+        "The test statistic, named by statistic_name.",
+        "test statistic",
+        _BELOW_MINIMUM,
+    ),
+    ("result", "w_minus"): FieldDoc(
+        "Wilcoxon: sum of the ranks of negative differences.",
+        "rank sum",
+        _BELOW_MINIMUM,
+    ),
+    ("result", "p_value"): FieldDoc(
+        "The test's two-sided p-value, unadjusted. McNemar: exact binomial "
+        "over the discordant pairs at 0.5, min(1, 2 * sum over k <= min(b, c) "
+        "of C(b + c, k) / 2^(b + c)).",
+        field_doc.PROBABILITY,
+        "Null with its reason in p_value_null_reason.",
+    ),
+    ("result", "p_value_null_reason"): FieldDoc(
+        "Why the p-value is null: "
+        + _listed(
+            NULL_PAIRED_N_BELOW_MINIMUM,
+            NULL_NO_DISCORDANT_PAIRS,
+            NULL_ALL_DIFFERENCES_ZERO,
+        )
+        + ".",
+        field_doc.ID,
+        "Null when the p-value is a number.",
+    ),
+    ("result", "p_value_method"): FieldDoc(
+        "Wilcoxon: how the p-value was computed, exact_sign_flip or "
+        "normal_approximation.",
+        field_doc.ID,
+        "Null when the p-value is null.",
+    ),
+    ("result", "effect_size_name"): FieldDoc(
+        "Which effect size is reported: discordant_pair_odds_ratio (McNemar) "
+        "or rank_biserial (Wilcoxon).",
+        field_doc.ID,
+    ),
+    ("result", "effect_size_formula"): FieldDoc(
+        "The effect size's formula, as the record states it.", field_doc.TEXT
+    ),
+    ("result", "effect_size"): FieldDoc(
+        "The effect size, named by effect_size_name.",
+        "effect size",
+        "Null with its reason in effect_size_null_reason.",
+    ),
+    ("result", "effect_size_null_reason"): FieldDoc(
+        "Why the effect size is null: "
+        + _listed(
+            NULL_PAIRED_N_BELOW_MINIMUM,
+            NULL_ODDS_RATIO_EMPTY_CELL,
+            NULL_ALL_DIFFERENCES_ZERO,
+        )
+        + ".",
+        field_doc.ID,
+        "Null when the effect size is a number.",
+    ),
+    ("result", "direction"): FieldDoc(
+        f"Which side scored higher: {_DIRECTIONS}.", field_doc.ID, _BELOW_MINIMUM
+    ),
+    ("result", "mean_difference"): FieldDoc(
+        "Mean candidate-minus-reference difference over the paired items.",
+        _COMPARED_UNIT,
+        _BELOW_MINIMUM,
+    ),
+    ("result", "tie_count"): FieldDoc("Tied differences.", field_doc.COUNT),
+    ("result", "zero_difference_count"): FieldDoc("Zero differences.", field_doc.COUNT),
+    ("batch_values", "reference"): FieldDoc(
+        "Reference side's per-batch value.",
+        _COMPARED_UNIT,
+        "Null when the side's rows carry no single batch value.",
+    ),
+    ("batch_values", "candidate"): FieldDoc(
+        "Candidate side's per-batch value.",
+        _COMPARED_UNIT,
+        "Null when the side's rows carry no single batch value.",
+    ),
+    ("batch_values", "difference"): FieldDoc(
+        "Candidate minus reference per-batch value.",
+        _COMPARED_UNIT,
+        "Null with its reason in batch_values.difference_null_reason.",
+    ),
+    ("batch_values", "difference_null_reason"): FieldDoc(
+        f"Why the per-batch difference is null: {NULL_NO_SINGLE_BATCH_VALUE}.",
+        field_doc.ID,
+        "Null when the difference is a number.",
+    ),
+    ("raw_p_value",): FieldDoc(
+        "The comparison's p-value before the family adjustment (result.p_value).",
+        field_doc.PROBABILITY,
+        f"{_NO_RESULT} Otherwise null with result.p_value_null_reason.",
+    ),
+    ("adjusted_p_value",): FieldDoc(
+        "The comparison's p-value after the family's multiplicity correction; "
+        "the verdict reads it.",
+        field_doc.PROBABILITY,
+        "Null with its reason in adjusted_p_value_null_reason.",
+    ),
+    ("adjusted_p_value_null_reason",): FieldDoc(
+        f"Why the adjusted p-value is null: {NULL_COMPARISON_REFUSED} (a "
+        f"refusal), {NULL_NO_PAIRED_TEST} (a per-batch quantity), or the "
+        "result's p_value_null_reason.",
+        field_doc.ID,
+        "Null when the adjusted p-value is a number, and on a version-1 "
+        "record's refusal (whose reasons are in refusal).",
+    ),
+    ("verdict",): FieldDoc(
+        f"{_VERDICTS}: read from adjusted_p_value against the family's alpha "
+        "by the record's verdict_rule.",
+        field_doc.ID,
+    ),
+}
 
 
 def _parser() -> argparse.ArgumentParser:

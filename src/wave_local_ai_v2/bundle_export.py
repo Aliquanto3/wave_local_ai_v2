@@ -55,13 +55,16 @@ from typing import Any
 
 from wave_local_ai_v2 import (
     comparison,
+    field_doc,
     leader_set,
     results,
     roster,
     row_contract,
+    score_interval,
     settings,
 )
 from wave_local_ai_v2.fiche_registry import read_fiche
+from wave_local_ai_v2.field_doc import FieldDoc
 from wave_local_ai_v2.suite_snapshot import snapshot_filename
 
 QUALITY_TABLE = "quality_items"
@@ -136,15 +139,6 @@ class ExportError(RuntimeError):
 # --------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class FieldDoc:
-    """One source field's meaning, unit, and what an empty cell means for it."""
-
-    meaning: str
-    unit: str
-    empty: str | None = None
-
-
 _ROW_EMPTY = (
     "The row records null for this field; if the row does not carry the field "
     "at all, the column name is also listed in its fields_not_carried."
@@ -162,14 +156,14 @@ _PRICE_EMPTY = (
     "Not a list-priced row: a local row is costed from energy, not a price table."
 )
 
-_ID = "identifier"
-_TEXT = "text"
-_BOOL = "boolean"
-_COUNT = "count"
-_JSON_ARRAY = "JSON array"
-_JSON_OBJECT = "JSON object"
-_SHA = "SHA-256, lowercase hex"
-_RATIO = "ratio, 0..1"
+_ID = field_doc.ID
+_TEXT = field_doc.TEXT
+_BOOL = field_doc.BOOL
+_COUNT = field_doc.COUNT
+_JSON_ARRAY = field_doc.JSON_ARRAY
+_JSON_OBJECT = field_doc.JSON_OBJECT
+_SHA = field_doc.SHA
+_RATIO = field_doc.RATIO
 
 _COMMON_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     # Identity and provenance.
@@ -400,11 +394,21 @@ _INTERVAL_CELLS: tuple[tuple[tuple[str, ...], str], ...] = (
     (("score_interval", "by_language", "*"), "language cell's"),
 )
 _INTERVAL_SCALE = "the suite's score scale (suite_accuracy or suite_score, 0..1)"
-_INTERVAL_EMPTY = "The row carries no interval block (see score_interval)."
+# A row written before the interval existed does not carry the block, and a
+# row with no suite score records it as null: either way an empty cell, never
+# a zero, and never a value back-filled onto a row that did not publish it.
+_INTERVAL_EMPTY = (
+    "The row carries no interval block: a row written before schema 21 does "
+    "not carry the field (the column is then listed in its fields_not_carried), "
+    "and a partial or judge-probe row records the block as null. Never a zero, "
+    "never back-filled."
+)
 _INTERVAL_VALUE_EMPTY = (
     "The interval is undefined and null_reason says why, or the row carries "
-    "no interval block."
+    "no interval block (written before schema 21, listed in fields_not_carried; "
+    "or recorded null). Never a zero, never back-filled."
 )
+_INTERVAL_PERCENT = f"{score_interval.CONFIDENCE_LEVEL:.0%}"
 
 _QUALITY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     ("model_id",): FieldDoc("Model that answered the item.", _ID),
@@ -459,13 +463,17 @@ _QUALITY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
         "A row below schema 21 does not carry the field.",
     ),
     ("score_interval", "confidence_level"): FieldDoc(
-        "Confidence level of the interval (0.95).", _RATIO, _INTERVAL_EMPTY
+        f"Confidence level of the interval ({score_interval.CONFIDENCE_LEVEL}).",
+        _RATIO,
+        _INTERVAL_EMPTY,
     ),
     ("score_interval", "resamples"): FieldDoc(
-        "Bootstrap resamples drawn per interval (10000).", _COUNT, _INTERVAL_EMPTY
+        f"Bootstrap resamples drawn per interval ({score_interval.RESAMPLES}).",
+        _COUNT,
+        _INTERVAL_EMPTY,
     ),
     ("score_interval", "method"): FieldDoc(
-        "Interval method: percentile.", _ID, _INTERVAL_EMPTY
+        f"Interval method: {score_interval.METHOD_PERCENTILE}.", _ID, _INTERVAL_EMPTY
     ),
     ("score_interval", "seed"): FieldDoc(
         "Seed each interval's generator was freshly seeded with.",
@@ -481,8 +489,16 @@ _QUALITY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
         _INTERVAL_EMPTY,
     ),
     ("score_interval", "draw_procedure_id"): FieldDoc(
-        "Versioned draw procedure (draw order, tie handling, percentile "
-        "interpolation), defined in score_interval.py.",
+        "Versioned draw procedure, defined in score_interval.py. "
+        f"{score_interval.DRAW_PROCEDURE_ID}: a cell's items in ascending "
+        "item_id order, each item's value correct as 1 or 0, or item_score; "
+        "each cell from a fresh random.Random(seed); each resample draws n "
+        "indexes in turn, one index being getrandbits(n.bit_length()) redrawn "
+        "until below n; a resample's value is math.fsum of its values over n; "
+        "the sorted resample values give the bounds as type-7 quantiles at "
+        "q = (1 - confidence_level) / 2 and 1 - q: at h = (resamples - 1) * q, "
+        "low + (h - floor(h)) * (high - low), low and high the values at "
+        "positions floor(h) and floor(h) + 1 counted from 0.",
         _ID,
         _INTERVAL_EMPTY,
     ),
@@ -498,7 +514,7 @@ _QUALITY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     ),
     **{
         (*prefix, "lower"): FieldDoc(
-            f"Lower bound of the {scope} 95% interval.",
+            f"Lower bound of the {scope} {_INTERVAL_PERCENT} interval.",
             _INTERVAL_SCALE,
             _INTERVAL_VALUE_EMPTY,
         )
@@ -506,7 +522,7 @@ _QUALITY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     },
     **{
         (*prefix, "upper"): FieldDoc(
-            f"Upper bound of the {scope} 95% interval.",
+            f"Upper bound of the {scope} {_INTERVAL_PERCENT} interval.",
             _INTERVAL_SCALE,
             _INTERVAL_VALUE_EMPTY,
         )
@@ -523,11 +539,14 @@ _QUALITY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     },
     **{
         (*prefix, "null_reason"): FieldDoc(
-            f"Why the {scope} interval is undefined: zero_width (every item "
-            "scored the same, as a suite scored 1.0 or 0.0) or no_items (the "
+            f"Why the {scope} interval is undefined: "
+            f"{score_interval.NULL_ZERO_WIDTH} (every item scored the same, as "
+            f"a suite scored 1.0 or 0.0) or {score_interval.NULL_NO_ITEMS} (the "
             "cell holds no item).",
             _ID,
-            "The interval is defined, or the row carries no interval block.",
+            "The interval is defined, or the row carries no interval block "
+            "(written before schema 21, listed in fields_not_carried; or "
+            "recorded null). Never back-filled.",
         )
         for prefix, scope in _INTERVAL_CELLS
     },
@@ -1100,47 +1119,25 @@ _ROW_EPIC = "every-published-row-explains-and-reproduces-itself (the row contrac
 _STATS_EPIC = "a-score-is-published-with-its-interval-a-difference-with-its-test"
 
 
-@dataclass(frozen=True)
-class OwnedElsewhere:
-    """A block this bundle does not hold yet, and who owns bringing it."""
-
-    table: str
-    name: str
-    meaning: str
-    owner: str
-
-
-NOT_CARRIED_ELSEWHERE: tuple[OwnedElsewhere, ...] = (
-    OwnedElsewhere(
-        QUALITY_TABLE,
-        "interval block",
-        "Bootstrap confidence interval on the suite score and each language "
-        "cell (bounds, confidence level, resample count, method, seed, "
-        "generator identity and version, draw-procedure id), the minimum "
-        "detectable effect and any named null reason.",
-        f"epic {_STATS_EPIC}",
-    ),
-)
-
 # --------------------------------------------------------------------------
 # The fifth table: comparison-family, comparison and leader-set records.
 #
 # The records are written by `wave-local-ai-v2-compare` (owned by the
 # statistics epic); this table flattens them and computes nothing. The
-# meaning, unit and null reasons of their statistical fields are that epic's
-# to define (story the-tabular-export-carries-the-interval-and-the-comparison-
-# record); the descriptions below say what each field holds, and each column
-# names that epic in the dictionary's `owner` cell.
+# meaning, unit and null reasons of their fields are defined beside the code
+# that writes them (`comparison.FAMILY_RECORD_FIELDS`,
+# `comparison.COMPARISON_RECORD_FIELDS`, `leader_set.LEADER_SET_RECORD_FIELDS`,
+# `leader_set.SUBJECT_RECORD_FIELDS`) and read here, never redefined; each
+# column names that epic and module in the dictionary's `owner` cell. What an
+# empty cell means on a row of another kind is this table's to say.
 # --------------------------------------------------------------------------
 
 KIND_FAMILY = comparison.RECORD_TYPE
 KIND_COMPARISON = "comparison"
 KIND_LEADER_SET = leader_set.RECORD_TYPE
 KIND_SUBJECT = "leader_set_subject"
-RECORD_OWNER = f"epic {_STATS_EPIC} (defines the record field)"
-
-_PROBABILITY = "probability, 0..1"
-_SUITE_SCORE = "the suite's score scale (suite_accuracy or suite_score, 0..1)"
+FAMILY_OWNER = f"epic {_STATS_EPIC} (defined in comparison.py)"
+LEADER_SET_OWNER = f"epic {_STATS_EPIC} (defined in leader_set.py)"
 
 RECORD_KEY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     ("record_kind",): FieldDoc(
@@ -1159,361 +1156,26 @@ RECORD_KEY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     ),
 }
 
+# The row-kind half of an empty record cell; the record module's definition
+# adds what a null means for that field (`_empty_cell`).
 _FAMILY_EMPTY = (
     "A leader_set or leader_set_subject row, or a family record that does not "
     "carry the field (an earlier record_version): the column is then listed in "
-    "fields_not_carried. Otherwise the record holds null."
+    "fields_not_carried."
 )
 _COMPARISON_EMPTY = (
     "Not a comparison row, or a comparison that does not carry the field: the "
-    "column is then listed in fields_not_carried. Otherwise the comparison holds "
-    "null (a refusal holds no test; a null p-value or effect size names its "
-    "reason in the matching *_null_reason column)."
+    "column is then listed in fields_not_carried."
 )
 _LEADER_EMPTY = (
-    "A comparison_family or comparison row (the column is then listed in "
-    "fields_not_carried), or the record holds null."
+    "A comparison_family or comparison row: the column is then listed in "
+    "fields_not_carried."
 )
 _SUBJECT_EMPTY = (
-    "Not a leader_set_subject row (the column is then listed in "
-    "fields_not_carried), or the subject holds null (the reference subject has "
-    "no comparison, verdict or p-value)."
+    "Not a leader_set_subject row: the column is then listed in fields_not_carried."
 )
-
-FAMILY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
-    ("record_type",): FieldDoc("Record type the file declares.", _ID),
-    ("record_version",): FieldDoc("Version of the family-record shape.", _ID),
-    ("family_id",): FieldDoc(
-        "Content hash identifying this family record, the ids it supersedes "
-        "included. A comparison row carries the id of the family holding it.",
-        _SHA,
-    ),
-    ("family_definition", "suite_id"): FieldDoc("Suite the family covers.", _ID),
-    ("family_definition", "suite_version"): FieldDoc(
-        "Version of the suite the family covers.", _ID
-    ),
-    ("family_definition", "compared_dimension"): FieldDoc(
-        "Configuration axis the family compares along (model, prompt_variant).",
-        _ID,
-    ),
-    ("family_definition", "compared_quantity"): FieldDoc(
-        "Quantity compared when it is not the score (a per-item measurement or "
-        "the per-batch energy); not carried by a score family.",
-        _ID,
-    ),
-    ("family_definition", "rule"): FieldDoc(
-        "The family rule the record states (one suite by one dimension, closed "
-        "at analysis time, grown by supersession).",
-        _TEXT,
-    ),
-    ("family_size",): FieldDoc("Comparisons the family holds.", _COUNT),
-    ("tested_count",): FieldDoc(
-        "Comparisons not refused: the ones the adjustment runs over.", _COUNT
-    ),
-    ("refused_count",): FieldDoc("Comparisons refused.", _COUNT),
-    ("alpha",): FieldDoc(
-        "Significance level the verdicts are read against.", _PROBABILITY
-    ),
-    ("multiplicity_correction", "method"): FieldDoc(
-        "Multiplicity correction applied over the family.", _ID
-    ),
-    ("multiplicity_correction", "formula"): FieldDoc(
-        "The correction's formula, as the record states it.", _TEXT
-    ),
-    ("multiplicity_correction", "adjusted_over"): FieldDoc(
-        "Which comparisons the adjustment runs over, as the record states it.",
-        _TEXT,
-    ),
-    ("multiplicity_correction", "adjustment_size"): FieldDoc(
-        "Number of p-values the adjustment ran over (m).", _COUNT
-    ),
-    ("multiplicity_correction", "note"): FieldDoc(
-        "A note the record adds on the correction.", _TEXT
-    ),
-    ("verdict_rule",): FieldDoc(
-        "How each comparison's verdict is read, as the record states it.", _TEXT
-    ),
-    ("rows_source",): FieldDoc(
-        "Quality rows file the family was computed from, as the record names it.",
-        _TEXT,
-    ),
-    ("supersedes",): FieldDoc(
-        "Family records this one supersedes, as the record lists them "
-        '([{"family_id": ...}]). Each named record is an earlier version of '
-        "the same family and stays its own row; a record no other record names "
-        "here is current.",
-        _JSON_ARRAY,
-    ),
-}
-
-COMPARISON_FIELDS: dict[tuple[str, ...], FieldDoc] = {
-    ("reference_run_id",): FieldDoc("run_id of the reference side's rows.", _ID),
-    ("reference_selector",): FieldDoc(
-        "Row fields selecting the reference side within its run (none).",
-        _JSON_OBJECT,
-    ),
-    ("reference_selector", "*"): FieldDoc(
-        "Value a reference-side row must carry in the field named by the column "
-        "suffix.",
-        _TEXT,
-    ),
-    ("reference_row_count",): FieldDoc("Rows the reference side selects.", _COUNT),
-    ("candidate_run_id",): FieldDoc("run_id of the candidate side's rows.", _ID),
-    ("candidate_selector",): FieldDoc(
-        "Row fields selecting the candidate side within its run (none).",
-        _JSON_OBJECT,
-    ),
-    ("candidate_selector", "*"): FieldDoc(
-        "Value a candidate-side row must carry in the field named by the column "
-        "suffix.",
-        _TEXT,
-    ),
-    ("candidate_row_count",): FieldDoc("Rows the candidate side selects.", _COUNT),
-    ("suite_id",): FieldDoc("Suite both sides share; null when they differ.", _ID),
-    ("suite_version",): FieldDoc(
-        "Suite version both sides share; null when they differ.", _ID
-    ),
-    ("suite_level",): FieldDoc(
-        "Suite level both sides share; null when they differ or do not carry it.",
-        _ID,
-    ),
-    ("compared_dimension",): FieldDoc("Axis this comparison is along.", _ID),
-    ("scoring_kind",): FieldDoc(
-        "Kind of compared value (binary, graded, continuous_measurement, "
-        "batch_measurement); null when the sides disagree.",
-        _ID,
-    ),
-    ("compared_field",): FieldDoc("Row field compared item by item.", _ID),
-    ("compared_quantity",): FieldDoc(
-        "Quantity compared when it is not the score (a per-item measurement or "
-        "the per-batch energy); not carried by a score comparison.",
-        _ID,
-    ),
-    ("refusal",): FieldDoc(
-        "Why the comparison is refused: one entry per field (field, reason, "
-        "reference_value, candidate_value); [] when not refused.",
-        _JSON_ARRAY,
-    ),
-    ("differing_fields",): FieldDoc(
-        "Row fields on which the two sides differ.", _JSON_ARRAY
-    ),
-    ("difference_convention",): FieldDoc("Sign convention of every difference.", _TEXT),
-    ("comparison_kind",): FieldDoc(
-        "test, observation (the sides differ outside the compared dimension or "
-        "a batch is partial; no difference is attributed) or refusal.",
-        _ID,
-    ),
-    ("confounds",): FieldDoc(
-        "Fields outside the compared dimension on which the sides differ.",
-        _JSON_ARRAY,
-    ),
-    ("observation_reason",): FieldDoc("Why the comparison is an observation.", _TEXT),
-    ("paired_item_ids",): FieldDoc("Item ids both sides answered.", _JSON_ARRAY),
-    ("paired_n",): FieldDoc("Number of paired items.", _COUNT),
-    ("paired_values",): FieldDoc(
-        "Each paired item's compared value on both sides (item_id, reference, "
-        "candidate).",
-        _JSON_ARRAY,
-    ),
-    ("unpaired_items",): FieldDoc(
-        "Items only one side answered (item_id, missing_from).", _JSON_ARRAY
-    ),
-    ("unpaired_count",): FieldDoc("Number of unpaired items.", _COUNT),
-    ("test",): FieldDoc("Paired test run.", _ID),
-    ("test_chosen_because",): FieldDoc(
-        "Why that test, as the record states it.", _TEXT
-    ),
-    ("result",): FieldDoc(
-        "The test's result block; null when no test ran.", _JSON_OBJECT
-    ),
-    ("result", "test"): FieldDoc("Test the result block belongs to.", _ID),
-    ("result", "contingency", "both_correct"): FieldDoc(
-        "Paired items both sides got right.", _COUNT
-    ),
-    ("result", "contingency", "reference_only_correct"): FieldDoc(
-        "Paired items only the reference got right (b).", _COUNT
-    ),
-    ("result", "contingency", "candidate_only_correct"): FieldDoc(
-        "Paired items only the candidate got right (c).", _COUNT
-    ),
-    ("result", "contingency", "both_wrong"): FieldDoc(
-        "Paired items both sides got wrong.", _COUNT
-    ),
-    ("result", "discordant_n"): FieldDoc("Discordant pairs (b + c).", _COUNT),
-    ("result", "conventions", "zero_method"): FieldDoc(
-        "How zero differences are handled.", _ID
-    ),
-    ("result", "conventions", "zero_method_definition"): FieldDoc(
-        "The zero method, as the record states it.", _TEXT
-    ),
-    ("result", "conventions", "exact_rule"): FieldDoc(
-        "When the exact p is used, as the record states it.", _TEXT
-    ),
-    ("result", "conventions", "exact_max_nonzero"): FieldDoc(
-        "Largest non-zero difference count with an exact p.", _COUNT
-    ),
-    ("result", "conventions", "continuity_correction"): FieldDoc(
-        "Whether a continuity correction is applied.", _BOOL
-    ),
-    ("result", "conventions", "tie_handling"): FieldDoc("How ties are ranked.", _TEXT),
-    ("result", "statistic_name"): FieldDoc("What the statistic is.", _TEXT),
-    ("result", "statistic"): FieldDoc(
-        "The test statistic, named by result_statistic_name.", "test statistic"
-    ),
-    ("result", "w_minus"): FieldDoc(
-        "Sum of the ranks of negative differences.", "rank sum"
-    ),
-    ("result", "p_value"): FieldDoc("The test's unadjusted p-value.", _PROBABILITY),
-    ("result", "p_value_null_reason"): FieldDoc("Why the p-value is null.", _ID),
-    ("result", "p_value_method"): FieldDoc("How the p-value was computed.", _ID),
-    ("result", "effect_size_name"): FieldDoc("Which effect size is reported.", _ID),
-    ("result", "effect_size_formula"): FieldDoc(
-        "The effect size's formula, as the record states it.", _TEXT
-    ),
-    ("result", "effect_size"): FieldDoc(
-        "The effect size, named by result_effect_size_name.", "effect size"
-    ),
-    ("result", "effect_size_null_reason"): FieldDoc(
-        "Why the effect size is null.", _ID
-    ),
-    ("result", "direction"): FieldDoc("Which side scored higher.", _ID),
-    ("result", "mean_difference"): FieldDoc(
-        "Mean candidate-minus-reference difference over the paired items.",
-        "compared field's unit",
-    ),
-    ("result", "tie_count"): FieldDoc("Tied differences.", _COUNT),
-    ("result", "zero_difference_count"): FieldDoc("Zero differences.", _COUNT),
-    ("batch_values", "reference"): FieldDoc(
-        "Reference side's per-batch value.", "compared field's unit"
-    ),
-    ("batch_values", "candidate"): FieldDoc(
-        "Candidate side's per-batch value.", "compared field's unit"
-    ),
-    ("batch_values", "difference"): FieldDoc(
-        "Candidate minus reference per-batch value.", "compared field's unit"
-    ),
-    ("batch_values", "difference_null_reason"): FieldDoc(
-        "Why the per-batch difference is null.", _ID
-    ),
-    ("raw_p_value",): FieldDoc(
-        "The comparison's p-value before the family adjustment.", _PROBABILITY
-    ),
-    ("adjusted_p_value",): FieldDoc(
-        "The comparison's p-value after the family's multiplicity correction; "
-        "the verdict reads it.",
-        _PROBABILITY,
-    ),
-    ("adjusted_p_value_null_reason",): FieldDoc(
-        "Why the adjusted p-value is null (comparison_refused for a refusal).",
-        _ID,
-    ),
-    ("verdict",): FieldDoc(
-        "distinguishable, not distinguishable or not comparable.", _ID
-    ),
-}
-
-LEADER_SET_FIELDS: dict[tuple[str, ...], FieldDoc] = {
-    ("record_type",): FieldDoc("Record type the file declares.", _ID),
-    ("record_version",): FieldDoc("Version of the leader-set record shape.", _ID),
-    ("leader_set_id",): FieldDoc(
-        "Content hash identifying this leader-set record, the ids it supersedes "
-        "included. A subject row carries the id of the record listing it.",
-        _SHA,
-    ),
-    ("suite_id",): FieldDoc("Suite the leader set is over.", _ID),
-    ("suite_version",): FieldDoc("Version of that suite.", _ID),
-    ("suite_level",): FieldDoc("Suite level its rows carry.", _ID),
-    ("task_suite",): FieldDoc("Task kind of the suite.", _ID),
-    ("grouping_fields",): FieldDoc(
-        "Fields that define the group (suite and machine class).", _JSON_ARRAY
-    ),
-    ("grouping_values",): FieldDoc(
-        "Machine-class values of the group (none recorded).", _JSON_OBJECT
-    ),
-    ("grouping_values", "*"): FieldDoc(
-        "The group's value for the fiche field named by the column suffix.",
-        "as the fiche field",
-    ),
-    ("grouping_not_recorded",): FieldDoc(
-        "Grouping fields the group's fiches do not carry.", _JSON_ARRAY
-    ),
-    ("machine_class_rule",): FieldDoc(
-        "How subjects are grouped, as the record states it.", _TEXT
-    ),
-    ("local_only_rule",): FieldDoc(
-        "Which subjects may enter, as the record states it.", _TEXT
-    ),
-    ("score_field",): FieldDoc("Row field the suite score is read from.", _ID),
-    ("reference", "run_id"): FieldDoc("run_id of the best local subject.", _ID),
-    ("reference", "model_id"): FieldDoc("model_id of the best local subject.", _ID),
-    ("reference", "suite_score"): FieldDoc(
-        "Published suite score of the best local subject.", _SUITE_SCORE
-    ),
-    ("tied_at_top",): FieldDoc(
-        "Subjects tied at the top score (run_id, model_id).", _JSON_ARRAY
-    ),
-    ("tie_rule",): FieldDoc("How a tie at the top is broken.", _TEXT),
-    ("membership_rule",): FieldDoc(
-        "How a subject becomes a member, as the record states it.", _TEXT
-    ),
-    ("comparison_ran",): FieldDoc(
-        "Whether any comparison against the reference ran.", _BOOL
-    ),
-    ("no_comparison_reason",): FieldDoc("Why no comparison ran.", _TEXT),
-    ("family_id",): FieldDoc(
-        "Family record the comparisons were read from; the family_family_id of "
-        "its comparison_family row.",
-        _SHA,
-    ),
-    ("alpha",): FieldDoc(
-        "Significance level of the family the verdicts were read against.",
-        _PROBABILITY,
-    ),
-    ("member_count",): FieldDoc("Subjects in the set.", _COUNT),
-    ("excluded_count",): FieldDoc("Subjects distinguishable from the best.", _COUNT),
-    ("not_compared_count",): FieldDoc("Subjects not compared.", _COUNT),
-    ("incomplete",): FieldDoc(
-        "Whether some subject was not compared, so membership is unknown.", _BOOL
-    ),
-    ("incomplete_reason",): FieldDoc("Why the set is incomplete.", _TEXT),
-    ("rows_source",): FieldDoc(
-        "Quality rows file the set was computed from, as the record names it.",
-        _TEXT,
-    ),
-    ("supersedes",): FieldDoc(
-        "Leader-set records this one supersedes, as the record lists them "
-        '([{"leader_set_id": ...}]); each named record stays its own row.',
-        _JSON_ARRAY,
-    ),
-}
-
-SUBJECT_FIELDS: dict[tuple[str, ...], FieldDoc] = {
-    ("run_id",): FieldDoc("run_id of the subject's batch.", _ID),
-    ("model_id",): FieldDoc("model_id of the subject.", _ID),
-    ("roster_entry_id",): FieldDoc("Roster entry the subject's rows cite.", _ID),
-    ("suite_score",): FieldDoc(
-        "The subject's published suite score; null for a batch with none.",
-        _SUITE_SCORE,
-    ),
-    ("role",): FieldDoc("reference (the best subject) or compared.", _ID),
-    ("status",): FieldDoc("member, excluded or not compared.", _ID),
-    ("verdict",): FieldDoc(
-        "Verdict of the subject's comparison against the reference.", _ID
-    ),
-    ("comparison_kind",): FieldDoc(
-        "Kind of that comparison: test, observation or refusal.", _ID
-    ),
-    ("adjusted_p_value",): FieldDoc(
-        "Family-adjusted p-value of that comparison.", _PROBABILITY
-    ),
-    ("refused_fields",): FieldDoc(
-        "Fields that comparison was refused on; [] when not refused.", _JSON_ARRAY
-    ),
-    ("not_compared_reason",): FieldDoc(
-        "Why the subject's membership is unknown, for a not compared subject.",
-        _TEXT,
-    ),
-}
+_RECORD_NULL = "Otherwise the record holds null."
+_PARENT_NULL = "Empty too when an object above it in the record is null."
 
 # What the dictionary names when the bundle read holds no record of a kind.
 RECORD_KINDS: dict[str, str] = {
@@ -1561,7 +1223,9 @@ class Source:
     excluded: frozenset[tuple[str, ...]] = frozenset()
     json_cells: frozenset[str] = frozenset()
     # Who defines the fields this source carries, when that is not this
-    # export: written to the dictionary's `owner` cell of each column.
+    # export: written to the dictionary's `owner` cell of each column. Such a
+    # field's `FieldDoc.empty` says what a null means for it, and `empty`
+    # above what an empty cell means otherwise (`_empty_cell`).
     owner: str = ""
 
 
@@ -2073,34 +1737,34 @@ def _record_row(
         Source(
             "family_",
             "comparison-family record",
-            FAMILY_FIELDS,
+            comparison.FAMILY_RECORD_FIELDS,
             family,
             _FAMILY_EMPTY,
-            owner=RECORD_OWNER,
+            owner=FAMILY_OWNER,
         ),
         Source(
             "comparison_",
             "comparison (a member of the family record)",
-            COMPARISON_FIELDS,
+            comparison.COMPARISON_RECORD_FIELDS,
             member,
             _COMPARISON_EMPTY,
-            owner=RECORD_OWNER,
+            owner=FAMILY_OWNER,
         ),
         Source(
             "leader_set_",
             "leader-set record",
-            LEADER_SET_FIELDS,
+            leader_set.LEADER_SET_RECORD_FIELDS,
             leader,
             _LEADER_EMPTY,
-            owner=RECORD_OWNER,
+            owner=LEADER_SET_OWNER,
         ),
         Source(
             "subject_",
             "leader-set subject",
-            SUBJECT_FIELDS,
+            leader_set.SUBJECT_RECORD_FIELDS,
             subject,
             _SUBJECT_EMPTY,
-            owner=RECORD_OWNER,
+            owner=LEADER_SET_OWNER,
         ),
     ]
 
@@ -2229,6 +1893,13 @@ def contract_fields(kind: row_contract.RowKind) -> frozenset[str]:
     return fields
 
 
+# A contract field another epic defines, named with that owner when no row
+# read carries it.
+_CONTRACT_FIELD_OWNERS: dict[str, str] = {
+    field: f"epic {_STATS_EPIC}" for field in row_contract.SCORE_INTERVAL_FIELDS
+}
+
+
 def _not_carried_by_contract(
     kind: row_contract.RowKind, table: Table
 ) -> list[tuple[str, ...]]:
@@ -2247,7 +1918,7 @@ def _not_carried_by_contract(
                 doc.meaning,
                 doc.unit,
                 "Not a column: no row of the bundle read carries this field.",
-                _ROW_EPIC,
+                _CONTRACT_FIELD_OWNERS.get(field, _ROW_EPIC),
             )
         )
     return entries
@@ -2273,6 +1944,21 @@ def _record_kinds_not_carried(table: Table) -> list[tuple[str, ...]]:
     ]
 
 
+def _empty_cell(column: Column) -> str:
+    """What an empty cell of `column` means.
+
+    A field this module describes states it whole. A field a record module
+    defines (a column with an owner) states what a null means for it; the
+    table adds the row-kind case before it, and the null object above it.
+    """
+    if not column.owner:
+        return column.doc.empty or column.empty
+    parts = [column.empty, column.doc.empty or _RECORD_NULL]
+    if len(column.path) > 1:
+        parts.append(_PARENT_NULL)
+    return " ".join(parts)
+
+
 def build_dictionary(tables: Mapping[str, Table]) -> list[tuple[str, ...]]:
     """Every column of every table, then everything the bundle does not carry."""
     entries: list[tuple[str, ...]] = []
@@ -2286,7 +1972,7 @@ def build_dictionary(tables: Mapping[str, Table]) -> list[tuple[str, ...]]:
                     f"{column.source_label} `{'.'.join(column.path)}`",
                     column.doc.meaning,
                     column.doc.unit,
-                    column.doc.empty or column.empty,
+                    _empty_cell(column),
                     column.owner,
                 )
             )
@@ -2318,19 +2004,6 @@ def build_dictionary(tables: Mapping[str, Table]) -> list[tuple[str, ...]]:
     entries += _not_carried_by_contract("quality", tables[QUALITY_TABLE])
     entries += _not_carried_by_contract("runtime", tables[RUNTIME_TABLE])
     entries += _record_kinds_not_carried(tables[COMPARISON_TABLE])
-    for owned in NOT_CARRIED_ELSEWHERE:
-        entries.append(
-            (
-                owned.table,
-                owned.name,
-                "false",
-                "not in the bundle read",
-                owned.meaning,
-                "",
-                "Not a column: the bundle read does not hold it.",
-                owned.owner,
-            )
-        )
     return entries
 
 
