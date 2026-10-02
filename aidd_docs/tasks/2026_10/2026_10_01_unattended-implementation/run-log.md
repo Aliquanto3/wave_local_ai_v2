@@ -87,3 +87,9 @@ Stories absent from this branch get code commits only; their `status: done` is s
 | C7 | a-campaign-is-declared-as-data-and-an-empty-cell-fails-it | skipped: dependency not done | none | `depends_on` the engine-registry story (skipped this run, acceptance conflict, see story 14) and a-gpu-run-and-a-cpu-only-run-never-share-a-fiche (not implemented). Unblocked by the story 14 owner answer, then the GPU/CPU story. |
 | C8 | the-terse-output-variant-runs-every-item-and-meets-baseline-in-a-paired-test | skipped: dependency not done | none | `depends_on` C7. |
 | C9 | the-constrained-output-variant-runs-under-a-llama-cpp-grammar-and-names-its-mechanism | skipped: dependency not done | none | `depends_on` C8. |
+
+## Owner decisions, 2026-10-02 (in session)
+
+The owner approved both recommendations and authorised the acceptance edits on this branch. The PR #54 copies (identical before these commits) need the same change at merge.
+- Story 1 (`ec8839b`): the reference is the exact Binomial(n, p-hat)/n quantiles within one grid step at n=20 and n=100; Wilson stays a coarse sanity check (0.05 at n=100); the minimum detectable effect is the 95% interval half-width read off the same resample. Story 1 is re-queued after C10, then the tabular-export story that depends on it.
+- Story 14 (`44c8953`): a declared switch that renders no difference refuses the batch (story 5 stands); an engine with no switch declares `none`. Story 14 is re-queued after story 1, starting from `parked/story-14-engine-registry` rebased onto the current head (its schema "16" is taken: renumber). C7 still waits on a-gpu-run-and-a-cpu-only-run-never-share-a-fiche.
