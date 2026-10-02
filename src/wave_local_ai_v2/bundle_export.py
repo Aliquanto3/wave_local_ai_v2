@@ -1,13 +1,17 @@
-"""The published bundle as four flat CSV tables and the dictionary that reads them.
+"""The published bundle as five flat CSV tables and the dictionary that reads them.
 
-`wave-local-ai-v2-export` reads the five bundle parts -- the two
-`*-reference.jsonl` row files, `fiches/`, the roster file and
-`suite-definitions/` -- and writes, into a directory it is told:
+`wave-local-ai-v2-export` reads the bundle parts -- the two
+`*-reference.jsonl` row files, `fiches/`, the roster file,
+`suite-definitions/`, and the analysis records in `comparisons/` and
+`leader-sets/` -- and writes, into a directory it is told:
 
 - `quality_items.csv`: one row per quality row;
 - `runtime_aggregates.csv`: one row per runtime row;
 - `fiches.csv`: one row per stored fiche;
 - `roster.csv`: one row per roster entry;
+- `comparison_records.csv`: one row per comparison-family record, per
+  comparison it holds, per leader-set record and per subject that record
+  lists, the kind named in `record_kind`;
 - `column_dictionary.csv`: every column of every table, what it means, its
   unit, the source field it came from and what an empty cell means there, plus
   the fields the bundle read does not carry, each with its owner;
@@ -49,7 +53,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from wave_local_ai_v2 import results, roster, row_contract, settings
+from wave_local_ai_v2 import (
+    comparison,
+    leader_set,
+    results,
+    roster,
+    row_contract,
+    settings,
+)
 from wave_local_ai_v2.fiche_registry import read_fiche
 from wave_local_ai_v2.suite_snapshot import snapshot_filename
 
@@ -57,7 +68,14 @@ QUALITY_TABLE = "quality_items"
 RUNTIME_TABLE = "runtime_aggregates"
 FICHE_TABLE = "fiches"
 ROSTER_TABLE = "roster"
-TABLES: tuple[str, ...] = (QUALITY_TABLE, RUNTIME_TABLE, FICHE_TABLE, ROSTER_TABLE)
+COMPARISON_TABLE = "comparison_records"
+TABLES: tuple[str, ...] = (
+    QUALITY_TABLE,
+    RUNTIME_TABLE,
+    FICHE_TABLE,
+    ROSTER_TABLE,
+    COMPARISON_TABLE,
+)
 DICTIONARY_FILE = "column_dictionary.csv"
 MANIFEST_FILE = "bundle_manifest.csv"
 
@@ -972,16 +990,416 @@ NOT_CARRIED_ELSEWHERE: tuple[OwnedElsewhere, ...] = (
         "detectable effect and any named null reason.",
         f"epic {_STATS_EPIC}",
     ),
-    OwnedElsewhere(
-        "",
-        "comparison and family records",
-        "Paired comparisons, comparison families and leader sets. Not a table "
-        "of this export: they are the fifth table of story comparison-family-"
-        "and-leader-set-records-read-as-a-fifth-table.",
-        f"epic {_STATS_EPIC} (records); story comparison-family-and-leader-set-"
-        "records-read-as-a-fifth-table (table)",
-    ),
 )
+
+# --------------------------------------------------------------------------
+# The fifth table: comparison-family, comparison and leader-set records.
+#
+# The records are written by `wave-local-ai-v2-compare` (owned by the
+# statistics epic); this table flattens them and computes nothing. The
+# meaning, unit and null reasons of their statistical fields are that epic's
+# to define (story the-tabular-export-carries-the-interval-and-the-comparison-
+# record); the descriptions below say what each field holds, and each column
+# names that epic in the dictionary's `owner` cell.
+# --------------------------------------------------------------------------
+
+KIND_FAMILY = comparison.RECORD_TYPE
+KIND_COMPARISON = "comparison"
+KIND_LEADER_SET = leader_set.RECORD_TYPE
+KIND_SUBJECT = "leader_set_subject"
+RECORD_OWNER = f"epic {_STATS_EPIC} (defines the record field)"
+
+_PROBABILITY = "probability, 0..1"
+_SUITE_SCORE = "the suite's score scale (suite_accuracy or suite_score, 0..1)"
+
+RECORD_KEY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
+    ("record_kind",): FieldDoc(
+        "Which record this row is: comparison_family (a family record), "
+        "comparison (one comparison a family record holds), leader_set (a "
+        "leader-set record) or leader_set_subject (one subject a leader-set "
+        "record lists).",
+        _TEXT,
+        _NEVER_EMPTY,
+    ),
+    ("record_file",): FieldDoc(
+        "File name of the record the row is read from, in comparisons/ or "
+        "leader-sets/; a comparison or subject row names the record holding it.",
+        _TEXT,
+        _NEVER_EMPTY,
+    ),
+}
+
+_FAMILY_EMPTY = (
+    "A leader_set or leader_set_subject row, or a family record that does not "
+    "carry the field (an earlier record_version): the column is then listed in "
+    "fields_not_carried. Otherwise the record holds null."
+)
+_COMPARISON_EMPTY = (
+    "Not a comparison row, or a comparison that does not carry the field: the "
+    "column is then listed in fields_not_carried. Otherwise the comparison holds "
+    "null (a refusal holds no test; a null p-value or effect size names its "
+    "reason in the matching *_null_reason column)."
+)
+_LEADER_EMPTY = (
+    "A comparison_family or comparison row (the column is then listed in "
+    "fields_not_carried), or the record holds null."
+)
+_SUBJECT_EMPTY = (
+    "Not a leader_set_subject row (the column is then listed in "
+    "fields_not_carried), or the subject holds null (the reference subject has "
+    "no comparison, verdict or p-value)."
+)
+
+FAMILY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
+    ("record_type",): FieldDoc("Record type the file declares.", _ID),
+    ("record_version",): FieldDoc("Version of the family-record shape.", _ID),
+    ("family_id",): FieldDoc(
+        "Content hash identifying this family record, the ids it supersedes "
+        "included. A comparison row carries the id of the family holding it.",
+        _SHA,
+    ),
+    ("family_definition", "suite_id"): FieldDoc("Suite the family covers.", _ID),
+    ("family_definition", "suite_version"): FieldDoc(
+        "Version of the suite the family covers.", _ID
+    ),
+    ("family_definition", "compared_dimension"): FieldDoc(
+        "Configuration axis the family compares along (model, prompt_variant).",
+        _ID,
+    ),
+    ("family_definition", "compared_quantity"): FieldDoc(
+        "Quantity compared when it is not the score (a per-item measurement or "
+        "the per-batch energy); not carried by a score family.",
+        _ID,
+    ),
+    ("family_definition", "rule"): FieldDoc(
+        "The family rule the record states (one suite by one dimension, closed "
+        "at analysis time, grown by supersession).",
+        _TEXT,
+    ),
+    ("family_size",): FieldDoc("Comparisons the family holds.", _COUNT),
+    ("tested_count",): FieldDoc(
+        "Comparisons not refused: the ones the adjustment runs over.", _COUNT
+    ),
+    ("refused_count",): FieldDoc("Comparisons refused.", _COUNT),
+    ("alpha",): FieldDoc(
+        "Significance level the verdicts are read against.", _PROBABILITY
+    ),
+    ("multiplicity_correction", "method"): FieldDoc(
+        "Multiplicity correction applied over the family.", _ID
+    ),
+    ("multiplicity_correction", "formula"): FieldDoc(
+        "The correction's formula, as the record states it.", _TEXT
+    ),
+    ("multiplicity_correction", "adjusted_over"): FieldDoc(
+        "Which comparisons the adjustment runs over, as the record states it.",
+        _TEXT,
+    ),
+    ("multiplicity_correction", "adjustment_size"): FieldDoc(
+        "Number of p-values the adjustment ran over (m).", _COUNT
+    ),
+    ("multiplicity_correction", "note"): FieldDoc(
+        "A note the record adds on the correction.", _TEXT
+    ),
+    ("verdict_rule",): FieldDoc(
+        "How each comparison's verdict is read, as the record states it.", _TEXT
+    ),
+    ("rows_source",): FieldDoc(
+        "Quality rows file the family was computed from, as the record names it.",
+        _TEXT,
+    ),
+    ("supersedes",): FieldDoc(
+        "Family records this one supersedes, as the record lists them "
+        '([{"family_id": ...}]). Each named record is an earlier version of '
+        "the same family and stays its own row; a record no other record names "
+        "here is current.",
+        _JSON_ARRAY,
+    ),
+}
+
+COMPARISON_FIELDS: dict[tuple[str, ...], FieldDoc] = {
+    ("reference_run_id",): FieldDoc("run_id of the reference side's rows.", _ID),
+    ("reference_selector",): FieldDoc(
+        "Row fields selecting the reference side within its run (none).",
+        _JSON_OBJECT,
+    ),
+    ("reference_selector", "*"): FieldDoc(
+        "Value a reference-side row must carry in the field named by the column "
+        "suffix.",
+        _TEXT,
+    ),
+    ("reference_row_count",): FieldDoc("Rows the reference side selects.", _COUNT),
+    ("candidate_run_id",): FieldDoc("run_id of the candidate side's rows.", _ID),
+    ("candidate_selector",): FieldDoc(
+        "Row fields selecting the candidate side within its run (none).",
+        _JSON_OBJECT,
+    ),
+    ("candidate_selector", "*"): FieldDoc(
+        "Value a candidate-side row must carry in the field named by the column "
+        "suffix.",
+        _TEXT,
+    ),
+    ("candidate_row_count",): FieldDoc("Rows the candidate side selects.", _COUNT),
+    ("suite_id",): FieldDoc("Suite both sides share; null when they differ.", _ID),
+    ("suite_version",): FieldDoc(
+        "Suite version both sides share; null when they differ.", _ID
+    ),
+    ("suite_level",): FieldDoc(
+        "Suite level both sides share; null when they differ or do not carry it.",
+        _ID,
+    ),
+    ("compared_dimension",): FieldDoc("Axis this comparison is along.", _ID),
+    ("scoring_kind",): FieldDoc(
+        "Kind of compared value (binary, graded, continuous_measurement, "
+        "batch_measurement); null when the sides disagree.",
+        _ID,
+    ),
+    ("compared_field",): FieldDoc("Row field compared item by item.", _ID),
+    ("compared_quantity",): FieldDoc(
+        "Quantity compared when it is not the score (a per-item measurement or "
+        "the per-batch energy); not carried by a score comparison.",
+        _ID,
+    ),
+    ("refusal",): FieldDoc(
+        "Why the comparison is refused: one entry per field (field, reason, "
+        "reference_value, candidate_value); [] when not refused.",
+        _JSON_ARRAY,
+    ),
+    ("differing_fields",): FieldDoc(
+        "Row fields on which the two sides differ.", _JSON_ARRAY
+    ),
+    ("difference_convention",): FieldDoc("Sign convention of every difference.", _TEXT),
+    ("comparison_kind",): FieldDoc(
+        "test, observation (the sides differ outside the compared dimension or "
+        "a batch is partial; no difference is attributed) or refusal.",
+        _ID,
+    ),
+    ("confounds",): FieldDoc(
+        "Fields outside the compared dimension on which the sides differ.",
+        _JSON_ARRAY,
+    ),
+    ("observation_reason",): FieldDoc("Why the comparison is an observation.", _TEXT),
+    ("paired_item_ids",): FieldDoc("Item ids both sides answered.", _JSON_ARRAY),
+    ("paired_n",): FieldDoc("Number of paired items.", _COUNT),
+    ("paired_values",): FieldDoc(
+        "Each paired item's compared value on both sides (item_id, reference, "
+        "candidate).",
+        _JSON_ARRAY,
+    ),
+    ("unpaired_items",): FieldDoc(
+        "Items only one side answered (item_id, missing_from).", _JSON_ARRAY
+    ),
+    ("unpaired_count",): FieldDoc("Number of unpaired items.", _COUNT),
+    ("test",): FieldDoc("Paired test run.", _ID),
+    ("test_chosen_because",): FieldDoc(
+        "Why that test, as the record states it.", _TEXT
+    ),
+    ("result",): FieldDoc(
+        "The test's result block; null when no test ran.", _JSON_OBJECT
+    ),
+    ("result", "test"): FieldDoc("Test the result block belongs to.", _ID),
+    ("result", "contingency", "both_correct"): FieldDoc(
+        "Paired items both sides got right.", _COUNT
+    ),
+    ("result", "contingency", "reference_only_correct"): FieldDoc(
+        "Paired items only the reference got right (b).", _COUNT
+    ),
+    ("result", "contingency", "candidate_only_correct"): FieldDoc(
+        "Paired items only the candidate got right (c).", _COUNT
+    ),
+    ("result", "contingency", "both_wrong"): FieldDoc(
+        "Paired items both sides got wrong.", _COUNT
+    ),
+    ("result", "discordant_n"): FieldDoc("Discordant pairs (b + c).", _COUNT),
+    ("result", "conventions", "zero_method"): FieldDoc(
+        "How zero differences are handled.", _ID
+    ),
+    ("result", "conventions", "zero_method_definition"): FieldDoc(
+        "The zero method, as the record states it.", _TEXT
+    ),
+    ("result", "conventions", "exact_rule"): FieldDoc(
+        "When the exact p is used, as the record states it.", _TEXT
+    ),
+    ("result", "conventions", "exact_max_nonzero"): FieldDoc(
+        "Largest non-zero difference count with an exact p.", _COUNT
+    ),
+    ("result", "conventions", "continuity_correction"): FieldDoc(
+        "Whether a continuity correction is applied.", _BOOL
+    ),
+    ("result", "conventions", "tie_handling"): FieldDoc("How ties are ranked.", _TEXT),
+    ("result", "statistic_name"): FieldDoc("What the statistic is.", _TEXT),
+    ("result", "statistic"): FieldDoc(
+        "The test statistic, named by result_statistic_name.", "test statistic"
+    ),
+    ("result", "w_minus"): FieldDoc(
+        "Sum of the ranks of negative differences.", "rank sum"
+    ),
+    ("result", "p_value"): FieldDoc("The test's unadjusted p-value.", _PROBABILITY),
+    ("result", "p_value_null_reason"): FieldDoc("Why the p-value is null.", _ID),
+    ("result", "p_value_method"): FieldDoc("How the p-value was computed.", _ID),
+    ("result", "effect_size_name"): FieldDoc("Which effect size is reported.", _ID),
+    ("result", "effect_size_formula"): FieldDoc(
+        "The effect size's formula, as the record states it.", _TEXT
+    ),
+    ("result", "effect_size"): FieldDoc(
+        "The effect size, named by result_effect_size_name.", "effect size"
+    ),
+    ("result", "effect_size_null_reason"): FieldDoc(
+        "Why the effect size is null.", _ID
+    ),
+    ("result", "direction"): FieldDoc("Which side scored higher.", _ID),
+    ("result", "mean_difference"): FieldDoc(
+        "Mean candidate-minus-reference difference over the paired items.",
+        "compared field's unit",
+    ),
+    ("result", "tie_count"): FieldDoc("Tied differences.", _COUNT),
+    ("result", "zero_difference_count"): FieldDoc("Zero differences.", _COUNT),
+    ("batch_values", "reference"): FieldDoc(
+        "Reference side's per-batch value.", "compared field's unit"
+    ),
+    ("batch_values", "candidate"): FieldDoc(
+        "Candidate side's per-batch value.", "compared field's unit"
+    ),
+    ("batch_values", "difference"): FieldDoc(
+        "Candidate minus reference per-batch value.", "compared field's unit"
+    ),
+    ("batch_values", "difference_null_reason"): FieldDoc(
+        "Why the per-batch difference is null.", _ID
+    ),
+    ("raw_p_value",): FieldDoc(
+        "The comparison's p-value before the family adjustment.", _PROBABILITY
+    ),
+    ("adjusted_p_value",): FieldDoc(
+        "The comparison's p-value after the family's multiplicity correction; "
+        "the verdict reads it.",
+        _PROBABILITY,
+    ),
+    ("adjusted_p_value_null_reason",): FieldDoc(
+        "Why the adjusted p-value is null (comparison_refused for a refusal).",
+        _ID,
+    ),
+    ("verdict",): FieldDoc(
+        "distinguishable, not distinguishable or not comparable.", _ID
+    ),
+}
+
+LEADER_SET_FIELDS: dict[tuple[str, ...], FieldDoc] = {
+    ("record_type",): FieldDoc("Record type the file declares.", _ID),
+    ("record_version",): FieldDoc("Version of the leader-set record shape.", _ID),
+    ("leader_set_id",): FieldDoc(
+        "Content hash identifying this leader-set record, the ids it supersedes "
+        "included. A subject row carries the id of the record listing it.",
+        _SHA,
+    ),
+    ("suite_id",): FieldDoc("Suite the leader set is over.", _ID),
+    ("suite_version",): FieldDoc("Version of that suite.", _ID),
+    ("suite_level",): FieldDoc("Suite level its rows carry.", _ID),
+    ("task_suite",): FieldDoc("Task kind of the suite.", _ID),
+    ("grouping_fields",): FieldDoc(
+        "Fields that define the group (suite and machine class).", _JSON_ARRAY
+    ),
+    ("grouping_values",): FieldDoc(
+        "Machine-class values of the group (none recorded).", _JSON_OBJECT
+    ),
+    ("grouping_values", "*"): FieldDoc(
+        "The group's value for the fiche field named by the column suffix.",
+        "as the fiche field",
+    ),
+    ("grouping_not_recorded",): FieldDoc(
+        "Grouping fields the group's fiches do not carry.", _JSON_ARRAY
+    ),
+    ("machine_class_rule",): FieldDoc(
+        "How subjects are grouped, as the record states it.", _TEXT
+    ),
+    ("local_only_rule",): FieldDoc(
+        "Which subjects may enter, as the record states it.", _TEXT
+    ),
+    ("score_field",): FieldDoc("Row field the suite score is read from.", _ID),
+    ("reference", "run_id"): FieldDoc("run_id of the best local subject.", _ID),
+    ("reference", "model_id"): FieldDoc("model_id of the best local subject.", _ID),
+    ("reference", "suite_score"): FieldDoc(
+        "Published suite score of the best local subject.", _SUITE_SCORE
+    ),
+    ("tied_at_top",): FieldDoc(
+        "Subjects tied at the top score (run_id, model_id).", _JSON_ARRAY
+    ),
+    ("tie_rule",): FieldDoc("How a tie at the top is broken.", _TEXT),
+    ("membership_rule",): FieldDoc(
+        "How a subject becomes a member, as the record states it.", _TEXT
+    ),
+    ("comparison_ran",): FieldDoc(
+        "Whether any comparison against the reference ran.", _BOOL
+    ),
+    ("no_comparison_reason",): FieldDoc("Why no comparison ran.", _TEXT),
+    ("family_id",): FieldDoc(
+        "Family record the comparisons were read from; the family_family_id of "
+        "its comparison_family row.",
+        _SHA,
+    ),
+    ("alpha",): FieldDoc(
+        "Significance level of the family the verdicts were read against.",
+        _PROBABILITY,
+    ),
+    ("member_count",): FieldDoc("Subjects in the set.", _COUNT),
+    ("excluded_count",): FieldDoc("Subjects distinguishable from the best.", _COUNT),
+    ("not_compared_count",): FieldDoc("Subjects not compared.", _COUNT),
+    ("incomplete",): FieldDoc(
+        "Whether some subject was not compared, so membership is unknown.", _BOOL
+    ),
+    ("incomplete_reason",): FieldDoc("Why the set is incomplete.", _TEXT),
+    ("rows_source",): FieldDoc(
+        "Quality rows file the set was computed from, as the record names it.",
+        _TEXT,
+    ),
+    ("supersedes",): FieldDoc(
+        "Leader-set records this one supersedes, as the record lists them "
+        '([{"leader_set_id": ...}]); each named record stays its own row.',
+        _JSON_ARRAY,
+    ),
+}
+
+SUBJECT_FIELDS: dict[tuple[str, ...], FieldDoc] = {
+    ("run_id",): FieldDoc("run_id of the subject's batch.", _ID),
+    ("model_id",): FieldDoc("model_id of the subject.", _ID),
+    ("roster_entry_id",): FieldDoc("Roster entry the subject's rows cite.", _ID),
+    ("suite_score",): FieldDoc(
+        "The subject's published suite score; null for a batch with none.",
+        _SUITE_SCORE,
+    ),
+    ("role",): FieldDoc("reference (the best subject) or compared.", _ID),
+    ("status",): FieldDoc("member, excluded or not compared.", _ID),
+    ("verdict",): FieldDoc(
+        "Verdict of the subject's comparison against the reference.", _ID
+    ),
+    ("comparison_kind",): FieldDoc(
+        "Kind of that comparison: test, observation or refusal.", _ID
+    ),
+    ("adjusted_p_value",): FieldDoc(
+        "Family-adjusted p-value of that comparison.", _PROBABILITY
+    ),
+    ("refused_fields",): FieldDoc(
+        "Fields that comparison was refused on; [] when not refused.", _JSON_ARRAY
+    ),
+    ("not_compared_reason",): FieldDoc(
+        "Why the subject's membership is unknown, for a not compared subject.",
+        _TEXT,
+    ),
+}
+
+# What the dictionary names when the bundle read holds no record of a kind.
+RECORD_KINDS: dict[str, str] = {
+    KIND_FAMILY: (
+        "Comparison-family records (comparisons/): one closed family of paired "
+        "comparisons with their multiplicity-adjusted p-values."
+    ),
+    KIND_COMPARISON: (
+        "Comparisons a family record holds: one paired test, observation or "
+        "refusal each."
+    ),
+    KIND_LEADER_SET: (
+        "Leader-set records (leader-sets/): per suite and machine class, the "
+        "local models not distinguishable from the best, with their subjects."
+    ),
+}
 
 
 # --------------------------------------------------------------------------
@@ -1012,6 +1430,9 @@ class Source:
     empty: str
     excluded: frozenset[tuple[str, ...]] = frozenset()
     json_cells: frozenset[str] = frozenset()
+    # Who defines the fields this source carries, when that is not this
+    # export: written to the dictionary's `owner` cell of each column.
+    owner: str = ""
 
 
 def lookup_doc(
@@ -1099,6 +1520,7 @@ class Column:
     doc: FieldDoc
     source_label: str
     empty: str
+    owner: str = ""
 
 
 @dataclass(frozen=True)
@@ -1167,7 +1589,15 @@ def build_table(name: str, row_sources: Sequence[Sequence[Source]]) -> Table:
             )
         seen[column_name] = f"{source.label} `{dotted}`"
         columns.append(
-            Column(column_name, index, path, doc, source.label, source.empty)
+            Column(
+                column_name,
+                index,
+                path,
+                doc,
+                source.label,
+                source.empty,
+                source.owner,
+            )
         )
 
     rows: list[tuple[str, ...]] = []
@@ -1194,13 +1624,15 @@ def build_table(name: str, row_sources: Sequence[Sequence[Source]]) -> Table:
 
 @dataclass(frozen=True)
 class BundlePaths:
-    """Where the five bundle parts are read from."""
+    """Where the bundle parts are read from."""
 
     runtime_rows: Path
     quality_rows: Path
     fiche_dir: Path
     roster: Path
     suite_definitions: Path
+    comparisons_dir: Path
+    leader_sets_dir: Path
 
 
 def default_bundle_paths() -> BundlePaths:
@@ -1211,12 +1643,15 @@ def default_bundle_paths() -> BundlePaths:
         fiche_dir=Path(settings.DEFAULT_FICHE_REGISTRY_DIR),
         roster=Path(settings.DEFAULT_ROSTER_PATH),
         suite_definitions=Path(settings.DEFAULT_SUITE_DEFINITIONS_DIR),
+        comparisons_dir=Path(settings.DEFAULT_COMPARISONS_DIR),
+        leader_sets_dir=Path(settings.DEFAULT_LEADER_SETS_DIR),
     )
 
 
 @dataclass(frozen=True)
 class Bundle:
-    """The bundle as read: rows, every stored fiche, the roster, cited suites."""
+    """The bundle as read: rows, every stored fiche, the roster, cited suites,
+    and the analysis records, each keyed by its file name."""
 
     runtime_rows: list[dict[str, Any]]
     quality_rows: list[dict[str, Any]]
@@ -1224,6 +1659,8 @@ class Bundle:
     roster_version: int
     roster_entries: dict[str, dict[str, Any]]
     suite_definitions: dict[tuple[str, str], dict[str, Any]]
+    family_records: dict[str, dict[str, Any]]
+    leader_set_records: dict[str, dict[str, Any]]
 
 
 def _read_row_file(path: Path) -> list[dict[str, Any]]:
@@ -1288,10 +1725,92 @@ def _read_suite_definitions(
     return definitions
 
 
+def _read_records(directory: Path, record_type: str) -> dict[str, dict[str, Any]]:
+    """Every `*.json` record in `directory`, keyed by file name, in name order.
+
+    A missing directory holds no record of the kind: a bundle may predate it,
+    and the dictionary then names the kind as not carried. A path that exists
+    but is not a directory, or a file that is not a JSON object of
+    `record_type`, refuses: nothing in a record directory is skipped silently.
+    """
+    if not directory.exists():
+        return {}
+    if not directory.is_dir():
+        raise ExportError(f"{directory.as_posix()} is not a record directory")
+    records: dict[str, dict[str, Any]] = {}
+    for path in sorted(directory.glob("*.json")):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as error:
+            raise ExportError(f"record {path.name} is not JSON: {error}") from error
+        if not isinstance(record, dict) or record.get("record_type") != record_type:
+            raise ExportError(
+                f"{directory.as_posix()}/{path.name} is not a {record_type} record"
+            )
+        records[path.name] = record
+    return records
+
+
+def _entries(name: str, record: Mapping[str, Any], key: str) -> list[dict[str, Any]]:
+    """`record[key]` as a list of objects (none when absent), or a refusal."""
+    entries = record.get(key, [])
+    if not isinstance(entries, list) or not all(
+        isinstance(entry, dict) for entry in entries
+    ):
+        raise ExportError(f"record {name}: `{key}` is not a list of objects")
+    return entries
+
+
+def _record_id(name: str, record: Mapping[str, Any], key: str) -> str:
+    """The record's own id, or a refusal: every record is cited by it."""
+    value = record.get(key)
+    if not isinstance(value, str):
+        raise ExportError(f"record {name}: `{key}` is not an id")
+    return value
+
+
+def _check_record_pointers(
+    families: Mapping[str, Mapping[str, Any]],
+    leader_sets: Mapping[str, Mapping[str, Any]],
+    quality_rows: Iterable[Mapping[str, Any]],
+) -> None:
+    """Refuse a record citing a run or a record the bundle read does not hold.
+
+    Checked, not joined: the table carries the ids as the records write them.
+    """
+    run_ids = {row.get("run_id") for row in quality_rows}
+    family_ids = {_record_id(n, r, "family_id") for n, r in families.items()}
+    leader_set_ids = {_record_id(n, r, "leader_set_id") for n, r in leader_sets.items()}
+    cited: list[tuple[str, str, Any, set[Any]]] = []
+    for name, record in families.items():
+        for member in _entries(name, record, "members"):
+            for side in ("reference_run_id", "candidate_run_id"):
+                cited.append((name, side, member.get(side), run_ids))
+        for entry in _entries(name, record, "supersedes"):
+            cited.append((name, "supersedes", entry.get("family_id"), family_ids))
+    for name, record in leader_sets.items():
+        for subject in _entries(name, record, "subjects"):
+            cited.append((name, "subject run_id", subject.get("run_id"), run_ids))
+        if record.get("family_id") is not None:
+            cited.append((name, "family_id", record["family_id"], family_ids))
+        for entry in _entries(name, record, "supersedes"):
+            cited.append(
+                (name, "supersedes", entry.get("leader_set_id"), leader_set_ids)
+            )
+    for name, pointer, value, held in cited:
+        if not isinstance(value, str) or value not in held:
+            raise ExportError(
+                f"record {name}: {pointer} {value!r} does not resolve in the bundle read"
+            )
+
+
 def read_bundle(paths: BundlePaths) -> Bundle:
-    """Read the five parts, refusing anything that would leave a hole."""
+    """Read every part, refusing anything that would leave a hole."""
     quality_rows = _read_row_file(paths.quality_rows)
     roster_version, roster_entries = _read_roster(paths.roster)
+    family_records = _read_records(paths.comparisons_dir, KIND_FAMILY)
+    leader_set_records = _read_records(paths.leader_sets_dir, KIND_LEADER_SET)
+    _check_record_pointers(family_records, leader_set_records, quality_rows)
     return Bundle(
         runtime_rows=_read_row_file(paths.runtime_rows),
         quality_rows=quality_rows,
@@ -1301,11 +1820,13 @@ def read_bundle(paths: BundlePaths) -> Bundle:
         suite_definitions=_read_suite_definitions(
             quality_rows, paths.suite_definitions
         ),
+        family_records=family_records,
+        leader_set_records=leader_set_records,
     )
 
 
 # --------------------------------------------------------------------------
-# The four tables.
+# The tables.
 # --------------------------------------------------------------------------
 
 
@@ -1398,8 +1919,81 @@ def _suite_source(row: dict[str, Any], bundle: Bundle) -> Source:
     )
 
 
+def _without(record: Mapping[str, Any], key: str) -> dict[str, Any]:
+    return {field: value for field, value in record.items() if field != key}
+
+
+def _record_row(
+    kind: str,
+    file_name: str,
+    family: Mapping[str, Any] | _NotCarried = NOT_CARRIED,
+    member: Mapping[str, Any] | _NotCarried = NOT_CARRIED,
+    leader: Mapping[str, Any] | _NotCarried = NOT_CARRIED,
+    subject: Mapping[str, Any] | _NotCarried = NOT_CARRIED,
+) -> list[Source]:
+    """One row's five sources, a source that is not the row's kind not carried."""
+    return [
+        Source(
+            "",
+            "export",
+            RECORD_KEY_FIELDS,
+            {"record_kind": kind, "record_file": file_name},
+            _NEVER_EMPTY,
+        ),
+        Source(
+            "family_",
+            "comparison-family record",
+            FAMILY_FIELDS,
+            family,
+            _FAMILY_EMPTY,
+            owner=RECORD_OWNER,
+        ),
+        Source(
+            "comparison_",
+            "comparison (a member of the family record)",
+            COMPARISON_FIELDS,
+            member,
+            _COMPARISON_EMPTY,
+            owner=RECORD_OWNER,
+        ),
+        Source(
+            "leader_set_",
+            "leader-set record",
+            LEADER_SET_FIELDS,
+            leader,
+            _LEADER_EMPTY,
+            owner=RECORD_OWNER,
+        ),
+        Source(
+            "subject_",
+            "leader-set subject",
+            SUBJECT_FIELDS,
+            subject,
+            _SUBJECT_EMPTY,
+            owner=RECORD_OWNER,
+        ),
+    ]
+
+
+def _record_rows(bundle: Bundle) -> list[list[Source]]:
+    """Each family record then its comparisons, each leader set then its subjects,
+    records in file-name order, members and subjects in the order written."""
+    rows: list[list[Source]] = []
+    for name, record in bundle.family_records.items():
+        family = _without(record, "members")
+        rows.append(_record_row(KIND_FAMILY, name, family=family))
+        for member in record.get("members", []):
+            rows.append(_record_row(KIND_COMPARISON, name, family, member=member))
+    for name, record in bundle.leader_set_records.items():
+        leader = _without(record, "subjects")
+        rows.append(_record_row(KIND_LEADER_SET, name, leader=leader))
+        for subject in record.get("subjects", []):
+            rows.append(_record_row(KIND_SUBJECT, name, leader=leader, subject=subject))
+    return rows
+
+
 def build_tables(bundle: Bundle) -> dict[str, Table]:
-    """The four tables, keyed by table name, in `TABLES` order."""
+    """The five tables, keyed by table name, in `TABLES` order."""
     quality = build_table(
         QUALITY_TABLE,
         [_row_sources("quality", row, bundle) for row in bundle.quality_rows],
@@ -1461,6 +2055,7 @@ def build_tables(bundle: Bundle) -> dict[str, Table]:
         RUNTIME_TABLE: runtime,
         FICHE_TABLE: fiches,
         ROSTER_TABLE: roster_table,
+        COMPARISON_TABLE: build_table(COMPARISON_TABLE, _record_rows(bundle)),
     }
 
 
@@ -1528,6 +2123,26 @@ def _not_carried_by_contract(
     return entries
 
 
+def _record_kinds_not_carried(table: Table) -> list[tuple[str, ...]]:
+    """The record kinds no row of the fifth table holds, each named with its owner."""
+    position = table.header.index("record_kind") if table.rows else 0
+    held = {row[position] for row in table.rows}
+    return [
+        (
+            COMPARISON_TABLE,
+            f"{kind} records",
+            "false",
+            "not in the bundle read",
+            meaning,
+            "",
+            "Not a row: the bundle read holds no record of this kind.",
+            f"epic {_STATS_EPIC}",
+        )
+        for kind, meaning in RECORD_KINDS.items()
+        if kind not in held
+    ]
+
+
 def build_dictionary(tables: Mapping[str, Table]) -> list[tuple[str, ...]]:
     """Every column of every table, then everything the bundle does not carry."""
     entries: list[tuple[str, ...]] = []
@@ -1542,7 +2157,7 @@ def build_dictionary(tables: Mapping[str, Table]) -> list[tuple[str, ...]]:
                     column.doc.meaning,
                     column.doc.unit,
                     column.doc.empty or column.empty,
-                    "",
+                    column.owner,
                 )
             )
         entries.append(
@@ -1572,6 +2187,7 @@ def build_dictionary(tables: Mapping[str, Table]) -> list[tuple[str, ...]]:
         )
     entries += _not_carried_by_contract("quality", tables[QUALITY_TABLE])
     entries += _not_carried_by_contract("runtime", tables[RUNTIME_TABLE])
+    entries += _record_kinds_not_carried(tables[COMPARISON_TABLE])
     for owned in NOT_CARRIED_ELSEWHERE:
         entries.append(
             (
@@ -1638,7 +2254,26 @@ def build_manifest(paths: BundlePaths, bundle: Bundle) -> list[tuple[str, ...]]:
             "suite_id@suite_version",
             ";".join(f"{a}@{b}" for a, b in sorted(bundle.suite_definitions)),
         ),
+        (
+            "comparison_families",
+            paths.comparisons_dir.as_posix(),
+            str(len(bundle.family_records)),
+            "record_version",
+            _record_versions(bundle.family_records.values()),
+        ),
+        (
+            "leader_sets",
+            paths.leader_sets_dir.as_posix(),
+            str(len(bundle.leader_set_records)),
+            "record_version",
+            _record_versions(bundle.leader_set_records.values()),
+        ),
     ]
+
+
+def _record_versions(records: Iterable[Mapping[str, Any]]) -> str:
+    values = {str(record.get("record_version")) for record in records}
+    return ";".join(sorted(values, key=_version_sort_key))
 
 
 # --------------------------------------------------------------------------
@@ -1684,6 +2319,8 @@ def _refuse_bundle_directory(output_dir: Path, paths: BundlePaths) -> None:
         paths.fiche_dir,
         paths.roster.parent,
         paths.suite_definitions,
+        paths.comparisons_dir,
+        paths.leader_sets_dir,
     }
     target = output_dir.resolve()
     if any(target == directory.resolve() for directory in bundle_dirs):
@@ -1707,7 +2344,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="wave-local-ai-v2-export",
         description=(
-            "Write the published bundle as four flat CSV tables, their column "
+            "Write the published bundle as five flat CSV tables, their column "
             "dictionary and a manifest. Reads the committed reference bundle "
             "unless pointed elsewhere; runs no benchmark and changes no bundle file."
         ),
@@ -1719,6 +2356,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--roster", type=Path, default=defaults.roster)
     parser.add_argument(
         "--suite-definitions", type=Path, default=defaults.suite_definitions
+    )
+    parser.add_argument(
+        "--comparisons-dir", type=Path, default=defaults.comparisons_dir
+    )
+    parser.add_argument(
+        "--leader-sets-dir", type=Path, default=defaults.leader_sets_dir
     )
     return parser
 
@@ -1732,6 +2375,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         fiche_dir=args.fiche_dir,
         roster=args.roster,
         suite_definitions=args.suite_definitions,
+        comparisons_dir=args.comparisons_dir,
+        leader_sets_dir=args.leader_sets_dir,
     )
     try:
         counts = export_bundle(paths, args.output_dir)

@@ -32,7 +32,7 @@ flowchart TD
 - `wave-local-ai-v2-quality` CLI command → `src/wave_local_ai_v2/quality_cli.py:main` (quality benchmark)
 - `wave-local-ai-v2-validate` CLI command → `src/wave_local_ai_v2/fiche_validator.py:main` (fiche invalidation validator)
 - `wave-local-ai-v2-serve` CLI command → `src/wave_local_ai_v2/service.py:main` (read-only results service — see `cli.md`)
-- `wave-local-ai-v2-export` CLI command → `src/wave_local_ai_v2/bundle_export.py:main` (the bundle as flat CSV tables — see `cli.md`)
+- `wave-local-ai-v2-export` CLI command → `src/wave_local_ai_v2/bundle_export.py:main` (the bundle and its comparison, family and leader-set records as flat CSV tables — see `cli.md`)
 - `wave-local-ai-v2-compare` CLI command → `src/wave_local_ai_v2/comparison.py:main` (paired comparison record — see `cli.md`)
 - `wave-local-ai-v2-candidate-gate` CLI command → `src/wave_local_ai_v2/candidate_gate.py:main` (the roster's candidate verification gate — see `cli.md`)
 - `wave-local-ai-v2-composition-check` CLI command → `src/wave_local_ai_v2/composition_check.py:main` (the roster's size-class composition rule — see `cli.md`)

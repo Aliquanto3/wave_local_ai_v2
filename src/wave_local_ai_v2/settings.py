@@ -30,6 +30,7 @@ DEFAULT_FICHE_REGISTRY_DIR = "aidd_docs/results/fiches"
 # `fiche_registry.py` states about its own directory: an artifact path is
 # configuration, never hardcoded in the module that writes it.
 DEFAULT_SUITE_DEFINITIONS_DIR = "aidd_docs/results/suite-definitions"
+DEFAULT_COMPARISONS_DIR = "aidd_docs/results/comparisons"
 DEFAULT_LEADER_SETS_DIR = "aidd_docs/results/leader-sets"
 # Where `use_case_coverage` publishes the coverage record, and only once every
 # PRD use case in it carries a resolvable state.

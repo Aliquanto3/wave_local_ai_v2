@@ -147,10 +147,16 @@ The command-line interface for running benchmarks.
   (a row predating that schema version — its absent `fiche_hash` is
   expected, not an integrity failure). Exits `1` on any `edited`/`missing`
   row, `0` otherwise, printing the checked count.
-- `wave-local-ai-v2-export --output-dir <dir>` — the published bundle as four
-  flat CSV tables (`quality_items`, `runtime_aggregates`, `fiches`, `roster`),
-  `column_dictionary.csv` and `bundle_manifest.csv` (`bundle_export.py`,
-  standard library only). Reads the committed reference bundle by default,
+- `wave-local-ai-v2-export --output-dir <dir>` — the published bundle as five
+  flat CSV tables (`quality_items`, `runtime_aggregates`, `fiches`, `roster`,
+  `comparison_records`), `column_dictionary.csv` and `bundle_manifest.csv`
+  (`bundle_export.py`, standard library only). `comparison_records` holds one
+  row per family record, comparison, leader-set record and leader-set subject
+  read from `comparisons/` and `leader-sets/` (`--comparisons-dir`,
+  `--leader-sets-dir`), named by `record_kind`. A missing record directory holds
+  no record of its kind (header-only table, kinds named `carried=false`, 0
+  entries in the manifest); a malformed record, or one citing a run or record
+  the bundle read does not hold, refuses the export. Reads the committed reference bundle by default,
   never the live stores unless pointed at them; every pointer is resolved into
   columns, nothing is computed, absence stays an empty cell listed in the
   row's `fields_not_carried`, and the manifest declares the `schema_version`

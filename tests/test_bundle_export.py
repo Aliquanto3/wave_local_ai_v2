@@ -6,18 +6,20 @@ from __future__ import annotations
 
 import ast
 import csv
+import dataclasses
 import hashlib
 import json
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 import pytest
 
-from wave_local_ai_v2 import bundle_export, row_contract
+from wave_local_ai_v2 import bundle_export, comparison, leader_set, row_contract
 from wave_local_ai_v2.bundle_export import (
     DICTIONARY_FILE,
     MANIFEST_FILE,
+    NOT_CARRIED,
     NOT_CARRIED_COLUMN,
     TABLES,
     BundlePaths,
@@ -238,10 +240,10 @@ def test_blocks_owned_elsewhere_are_named_with_their_owner(
         "language_claim_read_on",
         "language_claim_statement",
     } <= roster_header
-    assert (
-        "comparison-family-and-leader-set-records-read-as-a-fifth-table"
-        in owners["comparison and family records"]
-    )
+    # The comparison, family and leader-set records are the fifth table now,
+    # and the committed bundle holds all three kinds.
+    assert "comparison and family records" not in owners
+    assert not {name for name in owners if name.endswith(" records")}
     # Fields the row contract added after "7" are named, not silently absent.
     assert {"retries", "resumed", "thinking_policy", "prompt_variant_id"} <= set(owners)
     # The item licence and source are contract fields now, named as such
@@ -289,6 +291,8 @@ def test_the_export_changes_no_bundle_file(tmp_path: Path) -> None:
             COMMITTED.roster,
             *sorted(COMMITTED.fiche_dir.iterdir()),
             *sorted(COMMITTED.suite_definitions.iterdir()),
+            *sorted(COMMITTED.comparisons_dir.iterdir()),
+            *sorted(COMMITTED.leader_sets_dir.iterdir()),
         ]
         return {
             path.as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
@@ -358,24 +362,24 @@ def _bundle(
         quality = _committed_rows(COMMITTED.quality_rows)[:2]
     if runtime is None:
         runtime = _committed_rows(COMMITTED.runtime_rows)[:1]
+    # A constructed bundle holds no analysis record unless a test writes one.
+    comparisons_dir = tmp_path / "comparisons"
+    leader_sets_dir = tmp_path / "leader-sets"
+    comparisons_dir.mkdir(exist_ok=True)
+    leader_sets_dir.mkdir(exist_ok=True)
     return BundlePaths(
         runtime_rows=_write_rows(rows_dir / "runtime.jsonl", runtime),
         quality_rows=_write_rows(rows_dir / "quality.jsonl", quality),
         fiche_dir=COMMITTED.fiche_dir,
         roster=COMMITTED.roster,
         suite_definitions=COMMITTED.suite_definitions,
+        comparisons_dir=comparisons_dir,
+        leader_sets_dir=leader_sets_dir,
     )
 
 
 def _replace(paths: BundlePaths, **changes: Path) -> BundlePaths:
-    fields = {
-        "runtime_rows": paths.runtime_rows,
-        "quality_rows": paths.quality_rows,
-        "fiche_dir": paths.fiche_dir,
-        "roster": paths.roster,
-        "suite_definitions": paths.suite_definitions,
-    }
-    return BundlePaths(**{**fields, **changes})
+    return dataclasses.replace(paths, **changes)
 
 
 def test_absence_and_a_recorded_null_are_told_apart(tmp_path: Path) -> None:
@@ -437,7 +441,8 @@ def test_a_float_with_many_digits_round_trips(tmp_path: Path) -> None:
 
 
 def test_two_runs_are_byte_identical_and_the_format_is_pinned(tmp_path: Path) -> None:
-    paths = _bundle(tmp_path)
+    # Analysis records included, so the fifth table is held to it too.
+    paths, _ = _constructed_records_bundle(tmp_path)
     bundle_export.export_bundle(paths, tmp_path / "a")
     bundle_export.export_bundle(paths, tmp_path / "b")
 
@@ -481,6 +486,10 @@ def _refused_export(
             str(paths.runtime_rows),
             "--quality-rows",
             str(paths.quality_rows),
+            "--comparisons-dir",
+            str(paths.comparisons_dir),
+            "--leader-sets-dir",
+            str(paths.leader_sets_dir),
         ]
     )
 
@@ -532,6 +541,10 @@ def test_the_command_writes_and_reports_each_file(
             str(paths.roster),
             "--suite-definitions",
             str(paths.suite_definitions),
+            "--comparisons-dir",
+            str(paths.comparisons_dir),
+            "--leader-sets-dir",
+            str(paths.leader_sets_dir),
         ]
     )
 
@@ -576,6 +589,16 @@ def test_unreadable_bundle_parts_are_refused(tmp_path: Path) -> None:
         (_replace(paths, fiche_dir=list_fiches), "is not a JSON object"),
         (_replace(paths, roster=broken_roster), "roster"),
         (_replace(paths, suite_definitions=suites), "is not a JSON object"),
+        (
+            _replace(paths, comparisons_dir=paths.quality_rows),
+            "is not a record directory",
+        ),
+        (_replace(paths, comparisons_dir=bad_fiches), "is not JSON"),
+        (_replace(paths, comparisons_dir=list_fiches), "not a comparison_family"),
+        (
+            _replace(paths, leader_sets_dir=COMMITTED.comparisons_dir),
+            "not a leader_set",
+        ),
     ]
 
     for case, expected in cases:
@@ -631,6 +654,7 @@ def test_an_empty_bundle_writes_headers_only(tmp_path: Path) -> None:
 
     assert files["quality_items.csv"] == [(NOT_CARRIED_COLUMN,)]
     assert files["runtime_aggregates.csv"] == [(NOT_CARRIED_COLUMN,)]
+    assert files["comparison_records.csv"] == [(NOT_CARRIED_COLUMN,)]
 
 
 def test_a_contract_field_without_a_dictionary_entry_is_refused(
@@ -643,3 +667,358 @@ def test_a_contract_field_without_a_dictionary_entry_is_refused(
 
     with pytest.raises(ExportError, match="undescribed"):
         bundle_export._not_carried_by_contract("quality", table)
+
+
+# --------------------------------------------------------------------------
+# The fifth table: comparison-family, comparison and leader-set records.
+# --------------------------------------------------------------------------
+
+_RECORD_SOURCES = {
+    "comparison-family record": "family",
+    "comparison (a member of the family record)": "comparison",
+    "leader-set record": "leader_set",
+    "leader-set subject": "subject",
+}
+_TESTED_RUN = "5e13166da0654390a7d63f346ea5d4f1"  # pragma: allowlist secret
+_REFUSED_RUN = "d20afbda710c40378e6ad5ca8d9b6558"  # pragma: allowlist secret
+_LOCAL_MODEL = "Qwen3.6-35B-A3B"
+_CLOUD_MODEL = "mistral-small-2603"
+
+
+def _record_columns(dictionary: list[dict[str, str]]) -> dict[str, tuple[str, ...]]:
+    """Each record column of the fifth table: which record part, which path."""
+    columns: dict[str, tuple[str, ...]] = {}
+    for entry in dictionary:
+        if entry["table"] != "comparison_records" or entry["carried"] != "true":
+            continue
+        label, _, path = entry["source"].partition(" `")
+        if label in _RECORD_SOURCES:
+            columns[entry["column"]] = (_RECORD_SOURCES[label], *path[:-1].split("."))
+    return columns
+
+
+def _row_records(
+    rows: list[dict[str, str]], paths: BundlePaths
+) -> list[dict[str, dict[str, object]]]:
+    """The record parts each table row was read from, rebuilt from the files."""
+    position: dict[tuple[str, str], int] = defaultdict(int)
+    parts: list[dict[str, dict[str, object]]] = []
+    for row in rows:
+        kind, name = row["record_kind"], row["record_file"]
+        is_family = kind in ("comparison_family", "comparison")
+        directory = paths.comparisons_dir if is_family else paths.leader_sets_dir
+        record = json.loads((directory / name).read_text(encoding="utf-8"))
+        part: dict[str, dict[str, object]]
+        if is_family:
+            part = {"family": {k: v for k, v in record.items() if k != "members"}}
+            if kind == "comparison":
+                part["comparison"] = record["members"][position[(kind, name)]]
+        else:
+            part = {"leader_set": {k: v for k, v in record.items() if k != "subjects"}}
+            if kind == "leader_set_subject":
+                part["subject"] = record["subjects"][position[(kind, name)]]
+        position[(kind, name)] += 1
+        parts.append(part)
+    return parts
+
+
+def _assert_the_table_is_the_records(output_dir: Path, paths: BundlePaths) -> None:
+    """Every record value is a cell, and every cell is a record value."""
+    columns = _record_columns(_read_csv(output_dir / DICTIONARY_FILE))
+    rows = _read_csv(output_dir / "comparison_records.csv")
+    assert rows
+    for row, parts in zip(rows, _row_records(rows, paths), strict=True):
+        not_carried = json.loads(row[NOT_CARRIED_COLUMN])
+        context = f"{row['record_kind']} in {row['record_file']}"
+        # Nothing computed: each cell is the value its record holds there.
+        for column, (part, *path) in columns.items():
+            value = bundle_export._read_path(
+                parts.get(part, NOT_CARRIED), tuple(path), context
+            )
+            assert row[column] == bundle_export.format_cell(value, context), column
+            assert (value is NOT_CARRIED) == (column in not_carried), column
+        # Nothing absent: each value the record holds has its column, a null
+        # where other records hold an object being the null of its sub-columns.
+        held = set(columns.values())
+        for part, record in parts.items():
+            for path in bundle_export._leaf_paths(record, (), frozenset(), frozenset()):
+                key = (part, *path)
+                assert key in held or (
+                    bundle_export._read_path(record, path, context) is None
+                    and any(column[: len(key)] == key for column in held)
+                ), (context, key)
+
+
+def _side(run_id: str, model_id: str) -> comparison.Side:
+    return comparison.Side(run_id, {"model_id": model_id})
+
+
+def _constructed_records_bundle(tmp_path: Path) -> tuple[BundlePaths, dict[str, str]]:
+    """A tested comparison, a refused one, a family of two superseded by a family
+    of three, and a leader set, each written by the analysis code itself."""
+    rows = _committed_rows(COMMITTED.quality_rows)
+    for row in rows:
+        if row["run_id"] == _TESTED_RUN:
+            # The one generation constraint the committed rows lack.
+            row["thinking_policy"] = "disabled"
+    paths = _bundle(tmp_path, quality=rows)
+    pairs = [
+        (_side(_TESTED_RUN, _LOCAL_MODEL), _side(_TESTED_RUN, _CLOUD_MODEL)),
+        (_side(_REFUSED_RUN, _LOCAL_MODEL), _side(_REFUSED_RUN, _CLOUD_MODEL)),
+        (_side(_TESTED_RUN, _LOCAL_MODEL), _side(_REFUSED_RUN, _LOCAL_MODEL)),
+    ]
+    members = [
+        comparison.compare_sides(
+            comparison.select_side(rows, reference),
+            comparison.select_side(rows, candidate),
+            reference,
+            candidate,
+        )
+        for reference, candidate in pairs
+    ]
+    source = "rows/quality.jsonl"
+    family_of_two = comparison.build_family_record(
+        members[:2], alpha=0.05, rows_source=source
+    )
+    family_of_three = comparison.build_family_record(
+        members,
+        alpha=0.05,
+        rows_source=source,
+        supersedes=[family_of_two["family_id"]],
+    )
+    for record in (family_of_two, family_of_three):
+        path = comparison.default_output_path(record, paths.comparisons_dir)
+        path.write_text(comparison.record_text(record), encoding="utf-8", newline="\n")
+    code = leader_set.publish(
+        rows,
+        rows_source=source,
+        records_dir=paths.comparisons_dir,
+        leader_sets_dir=paths.leader_sets_dir,
+        fiche_registry_dir=COMMITTED.fiche_dir,
+        alpha=0.05,
+        echo=lambda _: None,
+    )
+    assert code == 0
+    return paths, {
+        "two": family_of_two["family_id"],
+        "three": family_of_three["family_id"],
+    }
+
+
+def test_the_fifth_table_flattens_every_record_kind(tmp_path: Path) -> None:
+    paths, ids = _constructed_records_bundle(tmp_path)
+    output_dir = tmp_path / "out"
+    bundle_export.export_bundle(paths, output_dir)
+    rows = _read_csv(output_dir / "comparison_records.csv")
+
+    assert Counter(row["record_kind"] for row in rows) == {
+        "comparison_family": 2,
+        "comparison": 5,
+        "leader_set": 1,
+        "leader_set_subject": 2,
+    }
+    _assert_the_table_is_the_records(output_dir, paths)
+
+    comparisons = [row for row in rows if row["record_kind"] == "comparison"]
+    tested = [r for r in comparisons if r["comparison_comparison_kind"] == "test"]
+    assert len(tested) == 2
+    for row in tested:
+        assert row["comparison_test"] == "mcnemar_exact"
+        assert row["comparison_raw_p_value"] == row["comparison_result_p_value"]
+    # A refusal is a visible row: its reasons are cells, its p is empty.
+    refused = [r for r in comparisons if r["comparison_comparison_kind"] == "refusal"]
+    assert len(refused) == 3
+    for row in refused:
+        assert row["comparison_adjusted_p_value"] == ""
+        assert row["comparison_adjusted_p_value_null_reason"] == "comparison_refused"
+        assert "thinking_policy" in row["comparison_refusal"]
+        assert row["comparison_verdict"] == "not comparable"
+    # Each comparison names the family holding it.
+    assert Counter(r["family_family_id"] for r in comparisons) == {
+        ids["two"]: 2,
+        ids["three"]: 3,
+    }
+    # The superseded family stays a row; the superseding row names it.
+    families = {
+        row["family_family_id"]: row
+        for row in rows
+        if row["record_kind"] == "comparison_family"
+    }
+    assert json.loads(families[ids["three"]]["family_supersedes"]) == [
+        {"family_id": ids["two"]}
+    ]
+    assert json.loads(families[ids["two"]]["family_supersedes"]) == []
+    # The leader set reads the current family; a not compared subject says why.
+    leader = next(row for row in rows if row["record_kind"] == "leader_set")
+    assert leader["leader_set_family_id"] == ids["three"]
+    assert leader["leader_set_incomplete"] == "true"
+    subjects = {
+        row["subject_status"]: row
+        for row in rows
+        if row["record_kind"] == "leader_set_subject"
+    }
+    assert set(subjects) == {"member", "not compared"}
+    assert "thinking_policy" in subjects["not compared"]["subject_not_compared_reason"]
+
+
+def test_the_fifth_table_over_the_committed_bundle(committed_export: Path) -> None:
+    families = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in sorted(COMMITTED.comparisons_dir.glob("*.json"))
+    ]
+    leader_sets = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in sorted(COMMITTED.leader_sets_dir.glob("*.json"))
+    ]
+    rows = _read_csv(committed_export / "comparison_records.csv")
+
+    assert len(rows) == sum(1 + len(r["members"]) for r in families) + sum(
+        1 + len(r["subjects"]) for r in leader_sets
+    )
+    _assert_the_table_is_the_records(committed_export, COMMITTED)
+    dictionary = _read_csv(committed_export / DICTIONARY_FILE)
+    # Every kind is held, so none is named as not carried.
+    assert not [
+        entry
+        for entry in dictionary
+        if entry["table"] == "comparison_records" and entry["carried"] == "false"
+    ]
+    # The statistics epic owns the definition of every record column.
+    record_columns = _record_columns(dictionary)
+    for entry in dictionary:
+        if entry["table"] == "comparison_records" and entry["column"] in record_columns:
+            assert "a-score-is-published-with-its-interval" in entry["owner"]
+    manifest = {row["part"]: row for row in _read_csv(committed_export / MANIFEST_FILE)}
+    assert manifest["comparison_families"]["entries_read"] == str(len(families))
+    assert manifest["comparison_families"]["versions_read"] == "1;2"
+    assert manifest["leader_sets"]["entries_read"] == str(len(leader_sets))
+
+
+def test_record_kinds_the_bundle_does_not_hold_are_named(tmp_path: Path) -> None:
+    files = bundle_export.build_export(_bundle(tmp_path))
+    not_carried = {
+        entry[1]: entry
+        for entry in files[DICTIONARY_FILE][1:]
+        if entry[0] == "comparison_records" and entry[2] == "false"
+    }
+
+    assert files["comparison_records.csv"] == [(NOT_CARRIED_COLUMN,)]
+    assert set(not_carried) == {
+        "comparison_family records",
+        "comparison records",
+        "leader_set records",
+    }
+    for entry in not_carried.values():
+        assert "a-score-is-published-with-its-interval" in entry[-1]
+
+
+def test_a_record_citing_what_the_bundle_does_not_hold_is_refused(
+    tmp_path: Path,
+) -> None:
+    paths, ids = _constructed_records_bundle(tmp_path)
+    without_older = tmp_path / "without-older"
+    without_older.mkdir()
+    for path in paths.comparisons_dir.glob("*.json"):
+        if ids["two"][:12] not in path.name:
+            (without_older / path.name).write_bytes(path.read_bytes())
+    without_families = tmp_path / "without-families"
+    without_families.mkdir()
+    one_row = _write_rows(
+        tmp_path / "rows" / "one.jsonl", _committed_rows(COMMITTED.quality_rows)[:1]
+    )
+    # A set of one cites no family; this one cites a record nobody holds.
+    unknown_older = tmp_path / "unknown-older"
+    unknown_older.mkdir()
+    for path in paths.leader_sets_dir.glob("*.json"):
+        record = json.loads(path.read_text(encoding="utf-8"))
+        record["family_id"] = None
+        record["supersedes"] = [{"leader_set_id": "not-in-the-bundle"}]
+        (unknown_older / path.name).write_text(json.dumps(record), encoding="utf-8")
+    cases = [
+        (_replace(paths, comparisons_dir=without_older), "supersedes"),
+        (_replace(paths, leader_sets_dir=unknown_older), "not-in-the-bundle"),
+        (_replace(paths, comparisons_dir=without_families), "family_id"),
+        (_replace(paths, quality_rows=one_row), "run_id"),
+    ]
+
+    for case, expected in cases:
+        with pytest.raises(ExportError, match=expected):
+            bundle_export.build_export(case)
+
+
+def test_every_member_field_the_analysis_writes_is_described() -> None:
+    rows = _committed_rows(COMMITTED.quality_rows)
+    reference = _side(_TESTED_RUN, _LOCAL_MODEL)
+    candidate = _side(_TESTED_RUN, _CLOUD_MODEL)
+    energy = comparison.compare_sides(
+        comparison.select_side(rows, reference),
+        comparison.select_side(rows, candidate),
+        reference,
+        candidate,
+        quantity="energy_kwh",
+    )
+    results = [
+        comparison.mcnemar_exact([(True, False), (False, True), (True, True)]),
+        comparison.mcnemar_exact([]),
+        comparison.wilcoxon_signed_rank([0.5, -0.25, 0.0, 1.0]),
+        comparison.wilcoxon_signed_rank([0.0, 0.0]),
+        comparison.wilcoxon_signed_rank([]),
+    ]
+
+    for member in [energy, *({**energy, "result": result} for result in results)]:
+        for path in bundle_export._leaf_paths(member, (), frozenset(), frozenset()):
+            assert bundle_export.lookup_doc(bundle_export.COMPARISON_FIELDS, path), path
+
+
+def test_a_bundle_without_record_directories_holds_no_record(tmp_path: Path) -> None:
+    paths = _replace(
+        _bundle(tmp_path),
+        comparisons_dir=tmp_path / "no-comparisons",
+        leader_sets_dir=tmp_path / "no-leader-sets",
+    )
+    output_dir = tmp_path / "out"
+    bundle_export.export_bundle(paths, output_dir)
+
+    assert _header(output_dir / "comparison_records.csv") == [NOT_CARRIED_COLUMN]
+    assert not _read_csv(output_dir / "comparison_records.csv")
+    assert {
+        entry["column"]
+        for entry in _read_csv(output_dir / DICTIONARY_FILE)
+        if entry["table"] == "comparison_records" and entry["carried"] == "false"
+    } == {"comparison_family records", "comparison records", "leader_set records"}
+    manifest = {row["part"]: row for row in _read_csv(output_dir / MANIFEST_FILE)}
+    for part, directory in (
+        ("comparison_families", paths.comparisons_dir),
+        ("leader_sets", paths.leader_sets_dir),
+    ):
+        assert manifest[part]["path"] == directory.as_posix()
+        assert manifest[part]["entries_read"] == "0"
+    assert not paths.comparisons_dir.exists()
+
+
+@pytest.mark.parametrize(
+    ("kind", "key", "value", "expected"),
+    [
+        ("family", "members", {"not": "a list"}, "`members` is not a list"),
+        ("family", "members", ["not an object"], "`members` is not a list"),
+        ("family", "supersedes", "not-a-list", "`supersedes` is not a list"),
+        ("family", "family_id", None, "`family_id` is not an id"),
+        ("family", "members", [{"reference_run_id": ["x"]}], "reference_run_id"),
+        ("leader", "subjects", [1], "`subjects` is not a list"),
+        ("leader", "supersedes", [None], "`supersedes` is not a list"),
+        ("leader", "leader_set_id", 7, "`leader_set_id` is not an id"),
+        ("leader", "family_id", {"id": 1}, "family_id"),
+    ],
+)
+def test_a_malformed_record_is_refused_by_name(
+    tmp_path: Path, kind: str, key: str, value: object, expected: str
+) -> None:
+    paths, _ = _constructed_records_bundle(tmp_path)
+    directory = paths.comparisons_dir if kind == "family" else paths.leader_sets_dir
+    target = min(directory.glob("*.json"))
+    record = json.loads(target.read_text(encoding="utf-8"))
+    record[key] = value
+    target.write_text(json.dumps(record), encoding="utf-8")
+
+    with pytest.raises(ExportError, match=f"record {target.name}: .*{expected}"):
+        bundle_export.build_export(paths)

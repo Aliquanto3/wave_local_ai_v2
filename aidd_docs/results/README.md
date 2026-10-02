@@ -36,11 +36,13 @@ runs in a quiet thermal window, two quality runs, the validator proof, this READ
 tables rebuilt), filed in `aidd_docs/backlog/tech-debt.md`, not something a schema bump
 does to the published bytes on its way past.
 
-## The bundle as four flat tables (`wave-local-ai-v2-export`)
+## The bundle as five flat tables (`wave-local-ai-v2-export`)
 
-`uv run wave-local-ai-v2-export --output-dir <dir>` reads the five parts above (by default
-the committed reference files, never the untracked `runtime.jsonl` / `quality.jsonl` unless
-`--runtime-rows` / `--quality-rows` point at them) and writes six CSV files into `<dir>`. It
+`uv run wave-local-ai-v2-export --output-dir <dir>` reads the five parts above plus the
+analysis records in `comparisons/` and `leader-sets/` (by default the committed reference
+files and directories, never the untracked `runtime.jsonl` / `quality.jsonl` unless
+`--runtime-rows` / `--quality-rows` point at them; `--comparisons-dir` / `--leader-sets-dir`
+name other record directories) and writes seven CSV files into `<dir>`. It
 runs no benchmark, changes no bundle file, refuses to write into a bundle directory, and
 uses the standard library alone.
 
@@ -50,8 +52,9 @@ uses the standard library alone.
 | `runtime_aggregates.csv` | runtime row | the same, minus the suite; the per-repetition arrays (`repetitions`, `warmup_repetitions`, `verdict.reference_repetitions`) stay in the bundle |
 | `fiches.csv` | stored fiche | `fiche_hash` (the file name) and every fiche field |
 | `roster.csv` | roster entry | every entry field, launch flags, validated host, licence block and language claim included |
+| `comparison_records.csv` | comparison-family record, comparison, leader-set record, leader-set subject | `record_kind` names which and `record_file` the record's file; the family record's fields as `family_*` (on its comparisons' rows too, so each comparison carries its family), the comparison's as `comparison_*` (`result_*` for the test block), the leader-set record's as `leader_set_*` (on its subjects' rows too), the subject's as `subject_*` |
 | `column_dictionary.csv` | column | `table`, `column`, `carried`, `source`, `meaning`, `unit`, `empty_cell`, `owner` |
-| `bundle_manifest.csv` | bundle part | the path read, entries read, and the version values the part carries |
+| `bundle_manifest.csv` | bundle part | the path read, entries read, and the version values the part carries (`record_version` for the two record directories) |
 
 Read one table with no join: every pointer a row cites is resolved into columns of that row.
 
@@ -72,12 +75,32 @@ its table and every header has one entry (`tests/test_bundle_export.py`). `carri
 entries name what the bundle read does not hold, with an owner: the row-contract fields
 added after `"7"` (`retries`, `resumed`, `thinking_policy`, the prompt-variant, graded and
 judge blocks, the energy-window fields, the suite level and the item licence, source and
-source revision, the subject egress), the per-repetition arrays, and two blocks owned elsewhere -- the
-interval block (`a-score-is-published-with-its-interval-a-difference-with-its-test`) and the
-comparison and family records, which are the fifth table of
-`comparison-family-and-leader-set-records-read-as-a-fifth-table` rather than a table here.
+source revision, the subject egress), the per-repetition arrays, the interval block
+(`a-score-is-published-with-its-interval-a-difference-with-its-test`), and each record kind
+(`comparison_family`, `comparison`, `leader_set`) the record directories read do not hold.
 A row field the dictionary does not describe, an unresolved pointer or a non-finite float
 refuses the whole export before anything is written.
+
+**The fifth table flattens the analysis records and computes nothing.** Every cell of
+`comparison_records.csv` is a value a record in `comparisons/` or `leader-sets/` holds, at
+the path the dictionary's `source` names; no p-value, adjustment or leader set is derived
+during the export. A refused comparison is a row with its `comparison_refusal` cell and,
+from `record_version` `2`, `comparison_adjusted_p_value_null_reason` `comparison_refused`;
+a leader-set subject not compared is a row with its `subject_not_compared_reason`. A
+superseded family record stays a row: the record superseding it lists its id in
+`family_supersedes`, and the current family is the one no row lists there. Lists
+(`refusal`, `paired_values`, `supersedes`, ...) are compact JSON cells; columns a row's kind
+does not carry are empty and listed in its `fields_not_carried`. The meaning, unit and null
+reasons of the record fields are the statistics epic's to define (its story
+`the-tabular-export-carries-the-interval-and-the-comparison-record`), so each record column
+names that epic in its dictionary `owner` cell. A record citing a `run_id` the quality rows
+read do not hold, a leader set citing a family record not read, a `supersedes` id naming no
+record read, a malformed record, or a file in a record directory that is not a record of that
+directory's type refuses the export. A record directory that does not exist holds no record
+of its kind: the table is written as its header, the kinds are named `carried=false`, and
+the manifest lists the path with 0 entries. Over the committed bundle: 14 rows (4 family records, 7 comparisons, 1
+leader set, 2 subjects), 96 columns; the run is in
+`aidd_docs/tasks/2026_10/2026_10_01_comparison-and-leader-records-fifth-table/evidence/`.
 
 **The format is pinned.** UTF-8 without a byte-order mark; `,` delimiter; `"` quoting,
 minimal, a quote inside a quoted cell doubled; CRLF record terminator (RFC 4180), with line
@@ -445,8 +468,8 @@ unchanged. `tests/test_leader_set.py` recomputes the leader-set record from
 `quality-reference.jsonl` with the family it cites removed from file and requires
 identical bytes. Command output:
 `aidd_docs/tasks/2026_10/2026_10_01_local-models-not-distinguishable-from-the-best/evidence/leader-sets-output.txt`.
-The fifth export table that will flatten these records is not built yet
-(`comparison-family-and-leader-set-records-read-as-a-fifth-table`).
+The export flattens these records into its fifth table, `comparison_records.csv` (see "The
+bundle as five flat tables" above).
 
 ## The use-case coverage record, and why it is not here yet
 

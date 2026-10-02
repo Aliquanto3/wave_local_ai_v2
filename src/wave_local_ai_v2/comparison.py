@@ -46,7 +46,7 @@ from wave_local_ai_v2 import settings
 RECORD_TYPE = "comparison_family"
 RECORD_VERSION = "2"
 DEFAULT_ALPHA = 0.05
-COMPARISONS_DIR = Path("aidd_docs/results/comparisons")
+COMPARISONS_DIR = Path(settings.DEFAULT_COMPARISONS_DIR)
 
 SCORING_KIND_BINARY = "binary"
 SCORING_KIND_GRADED = "graded"
