@@ -1,6 +1,6 @@
 ---
 type: story
-status: proposed
+status: done
 source: aidd_docs/backlog/epics/every-size-class-spans-two-families-or-says-it-does-not.md
 parent: aidd_docs/backlog/epics/every-size-class-spans-two-families-or-says-it-does-not.md
 depends_on: aidd_docs/backlog/stories/every-roster-entry-states-its-family-its-licence-and-its-language-claim.md
