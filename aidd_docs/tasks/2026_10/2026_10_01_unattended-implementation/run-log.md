@@ -53,3 +53,11 @@ Resume with story 5, then the Phase B gate (Q1, Q4, Q11, Q20, Q30, Q43, Q70 and 
 Subagent briefs: `implementer-brief.md` and `reviewer-brief.md` in this folder.
 Run rules learned: a subagent that stalls gets resumed with SendMessage, reading and writing files in smaller pieces. Run detect-secrets on the staged files: `--all-files` scans nothing for that hook. The cherry-pick of `116a3ad` was refused by the permission classifier, so read PR #54 stories from `docs/slice-remaining-epics` read-only. Licence story 15: implement against the owner's Q43 line (on the PR head), not the worktree copy.
 Update: the owner cherry-picked `116a3ad` by hand as `2e7b7d5`. The worktree copies of the licence story (Q43 line) and the certification story (`depends_on`) are now current. The later PR #54 commits (`52eb15e`..`20bc76d`) are still not on this branch.
+
+## Resumed 2026-10-02
+
+Baseline on resume: `uv sync`, `uv run pytest` => 1137 passed, coverage 96.44%, matching story 4's gate. Phase B gate re-read in the live `owner-questions.md`: Q1, Q4, Q11, Q20, Q30, Q43, Q70 and Q74 all carry "(a), the recommended default".
+
+| # | Story | Outcome | Commits | Evidence |
+| - | ----- | ------- | ------- | -------- |
+| 5 | a-thinking-switch-the-template-ignores-is-refused-never-published-as-disabled | done (review round 1 pass) | `e9c1c69` feat, `898f1dd` done | `uv run pytest` => 1163 passed, coverage 96.47%; pre-commit passed; staged-file secrets scan clean. Live verification on `qwen3-0.6b-q8` under b10537: the render with the control ends in an empty think block, the render without it does not, verified (task `evidence/live-verification.md`, no results store written). Outside the story's file list, `bundle_export.py` (roster table refuses an undescribed field) and `judge_probe.py` (also a `disabled` batch) had to change. Non-blocking follow-ups: a control naming `messages`, `max_tokens` or a sampler key is accepted and overrides them; the fiche is written before the verification, so a refused batch leaves a fiche (no row); `allowed` byte-identity is proved at client level only; the committed `quality-reference.jsonl` local rows predate the chat path, so the "published row" invariance holds for rows since schema 11. |
