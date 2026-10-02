@@ -253,6 +253,16 @@ def load_roster(path: Path) -> RosterFile:
     return RosterFile(roster_version=roster_version, entries=entries)
 
 
+def parse_entry(entry_id: str, raw_entry: Any) -> RosterEntry:
+    """Parse one entry under exactly the rules `load_roster` applies to the file.
+
+    For a caller holding an entry that is not in a roster file yet -- the
+    candidate gate's pass record -- so "it would load" is proven by the same
+    code, not by a copy of it.
+    """
+    return _parse_entry(entry_id, raw_entry)
+
+
 def _block_at(raw_entry: dict[str, Any], path: str) -> Any:
     """The nested block `path` names, walked from the entry ("" is the entry)."""
     block: Any = raw_entry

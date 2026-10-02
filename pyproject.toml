@@ -40,6 +40,7 @@ wave-local-ai-v2-judge-probe = "wave_local_ai_v2.judge_probe:main"
 wave-local-ai-v2-serve = "wave_local_ai_v2.service:main"
 wave-local-ai-v2-export = "wave_local_ai_v2.bundle_export:main"
 wave-local-ai-v2-compare = "wave_local_ai_v2.comparison:main"
+wave-local-ai-v2-candidate-gate = "wave_local_ai_v2.candidate_gate:main"
 
 [build-system]
 requires = ["uv_build>=0.11.7,<0.12.0"]

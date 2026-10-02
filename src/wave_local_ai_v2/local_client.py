@@ -182,6 +182,38 @@ def verify_thinking_control(
     )
 
 
+def probe_reasoning(base_url: str, *, max_tokens: int, timeout: float) -> str:
+    """The reasoning one generation of `THINKING_PROBE_MESSAGE` produced, or "".
+
+    Sends no thinking argument at all, so it is the check behind a `none`
+    declaration: a model that does not reason returns no `reasoning_content`
+    and no `<think>` block in `content`. Returns whichever of the two carries
+    reasoning, verbatim, so a refusal can quote it.
+    """
+    payload = _post_json(
+        f"{base_url}{prompt_provenance.LOCAL_CHAT_ENDPOINT}",
+        {
+            "messages": [{"role": "user", "content": THINKING_PROBE_MESSAGE}],
+            "max_tokens": max_tokens,
+        },
+        timeout,
+    )
+    choices = payload.get("choices")
+    choice = choices[0] if isinstance(choices, list) and choices else None
+    message = choice.get("message") if isinstance(choice, dict) else None
+    if not isinstance(message, dict):
+        raise LocalRequestError(
+            f"unexpected /v1/chat/completions response shape: {payload!r}"
+        )
+    reasoning = message.get("reasoning_content")
+    if isinstance(reasoning, str) and reasoning.strip():
+        return reasoning
+    content = message.get("content")
+    if isinstance(content, str) and "<think>" in content:
+        return content
+    return ""
+
+
 def _post_json(url: str, body: dict[str, Any], timeout: float) -> dict[str, Any]:
     response = requests.post(url, json=body, timeout=timeout)
     response.raise_for_status()

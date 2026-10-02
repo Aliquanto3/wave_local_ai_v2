@@ -389,3 +389,27 @@ def test_only_an_object_control_can_be_verified(declared: Any) -> None:
             BASE, _entry(**declared), chat_template=TEMPLATE, timeout=TIMEOUT
         )
     assert post.call_count == 0
+
+
+def _probe(message: Any) -> str:
+    with _post({"choices": [{"message": message}]}) as post:
+        reasoning = local_client.probe_reasoning(BASE, max_tokens=64, timeout=TIMEOUT)
+    body = post.call_args.kwargs["json"]
+    assert body["messages"][0]["content"] == local_client.THINKING_PROBE_MESSAGE
+    assert "chat_template_kwargs" not in body
+    return reasoning
+
+
+def test_probe_reasoning_returns_the_reasoning_a_generation_carried() -> None:
+    assert _probe({"content": "ready", "reasoning_content": "Hmm."}) == "Hmm."
+    assert _probe({"content": "<think>x</think>ready"}) == "<think>x</think>ready"
+    assert _probe({"content": "ready", "reasoning_content": " "}) == ""
+    assert _probe({"content": None}) == ""
+
+
+def test_probe_reasoning_refuses_a_body_with_no_message() -> None:
+    with (
+        _post({"choices": []}),
+        pytest.raises(local_client.LocalRequestError, match="response shape"),
+    ):
+        local_client.probe_reasoning(BASE, max_tokens=64, timeout=TIMEOUT)

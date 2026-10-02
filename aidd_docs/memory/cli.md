@@ -162,6 +162,18 @@ The command-line interface for running benchmarks.
   comparable` (its p kept in `result`). No timestamp: a
   re-run is byte-identical; a different existing file is refused (exit `1`);
   no published record is rewritten.
+- `wave-local-ai-v2-candidate-gate --candidate <declaration.json> [--records
+  <jsonl>]` — the roster's verification gate (`candidate_gate.py`): one
+  declared candidate through seven steps, cheapest first, first failure stops
+  (commit-sha revision and file on the hub, licence read and scanned for a
+  benchmark-publication ban, disk headroom, download with sha256/bytes/GGUF
+  architecture/total params read off the bytes, one load under the probed
+  build, `/props` template plus the declared thinking control verified,
+  EN/FR/DE claim recorded). Appends one record to
+  `aidd_docs/roster/candidate-records.jsonl`: `passed` with the full entry
+  block, `refused`, or `deferred` (unknown architecture under the pinned
+  build). Never writes `models.json`; exits `0`/`1`/`2` (pass / recorded
+  refusal / nothing recorded). See `docs/setup.md` 3.2.
 - `wave-local-ai-v2-serve` — read-only results service: four `GET` routes over
   the two stores, answering the views a pitch screen needs without a terminal.
   Writes nothing: every store file is opened for reading, and every non-`GET`

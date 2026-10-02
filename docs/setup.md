@@ -302,6 +302,53 @@ Verify each checksum:
 sha256sum <SLM_MODELS_DIR>/Qwen3-0.6B/Qwen3-0.6B-Q8_0.gguf
 ```
 
+### 3.2 Before adding an entry: the candidate gate
+
+A new model enters `aidd_docs/roster/models.json` only from a pass record of
+the candidate gate, and a candidate that fails it leaves a refusal behind.
+Declare the candidate as a JSON file:
+
+| Key | What it is |
+| --- | ---------- |
+| `entry_id` | the roster id the entry will take |
+| `repo`, `revision` | the Hugging Face repo and a 40-hex **commit sha** (a branch is refused) |
+| `repo_file` | the GGUF's path in the repo |
+| `file` | its path under `SLM_MODELS_DIR` (the roster's `file`) |
+| `display_id`, `quant`, `family` | as in the roster; `family` from `roster.KNOWN_FAMILIES` |
+| `thinking_control` | the request arguments that disable reasoning, `"none"` for a model that does not reason, or `"allowed"` when no control can be verified (the entry then carries none and runs under `allowed` only) |
+| `active_params_b` | the card's figure |
+| `client_commercial_use` | your reading of the licence, a boolean |
+| `language_claim` | `languages` (subset of `en`/`fr`/`de`), `source_url`, optional verbatim `statement` |
+| `server_flags`, `validated_host` | the launch blocks, exactly as a roster entry holds them |
+
+Then, with `SLM_MODELS_DIR` and `LLAMA_SERVER_PATH` set as for a run and no
+`llama-server` already on port 8080:
+
+```sh
+uv run wave-local-ai-v2-candidate-gate --candidate <candidate.json>
+```
+
+It runs seven steps, cheapest first, and stops at the first failure: the
+revision and file exist on the hub; the licence id is read at the revision and
+its text scanned (a sentence forbidding publication of benchmark results is the
+one licence refusal); free disk under `SLM_MODELS_DIR` covers the file; the
+file is downloaded at the revision and its sha256, size, architecture and
+total parameter count are read off the bytes; one `llama-server` load under the
+build the binary reports; the chat template from `/props` and the declared
+thinking control verified against it (`none` by one generation that must
+return no reasoning); the language claim recorded. Set `HF_TOKEN` for a gated
+repository.
+
+Every run appends one line to `aidd_docs/roster/candidate-records.jsonl`
+(`--records` overrides): a pass carries the full entry block, a refusal names
+the step, the evidence and the date, and an architecture the pinned build does
+not load is recorded `deferred` naming the architecture and the build. The
+gate never switches build. Exit `0` is a pass, `1` a refusal or deferral, `2`
+means nothing was recorded (a malformed declaration, an unreachable hub, a
+busy port, an unreadable build). The gate never writes `models.json`: copy the
+pass record's `entry` into it as a reviewed change, and add the model's row to
+the tables above.
+
 ## 4. Configure `.env` and run
 
 ```sh
