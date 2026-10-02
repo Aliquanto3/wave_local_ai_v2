@@ -558,6 +558,19 @@ def test_a_framework_version_bump_stays_a_confound() -> None:
     assert "harness_version" in member["confounds"]
 
 
+def test_two_models_of_different_families_and_classes_are_a_clean_test() -> None:
+    # `family` and `size_class` are the subject's own: they move with the
+    # model axis, so a cross-family comparison is not confounded by them.
+    ref, cand = _pairs_outcomes(14, 1, 4, 1)
+    member = _compare(
+        _binary_rows("run-ref", "model-a", ref, family="qwen", size_class="~0.5B"),
+        _binary_rows("run-cand", "model-b", cand, family="gemma", size_class="~4B"),
+    )
+    assert member["comparison_kind"] == comparison.KIND_TEST
+    assert {"family", "size_class"} <= set(member["differing_fields"])
+    assert member["confounds"] == []
+
+
 def test_a_prompt_variant_dimension_is_a_clean_test() -> None:
     ref, cand = _pairs_outcomes(14, 1, 4, 1)
     member = compare_sides(

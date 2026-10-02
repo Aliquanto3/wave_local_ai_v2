@@ -177,6 +177,21 @@ def test_two_members_one_excluded_and_the_cloud_never_listed(bundle: Bundle) -> 
     assert excluded["verdict"] == comparison.VERDICT_DISTINGUISHABLE
 
 
+def test_models_of_two_families_and_classes_are_compared_not_observed(
+    bundle: Bundle,
+) -> None:
+    # Family and size class are the subject's own, so a cross-family leader
+    # set reads verdicts rather than confounded observations.
+    bundle.add(_batch("run-a", "model-a", 20, family="qwen", size_class="~0.5B"))
+    bundle.add(_batch("run-g", "model-g", 5, family="gemma", size_class="~4B"))
+
+    assert bundle.run() == 0
+
+    (record,) = bundle.current()
+    assert _statuses(record) == {"model-a": "member", "model-g": "excluded"}
+    assert record["incomplete"] is False
+
+
 def test_a_refused_comparison_is_not_compared_and_the_record_incomplete(
     bundle: Bundle,
 ) -> None:

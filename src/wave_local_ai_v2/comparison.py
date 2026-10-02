@@ -308,6 +308,10 @@ DIMENSIONS: dict[str, Dimension] = {
                 # A function of `provider` (`row_contract.subject_egress_for`),
                 # so it moves with the model axis and is never a confound.
                 "subject_egress",
+                # The subject's family and size class (schema "19"): properties
+                # of the model, so they move with the model axis too.
+                "family",
+                "size_class",
                 "roster_entry_id",
                 "roster_version",
                 "endpoint",
