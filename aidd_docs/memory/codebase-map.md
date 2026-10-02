@@ -32,4 +32,5 @@ flowchart TD
 - `wave-local-ai-v2-quality` CLI command → `src/wave_local_ai_v2/quality_cli.py:main` (quality benchmark)
 - `wave-local-ai-v2-validate` CLI command → `src/wave_local_ai_v2/fiche_validator.py:main` (fiche invalidation validator)
 - `wave-local-ai-v2-serve` CLI command → `src/wave_local_ai_v2/service.py:main` (read-only results service — see `cli.md`)
+- `wave-local-ai-v2-export` CLI command → `src/wave_local_ai_v2/bundle_export.py:main` (the bundle as flat CSV tables — see `cli.md`)
 - Gap, not fixed here: `pyproject.toml` also declares `wave-local-ai-v2-judge-probe` → `judge_probe.py:main`, which this list has never named.

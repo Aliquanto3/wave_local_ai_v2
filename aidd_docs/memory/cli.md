@@ -87,6 +87,15 @@ The command-line interface for running benchmarks.
   (a row predating that schema version — its absent `fiche_hash` is
   expected, not an integrity failure). Exits `1` on any `edited`/`missing`
   row, `0` otherwise, printing the checked count.
+- `wave-local-ai-v2-export --output-dir <dir>` — the published bundle as four
+  flat CSV tables (`quality_items`, `runtime_aggregates`, `fiches`, `roster`),
+  `column_dictionary.csv` and `bundle_manifest.csv` (`bundle_export.py`,
+  standard library only). Reads the committed reference bundle by default,
+  never the live stores unless pointed at them; every pointer is resolved into
+  columns, nothing is computed, absence stays an empty cell listed in the
+  row's `fields_not_carried`, and the manifest declares the `schema_version`
+  the rows carry, not the live constant. A row field the dictionary does not
+  describe refuses the export; see `aidd_docs/results/README.md`.
 - `wave-local-ai-v2-serve` — read-only results service: four `GET` routes over
   the two stores, answering the views a pitch screen needs without a terminal.
   Writes nothing: every store file is opened for reading, and every non-`GET`

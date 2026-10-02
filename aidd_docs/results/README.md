@@ -36,6 +36,74 @@ runs in a quiet thermal window, two quality runs, the validator proof, this READ
 tables rebuilt), filed in `aidd_docs/backlog/tech-debt.md`, not something a schema bump
 does to the published bytes on its way past.
 
+## The bundle as four flat tables (`wave-local-ai-v2-export`)
+
+`uv run wave-local-ai-v2-export --output-dir <dir>` reads the five parts above (by default
+the committed reference files, never the untracked `runtime.jsonl` / `quality.jsonl` unless
+`--runtime-rows` / `--quality-rows` point at them) and writes six CSV files into `<dir>`. It
+runs no benchmark, changes no bundle file, refuses to write into a bundle directory, and
+uses the standard library alone.
+
+| File | One row per | What it holds |
+| ---- | ----------- | ------------- |
+| `quality_items.csv` | quality row | every row field, nested blocks as named columns (`sampling_seed`, `language_breakdown_en_accuracy`, `failure_counts_unparseable`, `verdict_verdict`, ...), the cited fiche as `fiche_*`, the cited roster entry's model fields as `roster_entry_*` plus `roster_file_version`, and the cited suite definition as `suite_definition_*` |
+| `runtime_aggregates.csv` | runtime row | the same, minus the suite; the per-repetition arrays (`repetitions`, `warmup_repetitions`, `verdict.reference_repetitions`) stay in the bundle |
+| `fiches.csv` | stored fiche | `fiche_hash` (the file name) and every fiche field |
+| `roster.csv` | roster entry | every entry field, launch flags and validated host included |
+| `column_dictionary.csv` | column | `table`, `column`, `carried`, `source`, `meaning`, `unit`, `empty_cell`, `owner` |
+| `bundle_manifest.csv` | bundle part | the path read, entries read, and the version values the part carries |
+
+Read one table with no join: every pointer a row cites is resolved into columns of that row.
+
+**The schema it declares is the one it read.** `bundle_manifest.csv` states the distinct
+`schema_version` values each row file carries -- `7` for both today -- read from the bytes,
+not from `row_contract.SCHEMA_VERSION`; each row also keeps its own `schema_version` column.
+A regenerated bundle declares its own version with no code change. The roster gap is shown,
+not reconciled: rows state `roster_version` `1`, the roster file they resolve against is
+`roster_file_version` `2`.
+
+**Absence stays absence.** An empty cell is either a recorded `null` or a field the source
+does not carry; the row's last column, `fields_not_carried`, lists the columns whose
+emptiness means "not carried", so the two stay apart without a `null` token turning a numeric
+column into text. Each dictionary entry states what an empty cell means in that column.
+
+**The dictionary and the tables agree both ways.** Every `carried=true` entry is a header of
+its table and every header has one entry (`tests/test_bundle_export.py`). `carried=false`
+entries name what the bundle read does not hold, with an owner: the row-contract fields
+added after `"7"` (`retries`, `resumed`, `thinking_policy`, the prompt-variant, graded and
+judge blocks, the energy-window fields), the per-repetition arrays, and four blocks owned
+elsewhere -- the interval block and the item licence and source
+(`a-score-is-published-with-its-interval-a-difference-with-its-test`), the roster licence
+block (`every-size-class-spans-two-families-or-says-it-does-not`), and the comparison and
+family records, which are the fifth table of
+`comparison-family-and-leader-set-records-read-as-a-fifth-table` rather than a table here.
+A row field the dictionary does not describe, an unresolved pointer or a non-finite float
+refuses the whole export before anything is written.
+
+**The format is pinned.** UTF-8 without a byte-order mark; `,` delimiter; `"` quoting,
+minimal, a quote inside a quoted cell doubled; CRLF record terminator (RFC 4180), with line
+breaks inside quoted cells kept as written; floats as Python's shortest round-trip `repr`
+(`8.553058931896319e-05` reads back as the same double); booleans `true`/`false`; lists, and
+the judge block's nested records, as compact JSON. Two runs over the same bundle are byte
+identical.
+
+### Recomputation from the quality table alone (2026-10-01)
+
+Each published run's `suite_accuracy` and per-language accuracy, recomputed from the
+exported `quality_items.csv` with Python's `csv` module and nothing else (mean of the
+per-item `correct` column, grouped by `run_id`, `provider`, `model_id`, then by `language`):
+
+| `run_id` | Provider | Model | n | `correct` | Recomputed | Published | `en` / `fr` / `de` recomputed | Match |
+| -------- | -------- | ----- | - | --------- | ---------- | --------- | ----------------------------- | ----- |
+| `5e13166d...` | local | `Qwen3.6-35B-A3B` | 20 | 16 | 0.8 | 0.8 | 0.6 / 1.0 / 1.0 | yes |
+| `5e13166d...` | mistral | `mistral-small-2603` | 20 | 19 | 0.95 | 0.95 | 1.0 / 1.0 / 0.8 | yes |
+| `d20afbda...` | local | `Qwen3.6-35B-A3B` | 20 | 16 | 0.8 | 0.8 | 0.6 / 1.0 / 1.0 | yes |
+| `d20afbda...` | mistral | `mistral-small-2603` | 20 | 18 | 0.9 | 0.9 | 1.0 / 1.0 / 0.6 | yes |
+
+Every recomputed value equals the published one exactly, per-language `n` included (10 / 5 /
+5). The script and its raw output are in
+`aidd_docs/tasks/2026_10/2026_10_01_the-published-bundle-reads-as-four-flat-tables/evidence/`.
+
 ## Runtime energy window changed underfoot the rows already in this file (2026-09-22)
 
 As of this increment's commit (`row_contract.SCHEMA_VERSION` `"12"`, see its numbered
