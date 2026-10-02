@@ -1,0 +1,69 @@
+{
+  "alpha": 0.05,
+  "family_definition": {
+    "compared_dimension": "model",
+    "suite_id": "classification-support-routing",
+    "suite_version": "2"
+  },
+  "family_id": "d4641d06a525e0d25d10d6eb4d79cd756404e3a278b9f18c9aac5b102e024155",
+  "family_size": 1,
+  "members": [
+    {
+      "adjusted_p_value": null,
+      "adjusted_p_value_null_reason": null,
+      "candidate_row_count": 20,
+      "candidate_run_id": "5e13166da0654390a7d63f346ea5d4f1",
+      "candidate_selector": {
+        "model_id": "mistral-small-2603"
+      },
+      "compared_dimension": "model",
+      "compared_field": "correct",
+      "comparison_kind": "refusal",
+      "confounds": [],
+      "difference_convention": "candidate minus reference",
+      "differing_fields": [
+        "endpoint",
+        "model_id",
+        "prompt_template_hash",
+        "prompt_template_id",
+        "provider",
+        "sampling"
+      ],
+      "observation_reason": null,
+      "paired_item_ids": null,
+      "paired_n": null,
+      "paired_values": null,
+      "reference_row_count": 20,
+      "reference_run_id": "5e13166da0654390a7d63f346ea5d4f1",
+      "reference_selector": {
+        "model_id": "Qwen3.6-35B-A3B"
+      },
+      "refusal": [
+        {
+          "candidate_value": null,
+          "field": "thinking_policy",
+          "reason": "absent",
+          "reference_value": null
+        }
+      ],
+      "result": null,
+      "scoring_kind": "binary",
+      "suite_id": "classification-support-routing",
+      "suite_level": null,
+      "suite_version": "2",
+      "test": null,
+      "test_chosen_because": null,
+      "unpaired_count": null,
+      "unpaired_items": null,
+      "verdict": "not comparable"
+    }
+  ],
+  "multiplicity_correction": {
+    "method": "holm",
+    "note": "a family of one: each adjusted p equals its raw p"
+  },
+  "record_type": "comparison_family",
+  "record_version": "1",
+  "rows_source": "aidd_docs/results/quality-reference.jsonl",
+  "verdict_rule": "distinguishable when adjusted_p_value <= alpha; not distinguishable otherwise, including a p left null because the sides never disagree; not comparable for a refusal, an observation (the sides differ outside the compared dimension or not on it, so no difference is attributable to it; its p stays in result) or a paired n below the test's minimum"
+}

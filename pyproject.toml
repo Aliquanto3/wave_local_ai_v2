@@ -39,6 +39,7 @@ wave-local-ai-v2-validate = "wave_local_ai_v2.fiche_validator:main"
 wave-local-ai-v2-judge-probe = "wave_local_ai_v2.judge_probe:main"
 wave-local-ai-v2-serve = "wave_local_ai_v2.service:main"
 wave-local-ai-v2-export = "wave_local_ai_v2.bundle_export:main"
+wave-local-ai-v2-compare = "wave_local_ai_v2.comparison:main"
 
 [build-system]
 requires = ["uv_build>=0.11.7,<0.12.0"]
@@ -55,6 +56,7 @@ dev = [
     "pytest-cov>=7.1.0",
     "pyyaml>=6.0.3",
     "ruff>=0.16.4",
+    "scipy>=1.18.1",
     "types-psutil>=7.2.2.20260518",
     "types-pyyaml>=6.0.12.20260815",
     "types-requests>=2.33.0.20260712",

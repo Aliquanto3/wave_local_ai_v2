@@ -262,6 +262,49 @@ licence, that the item came from that source, or that the revision exists.
 `contamination_risk` stays forced to `provenance == "public"` and is likewise a
 declaration. A reader who needs the claim checked has to check it against the named source.
 
+## Paired comparisons: both committed pairs are refused (2026-10-02)
+
+`comparisons/` holds the comparison records `wave-local-ai-v2-compare` writes over this
+bundle. They are derived artifacts, not a sixth input: each one is recomputed from
+`quality-reference.jsonl` alone, and `tests/test_comparison.py` re-runs the command for
+every committed record and requires identical bytes. A record is a family of one
+comparison (its Holm-adjusted p stated equal to its raw p), names its reference and
+candidate by `run_id` plus the row field that selects each side within the run, and holds
+either a paired test chosen by scoring kind (McNemar's exact test for `correct`, Wilcoxon
+signed-rank for `item_score`) or a refusal naming every field that makes the sides
+incomparable.
+
+The bundle holds two pairable comparisons, each `Qwen3.6-35B-A3B` (reference) against
+`mistral-small-2603` (candidate) over the same 20 items of
+`classification-support-routing@2`, both sides sharing one `run_id`:
+
+```
+uv run wave-local-ai-v2-compare --reference <run_id> --reference-where model_id=Qwen3.6-35B-A3B \
+    --candidate <run_id> --candidate-where model_id=mistral-small-2603
+```
+
+| Run | Record | Comparison | Verdict |
+| --- | --- | --- | --- |
+| `5e13166d` | `classification-support-routing@2.model.d4641d06a525.json` | refused: `thinking_policy` absent on both sides | `not comparable` |
+| `d20afbda` | `classification-support-routing@2.model.2ef9fd3581d2.json` | refused: `thinking_policy` absent on both sides | `not comparable` |
+
+**No p-value is published for either pair, and that refusal is the evidence.** These rows
+are `schema_version` `"7"` and predate `thinking_policy`, one of the four generation
+constraints Methodology 3 requires identical across compared models. Two unknown values
+never count as a match (Methodology 8, applied to comparability by the owner's answer on
+2026-10-01), so the command refuses rather than assume both batches ran under the same
+policy. Each record still carries the fields on which the two sides actually differ,
+computed from the rows: `endpoint`, `model_id`, `prompt_template_hash`,
+`prompt_template_id`, `provider` and `sampling`, all of them the `model` dimension's own.
+
+The arithmetic the epic states for these pairs is reproduced, but by a test, not by a
+published record: with `thinking_policy` supplied to the same rows, run `5e13166d` gives 1
+item only Qwen got right and 4 only mistral got right, McNemar exact p = 0.375, and run
+`d20afbda` gives 2 and 4, p = 0.6875 (published as 0.688 in the epic). Both read `not
+distinguishable` at alpha 0.05: a 15-point accuracy gap on 20 items is not
+distinguishable from noise. Once the bundle is regenerated with `thinking_policy` on
+every row, the same command over the new pairs publishes their tests.
+
 ## The use-case coverage record, and why it is not here yet
 
 `use-case-coverage.json` is the published coverage record: one entry for each

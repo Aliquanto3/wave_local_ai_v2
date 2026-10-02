@@ -134,6 +134,22 @@ The command-line interface for running benchmarks.
   row's `fields_not_carried`, and the manifest declares the `schema_version`
   the rows carry, not the live constant. A row field the dictionary does not
   describe refuses the export; see `aidd_docs/results/README.md`.
+- `wave-local-ai-v2-compare --reference <run_id> --candidate <run_id>
+  [--reference-where field=value ...] [--candidate-where field=value ...]
+  [--dimension model|prompt_variant] [--alpha 0.05] [--rows <jsonl>] [--output <path>]`
+  — paired comparison (`comparison.py`) over the published quality rows
+  (default `quality-reference.jsonl`, read-only). Writes one immutable family
+  record of one comparison to `aidd_docs/results/comparisons/<suite>@<version>.<dimension>.<family_id[:12]>.json`:
+  McNemar's exact test when the rows score `correct`, Wilcoxon signed-rank
+  (Pratt zeros, exact sign-flip up to 50 non-zero pairs, no continuity
+  correction) when they score `item_score` — chosen from the row shape, never
+  by flag. Refuses (still a record, exit `0`) naming each field when the sides
+  differ on suite identity, `suite_level`, a generation constraint, the metric
+  triple, the scoring kind or the compared field, and when a constraint or the
+  metric is null on either side. Sides differing outside the declared
+  dimension publish an observation naming the confound, verdict `not
+  comparable` (its p kept in `result`). No timestamp: a
+  re-run is byte-identical; a different existing file is refused (exit `1`).
 - `wave-local-ai-v2-serve` — read-only results service: four `GET` routes over
   the two stores, answering the views a pitch screen needs without a terminal.
   Writes nothing: every store file is opened for reading, and every non-`GET`
