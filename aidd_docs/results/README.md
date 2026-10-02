@@ -71,11 +71,11 @@ column into text. Each dictionary entry states what an empty cell means in that 
 its table and every header has one entry (`tests/test_bundle_export.py`). `carried=false`
 entries name what the bundle read does not hold, with an owner: the row-contract fields
 added after `"7"` (`retries`, `resumed`, `thinking_policy`, the prompt-variant, graded and
-judge blocks, the energy-window fields), the per-repetition arrays, and four blocks owned
-elsewhere -- the interval block and the item licence and source
-(`a-score-is-published-with-its-interval-a-difference-with-its-test`), the roster licence
-block (`every-size-class-spans-two-families-or-says-it-does-not`), and the comparison and
-family records, which are the fifth table of
+judge blocks, the energy-window fields, the suite level and the item licence, source and
+source revision), the per-repetition arrays, and three blocks owned elsewhere -- the
+interval block (`a-score-is-published-with-its-interval-a-difference-with-its-test`), the
+roster licence block (`every-size-class-spans-two-families-or-says-it-does-not`), and the
+comparison and family records, which are the fifth table of
 `comparison-family-and-leader-set-records-read-as-a-fifth-table` rather than a table here.
 A row field the dictionary does not describe, an unresolved pointer or a non-finite float
 refuses the whole export before anything is written.
@@ -231,6 +231,36 @@ leader-set mechanism.
   `no-use-case-is-silently-absent` declared absence as `QualityView`'s
   `CoverageRecord`, rendered once at the overview page level rather than
   once per card.
+
+## Suite levels, and what an item's licence and source do not prove (2026-10-02)
+
+Every suite declares the level it is built to, and every quality row from schema `"15"`
+names the level its suite was certified at (`suite_level`). A `development` suite is gated
+as before: at least 20 items and at least 25% of items in each of EN, FR and DE, else its
+score is published marked indicative. A `publication` suite is certified or refused: at
+least 100 items and at least the size target it declares (300 where its public source
+supplies them, the 100-item floor where it does not, with the reason recorded beside the
+target), the same 25% share, and a licence, a source and that source's revision on every
+item. A publication suite that falls short is refused at load, naming every shortfall; it
+never passes quietly as a development one, so no row of it can be written.
+
+Both shipped suites are `development`: `classification-support-routing@4` and
+`translation-business-short-form@3` carry `level` and, on every item, `licence`
+`CC-BY-4.0` -- the repository's hand-written items -- and no source, since nothing was
+drawn. Their rows carry `item_licence` `CC-BY-4.0` and `item_source` /
+`item_source_revision` as `null`. No item text changed and neither `prompt_set_hash`
+moved; the versions bumped because a published snapshot is never rewritten under its own
+version (`suite_snapshot` now refuses to overwrite one with different content), and
+`@3` / `@2` stay beside them. The cost: a row written under the new versions is
+`not_comparable` to any row written under `@3` / `@2`, although the subject is sent
+identical text. No committed row cites `@3` / `@2` today.
+
+**The licence and the source are author declarations, and nothing verifies them.** The
+gate checks that a publication item declares a licence, a source and a revision, and that
+each is a non-empty string; it does not check that the licence is the source's actual
+licence, that the item came from that source, or that the revision exists.
+`contamination_risk` stays forced to `provenance == "public"` and is likewise a
+declaration. A reader who needs the claim checked has to check it against the named source.
 
 ## The use-case coverage record, and why it is not here yet
 

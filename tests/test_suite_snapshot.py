@@ -1,6 +1,6 @@
 import json
 
-from wave_local_ai_v2 import suite_registry
+from wave_local_ai_v2 import suite_registry, suite_snapshot
 from wave_local_ai_v2.suite_snapshot import (
     SUITE_DEFINITIONS_DIR,
     all_snapshots,
@@ -37,10 +37,12 @@ def test_snapshot_carries_the_registered_suites_identity() -> None:
 def test_snapshot_publishes_exactly_the_keys_it_always_published() -> None:
     # The scoring-rule name and task_suite are definition fields, never
     # snapshot fields: exporting them would rewrite every committed file.
+    # `level` joined with the version bump that declared it.
     for snapshot in all_snapshots():
         assert set(snapshot) == {
             "suite_id",
             "suite_version",
+            "level",
             "prompt_set_hash",
             "max_output_tokens",
             "stop_sequences",
@@ -65,6 +67,7 @@ def test_classification_snapshot_items_carry_exactly_the_published_fields() -> N
             "language",
             "provenance",
             "contamination_risk",
+            "licence",
         }
 
 
@@ -85,6 +88,7 @@ def test_translation_snapshot_items_carry_exactly_the_published_fields() -> None
             "target_language",
             "provenance",
             "contamination_risk",
+            "licence",
         }
 
 
@@ -152,7 +156,9 @@ def test_a_version_bump_never_overwrites_its_predecessor() -> None:
     """
     for builder, previous in (
         (classification_snapshot, "2"),
+        (classification_snapshot, "3"),
         (translation_snapshot, "1"),
+        (translation_snapshot, "2"),
     ):
         snapshot = builder()
         assert snapshot["suite_version"] != previous
@@ -163,3 +169,53 @@ def test_a_version_bump_never_overwrites_its_predecessor() -> None:
         old = json.loads(old_path.read_text(encoding="utf-8"))
         assert old["suite_version"] == previous
         assert old["prompt_set_hash"] == snapshot["prompt_set_hash"]
+
+
+def test_every_hand_written_item_names_its_licence_at_the_development_level() -> None:
+    """The level and the per-item licence the version bump added, with the
+    prompt-set hash its predecessor published: no item text moved."""
+    for snapshot, predecessor in (
+        (classification_snapshot(), "3"),
+        (translation_snapshot(), "2"),
+    ):
+        assert snapshot["level"] == "development"
+        for item in snapshot["items"]:
+            assert item["provenance"] == "hand_written"
+            assert item["licence"] == "CC-BY-4.0"
+            assert "source" not in item
+        old_path = SUITE_DEFINITIONS_DIR / snapshot_filename(
+            snapshot["suite_id"], predecessor
+        )
+        old = json.loads(old_path.read_text(encoding="utf-8"))
+        assert "level" not in old
+        assert old["prompt_set_hash"] == snapshot["prompt_set_hash"]
+        assert [item["prompt"] for item in old["items"]] == [
+            item["prompt"] for item in snapshot["items"]
+        ]
+
+
+def test_exporting_over_a_published_file_with_other_content_is_refused(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    monkeypatch.setattr(suite_snapshot, "SUITE_DEFINITIONS_DIR", tmp_path)
+    published = tmp_path / snapshot_filename(
+        CLASSIFICATION.suite_id, CLASSIFICATION.suite_version
+    )
+    published.write_text('{"published": true}', encoding="utf-8")
+
+    assert suite_snapshot.main() == 1
+
+    assert published.read_text(encoding="utf-8") == '{"published": true}'
+    # Nothing else was written either: the refusal is checked before any write.
+    assert sorted(path.name for path in tmp_path.iterdir()) == [published.name]
+    assert published.name in capsys.readouterr().err
+
+
+def test_re_exporting_identical_content_is_a_no_op(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(suite_snapshot, "SUITE_DEFINITIONS_DIR", tmp_path)
+
+    assert suite_snapshot.main() == 0
+    before = {path.name: path.read_bytes() for path in tmp_path.iterdir()}
+
+    assert suite_snapshot.main() == 0
+    assert {path.name: path.read_bytes() for path in tmp_path.iterdir()} == before

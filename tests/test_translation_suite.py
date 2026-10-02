@@ -102,7 +102,7 @@ def test_editing_a_prompt_moves_the_hash() -> None:
 
 def test_suite_declares_its_identity_and_its_generation_caps() -> None:
     assert SUITE.suite_id == "translation-business-short-form"
-    assert SUITE.suite_version == "2"
+    assert SUITE.suite_version == "3"
     assert SUITE.task_suite == "translation"
     assert SUITE.scoring_rule == "chrf_against_reference"
     # 128, not the classification suite's 32: a sentence truncates there.

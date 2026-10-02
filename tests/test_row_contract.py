@@ -195,6 +195,10 @@ COMPLETE_QUALITY_ROW = {
     "contamination_risk": False,
     "indicative": True,
     "indicative_reasons": ["item_count 10 is below the minimum of 20"],
+    "suite_level": "development",
+    "item_licence": "CC-BY-4.0",
+    "item_source": None,
+    "item_source_revision": None,
     "failure_reason": None,
     "failure_counts": {
         "empty": 0,
@@ -1040,14 +1044,14 @@ def test_the_schema_version_moved_once_for_the_thinking_policy() -> None:
     # `thinking_policy` is required on every quality row, because a score
     # produced with the subject allowed to reason and one produced without it
     # are not the same measurement and a row has to say which it is.
-    assert SCHEMA_VERSION == "14"
+    assert SCHEMA_VERSION == "15"
 
 
 def test_the_schema_version_moved_for_the_runtime_energy_window() -> None:
     # "12" fixes audit finding C3: the runtime row's energy figures used to
     # span the whole counted-repetition window, cooldowns included. Required
     # only on runtime rows -- quality rows carry no energy window at all.
-    assert SCHEMA_VERSION == "14"
+    assert SCHEMA_VERSION == "15"
     assert {"active_window_s", "idle_window_s", "energy_window_method"} <= (
         REQUIRED_FIELDS["runtime"]
     )
@@ -1060,7 +1064,7 @@ def test_the_schema_version_moved_for_the_judge_call_record_extension() -> None:
     # "13" adds five fields inside each judge call record. Additive inside the
     # conditional judge block: neither row kind's required set moves, so a
     # deterministic quality row validates unchanged.
-    assert SCHEMA_VERSION == "14"
+    assert SCHEMA_VERSION == "15"
     assert set(NEW_JUDGE_RECORD_FIELDS).isdisjoint(REQUIRED_FIELDS["quality"])
     assert set(NEW_JUDGE_RECORD_FIELDS).isdisjoint(JUDGED_FIELDS)
     validate_row("quality", COMPLETE_QUALITY_ROW)
@@ -1070,9 +1074,71 @@ def test_the_schema_version_moved_for_the_prompt_variant() -> None:
     # "14" makes both row kinds name the variant they ran under and carry the
     # prompt as the variant left it. Not conditional: every row ran under some
     # variant, and a row below "14" is never back-filled with `baseline`.
-    assert SCHEMA_VERSION == "14"
+    assert SCHEMA_VERSION == "15"
     for kind in ("runtime", "quality"):
         assert set(PROMPT_VARIANT_FIELDS) <= REQUIRED_FIELDS[kind]
+
+
+def test_the_schema_version_moved_for_the_suite_level() -> None:
+    # "15" makes every quality row name the level its suite was certified at
+    # and its item's licence, source and source revision. Not conditional:
+    # every suite is certified at some level. Quality rows only -- a runtime
+    # row runs no suite.
+    assert SCHEMA_VERSION == "15"
+    assert set(SUITE_LEVEL_FIELDS) <= REQUIRED_FIELDS["quality"]
+    assert set(SUITE_LEVEL_FIELDS).isdisjoint(REQUIRED_FIELDS["runtime"])
+
+
+SUITE_LEVEL_FIELDS = (
+    "suite_level",
+    "item_licence",
+    "item_source",
+    "item_source_revision",
+)
+
+
+@pytest.mark.parametrize("field", SUITE_LEVEL_FIELDS)
+def test_a_quality_row_missing_a_suite_level_field_is_refused_by_name(field) -> None:
+    row = {k: v for k, v in COMPLETE_QUALITY_ROW.items() if k != field}
+
+    with pytest.raises(RowContractError, match=field):
+        validate_row("quality", row)
+
+
+def test_a_quality_row_with_an_unknown_level_is_refused() -> None:
+    row = {**COMPLETE_QUALITY_ROW, "suite_level": "draft"}
+
+    with pytest.raises(RowContractError, match="suite_level 'draft'"):
+        validate_row("quality", row)
+
+
+_PUBLICATION_ROW = {
+    **COMPLETE_QUALITY_ROW,
+    "suite_level": "publication",
+    "item_licence": "MIT",
+    "item_source": "example-benchmark",
+    "item_source_revision": "abc123",
+}
+
+
+def test_a_publication_row_naming_its_licence_and_source_validates() -> None:
+    validate_row("quality", _PUBLICATION_ROW)
+
+
+@pytest.mark.parametrize("field", SUITE_LEVEL_FIELDS[1:])
+def test_a_publication_row_with_a_null_item_declaration_is_refused(field) -> None:
+    row = {**_PUBLICATION_ROW, field: None}
+
+    with pytest.raises(RowContractError, match=f"{field} is null"):
+        validate_row("quality", row)
+
+
+@pytest.mark.parametrize("value", ["", 7])
+def test_a_malformed_item_declaration_is_refused(value) -> None:
+    row = {**COMPLETE_QUALITY_ROW, "item_licence": value}
+
+    with pytest.raises(RowContractError, match="malformed item_licence"):
+        validate_row("quality", row)
 
 
 PROMPT_VARIANT_FIELDS = (

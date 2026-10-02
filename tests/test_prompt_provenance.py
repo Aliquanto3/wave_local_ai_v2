@@ -50,6 +50,10 @@ _MINIMAL_QUALITY_ROW = {
     "contamination_risk": False,
     "indicative": True,
     "indicative_reasons": [],
+    "suite_level": "development",
+    "item_licence": "CC-BY-4.0",
+    "item_source": None,
+    "item_source_revision": None,
     "failure_reason": None,
     "failure_counts": {
         "empty": 0,

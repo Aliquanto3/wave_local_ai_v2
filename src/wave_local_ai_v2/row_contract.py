@@ -99,7 +99,17 @@ from wave_local_ai_v2 import (
 # row declaring `baseline` must carry the item's authored text unchanged. A
 # row below "14" is read under its own version and never back-filled with
 # `baseline`: nothing on it says which prompt shape produced it.
-SCHEMA_VERSION = "14"
+# "15": `suite_level` (the level the row's suite was certified at,
+# `development` or `publication`), `item_licence`, `item_source` and
+# `item_source_revision` (the item's own declarations, copied from the suite
+# definition) became required on quality rows only (Story: a suite is
+# certified to its declared level, and every item names its licence and
+# source). A hand-written item carries a licence and no source: its row holds
+# the two source fields as `null`. A publication row holds all three. The
+# declarations are the author's: nothing checks that a licence or a source is
+# the true one. A row below "15" is read under its own version and never
+# back-filled with `development`.
+SCHEMA_VERSION = "15"
 
 # The two values `thinking_policy` may take. This is the **suite's** declared
 # policy, not a report of what each provider did with it: it is published on
@@ -313,6 +323,12 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "contamination_risk",
             "indicative",
             "indicative_reasons",
+            # suite_gate: the level the suite was certified at, and the item's
+            # licence and source declarations (schema "15")
+            "suite_level",
+            "item_licence",
+            "item_source",
+            "item_source_revision",
             # scoring.score_item / score_suite
             "failure_reason",
             "failure_counts",
@@ -503,8 +519,37 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
         _validate_runtime_repetition_structure(row)
 
     if kind == "quality":
+        _validate_suite_level(row)
         _validate_judged_fields(row)
         _validate_graded_fields(row)
+
+
+_ITEM_SOURCE_FIELDS = ("item_licence", "item_source", "item_source_revision")
+
+
+def _validate_suite_level(row: dict[str, Any]) -> None:
+    """Refuse an unknown level, a malformed item declaration, and a
+    publication row missing any of the three item declarations its suite
+    could only have been certified with."""
+    level = row["suite_level"]
+    if level not in suite_gate.SUITE_LEVELS:
+        raise RowContractError(
+            f"row of kind 'quality' has suite_level {level!r}, not one of "
+            f"{', '.join(sorted(suite_gate.SUITE_LEVELS))}"
+        )
+    for field in _ITEM_SOURCE_FIELDS:
+        value = row[field]
+        if value is None:
+            if level == suite_gate.LEVEL_PUBLICATION:
+                raise RowContractError(
+                    f"row of kind 'quality' has suite_level 'publication' but "
+                    f"{field} is null: a publication item declares its licence, "
+                    "its source and that source's revision"
+                )
+        elif not (isinstance(value, str) and value.strip()):
+            raise RowContractError(
+                f"row of kind 'quality' has a malformed {field}: {value!r}"
+            )
 
 
 def _validate_prompt_variant(kind: RowKind, row: dict[str, Any]) -> None:

@@ -1,12 +1,13 @@
 {
   "suite_id": "classification-support-routing",
-  "suite_version": "3",
+  "suite_version": "4",
   "task_suite": "classification",
   "scoring_rule": "exact_label_match",
   "max_output_tokens": 32,
   "stop_sequences": [],
   "context_length": 32768,
   "thinking_policy": "disabled",
+  "level": "development",
   "items": [
     {
       "item_id": "billing-01",
@@ -14,7 +15,8 @@
       "expected_label": "billing",
       "language": "en",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "billing-02",
@@ -22,7 +24,8 @@
       "expected_label": "billing",
       "language": "en",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "technical-01",
@@ -30,7 +33,8 @@
       "expected_label": "technical",
       "language": "en",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "technical-02",
@@ -38,7 +42,8 @@
       "expected_label": "technical",
       "language": "en",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "account-01",
@@ -46,7 +51,8 @@
       "expected_label": "account",
       "language": "en",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "account-02",
@@ -54,7 +60,8 @@
       "expected_label": "account",
       "language": "en",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "other-01",
@@ -62,7 +69,8 @@
       "expected_label": "other",
       "language": "en",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "other-02",
@@ -70,7 +78,8 @@
       "expected_label": "other",
       "language": "en",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "billing-03",
@@ -78,7 +87,8 @@
       "expected_label": "billing",
       "language": "en",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "technical-03",
@@ -86,7 +96,8 @@
       "expected_label": "technical",
       "language": "en",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "billing-fr-01",
@@ -94,7 +105,8 @@
       "expected_label": "billing",
       "language": "fr",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "technical-fr-01",
@@ -102,7 +114,8 @@
       "expected_label": "technical",
       "language": "fr",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "account-fr-01",
@@ -110,7 +123,8 @@
       "expected_label": "account",
       "language": "fr",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "other-fr-01",
@@ -118,7 +132,8 @@
       "expected_label": "other",
       "language": "fr",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "technical-fr-02",
@@ -126,7 +141,8 @@
       "expected_label": "technical",
       "language": "fr",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "billing-de-01",
@@ -134,7 +150,8 @@
       "expected_label": "billing",
       "language": "de",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "technical-de-01",
@@ -142,7 +159,8 @@
       "expected_label": "technical",
       "language": "de",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "account-de-01",
@@ -150,7 +168,8 @@
       "expected_label": "account",
       "language": "de",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "other-de-01",
@@ -158,7 +177,8 @@
       "expected_label": "other",
       "language": "de",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "account-de-02",
@@ -166,7 +186,8 @@
       "expected_label": "account",
       "language": "de",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     }
   ]
 }

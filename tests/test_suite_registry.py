@@ -12,11 +12,11 @@ from wave_local_ai_v2.suite_registry import SuiteRegistryError
 # neither the version nor the prompt-set hash of either shipped suite.
 _SHIPPED = {
     "classification-support-routing": (
-        "3",
+        "4",
         "d41a2134274cf1c8036022d2b68396d04bfd14ff263d2f8699dbefd7a2e4596a",  # pragma: allowlist secret
     ),
     "translation-business-short-form": (
-        "2",
+        "3",
         "16150e4406042a8940093740640627b7ce4ce9e80ae64bc080b7b4d80f6f7574",  # pragma: allowlist secret
     ),
 }
@@ -30,6 +30,7 @@ _VALID = {
     "stop_sequences": [],
     "context_length": 2048,
     "thinking_policy": "disabled",
+    "level": "development",
     "items": [
         {
             "item_id": f"item-{language}",
@@ -274,31 +275,84 @@ def test_unregister_drops_only_a_run_time_registration(tmp_path) -> None:
 def test_the_interval_epics_fields_are_additions_to_the_one_shape(
     tmp_path, registered
 ) -> None:
-    """Declared level, source, licence, source revision, content hash and
-    selection rule: carried as data on the suite and on each item, and
-    exported in the snapshot, with no second shape and no loader change."""
-    data = _variant(
-        level="publication",
-        source="example-dataset",
-        source_revision="abc123",
-        selection_rule={"seed": 1, "n": 3},
-    )
+    """Source, licence, source revision, content hash and selection rule:
+    carried as data on the suite and on each item, and exported in the
+    snapshot, with no second shape. The declared level is a core key."""
+    data = _variant(selection_rule={"seed": 1, "n": 3})
     for item in data["items"]:
         item["licence"] = "CC-BY-4.0"
+        item["source"] = "example-dataset"
+        item["source_revision"] = "abc123"
         item["content_hash"] = "sha256:00"
     definition = suite_registry.register(_write(tmp_path, data))
     registered.append(definition.suite_id)
 
-    assert dict(definition.extra) == {
-        "level": "publication",
-        "source": "example-dataset",
-        "source_revision": "abc123",
-        "selection_rule": {"seed": 1, "n": 3},
-    }
+    assert definition.level == "development"
+    assert dict(definition.extra) == {"selection_rule": {"seed": 1, "n": 3}}
     assert all(item["licence"] == "CC-BY-4.0" for item in definition.items)
     snapshot = suite_snapshot.build_snapshot(definition)
-    assert snapshot["level"] == "publication"
+    assert snapshot["level"] == "development"
+    assert snapshot["items"][0]["source_revision"] == "abc123"
     assert snapshot["items"][0]["content_hash"] == "sha256:00"
+
+
+def test_a_definition_without_a_level_is_refused(tmp_path) -> None:
+    data = _variant()
+    del data["level"]
+
+    with pytest.raises(SuiteRegistryError, match="is missing level"):
+        suite_registry.load_definition(_write(tmp_path, data))
+
+
+def test_a_publication_definition_that_falls_short_is_never_registered(
+    tmp_path,
+) -> None:
+    """Three items declaring `publication` are refused at load, naming the
+    count, rather than registered at the development level."""
+    data = _variant(
+        level="publication",
+        size_target=100,
+        size_target_reason="the source holds fewer than 300",
+    )
+    path = _write(tmp_path, data)
+
+    with pytest.raises(SuiteGateError, match="item_count 3 is below the publication"):
+        suite_registry.register(path)
+    assert "fixture-suite" not in suite_registry.registered_ids()
+
+
+def test_a_publication_definition_carries_its_target_into_the_snapshot(
+    tmp_path, registered
+) -> None:
+    items = [
+        {
+            "item_id": f"{language}-{index}",
+            "prompt": f"Classify {language} {index}.",
+            "expected_label": "billing",
+            "language": language,
+            "provenance": "public",
+            "contamination_risk": True,
+            "licence": "MIT",
+            "source": "example-dataset",
+            "source_revision": "abc123",
+        }
+        for language in ("en", "fr", "de")
+        for index in range(34)
+    ]
+    data = _variant(
+        level="publication",
+        size_target=100,
+        size_target_reason="the source holds fewer than 300 items",
+        items=items,
+    )
+    definition = suite_registry.register(_write(tmp_path, data))
+    registered.append(definition.suite_id)
+
+    assert definition.gate["level"] == "publication"
+    snapshot = suite_snapshot.build_snapshot(definition)
+    assert snapshot["level"] == "publication"
+    assert snapshot["size_target"] == 100
+    assert snapshot["size_target_reason"] == "the source holds fewer than 300 items"
 
 
 def test_every_shipped_rule_is_named_in_the_rule_table() -> None:

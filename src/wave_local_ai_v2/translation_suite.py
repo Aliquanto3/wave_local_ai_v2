@@ -48,6 +48,10 @@ Why the data declares what it declares:
   local subject is rendered through the model's own chat template under the
   declared thinking policy instead of being posted raw to `/completion`. A
   chrF score under "2" is not comparable to one under "1".
+- `suite_version` "3": no item text changed and `prompt_set_hash` does not
+  move; as the classification suite's "4", the definition gained `level`
+  `development` and every item its `licence` `CC-BY-4.0`, for the same
+  reasons, and no `source` or `source_revision` since nothing was drawn.
 - `max_output_tokens` 128, not the classification suite's 32: a sentence
   translation truncates there.
 - `thinking_policy` `disabled`, on evidence: probed on `b10537-bf0040e15`,

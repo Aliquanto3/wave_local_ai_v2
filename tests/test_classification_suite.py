@@ -57,7 +57,7 @@ def test_every_item_carries_consistent_language_provenance_and_risk_tags() -> No
 
 def test_suite_declares_its_identity_its_caps_and_its_scoring_rule() -> None:
     assert SUITE.suite_id == "classification-support-routing"
-    assert SUITE.suite_version == "3"
+    assert SUITE.suite_version == "4"
     assert SUITE.task_suite == "classification"
     assert SUITE.scoring_rule == "exact_label_match"
     assert SUITE.max_output_tokens == 32

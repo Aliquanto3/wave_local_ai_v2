@@ -28,6 +28,19 @@ Why the data declares what it declares:
   under the declared thinking policy instead of posting it raw to
   `/completion`. A score under "3" measures something a score under "2" did
   not; the pair (`suite_version`, `prompt_template_id`) separates the two.
+  "4": no item text changed and `prompt_set_hash` does not move; the
+  definition gained `level` and every item its `licence`, which the
+  published snapshot carries, and a published snapshot is never rewritten
+  under its own version. What the subject is sent is identical to "3".
+- `level` `development` (Methodology 4): twenty hand-written items are the
+  development level's floor, not the publication level's hundred. Rows name
+  the level their suite was certified at, so this score is never read as a
+  publication-level one.
+- Each item's `licence` `CC-BY-4.0` (Methodology 5): the repository's own
+  hand-written items are published under it. It sits on the item, not only
+  on the suite, because a suite may one day hold items under other terms.
+  The items declare no `source` or `source_revision`: nothing was drawn from
+  a public benchmark.
 - `max_output_tokens` 32: the cap is a property of what the suite asks a
   model to produce (one label word), not of the harness driving the request.
 - `thinking_policy` `disabled`: probed on `b10537-bf0040e15`, `Qwen3-0.6B`

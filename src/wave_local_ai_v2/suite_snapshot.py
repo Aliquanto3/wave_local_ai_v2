@@ -13,7 +13,8 @@ identity, caps, and every item with every field its definition declares. A
 suite is data now, so the snapshot of a shipped suite is its definition file
 plus the computed `prompt_set_hash`, minus the scoring-rule name and
 `task_suite`, which no snapshot has ever carried. It stays the file a bundle
-reader resolves, because it is addressed by version and never overwritten.
+reader resolves, because it is addressed by version and never overwritten:
+the exporter refuses to replace a published file with different content.
 """
 
 from __future__ import annotations
@@ -56,6 +57,7 @@ def build_snapshot(definition: suite_registry.SuiteDefinition) -> dict[str, Any]
         **definition.extra,
         "suite_id": definition.suite_id,
         "suite_version": definition.suite_version,
+        "level": definition.level,
         "prompt_set_hash": definition.prompt_set_hash,
         "max_output_tokens": definition.max_output_tokens,
         "stop_sequences": list(definition.stop_sequences),
@@ -78,16 +80,48 @@ def all_snapshots() -> list[dict[str, Any]]:
     ]
 
 
-def main() -> None:
-    SUITE_DEFINITIONS_DIR.mkdir(parents=True, exist_ok=True)
+def _published_text(path: Path) -> str | None:
+    """A snapshot file's text, read in text mode, or None if absent."""
+    if not path.exists():
+        return None
+    return path.read_text(encoding="utf-8")
+
+
+def main() -> int:
+    """Export every registered suite; refuse to overwrite a published file.
+
+    A snapshot already on disk under the same `<suite_id>@<suite_version>`
+    name is a published definition a row may resolve to. Re-exporting the
+    same bytes is a no-op; any other content is refused, naming the file, and
+    nothing is written -- the definition changed under an unchanged version,
+    which only a version bump answers.
+    """
+    planned: list[tuple[Path, str]] = []
+    refused: list[Path] = []
     for snapshot in all_snapshots():
         out_path = SUITE_DEFINITIONS_DIR / snapshot_filename(
             snapshot["suite_id"], snapshot["suite_version"]
         )
-        out_path.write_text(snapshot_text(snapshot), encoding="utf-8")
+        text = snapshot_text(snapshot)
+        published = _published_text(out_path)
+        if published is None:
+            planned.append((out_path, text))
+        elif published != text:
+            refused.append(out_path)
+    if refused:
+        for path in refused:
+            print(
+                f"{path} is already published with different content: bump "
+                "the suite version instead of overwriting it",
+                file=sys.stderr,
+            )
+        return 1
+    SUITE_DEFINITIONS_DIR.mkdir(parents=True, exist_ok=True)
+    for out_path, text in planned:
+        out_path.write_text(text, encoding="utf-8")
         print(out_path)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
-    sys.exit(0)
+    sys.exit(main())

@@ -420,6 +420,27 @@ _QUALITY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     ("indicative_reasons",): FieldDoc(
         "Why the score is indicative; empty array when it is not.", _JSON_ARRAY
     ),
+    ("suite_level",): FieldDoc(
+        "Level the suite was certified at: development or publication.", _ID
+    ),
+    ("item_licence",): FieldDoc(
+        "Licence the item is redistributed under, as its author declares it "
+        "(CC-BY-4.0 for a hand-written item). Declared, not verified.",
+        "SPDX licence identifier",
+    ),
+    ("item_source",): FieldDoc(
+        "Public source the item was drawn from, as its author declares it. "
+        "Declared, not verified.",
+        _ID,
+        "The item was not drawn from a source (a hand-written item), or the "
+        "row does not carry the field.",
+    ),
+    ("item_source_revision",): FieldDoc(
+        "Revision of that source the item was drawn at.",
+        _ID,
+        "The item was not drawn from a source (a hand-written item), or the "
+        "row does not carry the field.",
+    ),
     ("failure_reason",): FieldDoc(
         "Why no usable answer was produced for this item.",
         _ID,
@@ -769,14 +790,6 @@ NOT_CARRIED_ELSEWHERE: tuple[OwnedElsewhere, ...] = (
         "generator identity and version, draw-procedure id), the minimum "
         "detectable effect and any named null reason.",
         f"epic {_STATS_EPIC}",
-    ),
-    OwnedElsewhere(
-        QUALITY_TABLE,
-        "item licence and source",
-        "Each item's licence and source as the rows and suite definitions "
-        "record them. Every item of this bundle is provenance hand_written.",
-        f"epic {_STATS_EPIC} (story a-suite-is-certified-to-its-declared-level-"
-        "and-every-item-names-its-licence-and-source)",
     ),
     OwnedElsewhere(
         ROSTER_TABLE,

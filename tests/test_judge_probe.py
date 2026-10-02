@@ -473,6 +473,12 @@ def test_every_row_says_it_is_indicative_and_why(stubbed_probe) -> None:
     for row in read_rows(probe_path):
         assert row["indicative"] is True
         assert any("below the minimum of 20" in r for r in row["indicative_reasons"])
+        # The probe declares no level: the gate certifies it at development,
+        # its behaviour before levels existed.
+        assert row["suite_level"] == "development"
+        assert row["item_licence"] == "CC-BY-4.0"
+        assert row["item_source"] is None
+        assert row["item_source_revision"] is None
 
 
 def test_every_row_carries_a_not_comparable_verdict_naming_why(stubbed_probe) -> None:

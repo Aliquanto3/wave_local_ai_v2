@@ -997,6 +997,7 @@ def _score_and_write(
             "contamination_risk": item["contamination_risk"],
             "indicative": gate_result["indicative"],
             "indicative_reasons": list(gate_result["indicative_reasons"]),
+            **quality_rows.suite_item_fields(gate_result, item),
             "retries": completions[index]["retries"],
             "resumed": resumed,
         }

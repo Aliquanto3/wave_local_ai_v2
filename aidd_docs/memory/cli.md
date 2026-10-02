@@ -22,8 +22,12 @@ The command-line interface for running benchmarks.
     behaves as before. `suite_registry.resolve` answers it from the data
     definitions in `src/wave_local_ai_v2/suite_data/<suite_id>.json` (id,
     version, `task_suite`, the four generation constraints, the scoring-rule
-    name, the items with their tags), gated by `suite_gate.gate_suite` at
-    load. An unregistered id (including the old `classification` /
+    name, the declared `level`, the items with their tags), gated by
+    `suite_gate.gate_suite` at load. A `development` suite below the
+    thresholds publishes indicative; a `publication` suite that falls short
+    of its 100-item floor, its declared `size_target`, the 25% share or a
+    per-item `licence`/`source`/`source_revision` is refused. Every row
+    names its `suite_level`. An unregistered id (including the old `classification` /
     `translation` values) or an unknown scoring rule is refused as one stderr
     line naming what is wrong. `quality_cli.py` holds no suite table and
     imports no suite: a further suite is a new data file plus, only where its
@@ -84,7 +88,9 @@ The command-line interface for running benchmarks.
   to the definition it was produced against. A
   snapshot of each registered definition at export time (its data plus the
   computed `prompt_set_hash`, without the scoring-rule name or `task_suite`),
-  not what a run resolves through; re-run after any suite edit.
+  not what a run resolves through; re-run after any suite edit. An existing
+  file with different content is refused (exit `1`, nothing written): a
+  changed definition takes a version bump.
   No `pyproject.toml` entry point — invoked as a module, not a CLI command.
 - `uv run python -m wave_local_ai_v2.use_case_coverage` — publishes the
   use-case coverage record (`src/wave_local_ai_v2/use_case_coverage.json`,

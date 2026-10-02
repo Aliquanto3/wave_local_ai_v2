@@ -222,7 +222,6 @@ def test_blocks_owned_elsewhere_are_named_with_their_owner(
     }
 
     assert "a-score-is-published-with-its-interval" in owners["interval block"]
-    assert "a-score-is-published-with-its-interval" in owners["item licence and source"]
     assert "every-size-class-spans-two-families" in owners["roster licence block"]
     assert (
         "comparison-family-and-leader-set-records-read-as-a-fifth-table"
@@ -230,6 +229,15 @@ def test_blocks_owned_elsewhere_are_named_with_their_owner(
     )
     # Fields the row contract added after "7" are named, not silently absent.
     assert {"retries", "resumed", "thinking_policy", "prompt_variant_id"} <= set(owners)
+    # The item licence and source are contract fields now, named as such
+    # rather than as a block owned elsewhere.
+    assert "item licence and source" not in owners
+    assert {
+        "suite_level",
+        "item_licence",
+        "item_source",
+        "item_source_revision",
+    } <= set(owners)
 
 
 def test_accuracy_recomputed_from_the_quality_table_equals_the_published_values(

@@ -103,6 +103,10 @@ COMPLETE_QUALITY_ROW = {
     "contamination_risk": False,
     "indicative": True,
     "indicative_reasons": ["item_count 10 is below the minimum of 20"],
+    "suite_level": "development",
+    "item_licence": "CC-BY-4.0",
+    "item_source": None,
+    "item_source_revision": None,
     "failure_reason": None,
     "failure_counts": {
         "empty": 0,

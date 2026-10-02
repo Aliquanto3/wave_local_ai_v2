@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A suite is certified to its declared level (row schema "15")** — a
+  suite definition declares `level`, `development` or `publication`.
+  `development` keeps the 20-item, 25%-per-language gate and its
+  indicative marking unchanged. `publication` needs at least 100 items and
+  at least the size target the suite declares (`size_target` 100 or 300,
+  with `size_target_reason`), the same 25% share, and a `licence`, `source`
+  and `source_revision` on every item; a publication suite that falls short
+  is refused at load naming every shortfall, never certified at
+  `development` instead. `gate_suite` returns the level it certified, and
+  every quality row carries `suite_level`, `item_licence`, `item_source`
+  and `item_source_revision`; the writer gate refuses an unknown level and
+  a publication row with a null declaration. Both shipped suites declare
+  `development` and give every hand-written item `licence` `CC-BY-4.0`,
+  which bumps classification to version `4` and translation to `3` with no
+  item text or `prompt_set_hash` moved; their `@3`/`@2` snapshots stay
+  beside the new ones. The snapshot export now refuses to overwrite a
+  published file with different content. Licence and source are author
+  declarations nothing verifies (`aidd_docs/results/README.md`).
+
 - **A suite is data resolved by its id** — each task suite is one JSON
   definition in `src/wave_local_ai_v2/suite_data/<suite_id>.json` holding
   its id, version, `task_suite`, the four generation constraints, the name

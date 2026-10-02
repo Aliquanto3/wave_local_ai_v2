@@ -35,6 +35,7 @@ NAMED_VALUES: dict[str, Any] = {
     "suite_version": SUITE_VERSION,
     "prompt_variant_id": "baseline",
     "prompt_variant_version": "1",
+    "suite_level": "development",
     "cpu_energy_kwh": 0.0003,
     "cpu_energy_method": "estimated_tdp",
     "gpu_energy_kwh": 0.0009,

@@ -19,10 +19,12 @@ The gate's result is held on the definition, which is what the CLI reads.
 The shape is open to additions: a top-level key the core does not name is
 kept in `SuiteDefinition.extra` and exported in the snapshot, and an item key
 the core does not name stays on the item. The interval epic's per-suite and
-per-item fields (declared level, source, licence, source revision, content
+per-item fields (size target, source, licence, source revision, content
 hash, selection rule) land that way, as data, without a second shape. Only
 the core keys are checked here; what an added key means is the business of
-the story that adds it.
+the story that adds it. The declared `level` is a core key, and the gate
+checks it together with the optional `size_target`/`size_target_reason` and
+each item's optional `licence`, `source` and `source_revision`.
 
 `prompt_set_hash` is never declared in the data: it is computed from the
 items at load, so a hand-edited prompt always moves it.
@@ -55,6 +57,7 @@ _CORE_KEYS = frozenset(
         "stop_sequences",
         "context_length",
         "thinking_policy",
+        "level",
         "items",
     }
 )
@@ -83,6 +86,9 @@ class SuiteDefinition:
     # `chat_template_kwargs`); every row of the batch publishes it regardless,
     # because it is the suite's declaration and not a per-provider report.
     thinking_policy: str
+    # The level the suite declares (`suite_gate.SUITE_LEVELS`); the gate
+    # certifies it there or refuses it, so `gate["level"]` always equals it.
+    level: str
     items: tuple[Mapping[str, Any], ...]
     prompt_set_hash: str
     gate: SuiteGateResult
@@ -181,8 +187,15 @@ def _definition_from_data(data: dict[str, Any], *, origin: str) -> SuiteDefiniti
 
     items = _items(data["items"], origin)
     # The gate runs on every load and its refusal propagates: no definition
-    # object exists for a suite it refuses.
-    gate = suite_gate.gate_suite(items)
+    # object exists for a suite it refuses, including a suite that falls short
+    # of the level it declares. The size target and its reason stay in
+    # `extra` (exported in the snapshot); the gate is what checks them.
+    gate = suite_gate.gate_suite(
+        items,
+        level=data["level"],
+        size_target=data.get("size_target"),
+        size_target_reason=data.get("size_target_reason"),
+    )
 
     return SuiteDefinition(
         suite_id=data["suite_id"],
@@ -193,6 +206,7 @@ def _definition_from_data(data: dict[str, Any], *, origin: str) -> SuiteDefiniti
         stop_sequences=list(stop_sequences),
         context_length=data["context_length"],
         thinking_policy=data["thinking_policy"],
+        level=data["level"],
         items=items,
         prompt_set_hash=prompt_set_hash(items),
         gate=gate,

@@ -142,16 +142,19 @@ class ProbeItem(TypedDict):
     language: Literal["en", "fr", "de"]
     provenance: Literal["hand_written", "licensed", "public"]
     contamination_risk: bool
+    licence: str
 
 
 def _item(item_id: str, prompt: str, language: Literal["en", "fr", "de"]) -> ProbeItem:
-    """One hand-written item. Every probe item is hand-written and uncontaminated."""
+    """One hand-written item. Every probe item is hand-written, uncontaminated
+    and published under the repository's hand-written-item licence."""
     return ProbeItem(
         item_id=item_id,
         prompt=prompt,
         language=language,
         provenance="hand_written",
         contamination_risk=False,
+        licence=suite_gate.HAND_WRITTEN_LICENCE,
     )
 
 
@@ -764,6 +767,7 @@ def _build_row(
         "contamination_risk": item["contamination_risk"],
         "indicative": context.gate_result["indicative"],
         "indicative_reasons": list(context.gate_result["indicative_reasons"]),
+        **quality_rows.suite_item_fields(context.gate_result, item),
         "failure_reason": failure_reason,
         "failure_counts": dict(failure_counts),
         # The subject generation's retries. Each judge call's own retries stay

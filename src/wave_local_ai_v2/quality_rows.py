@@ -1,5 +1,6 @@
-"""The per-batch energy/emissions/cost fields every quality row carries,
-declared once for both CLIs that write quality rows.
+"""The per-batch energy/emissions/cost fields and the per-item suite-level
+fields every quality row carries, declared once for both CLIs that write
+quality rows.
 
 `quality_cli.py`'s four batches (local, mistral, google) and `judge_probe.py`'s
 two (local, google) derive the same block. A second copy would be a parallel
@@ -21,6 +22,26 @@ from typing import Any
 from wave_local_ai_v2 import cost, emissions
 from wave_local_ai_v2.energy import ENERGY_METHOD_UNAVAILABLE, EnergyResult
 from wave_local_ai_v2.settings import Settings
+from wave_local_ai_v2.suite_gate import SuiteGateResult
+
+
+def suite_item_fields(
+    gate_result: SuiteGateResult, item: Mapping[str, Any]
+) -> dict[str, Any]:
+    """The level the suite was certified at and the item's own licence and
+    source declarations, as one quality row carries them.
+
+    The level is the gate's certified one, never the suite's raw
+    declaration: the two are equal only because the gate refuses a suite
+    that falls short. An item that declares no source (a hand-written one)
+    publishes `None`, a recorded absence, never an invented provenance.
+    """
+    return {
+        "suite_level": gate_result["level"],
+        "item_licence": item.get("licence"),
+        "item_source": item.get("source"),
+        "item_source_revision": item.get("source_revision"),
+    }
 
 
 def local_batch_fields(

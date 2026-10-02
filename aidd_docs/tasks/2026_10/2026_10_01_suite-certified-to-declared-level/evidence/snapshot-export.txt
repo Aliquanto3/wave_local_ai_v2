@@ -1,0 +1,23 @@
+$ uv run python -m wave_local_ai_v2.suite_snapshot   # second run, after the first wrote the two new files
+exit=0
+
+$ git status --short aidd_docs/results/suite-definitions/
+?? aidd_docs/results/suite-definitions/classification-support-routing@4.json
+?? aidd_docs/results/suite-definitions/translation-business-short-form@3.json
+$ git diff --stat -- aidd_docs/results/   # published files untouched
+(empty = unchanged)
+(Recorded before aidd_docs/results/README.md gained its "Suite levels" section; the
+claim holds for the published files under aidd_docs/results/suite-definitions/.)
+
+classification-support-routing@4: level=development items=20 item_licences=['CC-BY-4.0'] items_with_source=0
+  prompt_set_hash @4 = d41a2134274cf1c8036022d2b68396d04bfd14ff263d2f8699dbefd7a2e4596a
+  prompt_set_hash @3 = d41a2134274cf1c8036022d2b68396d04bfd14ff263d2f8699dbefd7a2e4596a  equal=True
+  prompts identical to @3: True
+translation-business-short-form@3: level=development items=21 item_licences=['CC-BY-4.0'] items_with_source=0
+  prompt_set_hash @3 = 16150e4406042a8940093740640627b7ce4ce9e80ae64bc080b7b4d80f6f7574
+  prompt_set_hash @2 = 16150e4406042a8940093740640627b7ce4ce9e80ae64bc080b7b4d80f6f7574  equal=True
+  prompts identical to @2: True
+
+$ attempted overwrite of a published file with other content (temp copy of suite-definitions/)
+C:\Users\Anael\AppData\Local\Temp\tmpuw2ihskk\classification-support-routing@4.json is already published with different content: bump the suite version instead of overwriting it
+exit 1 | file kept its edited content: True

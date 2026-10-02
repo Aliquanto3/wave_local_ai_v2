@@ -22,6 +22,7 @@ def _suite(suite_id: str, task_suite: str) -> dict:
         "stop_sequences": [],
         "context_length": 2048,
         "thinking_policy": "disabled",
+        "level": "development",
         "items": [
             {
                 "item_id": f"item-{language}",

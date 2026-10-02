@@ -1640,6 +1640,7 @@ _FIXTURE_DEFINITION = {
     "stop_sequences": ["###"],
     "context_length": 4096,
     "thinking_policy": "disabled",
+    "level": "development",
     "items": [
         {
             "item_id": f"fixture-{language}",
@@ -1696,6 +1697,11 @@ def test_a_suite_registered_outside_the_cli_runs_end_to_end(
         assert row["thinking_policy"] == "disabled"
         assert row["indicative"] is True
         assert row["suite_accuracy"] == 1.0
+        # A development fixture whose items declare no licence or source.
+        assert row["suite_level"] == "development"
+        assert row["item_licence"] is None
+        assert row["item_source"] is None
+        assert row["item_source_revision"] is None
     assert {row["item_id"] for row in rows} == {
         "fixture-en",
         "fixture-fr",
@@ -1703,6 +1709,68 @@ def test_a_suite_registered_outside_the_cli_runs_end_to_end(
     }
     # The fixture's own rule scored both batches, under the fixture's own cap.
     assert rule_calls == [16, 16]
+
+
+def test_a_publication_suite_runs_and_every_row_names_its_level_and_source(
+    stubbed_run, tmp_path
+) -> None:
+    quality_results_path, _ = stubbed_run
+    data = {
+        **_FIXTURE_DEFINITION,
+        "suite_id": "fixture-publication",
+        "scoring_rule": "exact_label_match",
+        "level": "publication",
+        "size_target": 100,
+        "size_target_reason": "the source holds fewer than 300 items",
+        "items": [
+            {
+                "item_id": f"pub-{language}-{index}",
+                "prompt": f"Route this {language} message {index}: invoice.",
+                "expected_label": "billing",
+                "language": language,
+                "provenance": "public",
+                "contamination_risk": True,
+                "licence": "MIT",
+                "source": "example-benchmark",
+                "source_revision": f"rev-{index}",
+            }
+            for language in ("en", "fr", "de")
+            for index in range(34)
+        ],
+    }
+    path = tmp_path / "fixture-publication.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    suite_registry.register(path)
+    try:
+        quality_cli._run(suite="fixture-publication")
+    finally:
+        suite_registry.unregister("fixture-publication")
+
+    rows = read_rows(quality_results_path)
+    assert len(rows) == 2 * 102
+    for row in rows:
+        assert row["suite_level"] == "publication"
+        assert row["indicative"] is False
+        assert row["item_licence"] == "MIT"
+        assert row["item_source"] == "example-benchmark"
+        assert row["item_source_revision"] == f"rev-{row['item_id'].split('-')[-1]}"
+        assert row["contamination_risk"] is True
+
+
+def test_a_shipped_suite_run_names_development_and_each_items_licence(
+    stubbed_run,
+) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run(suite="classification-support-routing")
+
+    rows = read_rows(quality_results_path)
+    assert rows
+    for row in rows:
+        assert row["suite_level"] == "development"
+        assert row["item_licence"] == "CC-BY-4.0"
+        assert row["item_source"] is None
+        assert row["item_source_revision"] is None
 
 
 def test_translation_run_writes_one_graded_row_per_item_per_provider(

@@ -1,12 +1,13 @@
 {
   "suite_id": "translation-business-short-form",
-  "suite_version": "2",
+  "suite_version": "3",
   "task_suite": "translation",
   "scoring_rule": "chrf_against_reference",
   "max_output_tokens": 128,
   "stop_sequences": [],
   "context_length": 32768,
   "thinking_policy": "disabled",
+  "level": "development",
   "items": [
     {
       "item_id": "en-fr-01",
@@ -16,7 +17,8 @@
       "language": "en",
       "target_language": "fr",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "en-fr-02",
@@ -26,7 +28,8 @@
       "language": "en",
       "target_language": "fr",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "en-fr-03",
@@ -36,7 +39,8 @@
       "language": "en",
       "target_language": "fr",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "en-fr-04",
@@ -46,7 +50,8 @@
       "language": "en",
       "target_language": "fr",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "en-fr-05",
@@ -56,7 +61,8 @@
       "language": "en",
       "target_language": "fr",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "en-fr-06",
@@ -66,7 +72,8 @@
       "language": "en",
       "target_language": "fr",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "en-fr-07",
@@ -76,7 +83,8 @@
       "language": "en",
       "target_language": "fr",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "fr-de-01",
@@ -86,7 +94,8 @@
       "language": "fr",
       "target_language": "de",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "fr-de-02",
@@ -96,7 +105,8 @@
       "language": "fr",
       "target_language": "de",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "fr-de-03",
@@ -106,7 +116,8 @@
       "language": "fr",
       "target_language": "de",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "fr-de-04",
@@ -116,7 +127,8 @@
       "language": "fr",
       "target_language": "de",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "fr-de-05",
@@ -126,7 +138,8 @@
       "language": "fr",
       "target_language": "de",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "fr-de-06",
@@ -136,7 +149,8 @@
       "language": "fr",
       "target_language": "de",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "fr-de-07",
@@ -146,7 +160,8 @@
       "language": "fr",
       "target_language": "de",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "de-en-01",
@@ -156,7 +171,8 @@
       "language": "de",
       "target_language": "en",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "de-en-02",
@@ -166,7 +182,8 @@
       "language": "de",
       "target_language": "en",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "de-en-03",
@@ -176,7 +193,8 @@
       "language": "de",
       "target_language": "en",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "de-en-04",
@@ -186,7 +204,8 @@
       "language": "de",
       "target_language": "en",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "de-en-05",
@@ -196,7 +215,8 @@
       "language": "de",
       "target_language": "en",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "de-en-06",
@@ -206,7 +226,8 @@
       "language": "de",
       "target_language": "en",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     },
     {
       "item_id": "de-en-07",
@@ -216,7 +237,8 @@
       "language": "de",
       "target_language": "en",
       "provenance": "hand_written",
-      "contamination_risk": false
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
     }
   ]
 }
