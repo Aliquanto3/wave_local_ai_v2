@@ -23,6 +23,7 @@ Epic: `aidd_docs/backlog/epics/a-score-is-published-with-its-interval-a-differen
 - Options: (a) accept the stated split; the bundle epic adds a fifth table for comparison and family records, with the column definitions supplied from this epic; (b) this epic ships its own export of the statistics; (c) the bundle epic owns everything including the statistical columns' definitions.
 - Recommended default: (a). It matches the split one sibling has already written down and avoids two exporters over one bundle.
 - Blocks: order 6 (`proposed`).
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q3. Who owns the cloud retry budget and per-item resume at publication scale?
 
@@ -31,6 +32,7 @@ Epic: `aidd_docs/backlog/epics/a-score-is-published-with-its-interval-a-differen
 - Options: (a) a new story under `any-open-ended-output-carries-two-judges-or-an-honest-flag`, beside the done one; (b) a new story under `every-published-row-explains-and-reproduces-itself`; (c) a new story under this epic.
 - Recommended default: (a). The done story is never reopened (a changed need is a new story), and its parent already owns the retry and resume behaviour.
 - Blocks: a cloud batch on either publication suite. Not the one required published batch per suite, which can be local.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q4. Is a comparability field absent on both sides a refusal, or an observation naming the absence?
 
@@ -48,6 +50,7 @@ Epic: `aidd_docs/backlog/epics/a-score-is-published-with-its-interval-a-differen
 - Options: (a) one epic, two gates, with the downstream epic depending on gate one; (b) split into two epics; (c) one gate.
 - Recommended default: (a), the epic's own recommendation; it unblocks the engine and variant epic without waiting on a licence answer.
 - Blocks: no story here; it decides when the downstream epic may start.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ## Judge amendment
 
@@ -60,6 +63,7 @@ Epic: `aidd_docs/backlog/epics/any-open-ended-output-carries-two-judges-or-an-ho
 - Options: (a) rewrite order 6 in place: two-judge rows under GLM and DeepSeek for every item, the single-judge path proven by order 10's forced collision rather than by a row, one item in ten also calibrated once order 11 lands, its `depends_on` moved to orders 10 and 11, and its README answers extended to the calibration figure and the actual campaign cost; (b) cancel order 6 with the reason recorded and create a new story that `supersedes` it with that acceptance; (c) leave order 6 unchanged and blocked until the owner revisits.
 - Recommended default: (a). The epic already states the acceptance is rewritten as a story change, the story is not `done` so no completed work is overwritten, and its runner and ten items are provider-agnostic and survive. Cost: order 6's history no longer shows the single-judge row it once promised; the epic's success check 2 already replaces it with the forced collision.
 - Blocks: order 6, order 10 (`proposed`), and through them order 11 and the epic's Success Evidence run.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q7. Which endpoint serves the calibration judge, GPT-5.6 Luna?
 
@@ -68,6 +72,7 @@ Epic: `aidd_docs/backlog/epics/any-open-ended-output-carries-two-judges-or-an-ho
 - Options: (a) the vendor's direct API (OpenAI), the same rule the pair follows; (b) a router with a fixed provider order, fallbacks disabled and the answering provider on the row; (c) whichever the spike finds cheaper.
 - Recommended default: (a). It matches the pair's rule, keeps the calibration judge at one egress destination rather than a router plus an upstream, and makes "the provider that actually answered" true by construction. Cost: one more provider account and key to hold.
 - Blocks: order 11 (`proposed`); the spike can investigate the direct API first under this default.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q8. How is the 10% calibration subsample drawn, and what is its floor?
 
@@ -76,6 +81,7 @@ Epic: `aidd_docs/backlog/epics/any-open-ended-output-carries-two-judges-or-an-ho
 - Options: (a) per suite and batch, a seeded draw stratified by language, rounded up, with at least one item per language present; the n is published beside each figure and an undefined statistic publishes a null with its reason (on the probe this is 3 items of 10, above 10%); (b) a plain seeded 10% rounded up, uniform over the items, accepting that a small suite may calibrate no FR or DE item; (c) a fixed minimum count per language (for example 5) regardless of suite size, at a higher calibration cost.
 - Recommended default: (a). It is the smallest rule that can answer the FR/DE question the PRD gives the calibration judge, and it keeps the 10% rate on publication-size suites where stratified rounding is negligible. Cost: a deviation above 10% on small suites, which the PRD's revisable-threshold clause allows but only the owner can accept.
 - Blocks: order 11 (`proposed`).
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q9. What happens when the found catalogue prices put a judged campaign over the ten-dollar estimate?
 
@@ -84,6 +90,7 @@ Epic: `aidd_docs/backlog/epics/any-open-ended-output-carries-two-judges-or-an-ho
 - Options: (a) no cap: every judged row reports its judge cost, the first campaign's actual total is compared against the estimate in the results README, and the owner revisits the budget then; (b) a per-campaign spend ceiling that stops issuing paid calls when reached and marks the run partial, through the shipped partial-and-resume machinery; (c) shrink the calibration subsample when its share of the budget passes a set fraction.
 - Recommended default: (a). It follows the PRD's "reported, never optimised" rule and the epic's own closing question about actual versus estimated cost; (b) is a budget control the PRD does not ask for, and (c) changes a methodology threshold for cost reasons. Cost: a mispriced campaign is noticed after it is paid for, bounded by one campaign.
 - Blocks: nothing today. Answering (b) or (c) adds a story under this epic.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ## Size-class families
 
@@ -96,6 +103,7 @@ Epic: `aidd_docs/backlog/epics/every-size-class-spans-two-families-or-says-it-do
 - Options: (a) the class is banded on total parameters, with edges at 1B, 3B and 6B (which yields the epic's four nominal classes and places every shipped entry where its name suggests), and bytes on disk is recorded and published beside it as the footprint figure without banding; per-machine fit stays with the machine epic's profiles; (b) the class is banded on bytes on disk, with edges where the machines separate (about 5 GB allocatable laptop VRAM, 8 GB tower VRAM, about 12 GB usable RAM on the 16 GB PC), accepting that the nominal names no longer describe the classes; (c) both: a nominal class banded as (a) plus a separate machine-fit band per entry, checked independently.
 - Recommended default: (a). It is the only option that keeps the four classes the epic and the gap brief name, it is checkable from the entry, and the epic itself excludes per-machine fit ("the per-machine decision of whether a given entry runs is not taken here"). Cost: the epic's "bounded in practice by the footprint bands" clause becomes descriptive rather than the measure, which only the owner can accept; edges stay revisable after the first full-roster run.
 - Blocks: order 3 (`proposed`), hence orders 5 to 8.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q11. Is a model family its vendor lineage or its model line?
 
@@ -113,6 +121,7 @@ Epic: `aidd_docs/backlog/epics/every-size-class-spans-two-families-or-says-it-do
 - Options: (a) take the spike's per-class shortlist, restricted to the epic's families: Granite 350M and the smallest LFM2 at ~0.5B; Granite 1B and LFM2 at ~2B; Ministral 3B and the Phi mini model at ~4B; Gemma 4 26B-A4B (MoE) and Gemma 4 12B (dense) at the top; any sub-4B MoE the spike finds is taken at its class; candidates tried smallest download first; one passing non-Qwen family per class suffices; each taken at the quant matching the Qwen entry of its class where its publisher ships it, otherwise the nearest one with the difference stated; (b) the same shortlist, but every passing candidate enters rather than stopping at the first second family; (c) (a) plus GPT-OSS 20B and Mellum2 at the top class as further MoE families.
 - Recommended default: (a). It is the epic's own stopping rule applied literally (the outcome is the composition, not a count of models), it bounds bench time and disk, and quant matching keeps a family comparison from being read as a quant comparison, the confusion this epic exists to remove. Cost: a class satisfied by its first passing family reports one rival, not the best one; (b) is the option that answers "which small model is best", at several times the bench cost.
 - Blocks: orders 5 to 8 (`proposed`), together with the spike.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ## Engine and prompt variant
 
@@ -134,6 +143,7 @@ Epic: `aidd_docs/backlog/epics/the-engine-and-the-prompt-variant-are-measured-no
 - Options: (a) `qwen3-0.6b-q8` (roster quant `Q8_0`), the machine epic's proving model; (b) the MoE flagship `qwen3.6-35b-a3b-ud-iq4xs`; (c) `qwen3-4b-q4km` (roster quant `Q4_K_M`).
 - Recommended default: (a). Cheapest to run under the full runtime protocol, runnable on every reference-machine candidate, and its roster quant is pinned explicitly so any different quant Ollama chooses is readable on the figure. Cost: the figure says nothing about MoE offload defaults, the case a consultant is most likely asked about; (b) can follow as a second side-run if spike `can-a-pinned-ollama-build-serve-the-roster-gguf-under-the-runtime-protocol` finds a matching library tag.
 - Blocks: order 11 (`proposed`).
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q22. Which machine is the campaign's declared reference machine?
 
@@ -142,6 +152,7 @@ Epic: `aidd_docs/backlog/epics/the-engine-and-the-prompt-variant-are-measured-no
 - Options: (a) the laptop (RTX 3060 Laptop, 6 GB VRAM, about 5.1 GB allocatable, per `context_input/hardware.md`), in its `gpu` mode; (b) the tower (RTX 3050, 8 GB VRAM); (c) the laptop in `cpu_only` mode.
 - Recommended default: (a). It is the development machine where every command is agent-executable, the existing bundle and the machine epic's proving runs are taken there, and it is the machine the epic's VRAM-pressure reasoning names. Cost: the tightest VRAM of the GPU machines, so the compressor's placement is most likely forced to CPU or a separate phase.
 - Blocks: order 12 (`proposed`); the compressor spike can proceed on the laptop under this default.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q23. May the input compressor bring a heavy ML dependency into the project, and how?
 
@@ -150,6 +161,7 @@ Epic: `aidd_docs/backlog/epics/the-engine-and-the-prompt-variant-are-measured-no
 - Options: (a) an optional, pinned dependency group used only by the `input_compressed` variant, excluded from the default install and the published container, its weights downloaded by revision with a checksum like a roster entry; (b) the compressor runs out of process in its own pinned environment, called by the harness through a narrow interface; (c) a required dependency of the project.
 - Recommended default: (a). It keeps the default install and the container unchanged for every reader who does not reproduce the compression cells, and reuses the pin-and-checksum discipline the roster already applies. Cost: a reproduction of the `input_compressed` cells needs one extra documented install step, and the dependency scan must cover the optional group.
 - Blocks: order 9 (`proposed`), together with its spike.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q24. How are TTFT, tokens and energy measured per variant and per task family?
 
@@ -158,6 +170,7 @@ Epic: `aidd_docs/backlog/epics/the-engine-and-the-prompt-variant-are-measured-no
 - Options: (a) quality rows gain per-item engine-reported TTFT (with its `ttft_source`) and per-item tokens in and out, so TTFT and tokens get paired tests over items; energy stays measured per batch, and per-variant energy differences are published as observations; (b) as (a), plus the energy tracker started and stopped around each item so energy is paired too; (c) per-item tokens on quality rows, while TTFT and energy come from the runtime protocol run per variant on a declared representative item per task family, with no paired test on either.
 - Recommended default: (a). Paired tests need per-item values, the engine already reports per-generation timings, and per-item energy on items of a few dozen tokens sits below what the tracker can resolve, so (b) would publish noise as a paired result. Cost: per-item TTFT on a quality batch is not the Methodology 6 runtime figure (no warm-up exclusion, no repetitions) and must be labelled as a distinct measurement; no paired energy claim is possible.
 - Blocks: order 10 (`proposed`) and through it order 12.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ## No use case silently absent
 
@@ -179,6 +192,7 @@ Epic: `aidd_docs/backlog/epics/no-use-case-is-silently-absent.md`. New stories a
 - Options: (a) container-based, no network, no host mount, wall-clock and memory caps, refusing to run where no container runtime is present, sharing the runtime the published image already uses; (b) a host subprocess under OS-level limits, with no container dependency; (c) a WebAssembly or language-level sandbox per programming language.
 - Recommended default: (a), the epic's recommendation. The project already ships a container image, so the runtime is not a new dependency, and refusing rather than falling back is the only posture that never runs untrusted code on the host. Cost: an operator must have a container runtime on each bench machine for this suite, and the no-GPU professional PC may not.
 - Blocks: order 4 (`proposed`).
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q32. Which programming language joins Python in the code-generation suite?
 
@@ -187,6 +201,7 @@ Epic: `aidd_docs/backlog/epics/no-use-case-is-silently-absent.md`. New stories a
 - Options: (a) JavaScript (Node, its built-in test runner); (b) TypeScript; (c) a compiled language such as Java, C# or Go; (d) more than one.
 - Recommended default: (a). It is the most common second language in client codebases, needs no compile step in the sandbox, and its test runner ships with the runtime. Cost: no claim about a typed or compiled language is publishable; (b) or (c) adds a compile step and a build failure mode to the scoring.
 - Blocks: order 4 (`proposed`).
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q33. How is a harness's per-call prompt overhead measured?
 
@@ -195,6 +210,7 @@ Epic: `aidd_docs/backlog/epics/no-use-case-is-silently-absent.md`. New stories a
 - Options: (a) per call, the token count of what the engine finally received minus the token count of the item's own rendered prompt (including the item's tool definitions as rendered under `direct`), under the tokenizer the row already names; a framework that rewrites rather than wraps the item's prompt is recorded unmeasurable, not zero; (b) the framework's own reported prompt-token count minus `direct`'s for the same item; (c) report the total only and drop the separate field.
 - Recommended default: (a), the epic's recommendation. It reads what the engine actually received rather than trusting a framework's self-report, and counting tool definitions as item content keeps `direct`'s overhead from being inflated by the task itself. Cost: it needs the engine-side prompt to be readable per call, which the tool-calling spike checks per framework; (c) contradicts the PRD acceptance criterion.
 - Blocks: the harness task (`proposed`), hence orders 5, 6, 7, 8 and 9.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q34. Is web research a retrieve-then-answer pipeline, or agentic tool use?
 
@@ -203,6 +219,7 @@ Epic: `aidd_docs/backlog/epics/no-use-case-is-silently-absent.md`. New stories a
 - Options: (a) pipeline-first: web research is independent of the tool-calling spike, sits outside the harness comparison this release, and records harness `direct`; an agentic variant is deferred until the tool-calling spike reports; (b) agentic from the start, sharing order 6's transcript capture and the spike's risk; (c) both, as two scoring rules over one query set.
 - Recommended default: (a). It keeps the heaviest suite off the riskiest gate and makes every archived response a function of the query alone, which is what makes offline recompute straightforward. Cost: the suite measures answer writing over search results, not a model's search strategy.
 - Blocks: orders 9 and 10 (`proposed`).
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ## Bundle, licences and citation
 
@@ -215,6 +232,7 @@ Epic: `aidd_docs/backlog/epics/one-download-holds-the-tables-their-licences-and-
 - Options: (a) the sandbox, with the real deposit left to the day a venue asks for a DOI; (b) a real deposit of the next release, so the first release carrying the archive also carries a DOI; (c) write the procedure without performing it.
 - Recommended default: (a). It exercises the same form without a permanent public act the PRD calls optional; (c) contradicts the epic's own resolution of the unknown. Cost: the sandbox may differ from production in small ways, so the first real deposit can still need one correction.
 - Blocks: order 6 (`proposed`).
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q41. What does the download give a reader for a drawn item whose text may not be redistributed?
 
@@ -223,6 +241,7 @@ Epic: `aidd_docs/backlog/epics/one-download-holds-the-tables-their-licences-and-
 - Options: (a) per item the source, its revision and the stable source key, plus one written instruction per source in the archive README; the content hash proves a fetched item is the scored one; (b) a fetch script shipped in the archive that downloads the source and verifies each item by hash; (c) the source identity and the hash only, no instruction.
 - Recommended default: (a). It meets the epic's "visible absence with its source and a fetch instruction" without the repository shipping code that pulls a third party's corpus, which a no-redistribution licence may itself restrict; (c) falls short of the epic's success check 5. Cost: the reader performs the join to the source by hand.
 - Blocks: order 7 (`proposed`), together with the two public-benchmark spikes.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q42. Who computes the published leader set, given the PRD names the export tooling?
 
@@ -231,6 +250,7 @@ Epic: `aidd_docs/backlog/epics/one-download-holds-the-tables-their-licences-and-
 - Options: (a) the interval epic computes the leader set into the bundle as its own records beside the comparison records, and this export flattens them like any other record (which then falls under Q2's table split); (b) a story here derives it in the export as an extra table, which amends this epic's "computes no number" boundary; (c) leave it unowned for this release.
 - Recommended default: (a). It keeps the export a pure projection, the epic's "derived, never authoritative" decision, and puts a statistical derivation with the epic that owns the paired tests; it still satisfies the PRD's "recomputable by anyone holding that bundle". Cost: the PRD's literal wording ("by the export tooling") is read loosely, which only the owner can accept.
 - Blocks: no story in this epic. It decides whether the pitch's leader-set cards can ever show a model.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q43. Do the hand-written item literals inside `src/` also fall under `LICENSE-DATA`?
 
@@ -252,6 +272,7 @@ Epic: `aidd_docs/backlog/epics/quality-scored-comparison-first-three-use-cases.m
 - Options: (a) rewrite order 2 in place under the amended methodology, folding in the answers to Q51 to Q56 (the same route Q6 recommends for the judged probe), and keep its subject scope at one local and one cloud subject so the roster-wide rewriting run stays with order 5; (b) cancel order 2 with its reason recorded and create a new story that `supersedes` it; (c) leave order 2 unchanged until the judge epic's orders 8 to 10 are `done`, then revisit.
 - Recommended default: (a). Order 2 is not `done`, so no completed work is overwritten; the judge epic already treats it as the rewriting suite's owner and the machinery's first consumer, and Q6 recommends the same in-place route for the sibling story, so the two judged stories stay consistent. Cost: order 2's history no longer shows its Mistral and Google wording, and its slug keeps "proves judged machinery", which Q56 questions.
 - Blocks: order 2, and through it orders 5 and 6 (`proposed`) and the epic's done gate.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q51. Order 2 is `ready` with no declared predecessor on the judge pair: does it return to `proposed` with `depends_on`?
 
@@ -260,6 +281,7 @@ Epic: `aidd_docs/backlog/epics/quality-scored-comparison-first-three-use-cases.m
 - Options: (a) declare `depends_on` on judge epic orders 7 and 10 (order 10 already depends on 8 and 9) and move order 2 from `ready` to `proposed`, a transition the lifecycle allows, until they are `done`; (b) declare the `depends_on` but keep `ready`, reading the edge as sequencing only; (c) leave the relation epic-wide, as today.
 - Recommended default: (a). It makes the blocker visible on the story a delivery agent would pick up, instead of only in the judge epic's prose. Cost: one more `proposed` story in this epic until the judge pair answers a live call.
 - Blocks: whether order 2 can be picked up for delivery today; nothing else.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q52. Order 2 forbids any judged score without agreement; the PRD keeps a flagged single-judge branch
 
@@ -268,6 +290,7 @@ Epic: `aidd_docs/backlog/epics/quality-scored-comparison-first-three-use-cases.m
 - Options: (a) restate the bullet as the PRD AC's two branches, adding that on the current roster every rewriting row is a two-judge row; (b) keep the stricter wording, so a colliding subject is excluded from the rewriting suite rather than flagged; (c) drop the bullet and rely on the row contract's `JUDGED_FIELDS` alone.
 - Recommended default: (a). It is the PRD's own wording and the judge epic's shipped invariant (the writer refuses a judged row carrying neither an agreement figure nor the flag). Cost: none on the current roster.
 - Blocks: nothing beyond Q50.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q53. Order 2 is silent on the per-judge-call fields and on judge cost
 
@@ -276,6 +299,7 @@ Epic: `aidd_docs/backlog/epics/quality-scored-comparison-first-three-use-cases.m
 - Options: (a) cite them in order 2's "Maps to" line and its `depends_on` (Q51) without new acceptance bullets, since the contract enforces them; (b) add one acceptance bullet per field to order 2; (c) leave order 2 silent.
 - Recommended default: (a). The contract is the enforcement point and order 7 owns it; repeating its bullets would put the same rule in two stories. Cost: a reader of order 2 alone has to follow the link to see the per-call fields.
 - Blocks: nothing beyond Q50.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q54. Must the rewriting suite's first published batch carry the calibration judge?
 
@@ -284,6 +308,7 @@ Epic: `aidd_docs/backlog/epics/quality-scored-comparison-first-three-use-cases.m
 - Options: (a) no: order 2 publishes its rewriting batch under the pair alone, its results README section states that the calibration subsample has not yet run, and order 11's first figure is computed over that batch's judged items once it lands; (b) yes: order 2 declares `depends_on` on order 11 and its batch is published with the calibration figure; (c) calibration is exercised on the judged probe only, and never on a suite batch this release.
 - Recommended default: (a). Methodology 11 forbids folding the calibration result into any suite score, so the rewriting score does not depend on it, and making it wait would put a third provider's spike on the critical path of the epic's last use case. Cost: the first rewriting publication carries a stated absence where its calibration figure belongs; (c) contradicts Methodology 11's "judged items".
 - Blocks: order 2's dependency set; nothing else.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q55. Order 2 does not state its rubric, its contested threshold or the judge prompt's language
 
@@ -292,6 +317,7 @@ Epic: `aidd_docs/backlog/epics/quality-scored-comparison-first-three-use-cases.m
 - Options: (a) order 2's rewrite adds its own versioned rubric (1-5 ordinal, so quadratic-weighted kappa with raw agreement beside it, the epic's decision), the shipped default threshold of more than 1 point unless the suite argues otherwise in writing, contested items kept visible and excluded from the headline with their count, and judge prompts in the item's language; (b) the rewriting suite reuses the probe's generic shipped rubric; (c) a separate story under this epic authors the rubric before order 2.
 - Recommended default: (a). It is the ownership the judge epic already wrote, and the probe's own source refuses to be a draft of the rewriting rubric. Cost: order 2 grows by four acceptance bullets; it stays one story because rubric and suite are versioned together.
 - Blocks: nothing beyond Q50.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q56. Does order 2 still prove the judged machinery, or only consume it?
 
@@ -300,6 +326,7 @@ Epic: `aidd_docs/backlog/epics/quality-scored-comparison-first-three-use-cases.m
 - Options: (a) order 2's rewrite restates its value as the third use case's quality score (a consultant compares local and cloud rewriting quality under two independent judges), with `depends_on` on the probe, and the epic's Progress text is updated by the owner to match; (b) keep "proves the machinery" as order 2's outcome and treat the probe as a rehearsal; (c) leave both texts as they are.
 - Recommended default: (a). It removes a double claim to the same proof, and it is the reading the judge epic's Boundaries already state. Cost: the story's slug no longer describes its outcome; renaming a file is the owner's call.
 - Blocks: nothing beyond Q50.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q57. Does order 2 have to be born compliant with Methodology 2 to 5, and as a data-defined suite?
 
@@ -308,6 +335,7 @@ Epic: `aidd_docs/backlog/epics/quality-scored-comparison-first-three-use-cases.m
 - Options: (a) order 2's rewrite cites Methodology 2 to 5 as acceptance and declares `depends_on` on the suite-as-data story, so the rewriting suite is born as data and gate-compliant; (b) as (a) without the suite-as-data dependency, migrating later; (c) a separate story under this epic, mirroring `the-classification-suite-reaches-twenty-items-across-three-languages`, brings the suite to compliance after order 2.
 - Recommended default: (a). It is what the row epic already expects, and it avoids authoring the third suite in a shape the next story replaces. Cost: order 2 waits on one more `ready` story in another epic.
 - Blocks: nothing beyond Q50.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q58. The epic's own Boundaries and Dependencies still name Mistral and Google as judges on the free tier
 
@@ -316,6 +344,7 @@ Epic: `aidd_docs/backlog/epics/quality-scored-comparison-first-three-use-cases.m
 - Options: (a) the owner amends those two rows and appends a dated Progress note (via `aidd-pm:07-epic`), leaving Success Evidence untouched; (b) leave the epic as history and let the judge epic's text govern; (c) cancel this epic and move order 2 and the new stories under the judge epic.
 - Recommended default: (a). An epic that names retired judges invites a delivery agent to wire them back, which is the exact failure Methodology 11 forbids. Cost: one owner edit.
 - Blocks: nothing directly.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q59. What is the reproduction verdict of a judged score, and which epic owns it?
 
@@ -324,6 +353,7 @@ Epic: `aidd_docs/backlog/epics/quality-scored-comparison-first-three-use-cases.m
 - Options: (a) a two-part verdict under this epic: the subject component compares the subject's per-item outputs (local: identical; cloud: Methodology 8's tolerance), the judged component recomputes scores, agreement, contested set and headline offline from the recorded judge records and must match exactly, and a live re-judge is compared per item under a suite-declared judge tolerance defaulting to the contested threshold (1 point on a 1-5 rubric), naming divergent items and judges; a changed judge model id, judge prompt hash or rubric version makes the pair not comparable naming the field; (b) one verdict on the per-item judged score under the suite's tolerance only, with no subject component; (c) every judged row is published single-run indicative and never reproduced; (d) the row epic owns it as a Methodology 8 amendment.
 - Recommended default: (a), owned here. It is the only option that tells a reader whether a non-reproduction came from the model or from a judge, and the offline recompute is the same property Methodology 17 demands of web research. Cost: one more verdict shape in `verdict.py` and a tolerance figure the PRD does not state yet, which only the owner can accept; the Z.ai and DeepSeek spikes' determinism answers are the evidence for whether 1 point is too loose or too tight.
 - Blocks: order 6 (`proposed`).
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ## Result reception log epic
 
@@ -336,6 +366,7 @@ Epic: `aidd_docs/backlog/epics/a-release-is-called-credible-only-by-its-logged-c
 - Options: (a) one append-only structured file (one record per session, for example JSONL or YAML) under `aidd_docs/results/`, beside the result stores it judges; (b) one Markdown file with a table per release under `aidd_docs/`; (c) a file outside the public repo, referenced from it.
 - Recommended default: (a). A structured record lets the verdict be recomputed rather than counted by hand, and sitting next to the results makes "which release did this judge" a local lookup. Cost: a schema to maintain.
 - Blocks: every story of the epic.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q61. May a client organisation be named in the tracked record?
 
@@ -344,6 +375,7 @@ Epic: `aidd_docs/backlog/epics/a-release-is-called-credible-only-by-its-logged-c
 - Options: (a) no client name; role plus an opaque session id only; (b) a pseudonymous client id, with the mapping kept outside the repo; (c) the client named, with their consent.
 - Recommended default: (b). It keeps the record confidential while still letting "three sessions" be told apart from "one client seen three times", which (a) cannot. Cost: a private mapping the consultant must keep.
 - Blocks: the record's schema (Q60) and the epic's client-identity check.
+- Owner answer: (b), the recommended default (2026-10-01).
 
 ### Q62. Who decides that a challenge was "resolved by evidence within that session"?
 
@@ -352,6 +384,7 @@ Epic: `aidd_docs/backlog/epics/a-release-is-called-credible-only-by-its-logged-c
 - Options: (a) the consultant records the resolution and must name the evidence that resolved it, so it is checkable afterwards; (b) a resolution counts only if the challenger agreed in the session, recorded as such; (c) a second consultant reviews each record before it counts.
 - Recommended default: (a). It is the PRD's own definition made auditable and needs nothing from the client. Cost: still self-reported; the epic records that limit as an accepted assumption.
 - Blocks: the sustained rule and the verdict.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q63. What counts as a session toward the three?
 
@@ -360,6 +393,7 @@ Epic: `aidd_docs/backlog/epics/a-release-is-called-credible-only-by-its-logged-c
 - Options: (a) only showings to a party outside the consultant's own firm count; repeats with one client count, and the verdict also states the number of distinct clients; (b) only distinct clients count; (c) any showing, internal or external, counts.
 - Recommended default: (a). It follows the PRD's wording literally and surfaces the distinct-client count instead of hiding it. Cost: three sessions with one client can validate a release, which (b) would forbid.
 - Blocks: the verdict.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q64. How does a sustained challenge interact with a release's verdict?
 
@@ -368,6 +402,7 @@ Epic: `aidd_docs/backlog/epics/a-release-is-called-credible-only-by-its-logged-c
 - Options: (a) it blocks that release's verdict permanently and revokes one already reached; the fix ships in a later release whose count starts at zero; (b) it resets the count within the same release; (c) it only blocks if it happens before the third clean session.
 - Recommended default: (a). The PRD scopes the verdict "for that release", and a sustained challenge to one of the three claims means that release's artifact failed on it. Cost: a single bad session can cost a release its verdict.
 - Blocks: the verdict.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q65. Where does a sustained challenge's follow-up item live?
 
@@ -376,6 +411,7 @@ Epic: `aidd_docs/backlog/epics/a-release-is-called-credible-only-by-its-logged-c
 - Options: (a) a backlog item under `aidd_docs/backlog/` (a defect when a claim is shown wrong, a spike when it is merely unresolved), linked from the record; (b) an entry in `aidd_docs/backlog/tech-debt.md`; (c) an open/closed state inside the record itself.
 - Recommended default: (a). It puts the follow-up in the flow that already gets worked and gives the owning epic a link to it. Cost: client-session context becomes a backlog item, which must respect Q61.
 - Blocks: the follow-up story.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q66. Is the verdict computed by a check or written by hand, and where is it published?
 
@@ -384,6 +420,7 @@ Epic: `aidd_docs/backlog/epics/a-release-is-called-credible-only-by-its-logged-c
 - Options: (a) a check reads the record and states each release's verdict, and the verdict is published in that release's `CHANGELOG.md` entry; (b) the consultant writes the verdict by hand in the record; (c) a check, published in `aidd_docs/results/README.md`.
 - Recommended default: (a). Derived from the records it cannot contradict them, and the changelog is where a client already reads "which version produced the numbers". Cost: this epic then ships code and a test, not only a document.
 - Blocks: whether the epic has a code story at all.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q67. Are showings that happened before the record existed backfilled?
 
@@ -392,6 +429,7 @@ Epic: `aidd_docs/backlog/epics/a-release-is-called-credible-only-by-its-logged-c
 - Options: (a) backfill only showings that can still name the release, the challenger's role, the evidence offered and the criterion disputed; others are not counted; (b) no backfill, counting starts with the record; (c) backfill everything from memory.
 - Recommended default: (a). It keeps every counted record held to the same fields without throwing away a showing that can meet them. Cost: a memory-based record looks like a contemporaneous one unless marked as backfilled.
 - Blocks: the first verdict, not the record.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q68. Is a product-wide check-in cadence added beyond the per-session log?
 
@@ -400,6 +438,7 @@ Epic: `aidd_docs/backlog/epics/a-release-is-called-credible-only-by-its-logged-c
 - Options: (a) no cadence this release; an unvalidated release simply reads as unvalidated; (b) a review at each release cut that states the count reached; (c) a fixed calendar review.
 - Recommended default: (b). It costs nothing new (a release is cut anyway), keeps the count visible, and never validates by elapsed time, which the PRD forbids. Cost: a line per release in the release procedure.
 - Blocks: nothing in slicing; it adds at most one acceptance line.
+- Owner answer: (b), the recommended default (2026-10-01).
 
 ### Q69. When is this epic `done`?
 
@@ -408,6 +447,7 @@ Epic: `aidd_docs/backlog/epics/a-release-is-called-credible-only-by-its-logged-c
 - Options: (a) done once the record, rule and verdict work and one real session is logged and read back; (b) done only once a release is actually validated; (c) done once the mechanism works on planted records, before any real session.
 - Recommended default: (a). One real session proves the record survives contact with reality; tying `done` to three sessions would leave the epic open on a calendar outside the project. Cost: the epic can close with no release yet validated, which its done note must then say.
 - Blocks: the epic's done gate, not its slicing.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ## Backlog health pass (read-only)
 
@@ -429,6 +469,7 @@ Read-only review of `aidd_docs/backlog/` (12 epics, 107 stories, 14 spikes, 1 ta
 - Options: (a) a new story under `every-published-row-explains-and-reproduces-itself` (the Methodology 8 owner) adding the suite-declared per-item tolerance and the cloud-subject verdict to every quality batch, which the judged re-run story's subject component then reuses through `depends_on`; (b) widen the judged re-run story to all quality batches; (c) a new story under `quality-scored-comparison-first-three-use-cases`.
 - Recommended default: (a). It keeps one verdict rule for all batches in the epic that owns Methodology 8, and keeps the judged story to its judged component. Cost: a new story under an epic whose existing stories are all `done` (see Q75), and a tolerance value the PRD does not state.
 - Blocks: the AC above; quality epic order 6 under option (a).
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q72. Who owns "every row records whether its prompt left the machine"?
 
@@ -437,6 +478,7 @@ Read-only review of `aidd_docs/backlog/` (12 epics, 107 stories, 14 spikes, 1 ta
 - Options: (a) a new story under `every-published-row-explains-and-reproduces-itself`: a row-contract field on every row (subject egress: none, or the provider), the writer gate refusing a row without it, the judge and search egress blocks kept as they are; (b) treat the cloud-subject `provider` field as the record and amend nothing; (c) a story under `any-open-ended-output-carries-two-judges-or-an-honest-flag`, which already owns judge egress.
 - Recommended default: (a). The AC says "every row", and the row contract is where "every row" is enforced. Cost: one more `SCHEMA_VERSION` bump.
 - Blocks: the AC above.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q73. Must each new use-case suite publish a MoE and a tiny dense model side by side?
 
@@ -445,6 +487,7 @@ Read-only review of `aidd_docs/backlog/` (12 epics, 107 stories, 14 spikes, 1 ta
 - Options: (a) each new suite story's published evidence requires one MoE and one tiny dense roster entry over the same items, side by side, or a recorded refusal (for example a model the tool-calling spike finds unable to emit tool calls); (b) one closing story under `no-use-case-is-silently-absent` runs the dense and MoE pair across all six suites; (c) the AC is met by roster composition alone.
 - Recommended default: (a). It matches the route the first three use cases took and keeps the evidence with the suite that produces it. Cost: two batches per suite instead of one; the MoE flagship is the slowest entry on the laptop.
 - Blocks: the AC above; adds one evidence bullet to each of the six stories.
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Q74. Engine order 1 and machine order 1 both change the fiche's hashed projection with no relation between them
 
@@ -462,6 +505,7 @@ Read-only review of `aidd_docs/backlog/` (12 epics, 107 stories, 14 spikes, 1 ta
 - Options: (a) the owner checks each epic's Success Evidence and closes it with its done note (via `aidd-pm:07-epic`), with Q71 and Q72 adding new stories under a follow-up home; (b) keep both `ready` and read the epic-level edges as ordering only; (c) keep both open as the home for Q71 and Q72.
 - Recommended default: (a). It turns eight epic-level edges into satisfied ones and leaves no ambiguity about whether the row contract is finished. Cost: Q71 and Q72, if answered (a), then need a home: a new story under a `done` epic is a lifecycle question only the owner can settle.
 - Blocks: the meaning of eight epic-level `depends_on` edges.
+- Owner answer: split, diverging from the recommended default (2026-10-01). `clean-machine-runs-it-and-nothing-reaches-main-unchecked` is closed under option (a) with its done note; `every-published-row-explains-and-reproduces-itself` stays open under option (c) as the home of the Q71 and Q72 stories, since an acceptance criterion it owns is not yet met.
 
 ### Q76. Which story waits on the model-output redistribution spike?
 
@@ -470,6 +514,7 @@ Read-only review of `aidd_docs/backlog/` (12 epics, 107 stories, 14 spikes, 1 ta
 - Options: (a) keep it epic-level, and state in `each-release-attaches-one-archive-that-needs-no-clone.md`'s scope that the first archive carrying open-ended model output (rewriting, document comparison) waits on the spike; (b) add `each-release-attaches-one-archive-that-needs-no-clone.md` to the spike's `parents`, which moves that story off `ready`; (c) leave it as is.
 - Recommended default: (a). Today's rows carry only `predicted_label`, which the licence story already scopes out as a separate part; the risk starts with open-ended output. Cost: one scope line.
 - Blocks: nothing `ready` under (a).
+- Owner answer: (a), the recommended default (2026-10-01).
 
 ### Mechanical findings
 
@@ -480,4 +525,4 @@ Read-only review of `aidd_docs/backlog/` (12 epics, 107 stories, 14 spikes, 1 ta
 - `aidd_docs/backlog/tasks/register-the-closed-harness-candidate-set-and-its-three-row-fields.md`: no `order`; add `order: 1` (the only task under its parent).
 - `aidd_docs/backlog/epics/the-pitch-runs-from-a-browser-and-only-with-the-key.md`: its three `related_to` entries sit on the end whose path sorts later; move each to `clean-machine-runs-it-and-nothing-reaches-main-unchecked.md`, `every-published-row-explains-and-reproduces-itself.md` and `quality-scored-comparison-first-three-use-cases.md` respectively.
 - `aidd_docs/backlog/epics/quality-scored-comparison-first-three-use-cases.md`: a `ready` epic with no `goal`; add `goal: aidd_docs/product/wave-local-ai-v2.md`, as every sibling epic has.
-- `aidd_docs/backlog/stories/google-ai-studio-api-surface-is-confirmed-live.md`: a `done` spike filed under `stories/` with story fields `parent` and `order: 1`; move it to `spikes/`, replace `parent` with `parents`, drop `order`, and update the `depends_on` path in `a-second-cloud-provider-answers-suite-items-as-a-subject.md`.
+- `aidd_docs/backlog/spikes/google-ai-studio-api-surface-is-confirmed-live.md`: a `done` spike filed under `stories/` with story fields `parent` and `order: 1`; move it to `spikes/`, replace `parent` with `parents`, drop `order`, and update the `depends_on` path in `a-second-cloud-provider-answers-suite-items-as-a-subject.md`.

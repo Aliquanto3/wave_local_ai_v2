@@ -22,6 +22,8 @@ Needs: an operator. The owner pushes a `v*` tag to prove the flow end to end, an
 
 Current state: on `v*`, `.github/workflows/ci.yml` runs `verify-tag` and `publish`, which pushes an image. No GitHub Release is created and nothing is attached. The workflow holds `permissions: contents: read`; `publish` adds only `packages: write`. The workflow belongs to `clean-machine-runs-it-and-nothing-reaches-main-unchecked`; this story is the single seam the epic names.
 
+Scope: the first archive carrying open-ended model output (rewriting, document comparison) waits on the spike `aidd_docs/backlog/spikes/may-the-model-outputs-in-the-published-rows-be-redistributed-and-on-what-terms.md`; archives whose rows carry only `predicted_label`, as today's do, do not (owner answer to Q76, option a, 2026-10-01).
+
 ## Acceptance
 
 - On a `v*` tag, once `test`, `build` and `verify-tag` succeed, CI builds the export from the bundle at the tagged commit and assembles one archive in a format the three desktop operating systems open without installing anything.

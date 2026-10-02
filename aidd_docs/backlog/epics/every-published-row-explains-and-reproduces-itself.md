@@ -3,7 +3,9 @@ type: epic
 status: ready
 source: aidd_docs/tasks/2026_08/2026_08_21-wave-local-ai-v2-benchmark-suite-prd.md
 goal: aidd_docs/product/wave-local-ai-v2.md
-related_to: aidd_docs/backlog/epics/quality-scored-comparison-first-three-use-cases.md
+related_to:
+  - aidd_docs/backlog/epics/quality-scored-comparison-first-three-use-cases.md
+  - aidd_docs/backlog/epics/the-pitch-runs-from-a-browser-and-only-with-the-key.md
 ---
 
 # Epic: Every published row explains and reproduces itself
@@ -97,6 +99,10 @@ Six checks confirm or challenge it, each able to fail. The first four are code-l
 - Two real runs on the bench machine produce a verdict with the thermal and load hints of both runs attached, and the 10% tolerance is recorded against the observed spread rather than assumed to fit it. This check calibrates the threshold; it does not gate the verdict logic, which the constructed-row check already covers.
 
 Once `done`, record here what a real client engineer's audit of a row actually surfaced, and whether any of the four thresholds moved on contact with the first full-roster run.
+
+## Progress (2026-10-01)
+
+All twenty stories through order 20 are `done`, and the epic stays open by owner decision (Q75, `aidd_docs/tasks/2026_10/2026_10_01_autonomous-slicing/owner-questions.md`): an acceptance criterion it owns is not yet met, so it is the home of two new stories rather than closed. Order 21, `a-cloud-subject-re-run-is-decided-per-item-under-its-suites-declared-tolerance.md` (Q71), adds the suite-declared per-item divergence tolerance and the cloud-subject verdict, including the single-run-indicative mark, to every quality batch. Order 22, `every-row-records-whether-its-prompt-left-the-machine.md` (Q72), adds a subject egress field to every row with the writer gate refusing a row without it. The Success Evidence check is not yet recorded here.
 
 ## Dependencies and Unknowns
 

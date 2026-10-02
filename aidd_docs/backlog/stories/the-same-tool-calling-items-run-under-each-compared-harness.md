@@ -19,7 +19,7 @@ Maps to: PRD Goals "the benchmark answers which inference engine, which agentic 
 
 Needs: a real local model run.
 
-Blocked: the open spike `aidd_docs/backlog/spikes/does-each-roster-model-emit-parseable-tool-calls-through-llama-server-and-can-each-candidate-harness-drive-it.md`, whose harness half decides which frameworks are comparable; if none beyond `direct` is, this story is not built and the harness comparison is published out of scope with `direct` as the lone reference. Also owner question Q33, through the harness task.
+Blocked: the open spike `aidd_docs/backlog/spikes/does-each-roster-model-emit-parseable-tool-calls-through-llama-server-and-can-each-candidate-harness-drive-it.md`, whose harness half decides which frameworks are comparable; if none beyond `direct` is, this story is not built and the harness comparison is published out of scope with `direct` as the lone reference.
 
 ## Acceptance
 
