@@ -68,8 +68,13 @@ def test_every_cited_fiche_still_hashes_to_its_own_name() -> None:
     # Existence is not integrity: a hand-edited fiche still resolves, but it
     # is no longer the fiche the harness wrote.
     fiche_registry_dir = Path(settings.DEFAULT_FICHE_REGISTRY_DIR)
-    for fiche_hash in sorted({str(row["fiche_hash"]) for row in _all_rows()}):
-        verification = fiche_registry.verify_fiche(fiche_hash, fiche_registry_dir)
+    # Each fiche is verified under the projection its citing row's own
+    # schema_version selects, never under whatever the code writes today.
+    cited = {(str(row["fiche_hash"]), row["schema_version"]) for row in _all_rows()}
+    for fiche_hash, schema_version in sorted(cited, key=str):
+        verification = fiche_registry.verify_fiche(
+            fiche_hash, fiche_registry_dir, schema_version=schema_version
+        )
         assert verification["status"] == "ok", (
             f"fiche {fiche_hash!r} is {verification['status']!r}: "
             f"{verification['changed_fields']}"

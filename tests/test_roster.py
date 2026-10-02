@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from wave_local_ai_v2 import roster, server
+from wave_local_ai_v2 import engines, roster, server
 from wave_local_ai_v2.roster import RosterError
 
 MOE_ENTRY_ID = "fake-moe-model"
@@ -292,8 +292,8 @@ def test_shipped_roster_entry_matches_the_validated_baseline_flags() -> None:
         ("-m", str(dummy_model_path)),
         ("--n-cpu-moe", str(host_n_cpu_moe)),
         ("-t", str(host_threads)),
-        ("--host", server.HOST),
-        ("--port", str(server.PORT)),
+        ("--host", engines.tracked_reference_engine().host),
+        ("--port", str(engines.tracked_reference_engine().default_port)),
     }
     stripped_flags: list[str] = []
     i = 0

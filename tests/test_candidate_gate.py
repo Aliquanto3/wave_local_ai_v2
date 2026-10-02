@@ -21,7 +21,7 @@ import pytest
 import requests
 
 from wave_local_ai_v2 import candidate_gate as gate
-from wave_local_ai_v2 import roster, server
+from wave_local_ai_v2 import engines, roster, server
 
 SHA = "23749fefcc72300e3a2ad315e1317431b06b590a"  # pragma: allowlist secret
 REPO = "Qwen/Qwen3-0.6B-GGUF"
@@ -550,6 +550,47 @@ def test_a_control_the_template_ignores_is_refused_and_no_claim_is_recorded(
 
     _assert_refused(record, gate.STEP_THINKING, "byte-identical")
     assert record["observed"]["chat_template_hash"]
+
+
+def _engine_declaring_no_switch(monkeypatch: pytest.MonkeyPatch) -> None:
+    reference = engines.tracked_reference_engine()
+    no_switch = engines.EngineEntry(
+        **{
+            **reference.__dict__,
+            "thinking_switch": engines.THINKING_SWITCH_NONE,
+        }
+    )
+    monkeypatch.setattr(engines, "tracked_reference_engine", lambda: no_switch)
+
+
+def test_an_object_control_on_an_engine_declaring_no_switch_is_refused(
+    tmp_path: Path, local: Server, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _engine_declaring_no_switch(monkeypatch)
+
+    record = _run(Stubs(), tmp_path)
+
+    _assert_refused(record, gate.STEP_THINKING, "declares no thinking switch")
+    # Refused before any render: nothing reached /apply-template.
+    assert not any(url.endswith("/apply-template") for url in local.posts)
+
+
+def test_a_none_declaration_still_passes_on_an_engine_declaring_no_switch(
+    tmp_path: Path, local: Server, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _engine_declaring_no_switch(monkeypatch)
+
+    record = _run(Stubs(), tmp_path, thinking_control="none")
+
+    assert record["outcome"] == gate.OUTCOME_PASSED
+
+
+def test_a_control_outside_the_engines_switch_field_is_refused(
+    tmp_path: Path, local: Server
+) -> None:
+    record = _run(Stubs(), tmp_path, thinking_control={"reasoning_effort": "none"})
+
+    _assert_refused(record, gate.STEP_THINKING, "'chat_template_kwargs'")
 
 
 @pytest.mark.parametrize(

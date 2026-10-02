@@ -41,7 +41,7 @@ from pathlib import Path
 from statistics import NormalDist
 from typing import Any
 
-from wave_local_ai_v2 import field_doc, harness, settings
+from wave_local_ai_v2 import field_doc, harness, row_contract, settings
 from wave_local_ai_v2.field_doc import FieldDoc
 
 RECORD_TYPE = "comparison_family"
@@ -333,6 +333,14 @@ DIMENSIONS: dict[str, Dimension] = {
     ),
 }
 DEFAULT_DIMENSION = "model"
+
+# The engine that produced a row and its build (schema "22"). Along `model`
+# they move with the axis only where they differ by construction: one side's
+# subject was served by a local engine and the other's by a cloud provider,
+# whose rows state that no engine applies. Between two locally served sides a
+# different engine or build is a confound, not part of what a model
+# comparison compares.
+ENGINE_FIELDS: frozenset[str] = frozenset({"engine_id", "engine_build"})
 
 
 class ComparisonInputError(ValueError):
@@ -829,6 +837,26 @@ def _partial_sides(
     ]
 
 
+def _axis(
+    dimension: str,
+    reference_rows: Sequence[Mapping[str, Any]],
+    candidate_rows: Sequence[Mapping[str, Any]],
+) -> Dimension:
+    """`dimension`'s axis for these two sides, with the engine rule applied."""
+    axis = DIMENSIONS[dimension]
+    if dimension != DEFAULT_DIMENSION:
+        return axis
+
+    def served_locally(rows: Sequence[Mapping[str, Any]]) -> set[bool]:
+        return {
+            row.get("provider") == row_contract.SUBJECT_PROVIDER_LOCAL for row in rows
+        }
+
+    if served_locally(reference_rows) != served_locally(candidate_rows):
+        return Dimension(fields=axis.fields | ENGINE_FIELDS, key_fields=axis.key_fields)
+    return axis
+
+
 def _comparison_kind(
     differing: Sequence[str], dimension: Dimension
 ) -> tuple[str, list[str], str | None]:
@@ -897,7 +925,7 @@ def compare_sides(
         raise ComparisonInputError(
             f"unknown compared quantity {quantity!r}: one of {', '.join(QUANTITIES)}"
         )
-    axis = DIMENSIONS[dimension]
+    axis = _axis(dimension, reference_rows, candidate_rows)
     refused = refusals(reference_rows, candidate_rows, quantity=quantity)
     differing = differing_fields(reference_rows, candidate_rows)
     if quantity == QUANTITY_SCORE:

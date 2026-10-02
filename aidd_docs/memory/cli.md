@@ -195,7 +195,10 @@ The command-line interface for running benchmarks.
   triple, the scoring kind or the compared field, and when a constraint or the
   metric is null on either side. Sides differing outside the declared
   dimension publish an observation naming the confound, verdict `not
-  comparable` (its p kept in `result`). `--quantity` (default `score`)
+  comparable` (its p kept in `result`). Along `model`, `engine_id` and
+  `engine_build` (schema "22") move with the axis only between a local and a
+  cloud side; two local sides on another engine or build are confounded.
+  `--quantity` (default `score`)
   compares a per-item measurement instead (schema "18" rows): the item's own
   tokens in or out, or its engine-reported first-token time, scoring kind
   `continuous_measurement`, Wilcoxon signed-rank over the same item ids; a
@@ -336,6 +339,17 @@ with the two figures that justify it, `architecture.total_params` and
 block declares per class `single_family_ladder`, `moe_sought`, `moe_entry`
 and `moe_absent_reason`. All are optional at load and shape-checked when
 present; `wave-local-ai-v2-composition-check` is what names an absence.
+The engine is resolved the same way, from the tracked engine registry
+(`aidd_docs/roster/engines.json`, one entry, `llama.cpp`, the reference
+engine, lifecycle `spawned`): the launch's `--host`/`--port`, the occupied-
+port guard, the health path, the build probe and the field the thinking
+control is carried in (`chat_template_kwargs`) all come from it. Every
+runtime row and local quality row names `engine_id` and the probed
+`engine_build`; a cloud row states `engine_id: "not_applicable"`. A batch
+under `disabled` prints one `thinking switch verified:` line to stderr with
+the two renders' hashes. An engine declaring no switch (`none`) cannot carry
+an object control: a `disabled` batch whose entry declares one is refused
+before any generation, and the candidate gate refuses such a candidate.
 
 `ROSTER_ENTRY_ID` defaults to the MoE flagship. Running several entries in
 turn is a shell loop over the ids, not a runner script: `load_dotenv(override=

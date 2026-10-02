@@ -1,7 +1,7 @@
 """Hardware fiche capture: the machine-bound fields every runtime row must carry.
 
-`capture_fiche()` stays machine-only: run-specific fields (llama.cpp build,
-roster entry id + its sha256, quant, flags) are supplied by the caller (the
+`capture_fiche()` stays machine-only: run-specific fields (engine id, build
+and configuration hash, roster entry id + its sha256, quant, flags) are supplied by the caller (the
 two CLIs) via `build_fiche`, which merges them with no re-reading of the
 machine and no side effects -- this keeps `build_fiche` composable with a
 plain dict in tests, without needing a live roster entry.
@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import platform
+from collections.abc import Mapping
 from typing import Any, TypedDict
 
 from wave_local_ai_v2.nvml import decode_nvml_str, nvml_device
@@ -29,30 +30,64 @@ class HardwareFiche(TypedDict):
 class Fiche(HardwareFiche):
     """The machine fiche plus the run-specific fields that describe one launch."""
 
-    llama_cpp_build: str | None
+    engine_id: str
+    engine_build: str | None
+    engine_config_hash: str
     roster_entry_id: str
     model_sha256: str
     quant: str
     flags: list[str]
 
 
-# The exact projection `fiche_hash` is computed over. `flags`, host and port
-# are never in it: `flags` stays on the stored fiche as raw evidence only
-# (plan.md's Decisions table), and host/port never existed on the fiche at
-# all -- stated here so a future field addition doesn't reintroduce them
-# silently.
-_NORMALISED_KEYS = (
-    "cpu",
-    "ram_gb",
-    "gpu_name",
-    "gpu_driver_version",
-    "os",
-    "cuda_ceiling",
-    "llama_cpp_build",
-    "quant",
-    "roster_entry_id",
-    "model_sha256",
-)
+class FicheProjectionError(ValueError):
+    """Raised when a fiche lacks a key of the projection it is hashed under."""
+
+
+# The projections `fiche_hash` is computed over, by version. `flags`, host and
+# port are in none of them: `flags` stays on the stored fiche as raw evidence
+# only (Methodology 14; it carries an absolute model path), and host/port never
+# existed on the fiche at all -- stated here so a future field addition doesn't
+# reintroduce them silently. The engine's launch configuration enters "2"
+# through `engine_config_hash`, taken over a path- and location-free
+# normalisation of those flags (`engines.config_hash`).
+#
+# "1": every fiche cited by a row below schema "22" -- one engine, named only
+# by its build. Kept so every committed fiche still verifies under the
+# projection it was written with; never chosen by a field being absent.
+# "2": `llama_cpp_build` generalised to `engine_build`, with `engine_id` and
+# `engine_config_hash` beside it, so two engines on one machine can never
+# hash to one identity.
+FICHE_PROJECTIONS: dict[str, tuple[str, ...]] = {
+    "1": (
+        "cpu",
+        "ram_gb",
+        "gpu_name",
+        "gpu_driver_version",
+        "os",
+        "cuda_ceiling",
+        "llama_cpp_build",
+        "quant",
+        "roster_entry_id",
+        "model_sha256",
+    ),
+    "2": (
+        "cpu",
+        "ram_gb",
+        "gpu_name",
+        "gpu_driver_version",
+        "os",
+        "cuda_ceiling",
+        "engine_id",
+        "engine_build",
+        "engine_config_hash",
+        "quant",
+        "roster_entry_id",
+        "model_sha256",
+    ),
+}
+
+# The projection every fiche written today is hashed under.
+CURRENT_FICHE_PROJECTION = "2"
 
 
 def capture_fiche() -> HardwareFiche:
@@ -72,7 +107,9 @@ def capture_fiche() -> HardwareFiche:
 def build_fiche(
     machine: HardwareFiche,
     *,
-    llama_cpp_build: str | None,
+    engine_id: str,
+    engine_build: str | None,
+    engine_config_hash: str,
     roster_entry_id: str,
     model_sha256: str,
     quant: str,
@@ -85,7 +122,9 @@ def build_fiche(
     """
     return Fiche(
         **machine,
-        llama_cpp_build=llama_cpp_build,
+        engine_id=engine_id,
+        engine_build=engine_build,
+        engine_config_hash=engine_config_hash,
         roster_entry_id=roster_entry_id,
         model_sha256=model_sha256,
         quant=quant,
@@ -93,24 +132,35 @@ def build_fiche(
     )
 
 
-def normalise_fiche(fiche: Fiche) -> dict[str, Any]:
+def normalise_fiche(
+    fiche: Mapping[str, Any], projection: str = CURRENT_FICHE_PROJECTION
+) -> dict[str, Any]:
     """Project `fiche` to exactly the fields its identity hash is computed over.
 
-    No `flags` key (the raw flag list, including any filesystem path it
-    carries, stays evidence-only on the stored fiche, never part of the
-    hashed projection) and no host or port (neither ever existed on the
-    fiche at all).
+    `projection` names a `FICHE_PROJECTIONS` version; the caller chooses it
+    from the citing row's schema version, never from which keys `fiche`
+    happens to hold. A fiche lacking a key of that projection raises
+    `FicheProjectionError` naming it: a new fiche that forgot an engine field
+    cannot pass as an old one.
     """
-    return {key: fiche[key] for key in _NORMALISED_KEYS}  # type: ignore[literal-required]
+    keys = FICHE_PROJECTIONS[projection]
+    missing = [key for key in keys if key not in fiche]
+    if missing:
+        raise FicheProjectionError(
+            f"fiche lacks projection {projection!r} field(s): {', '.join(missing)}"
+        )
+    return {key: fiche[key] for key in keys}
 
 
-def fiche_hash(fiche: Fiche) -> str:
+def fiche_hash(
+    fiche: Mapping[str, Any], projection: str = CURRENT_FICHE_PROJECTION
+) -> str:
     """SHA-256 over the sorted-key JSON of `fiche`'s normalised projection.
 
     Sorted keys make the hash independent of dict insertion order without a
     bespoke serializer.
     """
-    payload = json.dumps(normalise_fiche(fiche), sort_keys=True)
+    payload = json.dumps(normalise_fiche(fiche, projection), sort_keys=True)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 

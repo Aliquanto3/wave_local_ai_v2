@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Every row names the engine that produced it, and the fiche hashes it
+  (row schema "22")** -- a tracked engine registry
+  (`aidd_docs/roster/engines.json`, `engines.py`) holds one entry,
+  `llama.cpp`, declared the reference engine: its live build probe, its
+  endpoints, lifecycle `spawned`, host and default port, the request field
+  its thinking switch is carried in, how its launch flags are made path-free,
+  and its configuration defaults, each marked `declared` or
+  `engine_reported`. An entry missing any of these refuses to load, naming
+  the field. `server.py` reads host, port and the health path from the
+  entry instead of module constants (the MoE flagship's launch is
+  byte-identical); `local_client` refuses a roster control spelled outside
+  the engine's switch field, and an engine declaring no switch (`none`)
+  refuses a `disabled` batch whose entry declares an object control, as the
+  candidate gate refuses such a candidate. A declared switch that renders no
+  difference still refuses the batch before any generation. Every runtime row and every local quality row carries
+  `engine_id` and the probed `engine_build`; the writer gate refuses a row
+  naming an unregistered engine, and a cloud subject's row must state
+  `engine_id: "not_applicable"` with a null build. The fiche replaces
+  `llama_cpp_build` with `engine_id`, `engine_build` and
+  `engine_config_hash` (the flag list with the model path replaced by the
+  roster entry and host/port removed) inside a second hashed projection;
+  committed fiches keep verifying under the first, chosen by the citing
+  row's `schema_version`. The engine fields replace `llama_cpp_build` among
+  the runtime verdict's blocking fields, so a run against the committed
+  reference rows is `not_comparable` until the bundle is republished. Along
+  the comparison's `model` dimension, `engine_id` and `engine_build` move
+  with the axis only between a local and a cloud side; two local sides on
+  another engine or build are confounded. A `--resume` over rows written
+  under another engine or build is refused. Rows below "22" are not
+  back-filled.
 - **The tabular export carries the interval and the comparison record, and a
   reader recomputes them from the tables alone** -- the meaning, unit and null
   reasons of every comparison-family, comparison, leader-set and subject field

@@ -638,6 +638,8 @@ def _baseline_probe_row() -> dict:
         prompt_before_template=item["prompt"],
         provider="local",
         subject_egress="none",
+        engine_id="llama.cpp",
+        engine_build="b10537",
     )
 
 

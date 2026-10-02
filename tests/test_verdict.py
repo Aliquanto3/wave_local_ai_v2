@@ -1,3 +1,5 @@
+import json
+
 from wave_local_ai_v2.fiche_registry import write_fiche
 from wave_local_ai_v2.verdict import (
     VERDICT_NOT_COMPARABLE,
@@ -14,7 +16,9 @@ BASE_FICHE = {
     "gpu_driver_version": "1.2.3",
     "os": "z",
     "cuda_ceiling": "12.4",
-    "llama_cpp_build": "b10537",
+    "engine_id": "llama.cpp",
+    "engine_build": "b10537",
+    "engine_config_hash": "e" * 64,
     "roster_entry_id": "fake-entry",
     "model_sha256": "0" * 64,
     "quant": "UD-IQ4_XS",
@@ -196,7 +200,7 @@ def test_an_unusable_reported_metric_nulls_its_delta_without_blocking(
 
 def test_a_blocking_field_null_on_both_sides_is_not_comparable(tmp_path) -> None:
     registry_dir = tmp_path / "fiches"
-    fiche_hash = _write_fiche(registry_dir, llama_cpp_build=None)
+    fiche_hash = _write_fiche(registry_dir, engine_build=None)
     reference = _runtime_row(fiche_hash)
     candidate = _runtime_row(fiche_hash, run_id="run-candidate")
 
@@ -204,7 +208,53 @@ def test_a_blocking_field_null_on_both_sides_is_not_comparable(tmp_path) -> None
 
     # Two unknown builds are not evidence of the same build.
     assert result["verdict"] == VERDICT_NOT_COMPARABLE
-    assert "llama_cpp_build" in result["differing_fields"]
+    assert "engine_build" in result["differing_fields"]
+
+
+def test_an_engine_mismatch_is_not_comparable_naming_engine_id(tmp_path) -> None:
+    """Two fiches identical except for `engine_id` hash differently, and the
+    verdict between their rows names the engine instead of comparing medians."""
+    registry_dir = tmp_path / "fiches"
+    reference_hash = _write_fiche(registry_dir)
+    candidate_hash = _write_fiche(registry_dir, engine_id="ollama")
+    assert reference_hash != candidate_hash
+    reference = _runtime_row(reference_hash)
+    # A median 50% slower would be `not_reproduced` if the rows were compared.
+    candidate = _runtime_row(candidate_hash, run_id="run-candidate", gen_tok_per_s=13.0)
+
+    result = runtime_verdict(candidate, [reference], registry_dir, tolerance=0.10)
+
+    assert result["verdict"] == VERDICT_NOT_COMPARABLE
+    assert result["differing_fields"] == ["engine_id"]
+
+
+def test_a_legacy_reference_fiche_with_no_engine_field_is_not_comparable(
+    tmp_path,
+) -> None:
+    registry_dir = tmp_path / "fiches"
+    legacy = {
+        key: value
+        for key, value in BASE_FICHE.items()
+        if key not in ("engine_id", "engine_build", "engine_config_hash")
+    }
+    legacy["llama_cpp_build"] = "b10537"
+    candidate_hash = _write_fiche(registry_dir)
+    # Stored as the committed legacy fiches are: under projection "1", which
+    # the verdict never re-hashes, so its name only has to resolve.
+    legacy_hash = "1" * 64
+    (registry_dir / f"{legacy_hash}.json").write_text(
+        json.dumps(legacy), encoding="utf-8"
+    )
+
+    result = runtime_verdict(
+        _runtime_row(candidate_hash, run_id="run-candidate"),
+        [_runtime_row(legacy_hash)],
+        registry_dir,
+        tolerance=0.10,
+    )
+
+    assert result["verdict"] == VERDICT_NOT_COMPARABLE
+    assert result["differing_fields"] == ["engine_build", "engine_id"]
 
 
 def test_a_blocking_field_null_on_the_reference_only_is_not_comparable(

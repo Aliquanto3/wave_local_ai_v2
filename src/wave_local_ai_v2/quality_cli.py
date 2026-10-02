@@ -43,15 +43,15 @@ from __future__ import annotations
 import argparse
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, NotRequired, TypedDict
 
 import requests
 
 from wave_local_ai_v2 import (
-    build_probe,
     cost,
+    engines,
     fiche_registry,
     google_client,
     local_client,
@@ -273,19 +273,17 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
         for item in spec.items
     ]
 
+    # The engine the local half runs on, from the tracked registry: where it
+    # listens, how its build is probed, how its reasoning switch is spelled.
+    engine = engines.tracked_reference_engine()
+
     # Resolved once, before any process spawns: an entry that declares no
     # thinking control cannot run a `disabled` suite, and every render and
-    # answer of the batch sends exactly these arguments.
-    thinking_kwargs = local_client.thinking_kwargs(spec.thinking_policy, roster_entry)
-
-    if is_resume:
-        _refuse_a_resume_under_another_configuration(
-            settings,
-            spec,
-            run_id=run_id,
-            roster_entry=roster_entry,
-            prompt_variant=prompt_variant,
-        )
+    # answer of the batch sends exactly these arguments. An entry whose
+    # control the engine has no switch to carry is refused here too.
+    thinking_kwargs = local_client.thinking_kwargs(
+        spec.thinking_policy, roster_entry, engine
+    )
 
     # Refuses (roster.RosterError) before any process spawns when the
     # resolved n_cpu_moe cannot be applied to roster_entry -- the check lives
@@ -293,12 +291,33 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
     # the resolved value: settings.host_n_cpu_moe when set, the entry's own
     # validated_host value when unset.
     flags = server.build_flags(
-        roster_entry, settings.host_n_cpu_moe, settings.host_threads, model_path
+        roster_entry,
+        settings.host_n_cpu_moe,
+        settings.host_threads,
+        model_path,
+        engine=engine,
     )
     # Probing the binary itself doesn't need the server running, so this is
     # done before launch rather than costing readiness-wait time. An
     # unreadable build is an explicit None, never a fallback string.
-    llama_cpp_build = build_probe.probe_build(settings.llama_server_path)
+    engine_fields = engines.fiche_fields(
+        engine, settings.llama_server_path, flags, roster_entry.entry_id
+    )
+    local_engine_fields = quality_rows.local_engine_fields(engine_fields)
+
+    # After the build probe, because the engine and its build are part of the
+    # configuration a resumed batch must match; still before the server
+    # spawns or the fiche or any row is written, so a refusal writes nothing.
+    if is_resume:
+        _refuse_a_resume_under_another_configuration(
+            settings,
+            spec,
+            run_id=run_id,
+            roster_entry=roster_entry,
+            prompt_variant=prompt_variant,
+            local_engine_fields=local_engine_fields,
+        )
+
     # One fiche per invocation, built from the one local launch this run
     # performs, cited by both the local-provider and the mistral-provider
     # rows it also writes (plan.md's Decisions table): the run-specific
@@ -306,7 +325,7 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
     # established below.
     run_fiche = build_fiche(
         capture_fiche(),
-        llama_cpp_build=llama_cpp_build,
+        **engine_fields,
         roster_entry_id=roster_entry.entry_id,
         model_sha256=roster_entry.sha256,
         quant=roster_entry.quant,
@@ -341,6 +360,7 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
                 local_prompts,
                 roster_entry=roster_entry,
                 thinking_kwargs=thinking_kwargs,
+                engine=engine,
             ),
             country_iso_code=settings.emission_country_iso_code,
         )
@@ -369,6 +389,7 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
             prompt_variant=prompt_variant,
             variant_prompts=variant_prompts,
             fiche_hash=fiche_hash_value,
+            engine_row_fields=local_engine_fields,
             batch_fields=quality_rows.local_batch_fields(
                 settings, local_energy, local_completions
             ),
@@ -557,14 +578,16 @@ def _refuse_a_resume_under_another_configuration(
     run_id: str,
     roster_entry: roster.RosterEntry,
     prompt_variant: prompt_variants.PromptVariant,
+    local_engine_fields: Mapping[str, str | None],
 ) -> None:
     """Raise `ResumeConfigurationError` unless every row this run already
     wrote for this suite was produced the way this invocation would.
 
     A resume folds the rows on disk into the completed batch's score, so a
     row written under another model, suite version, prompt set, prompt
-    variant, sampler, endpoint, roster entry or thinking policy would make
-    one published score span two configurations. Checked for every provider
+    variant, sampler, endpoint, roster entry, thinking policy, engine or
+    engine build would make one published score span two configurations.
+    A cloud batch is held to the engine not applying. Checked for every provider
     before anything spawns or is written, so a refusal writes nothing.
     """
     shared = {
@@ -580,15 +603,22 @@ def _refuse_a_resume_under_another_configuration(
             roster_entry.display_id,
             LOCAL_SAMPLING,
             prompt_provenance.LOCAL_CHAT_ENDPOINT,
+            local_engine_fields,
         ),
         "mistral": (
             mistral_client.MODEL,
             CLOUD_SAMPLING,
             mistral_client.CHAT_COMPLETIONS_URL,
+            quality_rows.ENGINE_NOT_APPLICABLE_FIELDS,
         ),
-        "google": (google_client.MODEL, GOOGLE_SAMPLING, google_client.GENERATE_URL),
+        "google": (
+            google_client.MODEL,
+            GOOGLE_SAMPLING,
+            google_client.GENERATE_URL,
+            quality_rows.ENGINE_NOT_APPLICABLE_FIELDS,
+        ),
     }
-    for provider, (model_id, sampling, endpoint) in by_provider.items():
+    for provider, (model_id, sampling, endpoint, engine_fields) in by_provider.items():
         prior_rows = results.batch_rows(
             settings.quality_results_path, run_id, provider, task_suite=spec.task_suite
         )
@@ -599,6 +629,7 @@ def _refuse_a_resume_under_another_configuration(
                 "model_id": model_id,
                 "sampling": dict(sampling),
                 "endpoint": endpoint,
+                **engine_fields,
             },
         )
         if conflict is not None:
@@ -714,6 +745,7 @@ def _try_run_cloud_provider(
         fiche_hash=fiche_hash,
         batch_fields=batch["batch_fields"],
         extra_row_fields=batch["extra_row_fields"],
+        engine_row_fields=quality_rows.ENGINE_NOT_APPLICABLE_FIELDS,
         resumed=is_resume,
         retry_budget={provider: budget.total},
         partial_failure=failure,
@@ -773,6 +805,20 @@ def _google_call_path(
     }
 
 
+def _thinking_switch_record(
+    engine: engines.EngineEntry, probe: local_client.ThinkingControlProbe
+) -> str:
+    """One line recording that the engine's switch changed the rendered prompt."""
+    with_hash = prompt_provenance.template_hash(probe["with_control"])
+    without_hash = prompt_provenance.template_hash(probe["without_control"])
+    return (
+        f"thinking switch verified: engine={engine.engine_id} "
+        f"field={engine.thinking_switch['request_field']} "  # type: ignore[index]
+        f"renders_differ={with_hash != without_hash} "
+        f"with={with_hash} without={without_hash}"
+    )
+
+
 def _local_model_path(settings: Settings, roster_entry: roster.RosterEntry) -> Path:
     """Resolve the local GGUF, or raise: a missing file must cost no network call."""
     model_path = settings.slm_models_dir / roster_entry.file
@@ -789,6 +835,7 @@ def _run_local_suite(
     *,
     roster_entry: roster.RosterEntry,
     thinking_kwargs: dict[str, Any],
+    engine: engines.EngineEntry,
 ) -> _LocalBatch:
     """Answer every item through the loaded model's own chat template.
 
@@ -812,17 +859,20 @@ def _run_local_suite(
     """
     completions: list[_Completion] = []
     rendered_prompts: list[str] = []
-    base_url = f"http://{server.HOST}:{server.PORT}"
+    base_url = engines.base_url(engine)
 
-    with server.running_server(settings.llama_server_path, flags):
+    with server.running_server(settings.llama_server_path, flags, engine=engine):
         template = local_client.chat_template(base_url, timeout=REQUEST_TIMEOUT_S)
         if thinking_kwargs:
-            local_client.verify_thinking_control(
+            probe = local_client.verify_thinking_control(
                 base_url,
                 roster_entry,
                 chat_template=template,
                 timeout=REQUEST_TIMEOUT_S,
             )
+            # The verification's own record: the two renders differ, and which
+            # bytes they are, so the evidence is more than "it did not refuse".
+            print(_thinking_switch_record(engine, probe), file=sys.stderr)
         for prompt in prompts:
             rendered = local_client.render_prompt(
                 base_url,
@@ -1142,6 +1192,7 @@ def _score_and_write(
     prompt_variant: prompt_variants.PromptVariant,
     variant_prompts: list[str],
     fiche_hash: str,
+    engine_row_fields: Mapping[str, str | None],
     batch_fields: dict[str, Any],
     resumed: bool,
     retry_budget: dict[str, int],
@@ -1206,6 +1257,7 @@ def _score_and_write(
             "provider": provider,
             "subject_egress": row_contract.subject_egress_for(provider),
             **quality_rows.subject_composition_fields(model_id, provider, roster_entry),
+            **engine_row_fields,
             "fiche_hash": fiche_hash,
             **batch_fields,
             "task_suite": spec.task_suite,

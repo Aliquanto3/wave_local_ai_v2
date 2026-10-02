@@ -495,6 +495,41 @@ def test_a_local_and_a_cloud_subject_differ_on_egress_without_a_confound() -> No
     assert member["confounds"] == []
 
 
+_LLAMA = {"engine_id": "llama.cpp", "engine_build": "b10537"}
+_NO_ENGINE = {"engine_id": "not_applicable", "engine_build": None}
+
+
+def test_a_local_and_a_cloud_subject_differ_on_the_engine_without_a_confound() -> None:
+    # A cloud subject's row states that no engine applies: the engine moves
+    # with the model axis by construction, as the provider does.
+    ref, cand = _pairs_outcomes(14, 1, 4, 1)
+    member = _compare(
+        _binary_rows("run-ref", "model-a", ref, **_LLAMA),
+        _binary_rows("run-cand", "model-b", cand, provider="mistral", **_NO_ENGINE),
+    )
+    assert member["comparison_kind"] == comparison.KIND_TEST
+    assert {"engine_id", "engine_build"} <= set(member["differing_fields"])
+    assert member["confounds"] == []
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("engine_id", "ollama"), ("engine_build", "b9999")],
+)
+def test_two_local_models_on_another_engine_or_build_are_confounded(
+    field: str, value: str
+) -> None:
+    # Between two locally served sides the engine is not what a model
+    # comparison compares: a different engine or build is a confound.
+    ref, cand = _pairs_outcomes(14, 1, 4, 1)
+    member = _compare(
+        _binary_rows("run-ref", "model-a", ref, **_LLAMA),
+        _binary_rows("run-cand", "model-b", cand, **{**_LLAMA, field: value}),
+    )
+    assert member["comparison_kind"] == comparison.KIND_OBSERVATION
+    assert member["confounds"] == [field]
+
+
 def test_a_harness_overhead_is_a_measurement_and_never_a_confound() -> None:
     # Two models under the same harness spend different overheads: an
     # outcome, like their tokens, so the comparison stays a clean test.

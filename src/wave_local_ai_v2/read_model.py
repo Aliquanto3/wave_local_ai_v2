@@ -205,6 +205,10 @@ RUNTIME_VIEW_FIELDS: frozenset[str] = frozenset(
         "prompt_template_id",
         "prompt_template_hash",
         "prompt_capture",
+        # The engine that produced the row and its build (schema "22"):
+        # rendered, so "these are llama.cpp numbers" is read, not assumed.
+        "engine_id",
+        "engine_build",
         "fiche_hash",
         "verdict",
         "max_tokens",
@@ -290,6 +294,10 @@ QUALITY_VIEW_FIELDS: frozenset[str] = frozenset(
         "prompt_capture",
         "model_id",
         "provider",
+        # The local engine that produced the row, or `not_applicable` on a
+        # cloud subject's row (schema "22").
+        "engine_id",
+        "engine_build",
         "fiche_hash",
         "verdict",
         "task_suite",

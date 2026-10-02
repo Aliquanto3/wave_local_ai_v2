@@ -15,6 +15,8 @@ from typing import Any, Literal
 from wave_local_ai_v2 import (
     aggregation,
     cost,
+    engines,
+    hardware,
     harness,
     judge,
     judge_protocol,
@@ -178,7 +180,20 @@ from wave_local_ai_v2 import (
 # score (a partial batch, a judge-probe row). Owed only from "21"
 # (`SCORE_INTERVAL_SCHEMA_VERSION`): a row below "21" still validates without
 # it and is never back-filled. The runtime row is untouched.
-SCHEMA_VERSION = "21"
+# "22": `engine_id` and `engine_build` (the inference engine that produced
+# the row and its live-probed build) became required on both row kinds
+# (Story: every row names the engine that produced it, and the fiche hashes
+# it). A runtime row and a local quality row name an engine the tracked
+# registry (`engines.py`) holds; a row no local engine produced (a cloud
+# subject's quality row, the judge probe's cloud-subject row included)
+# states `engine_id: "not_applicable"` with a null build. A judge-probe row
+# whose subject is local carries `llama.cpp` like any local row. From this version a cited
+# fiche is hashed under projection "2" (`ENGINE_FICHE_SCHEMA_VERSION`), which
+# carries `engine_id`, `engine_build` and `engine_config_hash` in place of
+# `llama_cpp_build`. Owed only from "22": a row below "22" still validates
+# without them, is verified under projection "1", and is never back-filled
+# with `llama.cpp`.
+SCHEMA_VERSION = "22"
 
 # The two subject-composition fields "19" added, and the version from which a
 # quality row owes them.
@@ -221,12 +236,41 @@ THINKING_POLICY_DISABLED = "disabled"
 THINKING_POLICY_ALLOWED = "allowed"
 THINKING_POLICIES = frozenset({THINKING_POLICY_DISABLED, THINKING_POLICY_ALLOWED})
 
+# What a row no local engine produced says in `engine_id` (a cloud subject's
+# quality row): a stated non-applicability, never a null a reader could take
+# for a missing value, and never `llama.cpp`. Its `engine_build` is null.
+ENGINE_NOT_APPLICABLE = "not_applicable"
+
 # The schema version at which `fiche_hash` (and `verdict`) became required.
 # Fixed at "3" regardless of future `SCHEMA_VERSION` bumps: a stored row whose
 # own `schema_version` is below this predates the fiche-hash contract
 # entirely, so its missing `fiche_hash` is not an integrity failure the
 # validator should treat as fatal (`fiche_validator.py`'s `legacy` class).
 FICHE_HASH_SCHEMA_VERSION = "3"
+
+# The schema version from which a cited fiche is hashed under projection "2"
+# (`hardware.FICHE_PROJECTIONS`: the engine fields in place of
+# `llama_cpp_build`), and from which a row owes `ENGINE_FIELDS`. Fixed at
+# "22" like the constant above: which projection a stored fiche is verified
+# under is decided by the citing row's own version, never by a field the fiche
+# happens to lack.
+ENGINE_FIELDS: frozenset[str] = frozenset({"engine_id", "engine_build"})
+ENGINE_FICHE_SCHEMA_VERSION = "22"
+
+
+def fiche_projection_for(schema_version: object) -> str:
+    """The `hardware.FICHE_PROJECTIONS` version a row at `schema_version` cites.
+
+    Below `ENGINE_FICHE_SCHEMA_VERSION`: "1". At or above it, and for a
+    version that cannot be read as a number: the current projection -- an
+    unreadable version cannot be proven old, so it is held to today's rule.
+    """
+    try:
+        is_legacy = int(schema_version) < int(ENGINE_FICHE_SCHEMA_VERSION)  # type: ignore[call-overload]
+    except (TypeError, ValueError):
+        is_legacy = False
+    return "1" if is_legacy else hardware.CURRENT_FICHE_PROJECTION
+
 
 RowKind = Literal["runtime", "quality"]
 
@@ -258,6 +302,10 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             # which serves its prompt from the local llama-server only
             # (schema "16")
             "subject_egress",
+            # engines: the registered engine that produced the row and its
+            # live-probed build (schema "22")
+            "engine_id",
+            "engine_build",
             # fiche_registry: the hardware + run-specific fiche, cited by hash
             "fiche_hash",
             # verdict.runtime_verdict
@@ -366,6 +414,10 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             # provider id for a cloud one; checked against `provider`
             # (schema "16")
             "subject_egress",
+            # engines: the local engine that produced the row, or
+            # `ENGINE_NOT_APPLICABLE` when none did (schema "22")
+            "engine_id",
+            "engine_build",
             "fiche_hash",
             # energy.EnergyResult / emissions.local_emissions / scope3_cloud_emissions
             # -- same twelve fields as the runtime row (plan.md's Decisions:
@@ -643,6 +695,8 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
         missing -= HARNESS_FIELDS
     if kind == "quality" and _predates(row, SCORE_INTERVAL_SCHEMA_VERSION):
         missing -= SCORE_INTERVAL_FIELDS
+    if _predates(row, ENGINE_FICHE_SCHEMA_VERSION):
+        missing -= ENGINE_FIELDS
     if missing:
         raise RowContractError(
             f"row of kind {kind!r} is missing required field(s): "
@@ -660,6 +714,8 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
 
     _validate_prompt_variant(kind, row)
     _validate_subject_egress(kind, row)
+    if not _predates(row, ENGINE_FICHE_SCHEMA_VERSION):
+        _validate_engine(kind, row)
 
     cost_total = row["cost_total"]
     # The two bases are the values the cost was actually computed from: a kWh
@@ -1104,6 +1160,46 @@ def _validate_item_measurement(row: dict[str, Any]) -> None:
 
 
 _ITEM_SOURCE_FIELDS = ("item_licence", "item_source", "item_source_revision")
+
+
+def _validate_engine(kind: RowKind, row: dict[str, Any]) -> None:
+    """Refuse an unregistered engine, and an engine on a row none produced.
+
+    A runtime row and a local quality row must name an engine the tracked
+    registry holds; its build may be null (an unreadable probe is an explicit
+    null, never an assumed value). Any other quality row must state
+    `ENGINE_NOT_APPLICABLE` with a null build.
+    """
+    engine_id = row["engine_id"]
+    engine_build = row["engine_build"]
+    if engine_build is not None and not (
+        isinstance(engine_build, str) and engine_build.strip()
+    ):
+        raise RowContractError(
+            f"row of kind {kind!r} has a malformed engine_build: {engine_build!r}"
+        )
+
+    if kind == "runtime" or row["provider"] == SUBJECT_PROVIDER_LOCAL:
+        try:
+            registered = engines.registered_engine_ids()
+        except engines.EngineRegistryError as exc:
+            raise RowContractError(
+                f"row of kind {kind!r}: the engine registry cannot be read: {exc}"
+            ) from exc
+        if engine_id not in registered:
+            raise RowContractError(
+                f"row of kind {kind!r} names engine_id {engine_id!r}, which is "
+                f"not a registered engine (registered: {', '.join(sorted(registered))})"
+            )
+        return
+
+    if engine_id != ENGINE_NOT_APPLICABLE or engine_build is not None:
+        raise RowContractError(
+            f"row of kind {kind!r} from provider {row['provider']!r} was produced "
+            f"by no local engine: it must carry engine_id "
+            f"{ENGINE_NOT_APPLICABLE!r} and a null engine_build, got "
+            f"{engine_id!r} / {engine_build!r}"
+        )
 
 
 def _validate_suite_level(row: dict[str, Any]) -> None:

@@ -38,14 +38,15 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, NotRequired, TypedDict
 
 from wave_local_ai_v2 import (
     agreement,
-    build_probe,
     cost,
+    engines,
     fiche_registry,
     google_client,
     judge,
@@ -378,6 +379,11 @@ class _RunContext:
     # The retry total each cloud provider's calls drew from this invocation,
     # by provider: every probe row's subject or judges called both.
     retry_budget: dict[str, int]
+    # The engine the local subject runs on, and what its local rows carry for
+    # it: its id and live-probed build. A cloud subject's rows state that no
+    # engine applies.
+    engine: engines.EngineEntry
+    local_engine_fields: dict[str, str | None]
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -447,15 +453,27 @@ def _run(resume_run_id: str | None = None) -> None:
     # declaration is missing or self-inconsistent, which is worth having on a
     # hand-written set.
     gate_result = suite_gate.gate_suite(JUDGE_PROBE_ITEMS)
-    if is_resume:
-        _refuse_a_resume_under_another_configuration(settings, run_id, roster_entry)
+    engine = engines.tracked_reference_engine()
     flags = server.build_flags(
-        roster_entry, settings.host_n_cpu_moe, settings.host_threads, model_path
+        roster_entry,
+        settings.host_n_cpu_moe,
+        settings.host_threads,
+        model_path,
+        engine=engine,
     )
-    llama_cpp_build = build_probe.probe_build(settings.llama_server_path)
+    engine_fields = engines.fiche_fields(
+        engine, settings.llama_server_path, flags, roster_entry.entry_id
+    )
+    local_engine_fields = quality_rows.local_engine_fields(engine_fields)
+    # After the build probe (the engine and its build are part of the
+    # configuration), before the fiche, any spawn or any row is written.
+    if is_resume:
+        _refuse_a_resume_under_another_configuration(
+            settings, run_id, roster_entry, local_engine_fields
+        )
     run_fiche = build_fiche(
         capture_fiche(),
-        llama_cpp_build=llama_cpp_build,
+        **engine_fields,
         roster_entry_id=roster_entry.entry_id,
         model_sha256=roster_entry.sha256,
         quant=roster_entry.quant,
@@ -545,6 +563,8 @@ def _run(resume_run_id: str | None = None) -> None:
             judge_backends.PROVIDER_MISTRAL: mistral_budget.total,
             judge_backends.PROVIDER_GOOGLE: google_budget.total,
         },
+        engine=engine,
+        local_engine_fields=local_engine_fields,
     )
 
     local_summary = _run_local_batch(
@@ -572,7 +592,10 @@ def _judge_model_ids(row: dict[str, Any]) -> list[str]:
 
 
 def _refuse_a_resume_under_another_configuration(
-    settings: Settings, run_id: str, roster_entry: roster.RosterEntry
+    settings: Settings,
+    run_id: str,
+    roster_entry: roster.RosterEntry,
+    local_engine_fields: Mapping[str, str | None],
 ) -> None:
     """Raise `ResumeConfigurationError` unless every row this run already
     wrote was produced, and judged, the way this invocation would.
@@ -597,15 +620,23 @@ def _refuse_a_resume_under_another_configuration(
             LOCAL_SAMPLING,
             prompt_provenance.LOCAL_CHAT_ENDPOINT,
             sorted([mistral_client.MODEL, google_client.MODEL]),
+            local_engine_fields,
         ),
         judge_backends.PROVIDER_GOOGLE: (
             google_client.MODEL,
             GOOGLE_SAMPLING,
             google_client.GENERATE_URL,
             [mistral_client.MODEL],
+            quality_rows.ENGINE_NOT_APPLICABLE_FIELDS,
         ),
     }
-    for provider, (model_id, sampling, endpoint, judge_ids) in by_provider.items():
+    for provider, (
+        model_id,
+        sampling,
+        endpoint,
+        judge_ids,
+        engine_fields,
+    ) in by_provider.items():
         prior_rows = results.batch_rows(
             settings.judge_probe_reference_path, run_id, provider, task_suite=TASK_SUITE
         )
@@ -617,6 +648,7 @@ def _refuse_a_resume_under_another_configuration(
                 "sampling": dict(sampling),
                 "endpoint": endpoint,
                 "judge_model_ids": judge_ids,
+                **engine_fields,
             },
             derived={"judge_model_ids": _judge_model_ids},
         )
@@ -701,6 +733,7 @@ def _generate_local_outputs(
     flags: list[str],
     prompts: list[str],
     roster_entry: roster.RosterEntry,
+    engine: engines.EngineEntry,
 ) -> tuple[list[_ProbeCompletion], list[str], str]:
     """One llama-server launch, one chat completion per probe item.
 
@@ -717,10 +750,12 @@ def _generate_local_outputs(
     """
     completions: list[_ProbeCompletion] = []
     rendered_prompts: list[str] = []
-    base_url = f"http://{server.HOST}:{server.PORT}"
-    thinking_kwargs = local_client.thinking_kwargs(THINKING_POLICY, roster_entry)
+    base_url = engines.base_url(engine)
+    thinking_kwargs = local_client.thinking_kwargs(
+        THINKING_POLICY, roster_entry, engine
+    )
 
-    with server.running_server(settings.llama_server_path, flags):
+    with server.running_server(settings.llama_server_path, flags, engine=engine):
         template = local_client.chat_template(base_url, timeout=REQUEST_TIMEOUT_S)
         if thinking_kwargs:
             local_client.verify_thinking_control(
@@ -894,6 +929,11 @@ def _build_row(
         **quality_rows.subject_composition_fields(
             model_id, provider, context.roster_entry
         ),
+        **(
+            context.local_engine_fields
+            if provider == PROVIDER_LOCAL
+            else quality_rows.ENGINE_NOT_APPLICABLE_FIELDS
+        ),
         "fiche_hash": context.fiche_hash,
         **batch_fields,
         "task_suite": TASK_SUITE,
@@ -984,7 +1024,7 @@ def _run_local_batch(
     ]
     local_batch, energy = measure_energy(
         lambda: _generate_local_outputs(
-            settings, flags, variant_prompts, context.roster_entry
+            settings, flags, variant_prompts, context.roster_entry, context.engine
         ),
         country_iso_code=settings.emission_country_iso_code,
     )

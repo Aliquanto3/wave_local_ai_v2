@@ -5,6 +5,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from wave_local_ai_v2.hardware import (
+    FICHE_PROJECTIONS,
+    FicheProjectionError,
     build_fiche,
     capture_fiche,
     fiche_hash,
@@ -65,7 +67,9 @@ def _fixture_fiche(**overrides):
         "gpu_driver_version": "1.2.3",
         "os": "z",
         "cuda_ceiling": "12.4",
-        "llama_cpp_build": "b10537",
+        "engine_id": "llama.cpp",
+        "engine_build": "b10537",
+        "engine_config_hash": "e" * 64,
         "roster_entry_id": "qwen3.6-35b-a3b-ud-iq4xs",
         "model_sha256": "0" * 64,
         "quant": "UD-IQ4_XS",
@@ -98,6 +102,46 @@ def test_hash_differs_when_gpu_name_differs() -> None:
     assert fiche_hash(a) != fiche_hash(b)  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize(
+    ("field", "other"),
+    [
+        ("engine_id", "ollama"),
+        ("engine_build", "b10600"),
+        ("engine_config_hash", "f" * 64),
+    ],
+)
+def test_each_engine_field_changes_the_hash(field: str, other: str) -> None:
+    assert fiche_hash(_fixture_fiche()) != fiche_hash(_fixture_fiche(**{field: other}))
+
+
+def test_the_legacy_projection_hashes_llama_cpp_build_and_ignores_engine_fields() -> (
+    None
+):
+    legacy = {
+        key: value
+        for key, value in _fixture_fiche().items()
+        if not key.startswith("engine_")
+    }
+    legacy["llama_cpp_build"] = "b10537"
+
+    assert set(normalise_fiche(legacy, "1")) == set(FICHE_PROJECTIONS["1"])
+    assert "llama_cpp_build" in normalise_fiche(legacy, "1")
+    assert fiche_hash(legacy, "1") != fiche_hash(
+        {**legacy, "llama_cpp_build": "b1"}, "1"
+    )
+
+
+def test_a_fiche_lacking_a_projection_key_is_refused_naming_it() -> None:
+    legacy = {
+        key: value
+        for key, value in _fixture_fiche().items()
+        if not key.startswith("engine_")
+    }
+
+    with pytest.raises(FicheProjectionError, match="engine_id, engine_build"):
+        fiche_hash(legacy)
+
+
 def test_hash_is_independent_of_dict_key_insertion_order() -> None:
     a = _fixture_fiche()
     # Rebuild with keys in reverse insertion order -- still equal by value.
@@ -118,7 +162,9 @@ def test_build_fiche_merges_machine_capture_with_run_specific_fields() -> None:
 
     fiche = build_fiche(
         machine,  # type: ignore[arg-type]
-        llama_cpp_build="b10537",
+        engine_id="llama.cpp",
+        engine_build="b10537",
+        engine_config_hash="e" * 64,
         roster_entry_id="fake-entry",
         model_sha256="0" * 64,
         quant="UD-IQ4_XS",
@@ -126,7 +172,9 @@ def test_build_fiche_merges_machine_capture_with_run_specific_fields() -> None:
     )
 
     assert fiche["cpu"] == "x"
-    assert fiche["llama_cpp_build"] == "b10537"
+    assert fiche["engine_id"] == "llama.cpp"
+    assert fiche["engine_build"] == "b10537"
+    assert fiche["engine_config_hash"] == "e" * 64
     assert fiche["roster_entry_id"] == "fake-entry"
     assert fiche["model_sha256"] == "0" * 64
     assert fiche["quant"] == "UD-IQ4_XS"

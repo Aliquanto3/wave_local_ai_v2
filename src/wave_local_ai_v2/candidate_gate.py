@@ -18,7 +18,9 @@ steps, cheapest first, and the first failure stops every later one:
    binary. An architecture that build does not implement is `deferred`, naming
    the architecture and the build; the gate never offers another build.
 6. `thinking_control`: the chat template is read from `/props`; an object
-   control is verified with `local_client.verify_thinking_control`, a `none`
+   control is refused when the reference engine's registry entry declares no
+   thinking switch (`none`) or carries it in another request field, else
+   verified with `local_client.verify_thinking_control`; a `none`
    declaration by one live generation returning no reasoning, and `allowed`
    (no verifiable control) skips both and enters with no control declared.
 7. `language_claim`: the EN/FR/DE claim and its source are recorded.
@@ -55,6 +57,7 @@ import requests
 
 from wave_local_ai_v2 import (
     build_probe,
+    engines,
     local_client,
     prompt_provenance,
     roster,
@@ -530,8 +533,9 @@ def _step_load_and_thinking(
             f"architecture {facts.architecture!r}: {exc}",
         ) from None
     if run.seams.port_in_use():
+        engine = engines.tracked_reference_engine()
         raise GateAborted(
-            f"port {server.PORT} on {server.HOST} is already in use: stop the "
+            f"port {engine.default_port} on {engine.host} is already in use: stop the "
             "running llama-server before the gate's load"
         )
     try:
@@ -554,7 +558,8 @@ def _step_load_and_thinking(
 
 
 def _step_thinking(run: _Run, entry: roster.RosterEntry) -> dict[str, Any]:
-    base_url = f"http://{server.HOST}:{server.PORT}"
+    engine = engines.tracked_reference_engine()
+    base_url = engines.base_url(engine)
     control = run.candidate.thinking_control
     try:
         template = local_client.chat_template(base_url, timeout=HTTP_TIMEOUT_S)
@@ -572,6 +577,11 @@ def _step_thinking(run: _Run, entry: roster.RosterEntry) -> dict[str, Any]:
                     f"generation returned reasoning: {reasoning[:200]!r}",
                 )
             return {"declared": roster.THINKING_CONTROL_NONE, "verified": True}
+        # An object control the engine's switch cannot carry (an engine
+        # declaring `none`, or another request field) is refused before it is
+        # rendered: a batch would refuse it anyway.
+        if isinstance(control, dict):
+            local_client.check_engine_carries(entry.entry_id, control, engine)
         probe = local_client.verify_thinking_control(
             base_url, entry, chat_template=template, timeout=HTTP_TIMEOUT_S
         )
@@ -880,7 +890,10 @@ def default_seams() -> GateSeams:
         disk_free=lambda path: shutil.disk_usage(path).free,
         probe_build=build_probe.probe_build,
         launch=_launch,
-        port_in_use=lambda: server._port_is_open(server.HOST, server.PORT),
+        port_in_use=lambda: server._port_is_open(
+            engines.tracked_reference_engine().host,
+            engines.tracked_reference_engine().default_port,
+        ),
     )
 
 

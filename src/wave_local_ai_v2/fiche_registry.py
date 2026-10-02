@@ -13,7 +13,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal, TypedDict
 
-from wave_local_ai_v2 import hardware, path_guard
+from wave_local_ai_v2 import hardware, path_guard, row_contract
 
 # A local `--version` invocation-scale timeout: `git show` reads one blob from
 # the local object database, no network involved.
@@ -36,7 +36,7 @@ def write_fiche(fiche: Mapping[str, Any], registry_dir: Path) -> str:
     `registry_dir/<hash>.json` already exists, does nothing: no re-write, no
     duplicate, no error on a second identical fiche written in the same run.
     """
-    fiche_hash_value = hardware.fiche_hash(fiche)  # type: ignore[arg-type]
+    fiche_hash_value = hardware.fiche_hash(fiche)
     registry_dir.mkdir(parents=True, exist_ok=True)
     path = registry_dir / f"{fiche_hash_value}.json"
     if not path.exists():
@@ -59,8 +59,15 @@ def read_fiche(fiche_hash: str, registry_dir: Path) -> dict[str, Any] | None:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def verify_fiche(fiche_hash: str, registry_dir: Path) -> FicheVerification:
+def verify_fiche(
+    fiche_hash: str, registry_dir: Path, *, schema_version: object
+) -> FicheVerification:
     """Check whether the stored fiche named `fiche_hash` still hashes to its own name.
+
+    Re-hashed under the projection the citing row's `schema_version` selects
+    (`row_contract.fiche_projection_for`), so a committed fiche keeps
+    verifying under the projection it was written with and a new fiche
+    lacking an engine field is `"edited"`, never passed as an old one.
 
     `"missing"`: no file is stored under that hash. `"edited"`: the file
     exists but re-hashing its own current content (never the row that cited
@@ -76,7 +83,12 @@ def verify_fiche(fiche_hash: str, registry_dir: Path) -> FicheVerification:
     if stored is None:
         return FicheVerification(status="missing", changed_fields=[])
 
-    if hardware.fiche_hash(stored) == fiche_hash:  # type: ignore[arg-type]
+    projection = row_contract.fiche_projection_for(schema_version)
+    try:
+        rehashed = hardware.fiche_hash(stored, projection)
+    except hardware.FicheProjectionError as exc:
+        return FicheVerification(status="edited", changed_fields=[str(exc)])
+    if rehashed == fiche_hash:
         return FicheVerification(status="ok", changed_fields=[])
 
     path = registry_dir / f"{fiche_hash}.json"

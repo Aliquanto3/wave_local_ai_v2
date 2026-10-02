@@ -117,7 +117,9 @@ def validate_bundle(results_paths: list[Path], registry_dir: Path) -> Validation
                 )
                 continue
 
-            verification = fiche_registry.verify_fiche(fiche_hash, registry_dir)
+            verification = fiche_registry.verify_fiche(
+                fiche_hash, registry_dir, schema_version=schema_version
+            )
             if verification["status"] == "missing":
                 missing.append(
                     _MissingIssue(

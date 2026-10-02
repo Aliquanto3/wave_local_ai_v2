@@ -38,6 +38,16 @@ capability the server says is absent. `verify_thinking_control` is what makes
 a declaration more than a claim: it renders one fixed message with and without
 the control and refuses when the two strings are byte-identical.
 
+Which request field carries that control is the engine's spelling, not the
+model's: the engine registry entry (`engines.py`) declares it as its
+`thinking_switch` (llama.cpp: `chat_template_kwargs`), and a roster control
+spelled in any other field is refused rather than sent to an engine that would
+drop it. An engine declaring no switch at all (`none`) cannot carry an object
+control, so a `disabled` batch whose entry declares one is refused before any
+generation rather than published as `disabled` under an engine that never sent
+anything; only an entry declaring `none` (a model that does not reason) runs a
+`disabled` batch there.
+
 No retry logic lives here. The local path has no retryable error type, and a
 second retry policy beside `retry.py` would be one too many.
 """
@@ -51,7 +61,13 @@ from typing import Any, TypedDict
 
 import requests
 
-from wave_local_ai_v2 import prompt_provenance, roster, row_contract, timings
+from wave_local_ai_v2 import (
+    engines,
+    prompt_provenance,
+    roster,
+    row_contract,
+    timings,
+)
 
 # `finish_reason` values that mean the answer was cut short rather than
 # completed. Named here for the same reason `mistral_client` and
@@ -105,7 +121,9 @@ class LocalCompletion(TypedDict):
     measurement: timings.ItemMeasurement
 
 
-def thinking_kwargs(thinking_policy: str, entry: roster.RosterEntry) -> dict[str, Any]:
+def thinking_kwargs(
+    thinking_policy: str, entry: roster.RosterEntry, engine: engines.EngineEntry
+) -> dict[str, Any]:
     """The request arguments `thinking_policy` maps to under `entry`'s template.
 
     Resolved once per batch and sent on both call shapes, so a prompt can never
@@ -114,6 +132,11 @@ def thinking_kwargs(thinking_policy: str, entry: roster.RosterEntry) -> dict[str
     "think" argument a template might not declare. `disabled` sends the
     entry's declared control, nothing for a `none` declaration, and refuses an
     entry that declares neither -- there is no spelling to fall back on.
+
+    The control must be spelled in `engine`'s switch field, read from the
+    engine registry rather than assumed here. An engine with no switch has no
+    field to carry an object control in, so such an entry is refused under
+    `disabled` instead of running with nothing sent.
     """
     if thinking_policy == row_contract.THINKING_POLICY_ALLOWED:
         return {}
@@ -133,6 +156,7 @@ def thinking_kwargs(thinking_policy: str, entry: roster.RosterEntry) -> dict[str
     if control == roster.THINKING_CONTROL_NONE:
         return {}
     if isinstance(control, dict) and control:
+        check_engine_carries(entry.entry_id, control, engine)
         # A copy: the roster entry is shared, and a request body is not its to
         # own.
         return copy.deepcopy(control)
@@ -141,6 +165,33 @@ def thinking_kwargs(thinking_policy: str, entry: roster.RosterEntry) -> dict[str
     raise LocalRequestError(
         f"roster entry {entry.entry_id!r}: malformed thinking_control {control!r}"
     )
+
+
+def check_engine_carries(
+    entry_id: str, control: Mapping[str, Any], engine: engines.EngineEntry
+) -> None:
+    """Refuse an object `control` that `engine`'s thinking switch cannot carry.
+
+    An engine declaring no switch (`engines.THINKING_SWITCH_NONE`) carries no
+    control at all; any other engine carries one only in its declared request
+    field. Shared by every batch (through `thinking_kwargs`) and by the
+    candidate gate, so a control the run would refuse never enters the roster.
+    """
+    spelled = json.dumps(dict(control), sort_keys=True)
+    if engine.thinking_switch == engines.THINKING_SWITCH_NONE:
+        raise LocalRequestError(
+            f"roster entry {entry_id!r} declares thinking_control {spelled}, but "
+            f"engine {engine.engine_id!r} declares no thinking switch "
+            f"({engines.THINKING_SWITCH_NONE!r}): nothing could carry it, so a "
+            "thinking_policy 'disabled' batch is refused before any generation"
+        )
+    field = engine.thinking_switch["request_field"]  # type: ignore[index]
+    if set(control) != {field}:
+        raise LocalRequestError(
+            f"roster entry {entry_id!r}: thinking_control {spelled} is not "
+            f"spelled in engine {engine.engine_id!r}'s thinking switch field "
+            f"{field!r}"
+        )
 
 
 def verify_thinking_control(

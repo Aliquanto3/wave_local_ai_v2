@@ -49,6 +49,8 @@ COMPLETE_QUALITY_ROW = {
     "model_id": "Qwen3.6-35B-A3B",
     "provider": "local",
     "subject_egress": "none",
+    "engine_id": "llama.cpp",
+    "engine_build": "b10537",
     "fiche_hash": "a" * 64,
     "cpu_energy_kwh": 0.0003,
     "cpu_energy_method": "estimated_tdp",
@@ -247,6 +249,12 @@ def _write_items(
                 "provider": provider,
                 "subject_egress": subject_egress_for(provider),
                 "retry_budget": {} if provider == "local" else {provider: 4},
+                # A cloud provider's rows were produced by no local engine.
+                **(
+                    {}
+                    if provider == "local"
+                    else {"engine_id": "not_applicable", "engine_build": None}
+                ),
                 "item_id": item["item_id"],
                 "prompt_before_template": item["prompt"],
                 "task_suite": task_suite,

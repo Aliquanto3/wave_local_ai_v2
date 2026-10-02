@@ -426,6 +426,32 @@ Qwen3.6 EN 0.60 [0.300, 0.900] in both runs, mistral DE 0.80 [0.400, 1.000] and 
 models' intervals overlap in both runs. The interval qualifies each score on its own;
 whether two scores differ is the paired test's question, not the overlap's, and the next
 section explains why the committed pairs publish no paired test.
+## Every row names its engine, and the fiche hashes it (2026-10-02)
+
+From schema `"22"` every runtime row and every local quality row carries `engine_id` and
+`engine_build`: the inference engine that produced it, as the tracked engine registry
+(`aidd_docs/roster/engines.json`) names it, and the build the binary reported at launch
+(a live probe; `null` when it cannot be read). A cloud subject's quality row carries
+`engine_id` `not_applicable` and a null build: no local engine produced it. The registry
+holds one engine today, `llama.cpp`, the reference; its configuration defaults are each
+marked `declared` (read off `llama-server --help` for b10537) or `engine_reported` (read
+off `/props`).
+
+The fiche those rows cite is hashed under a second projection. Projection `"1"` is the
+one every committed fiche was written under (`llama_cpp_build` among its ten keys);
+projection `"2"` replaces it with `engine_id`, `engine_build` and `engine_config_hash`,
+the SHA-256 of the launch flag list with the model path replaced by `roster:<entry id>`
+and `--host` / `--port` removed. The raw `flags` stay on the fiche as evidence, outside
+both projections. Which projection a fiche is verified under is decided by the
+`schema_version` of the row citing it (`row_contract.fiche_projection_for`), never by a
+key the fiche happens to lack: the committed fiches keep verifying under `"1"` with no
+file edited, and a new fiche missing an engine key is `edited`, not an old fiche.
+
+The engine fields replace `llama_cpp_build` among the runtime verdict's blocking fields.
+A committed reference fiche carries no engine field, so a run today against
+`runtime-reference.jsonl` is `not_comparable` naming `engine_build` and `engine_id`,
+never `reproduced` on a `llama_cpp_build` no row tied to an engine. That holds until the
+bundle is republished under this epic's final schema; it is not back-filled.
 
 ## Paired comparisons: both committed pairs are refused (2026-10-02)
 
@@ -1080,7 +1106,8 @@ that field), `VRAM` is `vram_used_mib` in MiB (2^20 B, the unit NVML reports). B
 peaks over the counted repetitions, not point samples.
 
 Every dense `verdict` is `not_comparable`, and that is the honest first-run state rather
-than a gap: the verdict blocks on `llama_cpp_build` / `quant` / `gpu_name` / `flags`, and
+than a gap: the verdict blocked on `llama_cpp_build` / `quant` / `gpu_name` / `flags` (since
+schema `"22"`: `engine_id` / `engine_build` in place of the first), and
 no reference row shares a new quant and a flag set with no `--n-cpu-moe` in it. The
 flagship's `reproduced` is its own earlier pair, unaffected by this increment.
 

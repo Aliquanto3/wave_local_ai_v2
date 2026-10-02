@@ -229,7 +229,7 @@ def stubbed_run(tmp_path, monkeypatch):
             "wave_local_ai_v2.quality_cli.load_settings", return_value=fake_settings
         ),
         "probe_build": patch(
-            "wave_local_ai_v2.quality_cli.build_probe.probe_build",
+            "wave_local_ai_v2.build_probe.probe_build",
             return_value="b10537",
         ),
         "capture_fiche": patch(
@@ -530,7 +530,39 @@ def test_local_and_mistral_rows_cite_the_identical_fiche_hash(
     assert len(hashes) == 1
     stored_fiche = read_fiche(hashes.pop(), tmp_path / "fiches")
     assert stored_fiche is not None
-    assert stored_fiche["llama_cpp_build"] == "b10537"
+    assert stored_fiche["engine_id"] == "llama.cpp"
+    assert stored_fiche["engine_build"] == "b10537"
+
+
+def test_local_rows_name_the_engine_and_cloud_rows_state_it_does_not_apply(
+    stubbed_run,
+) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    engines_by_provider = {
+        (row["provider"], row["engine_id"], row["engine_build"]) for row in rows
+    }
+    assert engines_by_provider == {
+        ("local", "llama.cpp", "b10537"),
+        ("mistral", "not_applicable", None),
+    }
+
+
+def test_the_verified_thinking_switch_is_recorded(stubbed_run, capsys) -> None:
+    quality_cli._run()
+
+    record = [
+        line
+        for line in capsys.readouterr().err.splitlines()
+        if line.startswith("thinking switch verified:")
+    ]
+    assert len(record) == 1
+    assert (
+        "engine=llama.cpp field=chat_template_kwargs renders_differ=True" in record[0]
+    )
 
 
 def test_local_rows_take_their_model_id_from_the_roster_entry(stubbed_run) -> None:
@@ -1251,7 +1283,7 @@ def test_every_row_names_its_subjects_family_and_size_class(stubbed_run) -> None
         ("mistral", "mistral", None),
         ("google", "google", None),
     }
-    assert {row["schema_version"] for row in rows} == {"21"}
+    assert {row["schema_version"] for row in rows} == {"22"}
 
 
 def test_every_row_names_direct_its_version_and_its_measured_overhead(
@@ -2697,6 +2729,35 @@ def _truncate_mistral_half(path: Path, keep: int, **edits: object) -> list[dict]
     return kept
 
 
+def test_a_resume_of_a_local_batch_under_another_engine_build_is_refused(
+    stubbed_run, capsys
+) -> None:
+    # One local score over two builds of the engine is refused, writing nothing.
+    quality_results_path, started = stubbed_run
+    run_id = "resume-other-build"
+    quality_cli._run(resume_run_id=run_id)
+    rows = read_rows(quality_results_path)
+    kept = [
+        {**row, "engine_build": "b1"} for row in rows if row["provider"] == "local"
+    ][:5]
+    quality_results_path.write_text(
+        "".join(f"{json.dumps(row)}\n" for row in kept), encoding="utf-8"
+    )
+    started["running_server"].reset_mock()
+    with (
+        patch("sys.argv", ["wave-local-ai-v2-quality", "--resume", run_id]),
+        pytest.raises(SystemExit) as exit_info,
+    ):
+        quality_cli.main()
+
+    assert exit_info.value.code == 1
+    stderr = capsys.readouterr().err
+    assert f"refusing --resume {run_id}: the local batch's" in stderr
+    assert "engine_build='b1'" in stderr
+    assert started["running_server"].call_count == 0
+    assert read_rows(quality_results_path) == kept
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
@@ -2709,6 +2770,8 @@ def _truncate_mistral_half(path: Path, keep: int, **edits: object) -> list[dict]
         ("roster_entry_id", "another-entry"),
         ("endpoint", "https://example.invalid/v1/chat/completions"),
         ("thinking_policy", "enabled"),
+        # A cloud batch is held to the engine not applying.
+        ("engine_id", "llama.cpp"),
     ],
 )
 def test_a_resume_over_rows_of_another_configuration_is_refused_writing_nothing(

@@ -217,6 +217,17 @@ _COMMON_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     ("prompt_before_template",): FieldDoc(
         "The prompt as the variant left it, before the engine's templating.", _TEXT
     ),
+    ("engine_id",): FieldDoc(
+        "Inference engine that produced the row, as the engine registry names "
+        "it; not_applicable on a row no local engine produced (a cloud subject).",
+        _ID,
+    ),
+    ("engine_build",): FieldDoc(
+        "Engine build as the binary reported it at run time (live probe).",
+        _ID,
+        "The build could not be read, or no local engine produced the row "
+        "(engine_id is then not_applicable).",
+    ),
     ("fiche_hash",): FieldDoc(
         "Hardware and run fiche the row cites. Resolved into the fiche_* columns.",
         _SHA,
@@ -935,7 +946,30 @@ FICHE_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     ("flags",): FieldDoc("llama-server command line, as launched.", _JSON_ARRAY),
     ("gpu_driver_version",): FieldDoc("GPU driver version.", _TEXT),
     ("gpu_name",): FieldDoc("GPU model.", _TEXT),
-    ("llama_cpp_build",): FieldDoc("llama.cpp build that served the model.", _ID),
+    ("llama_cpp_build",): FieldDoc(
+        "llama.cpp build that served the model, on a fiche hashed under "
+        "projection 1 (cited by rows below schema 22).",
+        _ID,
+        "The fiche is hashed under projection 2, which carries engine_build "
+        "instead (the column name is then listed in fields_not_carried).",
+    ),
+    ("engine_id",): FieldDoc(
+        "Engine that served the model, on a fiche hashed under projection 2.",
+        _ID,
+        "The fiche predates the engine fields (projection 1).",
+    ),
+    ("engine_build",): FieldDoc(
+        "Engine build the binary reported at launch, on a fiche hashed under "
+        "projection 2.",
+        _ID,
+        "The build could not be read, or the fiche predates the engine fields.",
+    ),
+    ("engine_config_hash",): FieldDoc(
+        "Hash of the engine's launch configuration with the model path replaced "
+        "by the roster entry and the host and port removed.",
+        _SHA,
+        "The fiche predates the engine fields (projection 1).",
+    ),
     ("model_sha256",): FieldDoc("Checksum of the model file served.", _SHA),
     ("os",): FieldDoc("Operating system.", _TEXT),
     ("quant",): FieldDoc("Quantization of the model file served.", _ID),

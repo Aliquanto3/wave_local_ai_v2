@@ -8,18 +8,26 @@ recorded against the running binary and deliberately not re-run in CI.
 
 from __future__ import annotations
 
+import dataclasses
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from wave_local_ai_v2 import local_client, prompt_provenance, roster, row_contract
+from wave_local_ai_v2 import (
+    engines,
+    local_client,
+    prompt_provenance,
+    roster,
+    row_contract,
+)
 
 BASE = "http://127.0.0.1:8080"
 TIMEOUT = 30.0
 SAMPLING: dict[str, Any] = {"seed": 1, "temperature": 0}
 # The control the four shipped Qwen entries declare.
 QWEN_CONTROL: dict[str, Any] = {"chat_template_kwargs": {"enable_thinking": False}}
+ENGINE = engines.tracked_reference_engine()
 
 _CHAT_BODY = {
     "choices": [
@@ -338,21 +346,76 @@ def _render_router(*, honours_control: bool) -> Any:
 def test_allowed_sends_nothing_whatever_the_entry_declares(declared: Any) -> None:
     assert (
         local_client.thinking_kwargs(
-            row_contract.THINKING_POLICY_ALLOWED, _entry(**declared)
+            row_contract.THINKING_POLICY_ALLOWED, _entry(**declared), ENGINE
         )
         == {}
     )
 
 
 def test_disabled_sends_the_entrys_declared_control_as_a_copy() -> None:
-    control = {"reasoning_effort": "none"}
+    control = {"chat_template_kwargs": {"enable_thinking": False}}
 
     kwargs = local_client.thinking_kwargs(
-        row_contract.THINKING_POLICY_DISABLED, _entry(thinking_control=control)
+        row_contract.THINKING_POLICY_DISABLED, _entry(thinking_control=control), ENGINE
     )
 
     assert kwargs == control
     assert kwargs is not control
+
+
+def test_a_control_spelled_outside_the_engines_switch_field_is_refused() -> None:
+    # llama.cpp's registry entry carries the control in `chat_template_kwargs`;
+    # a request parameter it would not forward to the template is not sent.
+    with pytest.raises(
+        local_client.LocalRequestError,
+        match="not spelled in engine 'llama.cpp'.*'chat_template_kwargs'",
+    ):
+        local_client.thinking_kwargs(
+            row_contract.THINKING_POLICY_DISABLED,
+            _entry(thinking_control={"reasoning_effort": "none"}),
+            ENGINE,
+        )
+
+
+_NO_SWITCH = dataclasses.replace(ENGINE, thinking_switch=engines.THINKING_SWITCH_NONE)
+
+
+def test_an_engine_with_no_switch_refuses_an_object_control_under_disabled() -> None:
+    # Nothing could carry the control, so the batch is refused before any
+    # generation rather than published as `disabled` with nothing sent.
+    with pytest.raises(
+        local_client.LocalRequestError,
+        match="engine 'llama.cpp' declares no thinking switch.*refused before any",
+    ):
+        local_client.thinking_kwargs(
+            row_contract.THINKING_POLICY_DISABLED,
+            _entry(thinking_control=QWEN_CONTROL),
+            _NO_SWITCH,
+        )
+
+
+def test_an_engine_with_no_switch_runs_an_entry_that_does_not_reason() -> None:
+    # A `none` entry sends nothing on any engine: the model has no reasoning
+    # to disable, which the candidate gate verified by a live generation.
+    assert (
+        local_client.thinking_kwargs(
+            row_contract.THINKING_POLICY_DISABLED,
+            _entry(thinking_control=roster.THINKING_CONTROL_NONE),
+            _NO_SWITCH,
+        )
+        == {}
+    )
+
+
+def test_an_engine_with_no_switch_sends_nothing_under_allowed() -> None:
+    assert (
+        local_client.thinking_kwargs(
+            row_contract.THINKING_POLICY_ALLOWED,
+            _entry(thinking_control=QWEN_CONTROL),
+            _NO_SWITCH,
+        )
+        == {}
+    )
 
 
 def test_disabled_sends_nothing_for_an_entry_declaring_none() -> None:
@@ -360,6 +423,7 @@ def test_disabled_sends_nothing_for_an_entry_declaring_none() -> None:
         local_client.thinking_kwargs(
             row_contract.THINKING_POLICY_DISABLED,
             _entry(thinking_control=roster.THINKING_CONTROL_NONE),
+            ENGINE,
         )
         == {}
     )
@@ -372,19 +436,25 @@ def test_disabled_refuses_an_entry_that_declares_no_control() -> None:
         local_client.LocalRequestError,
         match="'fake-entry' declares no thinking_control",
     ):
-        local_client.thinking_kwargs(row_contract.THINKING_POLICY_DISABLED, _entry())
+        local_client.thinking_kwargs(
+            row_contract.THINKING_POLICY_DISABLED, _entry(), ENGINE
+        )
 
 
 def test_disabled_refuses_a_malformed_control_built_in_code() -> None:
     with pytest.raises(local_client.LocalRequestError, match="malformed"):
         local_client.thinking_kwargs(
-            row_contract.THINKING_POLICY_DISABLED, _entry(thinking_control="off")
+            row_contract.THINKING_POLICY_DISABLED,
+            _entry(thinking_control="off"),
+            ENGINE,
         )
 
 
 def test_an_unknown_thinking_policy_raises_rather_than_sending_nothing() -> None:
     with pytest.raises(local_client.LocalRequestError, match="unknown thinking_policy"):
-        local_client.thinking_kwargs("maybe", _entry(thinking_control=QWEN_CONTROL))
+        local_client.thinking_kwargs(
+            "maybe", _entry(thinking_control=QWEN_CONTROL), ENGINE
+        )
 
 
 def test_the_declared_control_is_what_both_calls_send() -> None:

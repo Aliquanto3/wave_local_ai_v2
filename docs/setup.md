@@ -467,9 +467,11 @@ at `RUNTIME_REFERENCE_PATH` (default
 A runtime re-run counts as `reproduced` when its `gen_tok_per_s` is within
 `RUNTIME_REPRODUCTION_TOLERANCE` (default `0.10`) of the matching reference
 row's; `not_reproduced` when it is outside; `not_comparable` when no
-reference row was configured or none matches on all four verdict-blocking
-fields (`llama_cpp_build`, `quant`, `gpu_name`, `flags`, all read from each
-row's stored fiche — CPU, RAM, driver and OS never block a comparison).
+reference row was configured or none matches on all five verdict-blocking
+fields (`engine_id`, `engine_build`, `quant`, `gpu_name`, `flags`, all read
+from each row's stored fiche — CPU, RAM, driver and OS never block a
+comparison). A reference fiche written before the engine fields carries
+neither, so it never matches a current run.
 Point `RUNTIME_REFERENCE_PATH` at an empty or absent file to opt out: that
 is `not_comparable`, not a failure.
 

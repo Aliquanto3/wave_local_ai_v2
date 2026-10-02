@@ -5,9 +5,14 @@ from unittest.mock import patch
 
 import pytest
 
+from wave_local_ai_v2 import hardware
 from wave_local_ai_v2.fiche_registry import verify_fiche, write_fiche
 from wave_local_ai_v2.fiche_validator import main, validate_bundle
-from wave_local_ai_v2.row_contract import FICHE_HASH_SCHEMA_VERSION
+from wave_local_ai_v2.row_contract import (
+    ENGINE_FICHE_SCHEMA_VERSION,
+    SCHEMA_VERSION,
+    fiche_projection_for,
+)
 from wave_local_ai_v2.settings import Settings
 
 FICHE = {
@@ -17,7 +22,9 @@ FICHE = {
     "gpu_driver_version": "1.2.3",
     "os": "z",
     "cuda_ceiling": "12.4",
-    "llama_cpp_build": "b10537",
+    "engine_id": "llama.cpp",
+    "engine_build": "b10537",
+    "engine_config_hash": "e" * 64,
     "roster_entry_id": "fake-entry",
     "model_sha256": "0" * 64,
     "quant": "UD-IQ4_XS",
@@ -53,7 +60,7 @@ def _git_tracked_registry(tmp_path: Path) -> tuple[Path, str]:
 def test_verify_fiche_returns_missing_for_an_unwritten_hash(tmp_path) -> None:
     registry_dir = tmp_path / "fiches"
 
-    result = verify_fiche("deadbeef" * 8, registry_dir)
+    result = verify_fiche("deadbeef" * 8, registry_dir, schema_version=SCHEMA_VERSION)
 
     assert result["status"] == "missing"
     assert result["changed_fields"] == []
@@ -63,10 +70,44 @@ def test_verify_fiche_returns_ok_for_an_untouched_written_fiche(tmp_path) -> Non
     registry_dir = tmp_path / "fiches"
     fiche_hash = write_fiche(FICHE, registry_dir)
 
-    result = verify_fiche(fiche_hash, registry_dir)
+    result = verify_fiche(fiche_hash, registry_dir, schema_version=SCHEMA_VERSION)
 
     assert result["status"] == "ok"
     assert result["changed_fields"] == []
+
+
+def test_a_legacy_fiche_verifies_under_the_projection_its_row_selects(
+    tmp_path,
+) -> None:
+    """A fiche written before the engine fields keeps verifying for the rows
+    that cited it, and cannot pass for a row at the engine schema."""
+    registry_dir = tmp_path / "fiches"
+    registry_dir.mkdir()
+    legacy = {
+        key: value for key, value in FICHE.items() if not key.startswith("engine_")
+    }
+    legacy["llama_cpp_build"] = "b10537"
+    legacy_hash = hardware.fiche_hash(legacy, "1")
+    (registry_dir / f"{legacy_hash}.json").write_text(
+        json.dumps(legacy, sort_keys=True), encoding="utf-8"
+    )
+
+    old_row = verify_fiche(legacy_hash, registry_dir, schema_version="21")
+    new_row = verify_fiche(
+        legacy_hash, registry_dir, schema_version=ENGINE_FICHE_SCHEMA_VERSION
+    )
+
+    assert old_row["status"] == "ok"
+    assert new_row["status"] == "edited"
+    assert "engine_id" in new_row["changed_fields"][0]
+
+
+def test_an_unreadable_schema_version_is_held_to_the_current_projection() -> None:
+    assert fiche_projection_for(None) == hardware.CURRENT_FICHE_PROJECTION
+    assert fiche_projection_for("x") == hardware.CURRENT_FICHE_PROJECTION
+    assert fiche_projection_for("7") == "1"
+    assert fiche_projection_for("21") == "1"
+    assert fiche_projection_for("22") == "2"
 
 
 def test_verify_fiche_names_the_changed_field_inside_a_committed_git_repo(
@@ -77,7 +118,7 @@ def test_verify_fiche_names_the_changed_field_inside_a_committed_git_repo(
     edited = {**FICHE, "gpu_name": "edited-in-place"}
     fiche_path.write_text(json.dumps(edited, sort_keys=True), encoding="utf-8")
 
-    result = verify_fiche(fiche_hash, registry_dir)
+    result = verify_fiche(fiche_hash, registry_dir, schema_version=SCHEMA_VERSION)
 
     assert result["status"] == "edited"
     assert result["changed_fields"] == ["gpu_name"]
@@ -90,7 +131,7 @@ def test_verify_fiche_degrades_outside_git(tmp_path) -> None:
     edited = {**FICHE, "gpu_name": "edited-in-place"}
     fiche_path.write_text(json.dumps(edited, sort_keys=True), encoding="utf-8")
 
-    result = verify_fiche(fiche_hash, registry_dir)
+    result = verify_fiche(fiche_hash, registry_dir, schema_version=SCHEMA_VERSION)
 
     assert result["status"] == "edited"
     assert len(result["changed_fields"]) == 1
@@ -106,7 +147,7 @@ def test_validator_over_a_clean_bundle_reports_zero_issues(tmp_path) -> None:
         [
             {
                 "run_id": "run-1",
-                "schema_version": FICHE_HASH_SCHEMA_VERSION,
+                "schema_version": SCHEMA_VERSION,
                 "fiche_hash": fiche_hash,
             }
             for _ in range(3)
@@ -132,7 +173,7 @@ def test_validator_names_the_citing_row_when_a_fiche_is_edited(tmp_path) -> None
         [
             {
                 "run_id": "run-1",
-                "schema_version": FICHE_HASH_SCHEMA_VERSION,
+                "schema_version": SCHEMA_VERSION,
                 "fiche_hash": fiche_hash,
             }
         ],
@@ -157,7 +198,7 @@ def test_validator_reports_missing_class_for_an_absent_hash(tmp_path) -> None:
         [
             {
                 "run_id": "run-1",
-                "schema_version": FICHE_HASH_SCHEMA_VERSION,
+                "schema_version": SCHEMA_VERSION,
                 "fiche_hash": "deadbeef" * 8,
             }
         ],
@@ -178,7 +219,7 @@ def test_validator_treats_a_current_schema_row_with_no_fiche_hash_key_as_missing
     results_path = tmp_path / "runtime.jsonl"
     _write_rows(
         results_path,
-        [{"run_id": "run-1", "schema_version": FICHE_HASH_SCHEMA_VERSION}],
+        [{"run_id": "run-1", "schema_version": SCHEMA_VERSION}],
     )
 
     report = validate_bundle([results_path], registry_dir)
@@ -257,7 +298,7 @@ def test_main_exits_zero_over_a_clean_bundle(tmp_path, monkeypatch, capsys) -> N
         [
             {
                 "run_id": "run-1",
-                "schema_version": FICHE_HASH_SCHEMA_VERSION,
+                "schema_version": SCHEMA_VERSION,
                 "fiche_hash": fiche_hash,
             }
         ],
@@ -295,7 +336,7 @@ def test_main_exits_one_and_names_the_class_when_a_hash_is_missing(
         [
             {
                 "run_id": "run-1",
-                "schema_version": FICHE_HASH_SCHEMA_VERSION,
+                "schema_version": SCHEMA_VERSION,
                 "fiche_hash": "deadbeef" * 8,
             }
         ],
@@ -334,7 +375,7 @@ def test_main_checks_an_explicit_path_without_a_local_model_install(
         [
             {
                 "run_id": "run-1",
-                "schema_version": FICHE_HASH_SCHEMA_VERSION,
+                "schema_version": SCHEMA_VERSION,
                 "fiche_hash": fiche_hash,
             }
         ],
@@ -391,7 +432,7 @@ def test_every_issue_names_the_results_file_it_came_from(tmp_path) -> None:
         [
             {
                 "run_id": "run-1",
-                "schema_version": FICHE_HASH_SCHEMA_VERSION,
+                "schema_version": SCHEMA_VERSION,
                 "fiche_hash": "deadbeef" * 8,
             }
         ],

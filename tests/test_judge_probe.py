@@ -233,7 +233,7 @@ def stubbed_probe(tmp_path, monkeypatch):
             "wave_local_ai_v2.judge_probe.load_settings", return_value=fake_settings
         ),
         "probe_build": patch(
-            "wave_local_ai_v2.judge_probe.build_probe.probe_build",
+            "wave_local_ai_v2.build_probe.probe_build",
             return_value="b10537",
         ),
         "capture_fiche": patch(
@@ -601,6 +601,19 @@ def test_the_local_and_cloud_rows_record_their_own_call_paths(stubbed_probe) -> 
         assert row["endpoint"] == google_client.GENERATE_URL
         assert row["prompt_template_id"] == "google-generatecontent-user-part"
         assert row["prompt_template_hash"] is not None
+
+
+def test_local_probe_rows_name_the_engine_and_the_cloud_row_states_none(
+    stubbed_probe,
+) -> None:
+    probe_path, _, _, _ = stubbed_probe
+
+    judge_probe._run()
+
+    rows = read_rows(probe_path)
+    assert {
+        (row["provider"], row["engine_id"], row["engine_build"]) for row in rows
+    } == {("local", "llama.cpp", "b10537"), ("google", "not_applicable", None)}
 
 
 def test_the_local_probe_row_publishes_the_rendered_prompt_and_the_policy(
@@ -1226,6 +1239,10 @@ def _judged_by_another_model(row: dict) -> dict:
         (_judged_by_another_model, "judge_model_ids="),
         (lambda row: {**row, "model_id": "Another Model"}, "model_id="),
         (lambda row: {**row, "suite_version": "0"}, "suite_version="),
+        # A local batch resumed under another engine build would publish one
+        # agreement over two builds.
+        (lambda row: {**row, "engine_build": "b1"}, "engine_build="),
+        (lambda row: {**row, "engine_id": "ollama"}, "engine_id="),
     ],
 )
 def test_a_probe_resume_over_rows_of_another_configuration_is_refused(

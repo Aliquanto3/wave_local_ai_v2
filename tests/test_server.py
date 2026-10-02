@@ -1,3 +1,4 @@
+import dataclasses
 import subprocess
 import sys
 import tempfile
@@ -7,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from wave_local_ai_v2 import roster, server
+from wave_local_ai_v2 import engines, roster, server
 from wave_local_ai_v2.settings import Settings
 
 REAL_ROSTER_PATH = Path("aidd_docs/roster/models.json")
@@ -393,12 +394,49 @@ def test_start_server_refuses_to_run_against_an_occupied_port() -> None:
     with (
         patch("wave_local_ai_v2.server._port_is_open", return_value=True),
         patch("wave_local_ai_v2.server.subprocess.Popen") as mock_popen,
-        pytest.raises(server.ServerStartupError, match=str(server.PORT)),
+        pytest.raises(server.ServerStartupError, match="port 8080 on 127.0.0.1"),
     ):
         server.start_server(Path("llama-server.exe"), [])
 
     # Nothing was spawned: a doomed second process would otherwise pass the
     # readiness poll against the stale server and be measured in its place.
+    mock_popen.assert_not_called()
+
+
+def _engine(**changes: object) -> engines.EngineEntry:
+    return dataclasses.replace(engines.tracked_reference_engine(), **changes)  # type: ignore[arg-type]
+
+
+def test_host_port_and_health_path_are_read_from_the_engine_entry() -> None:
+    engine = _engine(host="127.0.0.2", default_port=9191)
+    fake_process = MagicMock()
+    fake_process.poll.return_value = None
+
+    flags = server.build_flags(_shipped_entry(), None, 8, Path("<gguf>"), engine=engine)
+    with (
+        patch("wave_local_ai_v2.server._port_is_open", return_value=False) as probe,
+        patch("wave_local_ai_v2.server.subprocess.Popen", return_value=fake_process),
+        patch(
+            "wave_local_ai_v2.server.requests.get",
+            return_value=MagicMock(status_code=200),
+        ) as get,
+    ):
+        server.start_server(Path("llama-server.exe"), flags, engine=engine)
+
+    assert flags[-4:] == ["--host", "127.0.0.2", "--port", "9191"]
+    probe.assert_called_once_with("127.0.0.2", 9191)
+    assert get.call_args.args[0] == "http://127.0.0.2:9191/health"
+
+
+def test_an_attached_engine_is_never_spawned() -> None:
+    engine = _engine(lifecycle=engines.LIFECYCLE_ATTACHED)
+
+    with (
+        patch("wave_local_ai_v2.server.subprocess.Popen") as mock_popen,
+        pytest.raises(server.ServerStartupError, match="'attached'"),
+    ):
+        server.start_server(Path("llama-server.exe"), [], engine=engine)
+
     mock_popen.assert_not_called()
 
 
@@ -414,7 +452,7 @@ def test_running_server_prints_the_stderr_tail_before_reraising(capsys) -> None:
     fake_process = MagicMock()
     fake_process.poll.return_value = None
 
-    def fake_start(server_path, flags, *, stderr_sink):
+    def fake_start(server_path, flags, *, stderr_sink, engine):
         stderr_sink.write(b"ggml_cuda: out of memory")
         return fake_process
 

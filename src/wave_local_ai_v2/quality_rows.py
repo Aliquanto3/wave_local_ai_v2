@@ -17,12 +17,28 @@ by the CLIs, not the other way round.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from types import MappingProxyType
 from typing import Any
 
 from wave_local_ai_v2 import cost, emissions, harness, roster, row_contract, timings
 from wave_local_ai_v2.energy import ENERGY_METHOD_UNAVAILABLE, EnergyResult
+from wave_local_ai_v2.engines import EngineFicheFields
 from wave_local_ai_v2.settings import Settings
 from wave_local_ai_v2.suite_gate import SuiteGateResult
+
+# What a cloud subject's quality row carries for the engine: no local engine
+# produced it, which the row states rather than leaving null.
+ENGINE_NOT_APPLICABLE_FIELDS: Mapping[str, str | None] = MappingProxyType(
+    {"engine_id": row_contract.ENGINE_NOT_APPLICABLE, "engine_build": None}
+)
+
+
+def local_engine_fields(fiche_fields: EngineFicheFields) -> dict[str, str | None]:
+    """The two engine fields a local row carries, read off its own fiche's."""
+    return {
+        "engine_id": fiche_fields["engine_id"],
+        "engine_build": fiche_fields["engine_build"],
+    }
 
 
 def suite_item_fields(
