@@ -100,6 +100,19 @@ The command-line interface for running benchmarks.
   entry (missing, no state, a suite id `suite_registry` does not resolve,
   an out-of-scope entry without a reason). `--record`/`--output` override
   the two paths. Module invocation, like `suite_snapshot`.
+- `uv run python -m wave_local_ai_v2.subset_replay (--suite <id> | --definition
+  <path>) --source <rows.jsonl>` — replays a drawn suite's recorded
+  `selection_rule` (`subset_sampler.py`, sampler version `1`) over a source
+  table, one JSON row per line carrying `source`, `language`, the rule's
+  stable source key and content fields. Exits `0` when the redraw gives the
+  same item ids in the same order and every item's text still matches its
+  `content_hash`; exits `1` naming the first differing position, every item
+  whose hash moved, every item the source no longer holds, or why nothing
+  could be replayed (no rule, unreadable source, an unfillable stratum). The
+  recorded loader and generator (`CPython random.Random` + major.minor) are
+  printed, not enforced: rows are put in canonical order
+  (source, then stable key) before sampling, so their arrival order is
+  irrelevant. Module invocation, like `suite_snapshot`.
 - `wave-local-ai-v2-validate` — invalidation validator: checks every row of
   one or more results files (default: the two live stores,
   `RUNTIME_RESULTS_PATH`/`QUALITY_RESULTS_PATH`) against the stored fiche

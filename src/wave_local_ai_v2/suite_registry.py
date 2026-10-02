@@ -24,7 +24,10 @@ hash, selection rule) land that way, as data, without a second shape. Only
 the core keys are checked here; what an added key means is the business of
 the story that adds it. The declared `level` is a core key, and the gate
 checks it together with the optional `size_target`/`size_target_reason` and
-each item's optional `licence`, `source` and `source_revision`.
+each item's optional `licence`, `source` and `source_revision`. A declared
+`selection_rule` and each item's `content_hash` are checked through
+`subset_sampler`, which owns what they mean: a rule it could not replay, or
+items that disagree with it, never load.
 
 `prompt_set_hash` is never declared in the data: it is computed from the
 items at load, so a hand-edited prompt always moves it.
@@ -42,7 +45,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
-from wave_local_ai_v2 import row_contract, scoring_rules, suite_gate
+from wave_local_ai_v2 import row_contract, scoring_rules, subset_sampler, suite_gate
 from wave_local_ai_v2.suite_gate import SuiteGateResult
 
 SUITE_DATA_DIRNAME = "suite_data"
@@ -186,6 +189,7 @@ def _definition_from_data(data: dict[str, Any], *, origin: str) -> SuiteDefiniti
         )
 
     items = _items(data["items"], origin)
+    _check_selection(data, items, origin)
     # The gate runs on every load and its refusal propagates: no definition
     # object exists for a suite it refuses, including a suite that falls short
     # of the level it declares. The size target and its reason stay in
@@ -214,6 +218,33 @@ def _definition_from_data(data: dict[str, Any], *, origin: str) -> SuiteDefiniti
             {key: value for key, value in data.items() if key not in _CORE_KEYS}
         ),
     )
+
+
+def _check_selection(
+    data: Mapping[str, Any], items: Sequence[Mapping[str, Any]], origin: str
+) -> None:
+    """Refuse a declared selection rule that cannot be replayed, items that
+    disagree with it, or a malformed item content hash.
+
+    The rule and the hashes are additions to this shape, carried as data
+    (`extra` and the item mapping); what they mean is `subset_sampler`'s.
+    """
+    if "selection_rule" in data:
+        rule = data["selection_rule"]
+        problems = subset_sampler.check_selection_rule(rule, data["task_suite"])
+        if not problems:
+            problems = subset_sampler.check_drawn_items(items, rule)
+    else:
+        problems = [
+            problem
+            for problem in map(subset_sampler.content_hash_problem, items)
+            if problem is not None
+        ]
+    if problems:
+        raise SuiteRegistryError(
+            f"suite definition {origin} has a selection it cannot replay: "
+            + "; ".join(problems)
+        )
 
 
 def _require(condition: bool, origin: str, key: str) -> None:

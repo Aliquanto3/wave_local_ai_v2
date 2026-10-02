@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 import pytest
+from subset_fixtures import drawn_definition
 
 from wave_local_ai_v2 import scoring_rules, suite_registry, suite_snapshot
 from wave_local_ai_v2.suite_gate import SuiteGateError
@@ -275,25 +276,26 @@ def test_unregister_drops_only_a_run_time_registration(tmp_path) -> None:
 def test_the_interval_epics_fields_are_additions_to_the_one_shape(
     tmp_path, registered
 ) -> None:
-    """Source, licence, source revision, content hash and selection rule:
-    carried as data on the suite and on each item, and exported in the
-    snapshot, with no second shape. The declared level is a core key."""
-    data = _variant(selection_rule={"seed": 1, "n": 3})
+    """Source, licence and source revision: carried as data on each item and
+    exported in the snapshot, with no second shape. The declared level is a
+    core key. The content hash and the selection rule are the same kind of
+    addition, checked through `subset_sampler`: see the drawn suite below."""
+    data = _variant()
     for item in data["items"]:
         item["licence"] = "CC-BY-4.0"
         item["source"] = "example-dataset"
         item["source_revision"] = "abc123"
-        item["content_hash"] = "sha256:00"
+        item["content_hash"] = "0" * 64
     definition = suite_registry.register(_write(tmp_path, data))
     registered.append(definition.suite_id)
 
     assert definition.level == "development"
-    assert dict(definition.extra) == {"selection_rule": {"seed": 1, "n": 3}}
+    assert dict(definition.extra) == {}
     assert all(item["licence"] == "CC-BY-4.0" for item in definition.items)
     snapshot = suite_snapshot.build_snapshot(definition)
     assert snapshot["level"] == "development"
     assert snapshot["items"][0]["source_revision"] == "abc123"
-    assert snapshot["items"][0]["content_hash"] == "sha256:00"
+    assert snapshot["items"][0]["content_hash"] == "0" * 64
 
 
 def test_a_definition_without_a_level_is_refused(tmp_path) -> None:
@@ -359,3 +361,49 @@ def test_every_shipped_rule_is_named_in_the_rule_table() -> None:
     for suite_id in _SHIPPED:
         rule = suite_registry.resolve(suite_id).scoring_rule
         assert rule in scoring_rules.SCORING_RULES
+
+
+# --- a drawn publication suite ------------------------------------------------
+
+
+def test_a_drawn_definition_registers_at_publication_with_its_rule(
+    tmp_path, registered
+) -> None:
+    """The selection rule and the item hashes are fields of this shape, not a
+    second one: the drawn suite loads, certifies, and its snapshot carries
+    them."""
+    data, _ = drawn_definition()
+
+    definition = suite_registry.register(_write(tmp_path, data, "fixture-drawn.json"))
+    registered.append(definition.suite_id)
+
+    assert definition.gate["level"] == "publication"
+    snapshot = suite_snapshot.build_snapshot(definition)
+    assert snapshot["selection_rule"] == data["selection_rule"]
+    assert [item["content_hash"] for item in snapshot["items"]] == [
+        item["content_hash"] for item in data["items"]
+    ]
+
+
+def test_a_rule_recording_only_its_final_seed_never_loads(tmp_path) -> None:
+    data, _ = drawn_definition()
+    data["selection_rule"].update(seed=9, attempts=3, seeds_tried=[9])
+
+    with pytest.raises(SuiteRegistryError, match="1 seeds for 3 attempts"):
+        suite_registry.load_definition(_write(tmp_path, data))
+
+
+def test_items_disagreeing_with_their_rule_never_load(tmp_path) -> None:
+    data, _ = drawn_definition()
+    data["items"] = data["items"][:-1]
+
+    with pytest.raises(SuiteRegistryError, match="its selection rule draws 102"):
+        suite_registry.load_definition(_write(tmp_path, data))
+
+
+def test_a_malformed_content_hash_without_a_rule_never_loads(tmp_path) -> None:
+    data = _variant()
+    data["items"][0]["content_hash"] = "abc"
+
+    with pytest.raises(SuiteRegistryError, match="not a SHA-256 hex digest"):
+        suite_registry.load_definition(_write(tmp_path, data))
