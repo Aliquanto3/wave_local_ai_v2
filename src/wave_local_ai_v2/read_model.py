@@ -368,6 +368,13 @@ QUALITY_FIELDS_NOT_RENDERED: frozenset[str] = frozenset(
         # absence.
         "retry_budget",
         "partial_failure",
+        # The item's own tokens, engine-reported first-token time and cached
+        # prompt tokens, with their null reasons and labels (schema "18").
+        # Inputs to a paired per-item comparison, which `comparison.py`
+        # publishes as a record; rendering them per item is the pitch epic's
+        # call, and rendering them beside the runtime row's TTFT would invite
+        # reading one generation as Methodology 6's aggregate.
+        *row_contract.ITEM_MEASUREMENT_FIELDS,
     }
 )
 

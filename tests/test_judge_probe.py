@@ -464,6 +464,27 @@ def test_each_probe_row_records_its_subject_egress_apart_from_the_judges(
         assert row["judge_egress"]["item_left_machine"] is True
 
 
+def test_each_probe_row_carries_its_own_subject_generation_figures(
+    stubbed_probe,
+) -> None:
+    probe_path, _, _, _ = stubbed_probe
+
+    judge_probe._run()
+
+    rows = read_rows(probe_path)
+    local_rows = [row for row in rows if row["provider"] == "local"]
+    cloud_rows = [row for row in rows if row["provider"] != "local"]
+    for position, row in enumerate(local_rows):
+        assert (row["item_tokens_in"], row["item_tokens_out"]) == (23, 11)
+        # The stubbed engine reports no timings block: null with its reason.
+        assert row["item_ttft_ms"] is None
+        assert row["item_ttft_ms_null_reason"] == "not_reported_by_engine"
+        assert row["item_first_in_batch"] is (position == 0)
+    assert len(cloud_rows) == 1
+    assert cloud_rows[0]["item_ttft_ms_null_reason"] == "not_reported_by_provider"
+    assert cloud_rows[0]["item_first_in_batch"] is True
+
+
 def test_every_row_publishes_null_labels_and_a_real_subject_output(
     stubbed_probe,
 ) -> None:

@@ -159,6 +159,7 @@ The command-line interface for running benchmarks.
 - `wave-local-ai-v2-compare (--reference <run_id> --candidate <run_id>
   [--reference-where field=value ...] [--candidate-where field=value ...] |
   --comparisons <declaration.json>) [--dimension model|prompt_variant]
+  [--quantity score|item_tokens_in|item_tokens_out|item_ttft_ms|energy_kwh]
   [--alpha 0.05] [--rows <jsonl>] [--records-dir <dir>] [--output <path>]`
   — paired comparison (`comparison.py`) over the published quality rows
   (default `quality-reference.jsonl`, read-only). Writes one immutable family
@@ -181,7 +182,20 @@ The command-line interface for running benchmarks.
   triple, the scoring kind or the compared field, and when a constraint or the
   metric is null on either side. Sides differing outside the declared
   dimension publish an observation naming the confound, verdict `not
-  comparable` (its p kept in `result`). No timestamp: a
+  comparable` (its p kept in `result`). `--quantity` (default `score`)
+  compares a per-item measurement instead (schema "18" rows): the item's own
+  tokens in or out, or its engine-reported first-token time, scoring kind
+  `continuous_measurement`, Wilcoxon signed-rank over the same item ids; a
+  member is refused when a side's rows do not carry the field or the two
+  sides' `item_measurement_kind` / `item_ttft_source` labels differ.
+  `--quantity energy_kwh` publishes each side's per-batch energy and their
+  difference as an observation whose reason says why there is no paired test
+  (energy is per batch; per-item energy is below tracker resolution). The
+  quantity is part of the family (`family_definition.compared_quantity`,
+  named in the file name only off the default), so score records keep their
+  shape. A reader drops the batch's cold first item with
+  `--reference-where item_first_in_batch=false --candidate-where
+  item_first_in_batch=false`. No timestamp: a
   re-run is byte-identical; a different existing file is refused (exit `1`);
   no published record is rewritten.
 - `wave-local-ai-v2-candidate-gate --candidate <declaration.json> [--records

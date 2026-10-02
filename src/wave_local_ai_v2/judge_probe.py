@@ -65,6 +65,7 @@ from wave_local_ai_v2 import (
     server,
     suite_gate,
     suite_registry,
+    timings,
     verdict,
 )
 from wave_local_ai_v2.energy import measure_energy
@@ -355,6 +356,8 @@ class _ProbeCompletion(TypedDict):
     # Reported by the local chat endpoint's `usage` block; absent on the cloud
     # shape, which totals its own prompt tokens separately.
     prompt_tokens: NotRequired[int]
+    # The item's own engine-reported tokens and first-token time (schema "18").
+    measurement: timings.ItemMeasurement
 
 
 @dataclass(frozen=True)
@@ -750,6 +753,7 @@ def _generate_local_outputs(
                     # retries.
                     retries=0,
                     prompt_tokens=response["prompt_tokens"],
+                    measurement=response["measurement"],
                 )
             )
 
@@ -833,6 +837,8 @@ def _build_row(
     call_path_fields: dict[str, Any],
     batch_fields: dict[str, Any],
     judge_block: dict[str, Any],
+    # The item's own generation figures (`quality_rows.item_measurement_fields`).
+    item_measurement: dict[str, Any],
     failure_reason: str | None,
     failure_counts: dict[str, int],
     retries: int,
@@ -914,6 +920,7 @@ def _build_row(
         "partial_failure": (
             dict(partial_failure) if partial_failure is not None else None
         ),
+        **item_measurement,
         "verdict": {
             "verdict": verdict.VERDICT_NOT_COMPARABLE,
             "reference_run_id": None,
@@ -1084,21 +1091,23 @@ def _run_local_batch(
     batch_fields = quality_rows.local_batch_fields(settings, energy, completions)
     model_id = context.roster_entry.display_id
 
-    for (
+    for position, (
         item,
         completion,
         block,
         failure_reason,
         variant_prompt,
         rendered_prompt,
-    ) in zip(
-        items,
-        completions,
-        blocks,
-        failure_reasons,
-        variant_prompts,
-        rendered_prompts,
-        strict=False,
+    ) in enumerate(
+        zip(
+            items,
+            completions,
+            blocks,
+            failure_reasons,
+            variant_prompts,
+            rendered_prompts,
+            strict=False,
+        )
     ):
         row = _build_row(
             context,
@@ -1113,6 +1122,10 @@ def _run_local_batch(
             prompt=rendered_prompt,
             batch_fields=batch_fields,
             judge_block=block,
+            # The first generation of this server launch is the cold one.
+            item_measurement=quality_rows.item_measurement_fields(
+                completion["measurement"], first_in_batch=position == 0
+            ),
             failure_reason=failure_reason,
             failure_counts=failure_counts,
             retries=completion["retries"],
@@ -1220,6 +1233,13 @@ def _run_cloud_subject_item(
         prompt_before_template=variant_prompt,
         batch_fields=batch_fields,
         judge_block=block,
+        # The probe's one cloud subject item is its batch's only generation.
+        item_measurement=quality_rows.item_measurement_fields(
+            quality_rows.cloud_item_measurement(
+                response["prompt_tokens"], response["generated_tokens"]
+            ),
+            first_in_batch=True,
+        ),
         failure_reason=failure_reason,
         failure_counts=_failure_counts([failure_reason]),
         retries=context_retries + generate_retries,

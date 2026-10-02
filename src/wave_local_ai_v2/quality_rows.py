@@ -19,7 +19,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from wave_local_ai_v2 import cost, emissions
+from wave_local_ai_v2 import cost, emissions, timings
 from wave_local_ai_v2.energy import ENERGY_METHOD_UNAVAILABLE, EnergyResult
 from wave_local_ai_v2.settings import Settings
 from wave_local_ai_v2.suite_gate import SuiteGateResult
@@ -42,6 +42,65 @@ def suite_item_fields(
         "item_source": item.get("source"),
         "item_source_revision": item.get("source_revision"),
     }
+
+
+def item_measurement_fields(
+    measurement: timings.ItemMeasurement, *, first_in_batch: bool
+) -> dict[str, Any]:
+    """The per-item measurement block one quality row carries (schema "18").
+
+    The item's own tokens in and out, its engine-reported first-token time
+    under its `ttft_source` label, and the prompt tokens the engine reused
+    from its cache, each a value or null with its reason. Labelled a single
+    per-item generation (no warm-up exclusion, no repetitions), so it is
+    never read as Methodology 6's runtime figure, and the batch's first
+    generation -- the one a freshly launched server served cold -- is marked
+    so a reader can exclude it.
+    """
+    return {
+        "item_tokens_in": measurement["tokens_in"],
+        "item_tokens_in_null_reason": measurement["tokens_in_null_reason"],
+        "item_tokens_out": measurement["tokens_out"],
+        "item_tokens_out_null_reason": measurement["tokens_out_null_reason"],
+        "item_ttft_ms": measurement["ttft_ms"],
+        "item_ttft_ms_null_reason": measurement["ttft_ms_null_reason"],
+        "item_ttft_source": measurement["ttft_source"],
+        "item_prompt_tokens_cached": measurement["prompt_tokens_cached"],
+        "item_prompt_tokens_cached_null_reason": measurement[
+            "prompt_tokens_cached_null_reason"
+        ],
+        "item_measurement_kind": timings.ITEM_MEASUREMENT_SINGLE_GENERATION,
+        "item_first_in_batch": first_in_batch,
+    }
+
+
+def cloud_item_measurement(
+    prompt_tokens: int | None, generated_tokens: int | None, *, called: bool = True
+) -> timings.ItemMeasurement:
+    """One cloud item's measurement: the provider's own per-call token counts.
+
+    A cloud provider reports no first-token time and no prompt-cache count, so
+    both are null with `not_reported_by_provider`; a token count the response
+    did not carry is null with the same reason. An item refused before any
+    generation call (`called=False`, Google's context pre-flight) has nothing
+    to report at all: every value is null with `no_generation_call`.
+    """
+    if not called:
+        absent = timings.ITEM_NULL_NO_GENERATION_CALL
+        prompt_tokens = generated_tokens = None
+    else:
+        absent = timings.ITEM_NULL_NOT_REPORTED_BY_PROVIDER
+    return timings.ItemMeasurement(
+        tokens_in=prompt_tokens,
+        tokens_in_null_reason=absent if prompt_tokens is None else None,
+        tokens_out=generated_tokens,
+        tokens_out_null_reason=absent if generated_tokens is None else None,
+        ttft_ms=None,
+        ttft_ms_null_reason=absent,
+        ttft_source=None,
+        prompt_tokens_cached=None,
+        prompt_tokens_cached_null_reason=absent,
+    )
 
 
 def local_batch_fields(

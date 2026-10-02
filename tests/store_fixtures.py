@@ -61,6 +61,17 @@ NAMED_VALUES: dict[str, Any] = {
     },
     "retry_budget": {},
     "partial_failure": None,
+    "item_tokens_in": 57,
+    "item_tokens_in_null_reason": None,
+    "item_tokens_out": 2,
+    "item_tokens_out_null_reason": None,
+    "item_ttft_ms": 13.7,
+    "item_ttft_ms_null_reason": None,
+    "item_ttft_source": "server_reported",
+    "item_prompt_tokens_cached": 0,
+    "item_prompt_tokens_cached_null_reason": None,
+    "item_measurement_kind": "single_generation",
+    "item_first_in_batch": True,
 }
 
 GRADED_VALUES: dict[str, Any] = {

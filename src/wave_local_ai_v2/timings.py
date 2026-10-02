@@ -50,6 +50,97 @@ class GenerationFacts(TypedDict):
     content: str
 
 
+# What one quality item's own generation reports, as a row publishes it
+# (schema "18"). Not the runtime protocol's figure: one generation per item,
+# no warm-up exclusion, no repetitions -- Methodology 6's aggregate is the
+# runtime row's `ttft_ms`, measured on a fixed prompt. The label every row
+# carries for that distinction:
+ITEM_MEASUREMENT_SINGLE_GENERATION = "single_generation"
+
+# Why an item's value is null. Never a zero: an unreported count is unknown.
+# - the engine's response did not carry the value (or carried no number);
+# - the cloud provider reports no such value for a call;
+# - no generation call was made for the item (a context pre-flight refused it).
+ITEM_NULL_NOT_REPORTED_BY_ENGINE = "not_reported_by_engine"
+ITEM_NULL_NOT_REPORTED_BY_PROVIDER = "not_reported_by_provider"
+ITEM_NULL_NO_GENERATION_CALL = "no_generation_call"
+ITEM_NULL_REASONS = frozenset(
+    {
+        ITEM_NULL_NOT_REPORTED_BY_ENGINE,
+        ITEM_NULL_NOT_REPORTED_BY_PROVIDER,
+        ITEM_NULL_NO_GENERATION_CALL,
+    }
+)
+
+
+class ItemMeasurement(TypedDict):
+    """One item's own generation figures, each a value or null with a reason.
+
+    `ttft_ms` is the engine's `timings.prompt_ms` for this one request, the
+    same quantity and `ttft_source` label the runtime row's `ttft_ms` uses.
+    `prompt_tokens_cached` is the engine's `timings.cache_n`: llama-server
+    reuses a prompt prefix shared with the previous request, and `prompt_ms`
+    then covers only the uncached tokens, so a reader needs the count to read
+    the TTFT.
+    """
+
+    tokens_in: int | None
+    tokens_in_null_reason: str | None
+    tokens_out: int | None
+    tokens_out_null_reason: str | None
+    ttft_ms: float | None
+    ttft_ms_null_reason: str | None
+    ttft_source: str | None
+    prompt_tokens_cached: int | None
+    prompt_tokens_cached_null_reason: str | None
+
+
+def _count(container: Any, key: str) -> int | None:
+    value = container.get(key) if isinstance(container, dict) else None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
+def parse_item_measurement(response_json: dict[str, Any]) -> ItemMeasurement:
+    """One item's tokens, TTFT and cached prompt tokens off a chat response.
+
+    Confirmed live on b10537 (2026-10-02): `/v1/chat/completions` returns
+    `usage.prompt_tokens`, `usage.completion_tokens` and a `timings` block
+    with `prompt_ms` and `cache_n`. Each value the response does not carry
+    as a number is null with `not_reported_by_engine` -- never a zero, and
+    never a crashed run over one column.
+    """
+    usage = response_json.get("usage")
+    timings = response_json.get("timings")
+    tokens_in = _count(usage, "prompt_tokens")
+    tokens_out = _count(usage, "completion_tokens")
+    cached = _count(timings, "cache_n")
+    raw_ttft = timings.get("prompt_ms") if isinstance(timings, dict) else None
+    ttft_ms = (
+        float(raw_ttft)
+        if isinstance(raw_ttft, int | float)
+        and not isinstance(raw_ttft, bool)
+        and raw_ttft >= 0
+        else None
+    )
+
+    def reason(value: object) -> str | None:
+        return ITEM_NULL_NOT_REPORTED_BY_ENGINE if value is None else None
+
+    return ItemMeasurement(
+        tokens_in=tokens_in,
+        tokens_in_null_reason=reason(tokens_in),
+        tokens_out=tokens_out,
+        tokens_out_null_reason=reason(tokens_out),
+        ttft_ms=ttft_ms,
+        ttft_ms_null_reason=reason(ttft_ms),
+        ttft_source=TTFT_SOURCE_SERVER_REPORTED if ttft_ms is not None else None,
+        prompt_tokens_cached=cached,
+        prompt_tokens_cached_null_reason=reason(cached),
+    )
+
+
 def parse_generation_facts(response_json: dict[str, Any]) -> GenerationFacts:
     """Extract the generation facts a repetition's outcome is classified on.
 

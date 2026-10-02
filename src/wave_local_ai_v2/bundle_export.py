@@ -368,6 +368,14 @@ _PARTIAL_SCORE_DOC = (
     "a partial batch publishes no suite-level score."
 )
 
+# An item_ value is null only with its reason; a row below schema "18" does
+# not carry the field at all.
+_ITEM_NULL_DOC = (
+    "The value was not reported; its _null_reason column says why. A row "
+    "below schema 18 does not carry the field."
+)
+_ITEM_REPORTED_DOC = "The value was reported, or the row does not carry the field."
+
 _QUALITY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     ("model_id",): FieldDoc("Model that answered the item.", _ID),
     ("provider",): FieldDoc("Who ran the model: local, mistral or google.", _ID),
@@ -489,6 +497,69 @@ _QUALITY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
         "partial row carries no suite-level score.",
         _JSON_OBJECT,
         "The batch was complete when this row was written.",
+    ),
+    # The item's own generation figures (schema "18"): one generation per
+    # item, never the runtime protocol's aggregate.
+    ("item_tokens_in",): FieldDoc(
+        "Prompt tokens of this item's own generation, as its engine or provider "
+        "reported them.",
+        "tokens",
+        _ITEM_NULL_DOC,
+    ),
+    ("item_tokens_in_null_reason",): FieldDoc(
+        "Why item_tokens_in is empty: not_reported_by_engine, "
+        "not_reported_by_provider or no_generation_call.",
+        _ID,
+        _ITEM_REPORTED_DOC,
+    ),
+    ("item_tokens_out",): FieldDoc(
+        "Output tokens of this item's own generation, as its engine or provider "
+        "reported them.",
+        "tokens",
+        _ITEM_NULL_DOC,
+    ),
+    ("item_tokens_out_null_reason",): FieldDoc(
+        "Why item_tokens_out is empty (same reasons as item_tokens_in).",
+        _ID,
+        _ITEM_REPORTED_DOC,
+    ),
+    ("item_ttft_ms",): FieldDoc(
+        "Engine-reported time to first token of this item's one generation "
+        "(llama-server timings.prompt_ms). A single per-item generation, not "
+        "the runtime protocol's ttft_ms: no warm-up exclusion, no repetitions.",
+        "milliseconds",
+        _ITEM_NULL_DOC,
+    ),
+    ("item_ttft_ms_null_reason",): FieldDoc(
+        "Why item_ttft_ms is empty (a cloud provider reports none).",
+        _ID,
+        _ITEM_REPORTED_DOC,
+    ),
+    ("item_ttft_source",): FieldDoc(
+        "Where item_ttft_ms was read from, on ttft_source's values.",
+        _ID,
+        "item_ttft_ms is empty.",
+    ),
+    ("item_prompt_tokens_cached",): FieldDoc(
+        "Prompt tokens the engine reused from its cache for this item "
+        "(llama-server timings.cache_n); item_ttft_ms covers only the rest.",
+        "tokens",
+        _ITEM_NULL_DOC,
+    ),
+    ("item_prompt_tokens_cached_null_reason",): FieldDoc(
+        "Why item_prompt_tokens_cached is empty.",
+        _ID,
+        _ITEM_REPORTED_DOC,
+    ),
+    ("item_measurement_kind",): FieldDoc(
+        "single_generation: the item_ fields describe one generation of this "
+        "item, not an aggregate over repetitions.",
+        _ID,
+    ),
+    ("item_first_in_batch",): FieldDoc(
+        "Whether this item was its batch's first generation (on a freshly "
+        "launched server for a local row), the one a reader may exclude as cold.",
+        _BOOL,
     ),
     ("subject_output",): FieldDoc(
         "The model's raw answer.", _TEXT, "Not recorded for this suite kind."

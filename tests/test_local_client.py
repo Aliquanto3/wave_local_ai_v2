@@ -74,6 +74,37 @@ def test_a_well_formed_chat_body_yields_the_five_fields() -> None:
     assert completion["endpoint"] == prompt_provenance.LOCAL_CHAT_ENDPOINT
 
 
+def test_the_completion_carries_the_items_own_engine_measurement() -> None:
+    body = {
+        **_CHAT_BODY,
+        "timings": {"prompt_ms": 13.733, "cache_n": 0, "prompt_n": 57},
+    }
+
+    with _post(body):
+        completion = local_client.complete_chat(
+            BASE,
+            "hello",
+            max_tokens=32,
+            sampling=SAMPLING,
+            thinking_kwargs={},
+            timeout=TIMEOUT,
+        )
+
+    measurement = completion["measurement"]
+    assert (measurement["tokens_in"], measurement["tokens_out"]) == (57, 2)
+    assert measurement["ttft_ms"] == 13.733
+    assert measurement["ttft_source"] == "server_reported"
+    assert measurement["prompt_tokens_cached"] == 0
+
+
+def test_a_chat_body_without_timings_has_a_null_ttft_with_its_reason() -> None:
+    measurement = _complete()["measurement"]
+
+    assert measurement["ttft_ms"] is None
+    assert measurement["ttft_ms_null_reason"] == "not_reported_by_engine"
+    assert measurement["tokens_in"] == 57
+
+
 def test_length_is_a_truncating_finish_reason_and_stop_is_not() -> None:
     assert "length" in local_client.TRUNCATING_FINISH_REASONS
     assert "stop" not in local_client.TRUNCATING_FINISH_REASONS

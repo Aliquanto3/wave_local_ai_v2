@@ -1155,3 +1155,267 @@ def test_the_records_dir_skips_other_json_and_refuses_broken_json(
     (records / "broken.json").write_text("{", "utf-8")
     assert comparison.main([*args, "--records-dir", str(records)]) == 1
     assert "broken.json is not JSON" in capsys.readouterr().err
+
+
+# --------------------------------------------------------------------------
+# Per-item measurements and the per-batch energy (schema "18", Q24 (a))
+
+
+def _measured_rows(
+    run_id: str,
+    tokens_out: list[int],
+    *,
+    variant: str = "baseline",
+    ttft_source: str | None = "server_reported",
+    energy_kwh: float = 0.0012,
+    **overrides: Any,
+) -> list[dict[str, Any]]:
+    return [
+        _row(
+            run_id,
+            "model-a",
+            f"item-{i:02d}",
+            prompt_variant_id=variant,
+            schema_version="18",
+            item_tokens_in=40 + i,
+            item_tokens_out=tokens,
+            item_ttft_ms=10.0 + i,
+            item_ttft_source=ttft_source,
+            item_prompt_tokens_cached=0,
+            item_measurement_kind="single_generation",
+            item_first_in_batch=i == 0,
+            energy_kwh=energy_kwh,
+            **overrides,
+        )
+        for i, tokens in enumerate(tokens_out)
+    ]
+
+
+_BASELINE_TOKENS = [12, 9, 15, 11, 30, 8, 14, 10, 22, 13, 9, 17]
+_TERSE_TOKENS = [3, 2, 4, 3, 6, 2, 3, 2, 5, 4, 3, 4]
+
+
+def _variant_pair(quantity: str, **candidate: Any) -> dict[str, Any]:
+    return compare_sides(
+        _measured_rows("run-ref", _BASELINE_TOKENS),
+        _measured_rows("run-cand", _TERSE_TOKENS, variant="terse", **candidate),
+        Side("run-ref"),
+        Side("run-cand"),
+        dimension="prompt_variant",
+        quantity=quantity,
+    )
+
+
+def test_a_variant_pair_on_output_tokens_is_a_wilcoxon_over_identical_items() -> None:
+    member = _variant_pair("item_tokens_out")
+
+    assert member["comparison_kind"] == comparison.KIND_TEST
+    assert member["scoring_kind"] == comparison.SCORING_KIND_CONTINUOUS
+    assert member["compared_field"] == "item_tokens_out"
+    assert member["compared_quantity"] == "item_tokens_out"
+    assert member["test"] == comparison.TEST_WILCOXON
+    assert "continuous per-item measurement" in member["test_chosen_because"]
+    assert member["paired_item_ids"] == [f"item-{i:02d}" for i in range(12)]
+    assert member["unpaired_count"] == 0
+    assert member["differing_fields"] == ["prompt_variant_id"]
+    differences = [t - b for b, t in zip(_BASELINE_TOKENS, _TERSE_TOKENS, strict=True)]
+    oracle = stats.wilcoxon(differences, zero_method="pratt", method="exact")
+    assert member["raw_p_value"] == pytest.approx(oracle.pvalue)
+    assert member["result"]["direction"] == comparison.DIRECTION_REFERENCE_HIGHER
+    assert member["verdict"] == comparison.VERDICT_DISTINGUISHABLE
+
+
+def test_a_ttft_pair_is_a_wilcoxon_too_and_its_null_items_go_unpaired() -> None:
+    reference = _measured_rows("run-ref", _BASELINE_TOKENS)
+    reference[3] = {**reference[3], "item_ttft_ms": None, "item_ttft_source": None}
+    member = compare_sides(
+        reference,
+        _measured_rows("run-cand", _TERSE_TOKENS, variant="terse"),
+        Side("run-ref"),
+        Side("run-cand"),
+        dimension="prompt_variant",
+        quantity="item_ttft_ms",
+    )
+
+    assert member["test"] == comparison.TEST_WILCOXON
+    assert member["paired_n"] == 11
+    assert member["unpaired_items"] == [
+        {"item_id": "item-03", "missing_from": "reference"}
+    ]
+    # Identical TTFTs on both sides: every difference is zero.
+    assert member["result"]["p_value_null_reason"] == NULL_ALL_DIFFERENCES_ZERO
+
+
+def test_a_cold_first_item_is_excluded_with_a_selector() -> None:
+    side_ref = Side("run-ref", {"item_first_in_batch": "false"})
+    side_cand = Side("run-cand", {"item_first_in_batch": "false"})
+    rows = [
+        *_measured_rows("run-ref", _BASELINE_TOKENS),
+        *_measured_rows("run-cand", _TERSE_TOKENS, variant="terse"),
+    ]
+    member = compare_sides(
+        comparison.select_side(rows, side_ref),
+        comparison.select_side(rows, side_cand),
+        side_ref,
+        side_cand,
+        dimension="prompt_variant",
+        quantity="item_tokens_out",
+    )
+
+    assert member["paired_n"] == 11
+    assert "item-00" not in member["paired_item_ids"]
+
+
+def test_ttfts_from_two_sources_are_refused() -> None:
+    member = _variant_pair("item_ttft_ms", ttft_source="client_measured")
+
+    assert member["comparison_kind"] == comparison.KIND_REFUSAL
+    assert member["refusal"] == [
+        {
+            "field": "item_ttft_source",
+            "reason": comparison.REFUSAL_DIFFERS,
+            "reference_value": "server_reported",
+            "candidate_value": "client_measured",
+        }
+    ]
+    # Output tokens carry no source label: the same pair is a test there.
+    tokens = _variant_pair("item_tokens_out", ttft_source="client_measured")
+    assert tokens["comparison_kind"] == comparison.KIND_TEST
+
+
+def test_a_side_mixing_two_ttft_sources_is_refused() -> None:
+    reference = _measured_rows("run-ref", _BASELINE_TOKENS)
+    reference[0] = {**reference[0], "item_ttft_source": "client_measured"}
+    member = compare_sides(
+        reference,
+        _measured_rows("run-cand", _TERSE_TOKENS, variant="terse"),
+        Side("run-ref"),
+        Side("run-cand"),
+        dimension="prompt_variant",
+        quantity="item_ttft_ms",
+    )
+
+    assert [entry["reason"] for entry in member["refusal"]] == [
+        comparison.REFUSAL_VARIES_WITHIN_SIDE
+    ]
+
+
+def test_rows_below_schema_18_are_refused_on_a_per_item_quantity() -> None:
+    ref, cand = _pairs_outcomes(5, 1, 2, 1)
+    member = compare_sides(
+        _binary_rows("run-ref", "model-a", ref),
+        _binary_rows("run-cand", "model-a", cand, prompt_variant_id="terse"),
+        Side("run-ref"),
+        Side("run-cand"),
+        dimension="prompt_variant",
+        quantity="item_tokens_in",
+    )
+
+    assert member["comparison_kind"] == comparison.KIND_REFUSAL
+    assert member["refusal"][0]["field"] == "item_tokens_in"
+    assert member["refusal"][0]["reason"] == comparison.REFUSAL_ABSENT
+    assert member["adjusted_p_value_null_reason"] == NULL_COMPARISON_REFUSED
+
+
+def test_an_energy_difference_is_an_observation_that_says_why_no_test() -> None:
+    member = _variant_pair("energy_kwh", energy_kwh=0.0009)
+
+    assert member["comparison_kind"] == comparison.KIND_OBSERVATION
+    assert member["scoring_kind"] == comparison.SCORING_KIND_BATCH
+    assert member["observation_reason"] == comparison.ENERGY_NO_PAIRED_TEST_REASON
+    assert "below what the tracker can resolve" in member["observation_reason"]
+    assert member["test"] is None
+    assert member["raw_p_value"] is None
+    assert member["adjusted_p_value_null_reason"] == comparison.NULL_NO_PAIRED_TEST
+    assert member["batch_values"]["reference"] == 0.0012
+    assert member["batch_values"]["candidate"] == 0.0009
+    assert member["batch_values"]["difference"] == pytest.approx(-0.0003)
+    assert member["verdict"] == comparison.VERDICT_NOT_COMPARABLE
+
+
+def test_an_energy_side_with_two_batch_values_has_no_difference() -> None:
+    candidate = _measured_rows("run-cand", _TERSE_TOKENS, variant="terse")
+    candidate[0] = {**candidate[0], "energy_kwh": 0.5}
+    member = compare_sides(
+        _measured_rows("run-ref", _BASELINE_TOKENS),
+        candidate,
+        Side("run-ref"),
+        Side("run-cand"),
+        dimension="model",
+        quantity="energy_kwh",
+    )
+
+    assert member["batch_values"]["candidate"] is None
+    assert member["batch_values"]["difference"] is None
+    assert member["batch_values"]["difference_null_reason"] == (
+        "no_single_batch_value_on_a_side"
+    )
+    # The dimension's own reason is kept beside the energy one.
+    assert member["observation_reason"].startswith(
+        comparison.ENERGY_NO_PAIRED_TEST_REASON + "; "
+    )
+
+
+def test_an_unknown_quantity_is_refused_as_input() -> None:
+    rows = _measured_rows("run-ref", [1])
+    with pytest.raises(ComparisonInputError, match="unknown compared quantity"):
+        _compare(rows, rows, quantity="watts")
+
+
+def test_a_quantity_family_is_its_own_family_and_named_in_its_path(
+    tmp_path: Path,
+) -> None:
+    rows_path = tmp_path / "rows.jsonl"
+    rows = [
+        *_measured_rows("run-ref", _BASELINE_TOKENS),
+        *_measured_rows("run-cand", _TERSE_TOKENS, variant="terse"),
+    ]
+    rows_path.write_text("".join(json.dumps(row) + "\n" for row in rows), "utf-8")
+    records = tmp_path / "records"
+    base = [
+        "--rows",
+        str(rows_path),
+        "--reference",
+        "run-ref",
+        "--candidate",
+        "run-cand",
+        "--dimension",
+        "prompt_variant",
+        "--records-dir",
+        str(records),
+    ]
+
+    assert comparison.main(base) == 0
+    assert comparison.main([*base, "--quantity", "item_tokens_out"]) == 0
+    assert comparison.main([*base, "--quantity", "energy_kwh"]) == 0
+
+    by_name = {path.name: _load(path) for path in records.glob("*.json")}
+    assert len(by_name) == 3
+    assert all(record["supersedes"] == [] for record in by_name.values())
+    tokens = next(n for n in by_name if ".prompt_variant.item_tokens_out." in n)
+    assert by_name[tokens]["family_definition"]["compared_quantity"] == (
+        "item_tokens_out"
+    )
+    score = next(
+        record
+        for record in by_name.values()
+        if "compared_quantity" not in record["family_definition"]
+    )
+    assert "compared_quantity" not in score["members"][0]
+    energy = next(n for n in by_name if ".energy_kwh." in n)
+    assert by_name[energy]["members"][0]["verdict"] == "not comparable"
+
+
+def test_one_family_never_mixes_two_quantities() -> None:
+    members = [
+        _variant_pair("item_tokens_out"),
+        compare_sides(
+            _measured_rows("run-ref", _BASELINE_TOKENS),
+            _measured_rows("run-x", _TERSE_TOKENS, variant="terse"),
+            Side("run-ref"),
+            Side("run-x"),
+            dimension="prompt_variant",
+        ),
+    ]
+    with pytest.raises(FamilyError, match="more than one compared quantity"):
+        comparison.build_family_record(members, alpha=0.05, rows_source="rows")

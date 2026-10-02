@@ -1,0 +1,21 @@
+$ wave-local-ai-v2-compare ... --quantity item_tokens_out
+aidd_docs\tasks\2026_10\2026_10_01_quality-item-tokens-and-first-token-time\evidence\comparisons\classification-support-routing@4.prompt_variant.item_tokens_out.17622074fe2c.json written: family 17622074fe2c of 1 (1 tested, 0 refused, Holm over 1)
+  da37d53e vs 8d2dbf0f: observation, verdict not comparable
+exit 0
+$ wave-local-ai-v2-compare ... --quantity item_tokens_in
+aidd_docs\tasks\2026_10\2026_10_01_quality-item-tokens-and-first-token-time\evidence\comparisons\classification-support-routing@4.prompt_variant.item_tokens_in.8f3a065ed17b.json written: family 8f3a065ed17b of 1 (1 tested, 0 refused, Holm over 1)
+  da37d53e vs 8d2dbf0f: observation, verdict not comparable
+exit 0
+$ wave-local-ai-v2-compare ... --quantity energy_kwh
+aidd_docs\tasks\2026_10\2026_10_01_quality-item-tokens-and-first-token-time\evidence\comparisons\classification-support-routing@4.prompt_variant.energy_kwh.2d99a012d65a.json written: family 2d99a012d65a of 1 (1 tested, 0 refused, Holm over 1)
+  da37d53e vs 8d2dbf0f: observation, verdict not comparable
+exit 0
+$ wave-local-ai-v2-compare ... --quantity item_ttft_ms --reference-where item_first_in_batch=false --candidate-where item_first_in_batch=false
+aidd_docs\tasks\2026_10\2026_10_01_quality-item-tokens-and-first-token-time\evidence\comparisons\classification-support-routing@4.prompt_variant.item_ttft_ms.a57fadad8ade.json written: family a57fadad8ade of 1 (1 tested, 0 refused, Holm over 1)
+  da37d53e item_first_in_batch=false vs 8d2dbf0f item_first_in_batch=false: observation, verdict not comparable
+exit 0
+$ wave-local-ai-v2-compare --rows aidd_docs/results/quality-reference.jsonl (committed, schema below 18) --quantity item_tokens_out
+aidd_docs\tasks\2026_10\2026_10_01_quality-item-tokens-and-first-token-time\evidence\comparisons-committed\classification-support-routing@2.model.item_tokens_out.296e95554f2f.json written: family 296e95554f2f of 2 (0 tested, 2 refused, Holm over 0)
+  5e13166d model_id=Qwen3.6-35B-A3B vs 5e13166d model_id=mistral-small-2603: refusal, verdict not comparable; refused on thinking_policy (absent), item_tokens_out (absent), item_measurement_kind (absent)
+  d20afbda model_id=Qwen3.6-35B-A3B vs d20afbda model_id=mistral-small-2603: refusal, verdict not comparable; refused on thinking_policy (absent), item_tokens_out (absent), item_measurement_kind (absent)
+exit 0

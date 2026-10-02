@@ -51,7 +51,7 @@ from typing import Any, TypedDict
 
 import requests
 
-from wave_local_ai_v2 import prompt_provenance, roster, row_contract
+from wave_local_ai_v2 import prompt_provenance, roster, row_contract, timings
 
 # `finish_reason` values that mean the answer was cut short rather than
 # completed. Named here for the same reason `mistral_client` and
@@ -93,6 +93,9 @@ class LocalCompletion(TypedDict):
     generated_tokens: int
     prompt_tokens: int
     endpoint: str
+    # This item's own engine-reported figures, each null with its reason when
+    # the response did not carry it (schema "18").
+    measurement: timings.ItemMeasurement
 
 
 def thinking_kwargs(thinking_policy: str, entry: roster.RosterEntry) -> dict[str, Any]:
@@ -318,4 +321,5 @@ def complete_chat(
         generated_tokens=usage.get("completion_tokens", 0),
         prompt_tokens=usage.get("prompt_tokens", 0),
         endpoint=prompt_provenance.LOCAL_CHAT_ENDPOINT,
+        measurement=timings.parse_item_measurement(payload),
     )

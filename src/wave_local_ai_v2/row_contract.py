@@ -130,7 +130,20 @@ from wave_local_ai_v2 import (
 # suite-level score. The runtime row is untouched: it makes no cloud call
 # and has no resume. A row below "17" is read under its own version and never
 # back-filled.
-SCHEMA_VERSION = "17"
+# "18": eleven per-item measurement fields became required on quality rows
+# only (Story: each quality item records the tokens and the first-token time
+# its generation took; owner decision Q24 (a)). Until "17" a quality row
+# carried tokens and energy as batch figures and no TTFT, so no per-item
+# paired test was possible on either. The row now carries the item's own
+# input and output tokens, its engine-reported first-token time under its
+# `item_ttft_source` label (the runtime row's `ttft_source` discipline), and
+# the prompt tokens the engine reused from its cache, each a value or null
+# with its `*_null_reason` (never a zero); `item_measurement_kind` labels it
+# a single per-item generation, not Methodology 6's aggregate (no warm-up
+# exclusion, no repetitions); `item_first_in_batch` marks the batch's cold
+# first generation. Energy stays per batch. The runtime row is untouched. A
+# row below "18" is read under its own version and never back-filled.
+SCHEMA_VERSION = "18"
 
 # The value `subject_egress` takes when the subject prompt never left the
 # machine, and the `provider` a quality row names for a subject served by the
@@ -376,9 +389,42 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             # failure that left the batch partial, if any (schema "17").
             "retry_budget",
             "partial_failure",
+            # quality_rows.item_measurement_fields: the item's own generation
+            # figures and their labels (schema "18").
+            *(
+                "item_tokens_in",
+                "item_tokens_in_null_reason",
+                "item_tokens_out",
+                "item_tokens_out_null_reason",
+                "item_ttft_ms",
+                "item_ttft_ms_null_reason",
+                "item_ttft_source",
+                "item_prompt_tokens_cached",
+                "item_prompt_tokens_cached_null_reason",
+                "item_measurement_kind",
+                "item_first_in_batch",
+            ),
         }
     ),
 }
+
+# The four per-item values a quality row carries beside their null reasons
+# (schema "18"): a value, or null with one of `timings.ITEM_NULL_REASONS`.
+ITEM_MEASUREMENT_VALUE_FIELDS: tuple[str, ...] = (
+    "item_tokens_in",
+    "item_tokens_out",
+    "item_ttft_ms",
+    "item_prompt_tokens_cached",
+)
+ITEM_MEASUREMENT_FIELDS: frozenset[str] = frozenset(
+    {
+        *ITEM_MEASUREMENT_VALUE_FIELDS,
+        *(f"{field}_null_reason" for field in ITEM_MEASUREMENT_VALUE_FIELDS),
+        "item_ttft_source",
+        "item_measurement_kind",
+        "item_first_in_batch",
+    }
+)
 
 # The keys a non-null `partial_failure` carries: who failed, on which item,
 # and what it said.
@@ -579,6 +625,7 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
         _validate_suite_level(row)
         _validate_retry_budget(row)
         _validate_partial_failure(row)
+        _validate_item_measurement(row)
         _validate_judged_fields(row)
         _validate_graded_fields(row)
 
@@ -703,6 +750,65 @@ def _validate_partial_failure(row: dict[str, Any]) -> None:
                 f"row of kind 'quality' is partial but carries {field}="
                 f"{row[field]!r}: a partial batch publishes no suite-level score"
             )
+
+
+def _validate_item_measurement(row: dict[str, Any]) -> None:
+    """Refuse a per-item value that is neither a number nor null with a reason.
+
+    Exactly one of a value and its null reason is set: a null without a
+    reason is an unexplained gap, a value beside a reason contradicts itself.
+    A TTFT names its source (and only a TTFT does), on the runtime row's
+    `ttft_source` discipline; the measurement kind is the one label this
+    schema defines; the first-generation mark is a boolean.
+    """
+    for field in ITEM_MEASUREMENT_VALUE_FIELDS:
+        value = row[field]
+        reason = row[f"{field}_null_reason"]
+        if value is None:
+            if reason not in timings.ITEM_NULL_REASONS:
+                raise RowContractError(
+                    f"row of kind 'quality' has {field} null with "
+                    f"{field}_null_reason {reason!r}: a null value names one of "
+                    f"{', '.join(sorted(timings.ITEM_NULL_REASONS))}"
+                )
+            continue
+        if reason is not None:
+            raise RowContractError(
+                f"row of kind 'quality' carries {field}={value!r} beside "
+                f"{field}_null_reason {reason!r}: a reported value has no null reason"
+            )
+        numeric = isinstance(value, int) or (
+            field == "item_ttft_ms" and isinstance(value, float)
+        )
+        if isinstance(value, bool) or not numeric or value < 0:
+            raise RowContractError(
+                f"row of kind 'quality' has a malformed {field}: {value!r}"
+            )
+    source = row["item_ttft_source"]
+    if row["item_ttft_ms"] is None:
+        if source is not None:
+            raise RowContractError(
+                f"row of kind 'quality' has item_ttft_source {source!r} but no "
+                "item_ttft_ms: only a reported first-token time names its source"
+            )
+    elif source not in {
+        timings.TTFT_SOURCE_SERVER_REPORTED,
+        timings.TTFT_SOURCE_CLIENT_MEASURED,
+    }:
+        raise RowContractError(
+            f"row of kind 'quality' has an unrecognised item_ttft_source: {source!r}"
+        )
+    kind = row["item_measurement_kind"]
+    if kind != timings.ITEM_MEASUREMENT_SINGLE_GENERATION:
+        raise RowContractError(
+            f"row of kind 'quality' has item_measurement_kind {kind!r}: expected "
+            f"{timings.ITEM_MEASUREMENT_SINGLE_GENERATION!r}"
+        )
+    if not isinstance(row["item_first_in_batch"], bool):
+        raise RowContractError(
+            "row of kind 'quality' has a non-boolean item_first_in_batch: "
+            f"{row['item_first_in_batch']!r}"
+        )
 
 
 _ITEM_SOURCE_FIELDS = ("item_licence", "item_source", "item_source_revision")

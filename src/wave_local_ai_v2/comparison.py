@@ -14,6 +14,13 @@ exact-match score (`correct`) gets McNemar's exact test over the discordant
 pairs, a graded score (`item_score`) gets the Wilcoxon signed-rank test over
 the per-item differences. Every difference is candidate minus reference.
 
+The compared quantity is the score by default. A per-item measurement --
+the item's own tokens in or out, or its engine-reported first-token time
+(schema "18") -- is a continuous quantity and gets the Wilcoxon signed-rank
+test over the same item ids. Energy is measured per batch, never per item, so
+an energy difference is published as an observation that says why it carries
+no paired test (owner decision Q24 (a)).
+
 Everything runs on the standard library. scipy is a dev-only oracle the tests
 compare against, never an import here.
 """
@@ -41,6 +48,36 @@ COMPARISONS_DIR = Path("aidd_docs/results/comparisons")
 
 SCORING_KIND_BINARY = "binary"
 SCORING_KIND_GRADED = "graded"
+# A per-item measurement rather than a score: tokens, or a first-token time.
+SCORING_KIND_CONTINUOUS = "continuous_measurement"
+# A per-batch measurement: one value per side, no per-item pairing at all.
+SCORING_KIND_BATCH = "batch_measurement"
+
+# What a comparison compares. `score` is the rows' own score, its field
+# chosen by their scoring kind; the rest name the row field itself.
+QUANTITY_SCORE = "score"
+MEASUREMENT_QUANTITIES: tuple[str, ...] = (
+    "item_tokens_in",
+    "item_tokens_out",
+    "item_ttft_ms",
+)
+QUANTITY_ENERGY = "energy_kwh"
+QUANTITIES: tuple[str, ...] = (QUANTITY_SCORE, *MEASUREMENT_QUANTITIES, QUANTITY_ENERGY)
+
+# The row labels a per-item measurement is only one quantity under: two sides
+# whose non-null labels differ measured two different things.
+MEASUREMENT_LABEL_FIELDS: dict[str, tuple[str, ...]] = {
+    "item_tokens_in": ("item_measurement_kind",),
+    "item_tokens_out": ("item_measurement_kind",),
+    "item_ttft_ms": ("item_measurement_kind", "item_ttft_source"),
+}
+
+ENERGY_NO_PAIRED_TEST_REASON = (
+    "energy is measured per batch, never per item: per-item energy on items "
+    "of a few dozen tokens sits below what the tracker can resolve, so there "
+    "is no per-item value to pair and a per-batch energy difference is "
+    "published as an observation (owner decision Q24 (a))"
+)
 
 # The per-item value each scoring kind is compared on, on `verdict.py`'s
 # `compared_field` meaning.
@@ -56,6 +93,7 @@ TEST_WILCOXON = "wilcoxon_signed_rank"
 TEST_BY_SCORING_KIND: dict[str, str] = {
     SCORING_KIND_BINARY: TEST_MCNEMAR,
     SCORING_KIND_GRADED: TEST_WILCOXON,
+    SCORING_KIND_CONTINUOUS: TEST_WILCOXON,
 }
 
 TEST_CHOSEN_BECAUSE: dict[str, str] = {
@@ -70,6 +108,19 @@ TEST_CHOSEN_BECAUSE: dict[str, str] = {
     ),
 }
 
+# Why the test fits, per scoring kind: one test can serve two kinds for two
+# different reasons.
+CHOSEN_BECAUSE_BY_SCORING_KIND: dict[str, str] = {
+    SCORING_KIND_BINARY: TEST_CHOSEN_BECAUSE[TEST_MCNEMAR],
+    SCORING_KIND_GRADED: TEST_CHOSEN_BECAUSE[TEST_WILCOXON],
+    SCORING_KIND_CONTINUOUS: (
+        "the compared quantity is a continuous per-item measurement (tokens or "
+        "an engine-reported first-token time): per-item differences carry "
+        "magnitude and no normality is assumed, so the Wilcoxon signed-rank "
+        "test ranks them"
+    ),
+}
+
 # Named null reasons: a statistic that is undefined publishes one of these in
 # place of a number, on `agreement.py`'s value-plus-one-reason shape.
 NULL_PAIRED_N_BELOW_MINIMUM = "paired_n_below_minimum"
@@ -78,6 +129,8 @@ NULL_ODDS_RATIO_EMPTY_CELL = "odds_ratio_empty_cell"
 NULL_ALL_DIFFERENCES_ZERO = "all_differences_zero"
 # A refused member carries no p-value, so none is adjusted.
 NULL_COMPARISON_REFUSED = "comparison_refused"
+# A per-batch quantity has nothing to pair, so no test ran.
+NULL_NO_PAIRED_TEST = "no_paired_test"
 
 # Both tests' own minimum: one paired item. Below it nothing is compared.
 MIN_PAIRED_N = 1
@@ -208,6 +261,18 @@ EXCLUDED_FROM_DIFFERING: frozenset[str] = frozenset(
         "list_price_per_million_tokens",
         "list_price_currency",
         "list_price_retrieved_at",
+        # measurements: the item's own generation figures (schema "18")
+        "item_tokens_in",
+        "item_tokens_in_null_reason",
+        "item_tokens_out",
+        "item_tokens_out_null_reason",
+        "item_ttft_ms",
+        "item_ttft_ms_null_reason",
+        "item_ttft_source",
+        "item_prompt_tokens_cached",
+        "item_prompt_tokens_cached_null_reason",
+        "item_measurement_kind",
+        "item_first_in_batch",
     }
 )
 
@@ -570,8 +635,16 @@ def _derived_values(rows: Sequence[Mapping[str, Any]]) -> dict[str, set[str]]:
 def refusals(
     reference_rows: Sequence[Mapping[str, Any]],
     candidate_rows: Sequence[Mapping[str, Any]],
+    *,
+    quantity: str = QUANTITY_SCORE,
 ) -> list[dict[str, Any]]:
-    """Every field that makes the two sides incomparable, in declaration order."""
+    """Every field that makes the two sides incomparable, in declaration order.
+
+    On a measurement quantity the score's own derived kind is not what is
+    compared: the quantity's field must be carried by every row of both sides
+    (a row below schema "18" does not carry the per-item ones), and its labels
+    must name one measurement on both.
+    """
     found: list[dict[str, Any]] = []
 
     def refuse(key: str, reason: str, reference: Any, candidate: Any) -> None:
@@ -610,6 +683,10 @@ def refusals(
         for key in _METRIC_REFUSAL_FIELDS:
             check(key, absence_refuses=True)
 
+    if quantity != QUANTITY_SCORE:
+        found.extend(_measurement_refusals(reference_rows, candidate_rows, quantity))
+        return found
+
     reference_derived = _derived_values(reference_rows)
     candidate_derived = _derived_values(candidate_rows)
     for key in ("scoring_kind", "compared_field"):
@@ -626,6 +703,54 @@ def refusals(
         elif reference != candidate:
             refuse(key, REFUSAL_DIFFERS, reference, candidate)
     return found
+
+
+def _measurement_refusals(
+    reference_rows: Sequence[Mapping[str, Any]],
+    candidate_rows: Sequence[Mapping[str, Any]],
+    quantity: str,
+) -> list[dict[str, Any]]:
+    """The quantity's field absent from a row, or its labels disagreeing.
+
+    A label is read over the rows that carry a non-null one: a null TTFT has
+    no source, which is not a second source.
+    """
+    sides = (reference_rows, candidate_rows)
+    found: list[dict[str, Any]] = []
+    for key in (quantity, *MEASUREMENT_LABEL_FIELDS.get(quantity, ())):
+        carried = all(key in row for rows in sides for row in rows)
+        reference_labels, candidate_labels = (
+            {
+                json.dumps(row[key], sort_keys=True)
+                for row in rows
+                if row.get(key) is not None
+            }
+            for rows in sides
+        )
+        if not carried:
+            reason = REFUSAL_ABSENT
+        elif key == quantity:
+            continue
+        elif len(reference_labels) > 1 or len(candidate_labels) > 1:
+            reason = REFUSAL_VARIES_WITHIN_SIDE
+        elif reference_labels != candidate_labels:
+            reason = REFUSAL_DIFFERS
+        else:
+            continue
+        found.append(
+            {
+                "field": key,
+                "reason": reason,
+                "reference_value": _one_label(reference_labels),
+                "candidate_value": _one_label(candidate_labels),
+            }
+        )
+    return found
+
+
+def _one_label(labels: set[str]) -> Any:
+    """The one value a side's labels take, or `None` when none or several."""
+    return json.loads(next(iter(labels))) if len(labels) == 1 else None
 
 
 def differing_fields(
@@ -735,17 +860,36 @@ def compare_sides(
     *,
     dimension: str = DEFAULT_DIMENSION,
     alpha: float = DEFAULT_ALPHA,
+    quantity: str = QUANTITY_SCORE,
 ) -> dict[str, Any]:
-    """One comparison member: a paired test, an observation, or a refusal."""
+    """One comparison member: a paired test, an observation, or a refusal.
+
+    `quantity` is what is compared: the score (default), a per-item
+    measurement (Wilcoxon over the same item ids), or the per-batch energy
+    (always an observation, never a test).
+    """
     if not reference_rows:
         raise ComparisonInputError(f"no row selects the reference side {reference}")
     if not candidate_rows:
         raise ComparisonInputError(f"no row selects the candidate side {candidate}")
+    if quantity not in QUANTITIES:
+        raise ComparisonInputError(
+            f"unknown compared quantity {quantity!r}: one of {', '.join(QUANTITIES)}"
+        )
     axis = DIMENSIONS[dimension]
-    refused = refusals(reference_rows, candidate_rows)
+    refused = refusals(reference_rows, candidate_rows, quantity=quantity)
     differing = differing_fields(reference_rows, candidate_rows)
-    kinds = {scoring_kind(row) for row in [*reference_rows, *candidate_rows]}
-    kind = next(iter(kinds)) if len(kinds) == 1 else None
+    if quantity == QUANTITY_SCORE:
+        kinds = {scoring_kind(row) for row in [*reference_rows, *candidate_rows]}
+        kind = next(iter(kinds)) if len(kinds) == 1 else None
+        compared_field = COMPARED_FIELD_BY_SCORING_KIND.get(kind) if kind else None
+    else:
+        kind = (
+            SCORING_KIND_BATCH
+            if quantity == QUANTITY_ENERGY
+            else SCORING_KIND_CONTINUOUS
+        )
+        compared_field = quantity
 
     def shared(key: str) -> Any:
         reference_value = _single_value(reference_rows, key)
@@ -768,11 +912,14 @@ def compare_sides(
         "compared_dimension": dimension,
         # Named whenever both sides agree on it, a refusal included.
         "scoring_kind": kind,
-        "compared_field": COMPARED_FIELD_BY_SCORING_KIND.get(kind) if kind else None,
+        "compared_field": compared_field,
         "refusal": refused,
         "differing_fields": differing,
         "difference_convention": "candidate minus reference",
     }
+    if quantity != QUANTITY_SCORE:
+        # Only off the default, so a score record keeps its published shape.
+        member["compared_quantity"] = quantity
     if refused:
         return {
             **member,
@@ -793,8 +940,17 @@ def compare_sides(
             "verdict": VERDICT_NOT_COMPARABLE,
         }
 
-    assert kind is not None  # a missing scoring kind is a refusal above
-    compared = COMPARED_FIELD_BY_SCORING_KIND[kind]
+    assert kind is not None and compared_field is not None  # else refused above
+    comparison_kind, confounds, observation_reason = _comparison_kind(differing, axis)
+    if kind == SCORING_KIND_BATCH:
+        return {
+            **member,
+            **_batch_observation(
+                reference_rows, candidate_rows, compared_field, observation_reason
+            ),
+            "confounds": confounds,
+        }
+    compared = compared_field
     reference_values = _per_item_values(reference_rows, compared)
     candidate_values = _per_item_values(candidate_rows, compared)
     paired_ids = sorted(reference_values.keys() & candidate_values.keys())
@@ -818,7 +974,6 @@ def compare_sides(
         result = wilcoxon_signed_rank(
             [candidate_values[i] - reference_values[i] for i in paired_ids]
         )
-    comparison_kind, confounds, observation_reason = _comparison_kind(differing, axis)
     partial_sides = _partial_sides(reference_rows, candidate_rows)
     if partial_sides:
         # A partially observed row set shrinks the paired n, but a batch left
@@ -854,7 +1009,7 @@ def compare_sides(
         "unpaired_items": unpaired,
         "unpaired_count": len(unpaired),
         "test": test,
-        "test_chosen_because": TEST_CHOSEN_BECAUSE[test],
+        "test_chosen_because": CHOSEN_BECAUSE_BY_SCORING_KIND[kind],
         "result": result,
         "raw_p_value": result["p_value"],
         # Alone, a member is a family of one: Holm's adjusted p is the raw p.
@@ -862,6 +1017,56 @@ def compare_sides(
         "adjusted_p_value": result["p_value"],
         "adjusted_p_value_null_reason": result["p_value_null_reason"],
         "verdict": _verdict(comparison_kind, result, result["p_value"], alpha),
+    }
+
+
+def _batch_observation(
+    reference_rows: Sequence[Mapping[str, Any]],
+    candidate_rows: Sequence[Mapping[str, Any]],
+    field_name: str,
+    dimension_reason: str | None,
+) -> dict[str, Any]:
+    """A per-batch quantity's member body: two values, their difference, no test.
+
+    Each side's value is the one its rows repeat; a side whose rows carry two
+    (a batch completed by `--resume`, each run measuring its own span) or none
+    has no single batch value, and the difference is null with that reason.
+    """
+    reference_value = _single_value(reference_rows, field_name)
+    candidate_value = _single_value(candidate_rows, field_name)
+    known = (
+        reference_value is not _ABSENT
+        and candidate_value is not _ABSENT
+        and isinstance(reference_value, int | float)
+        and isinstance(candidate_value, int | float)
+    )
+    return {
+        "comparison_kind": KIND_OBSERVATION,
+        "observation_reason": (
+            ENERGY_NO_PAIRED_TEST_REASON
+            if dimension_reason is None
+            else f"{ENERGY_NO_PAIRED_TEST_REASON}; {dimension_reason}"
+        ),
+        "batch_values": {
+            "reference": _shown(reference_value),
+            "candidate": _shown(candidate_value),
+            "difference": candidate_value - reference_value if known else None,
+            "difference_null_reason": (
+                None if known else "no_single_batch_value_on_a_side"
+            ),
+        },
+        "paired_item_ids": None,
+        "paired_n": None,
+        "paired_values": None,
+        "unpaired_items": None,
+        "unpaired_count": None,
+        "test": None,
+        "test_chosen_because": None,
+        "result": None,
+        "raw_p_value": None,
+        "adjusted_p_value": None,
+        "adjusted_p_value_null_reason": NULL_NO_PAIRED_TEST,
+        "verdict": VERDICT_NOT_COMPARABLE,
     }
 
 
@@ -921,13 +1126,30 @@ def member_key(member: Mapping[str, Any]) -> tuple[str, str, str, str]:
     )
 
 
+def _member_quantity(member: Mapping[str, Any]) -> str:
+    """What a member compares; a member without the key compares the score."""
+    quantity: str = member.get("compared_quantity", QUANTITY_SCORE)
+    return quantity
+
+
 def _family_definition(members: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-    """One suite by one dimension; a member refused on suite identity joins it."""
+    """One suite by one dimension by one quantity; a member refused on suite
+    identity joins it.
+
+    The quantity is named only off the default, so a score family's
+    definition keeps the shape every published record has.
+    """
     dimensions = {member["compared_dimension"] for member in members}
     if len(dimensions) != 1:
         raise FamilyError(
             "the comparisons span more than one compared dimension: "
             + ", ".join(sorted(dimensions))
+        )
+    quantities = {_member_quantity(member) for member in members}
+    if len(quantities) != 1:
+        raise FamilyError(
+            "the comparisons span more than one compared quantity: "
+            + ", ".join(sorted(quantities))
         )
     suites = {
         (member["suite_id"], member["suite_version"])
@@ -941,21 +1163,31 @@ def _family_definition(members: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
             + "; one invocation writes one family record"
         )
     suite_id, suite_version = next(iter(suites)) if suites else (None, None)
-    return {
+    definition: dict[str, Any] = {
         "suite_id": suite_id,
         "suite_version": suite_version,
         "compared_dimension": next(iter(dimensions)),
         "rule": FAMILY_RULE,
     }
+    quantity = next(iter(quantities))
+    if quantity != QUANTITY_SCORE:
+        definition["compared_quantity"] = quantity
+    return definition
 
 
-def family_key(record: Mapping[str, Any]) -> tuple[Any, Any, Any]:
-    """The family a record belongs to, whatever its record version."""
+def family_key(record: Mapping[str, Any]) -> tuple[Any, Any, Any, Any]:
+    """The family a record belongs to, whatever its record version.
+
+    A record without a compared quantity compares the score: a token family
+    and a score family over one suite and dimension are two families, and Holm
+    never adjusts one over the other.
+    """
     definition = record["family_definition"]
     return (
         definition["suite_id"],
         definition["suite_version"],
         definition["compared_dimension"],
+        definition.get("compared_quantity", QUANTITY_SCORE),
     )
 
 
@@ -1086,7 +1318,9 @@ def default_output_path(
         if definition["suite_id"] is not None
         else "mixed-suites"
     )
-    name = f"{suite}.{definition['compared_dimension']}.{record['family_id'][:12]}.json"
+    quantity = definition.get("compared_quantity")
+    axis = definition["compared_dimension"] + (f".{quantity}" if quantity else "")
+    name = f"{suite}.{axis}.{record['family_id'][:12]}.json"
     return (COMPARISONS_DIR if directory is None else directory) / name
 
 
@@ -1285,6 +1519,16 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--dimension", choices=sorted(DIMENSIONS), default=DEFAULT_DIMENSION
     )
+    parser.add_argument(
+        "--quantity",
+        choices=QUANTITIES,
+        default=QUANTITY_SCORE,
+        help=(
+            "what is compared: the score (default), a per-item measurement "
+            "(Wilcoxon over the same item ids), or the per-batch energy "
+            "(an observation, never a test)"
+        ),
+    )
     parser.add_argument("--alpha", type=float, default=DEFAULT_ALPHA)
     parser.add_argument(
         "--records-dir",
@@ -1364,6 +1608,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 candidate,
                 dimension=args.dimension,
                 alpha=args.alpha,
+                quantity=args.quantity,
             )
             for reference, candidate in pairs
         ]

@@ -66,6 +66,7 @@ from wave_local_ai_v2 import (
     row_contract,
     server,
     suite_registry,
+    timings,
     verdict,
 )
 from wave_local_ai_v2.energy import measure_energy
@@ -156,6 +157,10 @@ class _Completion(TypedDict):
     # why `quality_rows.local_batch_fields` can publish `tokens_in_total` at
     # all; the two cloud paths total their own separately and leave this None.
     prompt_tokens: NotRequired[int]
+    # The item's own tokens and first-token time as its provider reported
+    # them, each null with its reason otherwise (schema "18"): the engine's
+    # figures on the local path, the provider's token counts on a cloud one.
+    measurement: timings.ItemMeasurement
 
 
 class _LocalBatch(TypedDict):
@@ -842,6 +847,7 @@ def _run_local_suite(
                     truncation_reason=None,
                     retries=0,
                     prompt_tokens=response["prompt_tokens"],
+                    measurement=response["measurement"],
                 )
             )
 
@@ -908,6 +914,9 @@ def _make_mistral_complete_item(
             generated_tokens=response["generated_tokens"],
             truncation_reason=None,
             retries=retries_taken,
+            measurement=quality_rows.cloud_item_measurement(
+                response["prompt_tokens"], response["generated_tokens"]
+            ),
         )
         return completion, response
 
@@ -974,6 +983,9 @@ def _make_google_complete_item(
                     generated_tokens=0,
                     truncation_reason=FAILURE_REASON_TRUNCATED_CONTEXT,
                     retries=context_retries,
+                    measurement=quality_rows.cloud_item_measurement(
+                        None, None, called=False
+                    ),
                 ),
                 None,
             )
@@ -1010,6 +1022,9 @@ def _make_google_complete_item(
                 FAILURE_REASON_TRUNCATED_MAX_TOKENS if truncated else None
             ),
             retries=context_retries + generate_retries,
+            measurement=quality_rows.cloud_item_measurement(
+                response["prompt_tokens"], response["generated_tokens"]
+            ),
         )
         return completion, response
 
@@ -1225,6 +1240,13 @@ def _score_and_write(
             "retry_budget": dict(retry_budget),
             "partial_failure": (
                 dict(partial_failure) if partial_failure is not None else None
+            ),
+            # The item's own generation figures. The first generation this
+            # invocation made is the batch's cold one -- a freshly launched
+            # server on the local path -- and is marked so a reader can
+            # exclude it; on a resume that is the first resumed item.
+            **quality_rows.item_measurement_fields(
+                completions[position]["measurement"], first_in_batch=position == 0
             ),
         }
         # Extra, non-required keys (google rows' model_version/api_version):

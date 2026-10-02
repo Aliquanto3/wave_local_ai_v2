@@ -6,11 +6,14 @@ from wave_local_ai_v2 import (
     FIXED_PROMPT,
     aggregation,
     prompt_variants,
+    quality_rows,
     suite_registry,
+    timings,
 )
 from wave_local_ai_v2.results import append_row
 from wave_local_ai_v2.row_contract import (
     GRADED_FIELDS,
+    ITEM_MEASUREMENT_FIELDS,
     JUDGE_EGRESS_FIELDS,
     JUDGED_FIELDS,
     REQUIRED_FIELDS,
@@ -217,6 +220,17 @@ COMPLETE_QUALITY_ROW = {
     "resumed": False,
     "retry_budget": {},
     "partial_failure": None,
+    "item_tokens_in": 57,
+    "item_tokens_in_null_reason": None,
+    "item_tokens_out": 2,
+    "item_tokens_out_null_reason": None,
+    "item_ttft_ms": 13.7,
+    "item_ttft_ms_null_reason": None,
+    "item_ttft_source": "server_reported",
+    "item_prompt_tokens_cached": 0,
+    "item_prompt_tokens_cached_null_reason": None,
+    "item_measurement_kind": "single_generation",
+    "item_first_in_batch": True,
 }
 
 
@@ -1053,14 +1067,14 @@ def test_the_schema_version_moved_once_for_the_thinking_policy() -> None:
     # `thinking_policy` is required on every quality row, because a score
     # produced with the subject allowed to reason and one produced without it
     # are not the same measurement and a row has to say which it is.
-    assert SCHEMA_VERSION == "17"
+    assert SCHEMA_VERSION == "18"
 
 
 def test_the_schema_version_moved_for_the_runtime_energy_window() -> None:
     # "12" fixes audit finding C3: the runtime row's energy figures used to
     # span the whole counted-repetition window, cooldowns included. Required
     # only on runtime rows -- quality rows carry no energy window at all.
-    assert SCHEMA_VERSION == "17"
+    assert SCHEMA_VERSION == "18"
     assert {"active_window_s", "idle_window_s", "energy_window_method"} <= (
         REQUIRED_FIELDS["runtime"]
     )
@@ -1073,7 +1087,7 @@ def test_the_schema_version_moved_for_the_judge_call_record_extension() -> None:
     # "13" adds five fields inside each judge call record. Additive inside the
     # conditional judge block: neither row kind's required set moves, so a
     # deterministic quality row validates unchanged.
-    assert SCHEMA_VERSION == "17"
+    assert SCHEMA_VERSION == "18"
     assert set(NEW_JUDGE_RECORD_FIELDS).isdisjoint(REQUIRED_FIELDS["quality"])
     assert set(NEW_JUDGE_RECORD_FIELDS).isdisjoint(JUDGED_FIELDS)
     validate_row("quality", COMPLETE_QUALITY_ROW)
@@ -1083,7 +1097,7 @@ def test_the_schema_version_moved_for_the_prompt_variant() -> None:
     # "14" makes both row kinds name the variant they ran under and carry the
     # prompt as the variant left it. Not conditional: every row ran under some
     # variant, and a row below "14" is never back-filled with `baseline`.
-    assert SCHEMA_VERSION == "17"
+    assert SCHEMA_VERSION == "18"
     for kind in ("runtime", "quality"):
         assert set(PROMPT_VARIANT_FIELDS) <= REQUIRED_FIELDS[kind]
 
@@ -1093,7 +1107,7 @@ def test_the_schema_version_moved_for_the_suite_level() -> None:
     # and its item's licence, source and source revision. Not conditional:
     # every suite is certified at some level. Quality rows only -- a runtime
     # row runs no suite.
-    assert SCHEMA_VERSION == "17"
+    assert SCHEMA_VERSION == "18"
     assert set(SUITE_LEVEL_FIELDS) <= REQUIRED_FIELDS["quality"]
     assert set(SUITE_LEVEL_FIELDS).isdisjoint(REQUIRED_FIELDS["runtime"])
 
@@ -1270,7 +1284,7 @@ def test_a_registered_non_baseline_variant_is_not_held_to_the_authored_text(
 def test_the_schema_version_moved_for_the_subject_egress() -> None:
     # "16" makes every row of either kind state where its subject prompt went.
     # Not conditional: every row was produced by sending a prompt somewhere.
-    assert SCHEMA_VERSION == "17"
+    assert SCHEMA_VERSION == "18"
     for kind in ("runtime", "quality"):
         assert "subject_egress" in REQUIRED_FIELDS[kind]
     # The subject field is not a member of the judge block, and the judge
@@ -1406,7 +1420,7 @@ def test_the_schema_version_moved_for_the_retry_budget_and_partial_batches() -> 
     # "17" makes every quality row name the retry budget its batch ran under
     # and whether that batch was left partial. The runtime row makes no cloud
     # call and has no resume, so it is untouched.
-    assert SCHEMA_VERSION == "17"
+    assert SCHEMA_VERSION == "18"
     for field in ("retry_budget", "partial_failure"):
         assert field in REQUIRED_FIELDS["quality"]
         assert field not in REQUIRED_FIELDS["runtime"]
@@ -1534,4 +1548,126 @@ def test_a_partial_judged_row_publishing_a_headline_is_refused_by_name() -> None
     }
 
     with pytest.raises(RowContractError, match="judged_headline_score"):
+        validate_row("quality", row)
+
+
+# --------------------------------------------------------------------------
+# Schema "18": the item's own tokens and first-token time
+
+
+def test_the_schema_version_moved_for_the_per_item_measurement() -> None:
+    # "18" puts each item's own tokens, engine-reported TTFT and cached prompt
+    # tokens on every quality row (Q24 (a)); the runtime row keeps its
+    # Methodology 6 aggregate and is untouched.
+    assert SCHEMA_VERSION == "18"
+    assert ITEM_MEASUREMENT_FIELDS <= REQUIRED_FIELDS["quality"]
+    assert ITEM_MEASUREMENT_FIELDS.isdisjoint(REQUIRED_FIELDS["runtime"])
+
+
+def test_the_row_block_the_writers_build_is_exactly_the_contracts() -> None:
+    block = quality_rows.item_measurement_fields(
+        timings.parse_item_measurement({}), first_in_batch=False
+    )
+
+    assert set(block) == ITEM_MEASUREMENT_FIELDS
+    validate_row("quality", {**COMPLETE_QUALITY_ROW, **block})
+
+
+@pytest.mark.parametrize("field", sorted(ITEM_MEASUREMENT_FIELDS))
+def test_a_quality_row_missing_a_per_item_field_is_refused_by_name(field) -> None:
+    row = {k: v for k, v in COMPLETE_QUALITY_ROW.items() if k != field}
+
+    with pytest.raises(RowContractError, match=field):
+        validate_row("quality", row)
+
+
+@pytest.mark.parametrize(
+    "field", ["item_tokens_in", "item_tokens_out", "item_prompt_tokens_cached"]
+)
+def test_a_null_value_without_its_reason_is_refused(field) -> None:
+    row = {**COMPLETE_QUALITY_ROW, field: None}
+
+    with pytest.raises(RowContractError, match=f"{field} null"):
+        validate_row("quality", row)
+
+
+def test_a_null_ttft_with_its_reason_and_no_source_validates() -> None:
+    validate_row(
+        "quality",
+        {
+            **COMPLETE_QUALITY_ROW,
+            "item_ttft_ms": None,
+            "item_ttft_ms_null_reason": "not_reported_by_engine",
+            "item_ttft_source": None,
+        },
+    )
+
+
+def test_a_reported_value_beside_a_null_reason_is_refused() -> None:
+    row = {
+        **COMPLETE_QUALITY_ROW,
+        "item_tokens_out_null_reason": "not_reported_by_engine",
+    }
+
+    with pytest.raises(RowContractError, match="item_tokens_out=2 beside"):
+        validate_row("quality", row)
+
+
+def test_an_unknown_null_reason_is_refused() -> None:
+    row = {
+        **COMPLETE_QUALITY_ROW,
+        "item_tokens_in": None,
+        "item_tokens_in_null_reason": "zero",
+    }
+
+    with pytest.raises(RowContractError, match="item_tokens_in null"):
+        validate_row("quality", row)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("item_tokens_in", -1),
+        ("item_tokens_out", 2.5),
+        ("item_prompt_tokens_cached", True),
+        ("item_ttft_ms", "13.7"),
+        ("item_ttft_ms", -0.1),
+    ],
+)
+def test_a_malformed_per_item_value_is_refused(field, value) -> None:
+    row = {**COMPLETE_QUALITY_ROW, field: value}
+
+    with pytest.raises(RowContractError, match=f"malformed {field}"):
+        validate_row("quality", row)
+
+
+def test_a_ttft_must_name_a_recognised_source() -> None:
+    row = {**COMPLETE_QUALITY_ROW, "item_ttft_source": "stopwatch"}
+
+    with pytest.raises(RowContractError, match="unrecognised item_ttft_source"):
+        validate_row("quality", row)
+
+
+def test_a_source_without_a_ttft_is_refused() -> None:
+    row = {
+        **COMPLETE_QUALITY_ROW,
+        "item_ttft_ms": None,
+        "item_ttft_ms_null_reason": "not_reported_by_provider",
+    }
+
+    with pytest.raises(RowContractError, match="item_ttft_source"):
+        validate_row("quality", row)
+
+
+def test_the_measurement_kind_is_the_single_generation_label() -> None:
+    row = {**COMPLETE_QUALITY_ROW, "item_measurement_kind": "median_of_5"}
+
+    with pytest.raises(RowContractError, match="item_measurement_kind"):
+        validate_row("quality", row)
+
+
+def test_the_first_generation_mark_is_a_boolean() -> None:
+    row = {**COMPLETE_QUALITY_ROW, "item_first_in_batch": None}
+
+    with pytest.raises(RowContractError, match="item_first_in_batch"):
         validate_row("quality", row)

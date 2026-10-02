@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Each quality item records the tokens and the first-token time its
+  generation took (row schema "18")** -- every quality row carries the
+  item's own `item_tokens_in`, `item_tokens_out`, engine-reported
+  `item_ttft_ms` (llama-server `timings.prompt_ms`, labelled
+  `item_ttft_source: server_reported`) and `item_prompt_tokens_cached`
+  (`timings.cache_n`: the engine reuses a prompt prefix shared with the
+  previous item, so the TTFT covers only the rest), each a value or null
+  with its `*_null_reason` (`not_reported_by_engine`,
+  `not_reported_by_provider`, `no_generation_call`), never a zero.
+  `item_measurement_kind: single_generation` states it is one generation
+  per item, not the runtime protocol's Methodology 6 aggregate (no warm-up
+  exclusion, no repetitions), and `item_first_in_batch` marks the batch's
+  cold first generation. A cloud row carries its provider's per-call token
+  counts and a null TTFT. Energy stays per batch. `wave-local-ai-v2-compare
+  --quantity item_tokens_in|item_tokens_out|item_ttft_ms` runs the Wilcoxon
+  signed-rank test over the same item ids (scoring kind
+  `continuous_measurement`); `--quantity energy_kwh` publishes the per-batch
+  difference as an observation saying why it carries no paired test. Score
+  comparisons and their published records are unchanged. Rows already
+  written keep their schema version and are not rewritten (owner decision
+  Q24 (a)).
+
 - **A publication-size cloud batch survives its rate limits and resumes per
   item (row schema "17")** -- the cloud retry budget is no longer one fixed
   batch total: it is `max(CLOUD_RETRY_MIN_RETRIES, ceil(items *

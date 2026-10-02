@@ -1435,6 +1435,137 @@ def test_google_context_refusal_scores_truncated_context_without_a_generate_call
     )
 
 
+def _timed_local_router():
+    """A local router whose every answer carries its own engine figures: item
+    n reports n + 10 prompt tokens, n + 1 output tokens, a prompt_ms of
+    n + 0.5 and n cached tokens, so a row carrying another item's figures,
+    or a batch total, is visible."""
+    answered = [0]
+
+    def route(url, *args, **kwargs):
+        if url.endswith("/apply-template"):
+            payload: dict = fake_apply_template(kwargs["json"])
+        else:
+            n = answered[0]
+            answered[0] += 1
+            payload = {
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {"role": "assistant", "content": "billing"},
+                    }
+                ],
+                "usage": {"completion_tokens": n + 1, "prompt_tokens": n + 10},
+                "timings": {"prompt_ms": n + 0.5, "cache_n": n, "prompt_n": 10},
+            }
+        return MagicMock(
+            status_code=200, json=lambda: payload, raise_for_status=lambda: None
+        )
+
+    return route
+
+
+def test_each_local_row_carries_its_own_engine_figures(stubbed_run) -> None:
+    quality_results_path, started = stubbed_run
+    started["post"].side_effect = _timed_local_router()
+
+    quality_cli._run()
+
+    local_rows = [
+        r for r in read_rows(quality_results_path) if r["provider"] == "local"
+    ]
+    assert [row["item_id"] for row in local_rows] == [
+        item["item_id"] for item in CLASSIFICATION_TASK_SUITE
+    ]
+    for n, row in enumerate(local_rows):
+        assert row["item_tokens_in"] == n + 10
+        assert row["item_tokens_out"] == n + 1
+        assert row["item_ttft_ms"] == n + 0.5
+        assert row["item_ttft_source"] == "server_reported"
+        assert row["item_prompt_tokens_cached"] == n
+        for field in (
+            "item_tokens_in",
+            "item_tokens_out",
+            "item_ttft_ms",
+            "item_prompt_tokens_cached",
+        ):
+            assert row[f"{field}_null_reason"] is None
+        assert row["item_measurement_kind"] == "single_generation"
+        assert row["item_first_in_batch"] is (n == 0)
+    # The batch total is still the batch's, beside the per-item figures.
+    assert local_rows[0]["tokens_out_total"] == sum(
+        row["item_tokens_out"] for row in local_rows
+    )
+
+
+def test_a_local_answer_without_timings_publishes_a_null_ttft_with_its_reason(
+    stubbed_run,
+) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    local_rows = [
+        r for r in read_rows(quality_results_path) if r["provider"] == "local"
+    ]
+    for row in local_rows:
+        assert (row["item_tokens_in"], row["item_tokens_out"]) == (11, 3)
+        assert row["item_ttft_ms"] is None
+        assert row["item_ttft_ms_null_reason"] == "not_reported_by_engine"
+        assert row["item_ttft_source"] is None
+        assert row["item_prompt_tokens_cached"] is None
+
+
+def test_a_cloud_row_carries_its_providers_token_counts_and_no_ttft(
+    stubbed_run,
+) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    mistral_rows = [
+        r for r in read_rows(quality_results_path) if r["provider"] == "mistral"
+    ]
+    assert mistral_rows
+    for position, row in enumerate(mistral_rows):
+        assert (row["item_tokens_in"], row["item_tokens_out"]) == (12, 3)
+        assert row["item_ttft_ms"] is None
+        assert row["item_ttft_ms_null_reason"] == "not_reported_by_provider"
+        assert row["item_prompt_tokens_cached_null_reason"] == (
+            "not_reported_by_provider"
+        )
+        assert row["item_first_in_batch"] is (position == 0)
+
+
+def test_a_google_item_refused_before_any_call_has_no_generation_to_report(
+    stubbed_run,
+) -> None:
+    quality_results_path, started = stubbed_run
+    _enable_google(started)
+    refused_id = CLASSIFICATION_TASK_SUITE[0]["item_id"]
+    refused_prompt = CLASSIFICATION_TASK_SUITE[0]["prompt"]
+
+    def fits(prompt, api_key, input_token_limit, model=google_client.MODEL):
+        if prompt == refused_prompt:
+            raise ContextWindowExceededError("too long")
+
+    started["google_check_context_fits"].side_effect = fits
+
+    quality_cli._run()
+
+    google_rows = {
+        row["item_id"]: row
+        for row in read_rows(quality_results_path)
+        if row["provider"] == "google"
+    }
+    refused = google_rows[refused_id]
+    for field in ("item_tokens_in", "item_tokens_out", "item_ttft_ms"):
+        assert refused[field] is None
+        assert refused[f"{field}_null_reason"] == "no_generation_call"
+    answered = next(row for iid, row in google_rows.items() if iid != refused_id)
+    assert (answered["item_tokens_in"], answered["item_tokens_out"]) == (12, 3)
+
+
 def test_local_rows_never_retry(stubbed_run) -> None:
     quality_results_path, _ = stubbed_run
 

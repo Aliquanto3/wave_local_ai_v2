@@ -296,6 +296,35 @@ each segment cover that invocation's calls only.
 No committed row carries either field: every row in this directory predates `"17"`, is read
 under its own version and is never back-filled.
 
+## Each item's own tokens and first-token time (2026-10-02)
+
+From schema `"18"` every quality row carries its item's own generation figures:
+`item_tokens_in`, `item_tokens_out`, `item_ttft_ms` (the engine's `timings.prompt_ms` for
+that one request, `item_ttft_source: server_reported`) and `item_prompt_tokens_cached`
+(the engine's `timings.cache_n`). Each is a value or null with its `*_null_reason`, never
+a zero: `not_reported_by_engine`, `not_reported_by_provider` (a cloud row has its
+provider's token counts but no TTFT) or `no_generation_call`.
+
+Read them as what they are. `item_measurement_kind: single_generation` says each is one
+generation of one item, not the runtime protocol's Methodology 6 figure: no warm-up
+exclusion, no repetitions, and a different prompt per item; compare it only with another
+row's `item_ttft_ms`, never with a runtime row's `ttft_ms`. llama-server reuses a prompt
+prefix shared with the previous request, so `item_ttft_ms` covers only the uncached tokens;
+a variant that adds a fixed instruction has it cached after the first item, and
+`item_prompt_tokens_cached` shows it. `item_first_in_batch` marks the batch's first
+generation, served by a freshly launched server; exclude it with
+`--reference-where item_first_in_batch=false --candidate-where item_first_in_batch=false`.
+
+`wave-local-ai-v2-compare --quantity item_tokens_out` (or `item_tokens_in`, `item_ttft_ms`)
+runs the Wilcoxon signed-rank test over the same item ids. Energy stays per batch:
+`--quantity energy_kwh` publishes the two batch values and their difference as an
+observation, because per-item energy on items of a few dozen tokens is below what the
+tracker can resolve, so there is nothing to pair (owner decision Q24 (a)).
+
+No committed row carries these fields: every row in this directory predates `"18"`, is read
+under its own version and is never back-filled; a per-item comparison over them is refused
+naming the absent field.
+
 ## Paired comparisons: both committed pairs are refused (2026-10-02)
 
 `comparisons/` holds the comparison records `wave-local-ai-v2-compare` writes over this

@@ -1,0 +1,66 @@
+{
+  "alpha": 0.05,
+  "family_definition": {
+    "compared_dimension": "prompt_variant",
+    "compared_quantity": "energy_kwh",
+    "rule": "one suite crossed with one compared dimension, closed at analysis time: every comparison this invocation declared, which must include every comparison of the family's current record, so a family only grows and each growth is a new record superseding the old by id (PRD Methodology 24)",
+    "suite_id": "classification-support-routing",
+    "suite_version": "4"
+  },
+  "family_id": "2d99a012d65a4366d438022f572ae28c5bc4404d773106833e0b689b48d4c3a1",
+  "family_size": 1,
+  "members": [
+    {
+      "adjusted_p_value": null,
+      "adjusted_p_value_null_reason": "no_paired_test",
+      "batch_values": {
+        "candidate": 6.850165821197776e-05,
+        "difference": 1.7399155766927813e-07,
+        "difference_null_reason": null,
+        "reference": 6.832766665430848e-05
+      },
+      "candidate_row_count": 20,
+      "candidate_run_id": "8d2dbf0ff2154c87b46d20e8035155b1",
+      "candidate_selector": {},
+      "compared_dimension": "prompt_variant",
+      "compared_field": "energy_kwh",
+      "compared_quantity": "energy_kwh",
+      "comparison_kind": "observation",
+      "confounds": [],
+      "difference_convention": "candidate minus reference",
+      "differing_fields": [],
+      "observation_reason": "energy is measured per batch, never per item: per-item energy on items of a few dozen tokens sits below what the tracker can resolve, so there is no per-item value to pair and a per-batch energy difference is published as an observation (owner decision Q24 (a)); the sides do not differ on the compared dimension's key field(s) prompt_variant_id, prompt_variant_version",
+      "paired_item_ids": null,
+      "paired_n": null,
+      "paired_values": null,
+      "raw_p_value": null,
+      "reference_row_count": 20,
+      "reference_run_id": "da37d53e619248d59cccb51f939cff8c",
+      "reference_selector": {},
+      "refusal": [],
+      "result": null,
+      "scoring_kind": "batch_measurement",
+      "suite_id": "classification-support-routing",
+      "suite_level": "development",
+      "suite_version": "4",
+      "test": null,
+      "test_chosen_because": null,
+      "unpaired_count": null,
+      "unpaired_items": null,
+      "verdict": "not comparable"
+    }
+  ],
+  "multiplicity_correction": {
+    "adjusted_over": "every member that was not refused, tests and observations alike, so adjustment_size equals tested_count; a member whose p is left null with a named reason enters as p = 1, which never lowers another member's adjusted p, and keeps its own adjusted p null with that reason; a refused member carries no p and enters no count",
+    "adjustment_size": 1,
+    "formula": "adjusted p_(i) = max over j <= i of min(1, (m - j + 1) * p_(j)), the m raw p-values sorted ascending; computed exactly, so tied raw p-values share one adjusted value and with m = 1 the adjusted p equals the raw p",
+    "method": "holm"
+  },
+  "record_type": "comparison_family",
+  "record_version": "2",
+  "refused_count": 0,
+  "rows_source": "aidd_docs/tasks/2026_10/2026_10_01_quality-item-tokens-and-first-token-time/evidence/quality.jsonl",
+  "supersedes": [],
+  "tested_count": 1,
+  "verdict_rule": "distinguishable when the Holm-adjusted p over the family (adjusted_p_value) <= alpha; not distinguishable otherwise, including a p left null because the sides never disagree; not comparable for a refusal, an observation (the sides differ outside the compared dimension or not on it, so no difference is attributable to it; its p stays in result) or a paired n below the test's minimum"
+}
