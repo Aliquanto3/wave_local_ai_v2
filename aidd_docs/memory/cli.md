@@ -134,22 +134,34 @@ The command-line interface for running benchmarks.
   row's `fields_not_carried`, and the manifest declares the `schema_version`
   the rows carry, not the live constant. A row field the dictionary does not
   describe refuses the export; see `aidd_docs/results/README.md`.
-- `wave-local-ai-v2-compare --reference <run_id> --candidate <run_id>
-  [--reference-where field=value ...] [--candidate-where field=value ...]
-  [--dimension model|prompt_variant] [--alpha 0.05] [--rows <jsonl>] [--output <path>]`
+- `wave-local-ai-v2-compare (--reference <run_id> --candidate <run_id>
+  [--reference-where field=value ...] [--candidate-where field=value ...] |
+  --comparisons <declaration.json>) [--dimension model|prompt_variant]
+  [--alpha 0.05] [--rows <jsonl>] [--records-dir <dir>] [--output <path>]`
   — paired comparison (`comparison.py`) over the published quality rows
   (default `quality-reference.jsonl`, read-only). Writes one immutable family
-  record of one comparison to `aidd_docs/results/comparisons/<suite>@<version>.<dimension>.<family_id[:12]>.json`:
+  record per invocation (one suite by one dimension; comparisons spanning two
+  suites refuse the invocation, exit `1`) to `aidd_docs/results/comparisons/<suite>@<version>.<dimension>.<family_id[:12]>.json`,
+  holding every declared comparison (a JSON array of `{reference: {run_id,
+  where}, candidate: {...}}`, or the one pair the flags name), its size,
+  tested and refused counts, and each member's Holm-adjusted p over the
+  members not refused (a null p counted as 1, so the adjustment size equals
+  the tested count), the verdict read against it. A grown family is a new
+  record listing the ids it `supersedes`, found among the records in
+  `--records-dir` (default `comparisons/`); a declaration leaving out any
+  comparison of the current record is refused (exit `1`): a family only
+  grows. A re-run matching a published record re-emits it. Each comparison is
   McNemar's exact test when the rows score `correct`, Wilcoxon signed-rank
   (Pratt zeros, exact sign-flip up to 50 non-zero pairs, no continuity
   correction) when they score `item_score` — chosen from the row shape, never
-  by flag. Refuses (still a record, exit `0`) naming each field when the sides
+  by flag. A member is refused (still listed, exit `0`) naming each field when its sides
   differ on suite identity, `suite_level`, a generation constraint, the metric
   triple, the scoring kind or the compared field, and when a constraint or the
   metric is null on either side. Sides differing outside the declared
   dimension publish an observation naming the confound, verdict `not
   comparable` (its p kept in `result`). No timestamp: a
-  re-run is byte-identical; a different existing file is refused (exit `1`).
+  re-run is byte-identical; a different existing file is refused (exit `1`);
+  no published record is rewritten.
 - `wave-local-ai-v2-serve` — read-only results service: four `GET` routes over
   the two stores, answering the views a pitch screen needs without a terminal.
   Writes nothing: every store file is opened for reading, and every non-`GET`

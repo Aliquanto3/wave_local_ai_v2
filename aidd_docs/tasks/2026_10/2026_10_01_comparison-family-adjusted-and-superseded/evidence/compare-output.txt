@@ -1,0 +1,8 @@
+aidd_docs\results\comparisons\classification-support-routing@2.model.1e1658cbe073.json written: family 1e1658cbe073 of 2 (0 tested, 2 refused, Holm over 0); supersedes 2ef9fd3581d2, d4641d06a525
+  5e13166d model_id=Qwen3.6-35B-A3B vs 5e13166d model_id=mistral-small-2603: refusal, verdict not comparable; refused on thinking_policy (absent)
+  d20afbda model_id=Qwen3.6-35B-A3B vs d20afbda model_id=mistral-small-2603: refusal, verdict not comparable; refused on thinking_policy (absent)
+exit 0
+aidd_docs\results\comparisons\classification-support-routing@2.model.1e1658cbe073.json unchanged: family 1e1658cbe073 of 2 (0 tested, 2 refused, Holm over 0); supersedes 2ef9fd3581d2, d4641d06a525; identical to a published record
+  5e13166d model_id=Qwen3.6-35B-A3B vs 5e13166d model_id=mistral-small-2603: refusal, verdict not comparable; refused on thinking_policy (absent)
+  d20afbda model_id=Qwen3.6-35B-A3B vs d20afbda model_id=mistral-small-2603: refusal, verdict not comparable; refused on thinking_policy (absent)
+exit 0

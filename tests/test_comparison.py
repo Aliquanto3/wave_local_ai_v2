@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import random
 from pathlib import Path
@@ -13,12 +14,15 @@ from scipy import stats
 from wave_local_ai_v2 import comparison
 from wave_local_ai_v2.comparison import (
     NULL_ALL_DIFFERENCES_ZERO,
+    NULL_COMPARISON_REFUSED,
     NULL_NO_DISCORDANT_PAIRS,
     NULL_ODDS_RATIO_EMPTY_CELL,
     NULL_PAIRED_N_BELOW_MINIMUM,
     ComparisonInputError,
+    FamilyError,
     Side,
     compare_sides,
+    holm_adjust,
     mcnemar_exact,
     wilcoxon_signed_rank,
 )
@@ -474,13 +478,18 @@ def test_a_family_of_one_states_its_adjusted_p_and_is_deterministic() -> None:
         _binary_rows("run-ref", "model-a", ref),
         _binary_rows("run-cand", "model-b", cand),
     )
-    first = comparison.build_family_record(_compare(*rows), alpha=0.05, rows_source="x")
+    first = comparison.build_family_record(
+        [_compare(*rows)], alpha=0.05, rows_source="x"
+    )
     second = comparison.build_family_record(
-        _compare(*rows), alpha=0.05, rows_source="x"
+        [_compare(*rows)], alpha=0.05, rows_source="x"
     )
     assert comparison.record_text(first) == comparison.record_text(second)
     assert first["family_size"] == 1
     assert first["members"][0]["adjusted_p_value"] == 0.375
+    assert first["members"][0]["raw_p_value"] == 0.375
+    assert first["multiplicity_correction"]["adjustment_size"] == 1
+    assert first["supersedes"] == []
     assert first["multiplicity_correction"]["method"] == "holm"
     assert len(first["family_id"]) == 64
 
@@ -499,6 +508,8 @@ def _bundle_args(run_id: str, output: Path, *extra: str) -> list[str]:
         run_id,
         "--candidate-where",
         "model_id=mistral-small-2603",
+        "--records-dir",
+        str(output.parent / "records"),
         "--output",
         str(output),
         *extra,
@@ -575,7 +586,7 @@ def test_the_command_writes_to_the_default_comparisons_dir(
     rows = tmp_path / "rows.jsonl"
     rows.write_text(REFERENCE_BUNDLE.read_text(encoding="utf-8"), encoding="utf-8")
     monkeypatch.setattr(comparison, "COMPARISONS_DIR", tmp_path / "comparisons")
-    args = _bundle_args(RUN_5E, tmp_path / "unused")[:-2] + ["--rows", str(rows)]
+    args = _bundle_args(RUN_5E, tmp_path / "unused")[:-4] + ["--rows", str(rows)]
     assert comparison.main(args) == 0
     written = list((tmp_path / "comparisons").glob("*.json"))
     assert len(written) == 1
@@ -620,32 +631,87 @@ def test_a_record_over_mixed_suites_is_named_as_such() -> None:
         _binary_rows("run-ref", "model-a", ref),
         _binary_rows("run-cand", "model-b", cand, suite_id="other-suite"),
     )
-    record = comparison.build_family_record(member, alpha=0.05, rows_source="x")
+    record = comparison.build_family_record([member], alpha=0.05, rows_source="x")
     assert comparison.default_output_path(record).name.startswith("mixed-suites.model.")
 
 
-PUBLISHED_RECORDS = sorted(Path("aidd_docs/results/comparisons").glob("*.json"))
+PUBLISHED_DIR = Path("aidd_docs/results/comparisons")
+PUBLISHED_RECORDS = sorted(PUBLISHED_DIR.glob("*.json"))
+
+
+def _load(path: Path) -> dict[str, Any]:
+    record: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+    return record
+
+
+def _declaration(members: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            side: {
+                "run_id": member[f"{side}_run_id"],
+                "where": member[f"{side}_selector"],
+            }
+            for side in ("reference", "candidate")
+        }
+        for member in members
+    ]
 
 
 @pytest.mark.parametrize("published", PUBLISHED_RECORDS, ids=lambda path: path.name)
-def test_a_published_record_recomputes_from_the_bundle_alone(
+def test_a_published_record_recomputes_or_is_unedited(
     published: Path, tmp_path: Path
 ) -> None:
-    record = json.loads(published.read_text(encoding="utf-8"))
-    (member,) = record["members"]
-    args = ["--rows", record["rows_source"], "--alpha", str(record["alpha"])]
-    for side in ("reference", "candidate"):
-        args += [f"--{side}", member[f"{side}_run_id"]]
-        for key, value in member[f"{side}_selector"].items():
-            args += [f"--{side}-where", f"{key}={value}"]
-    args += ["--dimension", member["compared_dimension"]]
+    record = _load(published)
+    if record["record_version"] == "1":
+        # Superseded and kept: its own content still hashes to its id.
+        body = {key: value for key, value in record.items() if key != "family_id"}
+        digest = hashlib.sha256(comparison.record_text(body).encode()).hexdigest()
+        assert digest == record["family_id"]
+        assert comparison.record_text(record) == published.read_text(encoding="utf-8")
+        return
+    # Recomputed from the bundle with only the records it supersedes on file,
+    # so the command cannot simply re-emit the published one.
+    records_dir = tmp_path / "records"
+    records_dir.mkdir()
+    by_id = {_load(path)["family_id"]: path for path in PUBLISHED_RECORDS}
+    for family_id in comparison.superseded_ids(record):
+        source = by_id[family_id]
+        (records_dir / source.name).write_bytes(source.read_bytes())
+    declaration = tmp_path / "comparisons.json"
+    declaration.write_text(json.dumps(_declaration(record["members"])), "utf-8")
     output = tmp_path / published.name
-    assert comparison.main([*args, "--output", str(output)]) == 0
+    args = [
+        "--rows",
+        record["rows_source"],
+        "--alpha",
+        str(record["alpha"]),
+        "--dimension",
+        record["family_definition"]["compared_dimension"],
+        "--comparisons",
+        str(declaration),
+        "--records-dir",
+        str(records_dir),
+        "--output",
+        str(output),
+    ]
+    assert comparison.main(args) == 0
     assert output.read_text(encoding="utf-8") == published.read_text(encoding="utf-8")
 
 
-def test_the_bundle_publishes_one_record_per_committed_pair() -> None:
-    assert len(PUBLISHED_RECORDS) == 2
+def test_the_bundle_publishes_one_current_family_holding_both_pairs() -> None:
+    records = [_load(path) for path in PUBLISHED_RECORDS]
+    current = [
+        record for record in records if record["family_id"] in comparison.heads(records)
+    ]
+    (head,) = current
+    assert head["record_version"] == comparison.RECORD_VERSION
+    assert head["family_size"] == 2
+    assert (head["tested_count"], head["refused_count"]) == (0, 2)
+    superseded = sorted(
+        record["family_id"] for record in records if record["record_version"] == "1"
+    )
+    assert comparison.superseded_ids(head) == superseded
+    assert len(superseded) == 2
 
 
 def test_two_spellings_of_one_rows_file_give_one_family_id(
@@ -674,3 +740,372 @@ def test_a_rows_file_outside_the_working_directory_is_named_absolutely(
     monkeypatch.chdir(elsewhere)
     rows = tmp_path / "rows.jsonl"
     assert comparison.rows_source_name(rows) == rows.resolve().as_posix()
+
+
+# --------------------------------------------------------------------------
+# Holm and the family
+
+
+def test_holm_reproduces_the_published_worked_example() -> None:
+    # Wikipedia, "Holm-Bonferroni method", Example: H1 and H4 rejected at 0.05.
+    adjusted = holm_adjust([0.01, 0.04, 0.03, 0.005])
+    assert adjusted == [0.03, 0.06, 0.06, 0.02]
+    assert [p <= 0.05 for p in adjusted] == [True, False, False, True]
+
+
+def test_holm_matches_a_hand_computed_fixture_with_a_tie_and_a_cap() -> None:
+    # m = 5, ascending 0.01, 0.04, 0.25, 0.25, 0.75: 5 * 0.01 = 0.05,
+    # 4 * 0.04 = 0.16, 3 * 0.25 = 0.75, then 0.5 and 0.75 under the running
+    # maximum 0.75, so the tie shares one value.
+    assert holm_adjust([0.25, 0.01, 0.25, 0.75, 0.04]) == [
+        0.75,
+        0.05,
+        0.75,
+        0.75,
+        0.16,
+    ]
+    assert holm_adjust([0.6, 0.7]) == [1.0, 1.0]
+    assert holm_adjust([0.375]) == [0.375]
+    assert holm_adjust([]) == []
+
+
+def _candidate_member(
+    model_id: str, candidate_only: int, **overrides: Any
+) -> dict[str, Any]:
+    """`model-a` against `model_id`: `candidate_only` items only the candidate gets."""
+    ref, cand = _pairs_outcomes(10, 0, candidate_only, 10 - candidate_only)
+    candidate = Side("run-cand", {"model_id": model_id})
+    return compare_sides(
+        _binary_rows("run-ref", "model-a", ref),
+        _binary_rows("run-cand", model_id, cand, **overrides),
+        REFERENCE,
+        candidate,
+    )
+
+
+def test_each_verdict_reads_its_holm_adjusted_p_with_the_raw_p_beside_it() -> None:
+    # Raw McNemar p: 8 one-way discordant pairs 2/2^8, 6 pairs 2/2^6, 5 pairs
+    # 2/2^5; Holm over three: 0.0234375, 0.0625, 0.0625.
+    members = [
+        _candidate_member("model-b", 8),
+        _candidate_member("model-c", 6),
+        _candidate_member("model-d", 5),
+    ]
+    record = comparison.build_family_record(members, alpha=0.05, rows_source="x")
+    by_model = {m["candidate_selector"]["model_id"]: m for m in record["members"]}
+    assert [by_model[k]["raw_p_value"] for k in ("model-b", "model-c", "model-d")] == [
+        0.0078125,
+        0.03125,
+        0.0625,
+    ]
+    assert [
+        by_model[k]["adjusted_p_value"] for k in ("model-b", "model-c", "model-d")
+    ] == [0.0234375, 0.0625, 0.0625]
+    assert by_model["model-b"]["verdict"] == comparison.VERDICT_DISTINGUISHABLE
+    # Distinguishable alone (raw 0.03125 <= 0.05), not once adjusted.
+    assert by_model["model-c"]["verdict"] == comparison.VERDICT_NOT_DISTINGUISHABLE
+    assert record["family_size"] == record["tested_count"] == 3
+    assert record["refused_count"] == 0
+    assert record["multiplicity_correction"]["adjustment_size"] == 3
+    assert record["family_definition"]["rule"] == comparison.FAMILY_RULE
+    reordered = comparison.build_family_record(
+        members[::-1], alpha=0.05, rows_source="x"
+    )
+    assert comparison.record_text(reordered) == comparison.record_text(record)
+
+
+def test_a_refused_member_is_listed_and_enters_no_count() -> None:
+    members = [
+        _candidate_member("model-b", 8),
+        _candidate_member("model-c", 6),
+        _candidate_member("model-d", 5),
+        _candidate_member("model-e", 8, max_output_tokens=64),
+    ]
+    record = comparison.build_family_record(members, alpha=0.05, rows_source="x")
+    refused = next(
+        m for m in record["members"] if m["candidate_selector"]["model_id"] == "model-e"
+    )
+    assert refused["comparison_kind"] == comparison.KIND_REFUSAL
+    assert [entry["field"] for entry in refused["refusal"]] == ["max_output_tokens"]
+    assert refused["raw_p_value"] is None
+    assert refused["adjusted_p_value"] is None
+    assert refused["adjusted_p_value_null_reason"] == NULL_COMPARISON_REFUSED
+    assert refused["verdict"] == comparison.VERDICT_NOT_COMPARABLE
+    assert (record["family_size"], record["tested_count"]) == (4, 3)
+    assert record["refused_count"] == 1
+    assert record["multiplicity_correction"]["adjustment_size"] == 3
+    adjusted = sorted(
+        m["adjusted_p_value"] for m in record["members"] if m is not refused
+    )
+    assert adjusted == [0.0234375, 0.0625, 0.0625]
+
+
+def test_an_observation_is_adjusted_and_a_null_p_counts_as_one() -> None:
+    observation = _candidate_member("model-b", 8, compute_mode="cpu_only")
+    no_discordant = _candidate_member("model-c", 0)
+    record = comparison.build_family_record(
+        [observation, no_discordant, _candidate_member("model-d", 6)],
+        alpha=0.05,
+        rows_source="x",
+    )
+    by_model = {m["candidate_selector"]["model_id"]: m for m in record["members"]}
+    # m = 3 = tested_count: model-c has no p and enters as p = 1, so the
+    # others are adjusted as one of three (0.0078125 * 3, then 0.03125 * 2).
+    assert record["multiplicity_correction"]["adjustment_size"] == 3
+    assert record["tested_count"] == 3
+    assert by_model["model-b"]["comparison_kind"] == comparison.KIND_OBSERVATION
+    assert by_model["model-b"]["adjusted_p_value"] == 0.0234375
+    assert by_model["model-b"]["verdict"] == comparison.VERDICT_NOT_COMPARABLE
+    assert by_model["model-c"]["adjusted_p_value"] is None
+    assert by_model["model-c"]["adjusted_p_value_null_reason"] == (
+        NULL_NO_DISCORDANT_PAIRS
+    )
+    assert by_model["model-d"]["adjusted_p_value"] == 0.0625
+
+
+def test_comparisons_that_cannot_form_one_family_are_refused() -> None:
+    member = _candidate_member("model-b", 8)
+    with pytest.raises(FamilyError, match="at least one"):
+        comparison.build_family_record([], alpha=0.05, rows_source="x")
+    with pytest.raises(FamilyError, match="declared twice"):
+        comparison.build_family_record([member, member], alpha=0.05, rows_source="x")
+    other_suite = _candidate_member("model-c", 6)
+    other_suite["suite_id"] = "translation-business-short-form"
+    with pytest.raises(FamilyError, match="more than one suite"):
+        comparison.build_family_record(
+            [member, other_suite], alpha=0.05, rows_source="x"
+        )
+    other_axis = {**_candidate_member("model-c", 6), "compared_dimension": "x"}
+    with pytest.raises(FamilyError, match="compared dimension"):
+        comparison.build_family_record(
+            [member, other_axis], alpha=0.05, rows_source="x"
+        )
+
+
+def test_a_member_refused_on_suite_identity_stays_in_its_family() -> None:
+    refused = _candidate_member("model-c", 6, suite_id="other-suite")
+    record = comparison.build_family_record(
+        [_candidate_member("model-b", 8), refused], alpha=0.05, rows_source="x"
+    )
+    assert record["family_definition"]["suite_id"] == "classification-support-routing"
+    assert record["refused_count"] == 1
+
+
+def _growing_rows(tmp_path: Path, candidates: int) -> Path:
+    ref, _ = _pairs_outcomes(10, 0, 0, 10)
+    rows = _binary_rows("run-1", "model-ref", ref)
+    for index in range(candidates):
+        discordant = index % 9 + 1
+        _, cand = _pairs_outcomes(10, 0, discordant, 10 - discordant)
+        rows += _binary_rows("run-1", f"model-{index:02d}", cand)
+    path = tmp_path / "rows.jsonl"
+    path.write_text("".join(json.dumps(row) + "\n" for row in rows), "utf-8")
+    return path
+
+
+def _declare(tmp_path: Path, count: int) -> Path:
+    declaration = [
+        {
+            "reference": {"run_id": "run-1", "where": {"model_id": "model-ref"}},
+            "candidate": {"run_id": "run-1", "where": {"model_id": f"model-{i:02d}"}},
+        }
+        for i in range(count)
+    ]
+    path = tmp_path / f"declare-{count}.json"
+    path.write_text(json.dumps(declaration), "utf-8")
+    return path
+
+
+def test_a_family_of_eleven_grown_to_twelve_is_superseded_not_edited(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    rows = _growing_rows(tmp_path, 12)
+    records = tmp_path / "records"
+
+    def run(count: int) -> int:
+        return comparison.main(
+            [
+                "--rows",
+                str(rows),
+                "--comparisons",
+                str(_declare(tmp_path, count)),
+                "--records-dir",
+                str(records),
+            ]
+        )
+
+    assert run(11) == 0
+    (eleven_path,) = records.glob("*.json")
+    eleven_bytes = eleven_path.read_bytes()
+    eleven = json.loads(eleven_bytes)
+    assert eleven["family_size"] == 11
+    assert eleven["supersedes"] == []
+
+    assert run(12) == 0
+    (twelve_path,) = set(records.glob("*.json")) - {eleven_path}
+    twelve = _load(twelve_path)
+    assert twelve["family_size"] == 12
+    assert twelve["multiplicity_correction"]["adjustment_size"] == 12
+    assert twelve["supersedes"] == [{"family_id": eleven["family_id"]}]
+    assert eleven_path.read_bytes() == eleven_bytes
+    assert "supersedes " + eleven["family_id"][:12] in capsys.readouterr().out
+
+    # The same bundle and definition, re-run: the identical record, nothing new.
+    twelve_bytes = twelve_path.read_bytes()
+    assert run(12) == 0
+    assert run(11) == 0
+    assert sorted(records.glob("*.json")) == sorted([eleven_path, twelve_path])
+    assert twelve_path.read_bytes() == twelve_bytes
+    assert eleven_path.read_bytes() == eleven_bytes
+    out = capsys.readouterr().out
+    assert "identical to a published record" in out
+    assert "superseded by " + twelve["family_id"][:12] in out
+
+
+@pytest.mark.parametrize(
+    ("first", "second", "missing"),
+    [
+        # A shrink: twelve, then the one favourable pair alone.
+        (range(12), [3], "model-00"),
+        # Disjoint: two pairs, then a third pair in their place.
+        (range(2), [2], "model-01"),
+    ],
+    ids=["shrinking", "disjoint"],
+)
+def test_a_declaration_dropping_a_current_comparison_is_refused(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    first: range | list[int],
+    second: list[int],
+    missing: str,
+) -> None:
+    rows = _growing_rows(tmp_path, 12)
+    records = tmp_path / "records"
+
+    def run(indexes: range | list[int], name: str) -> int:
+        declaration = [
+            {
+                "reference": {"run_id": "run-1", "where": {"model_id": "model-ref"}},
+                "candidate": {
+                    "run_id": "run-1",
+                    "where": {"model_id": f"model-{i:02d}"},
+                },
+            }
+            for i in indexes
+        ]
+        path = tmp_path / name
+        path.write_text(json.dumps(declaration), "utf-8")
+        args = ["--rows", str(rows), "--comparisons", str(path)]
+        return comparison.main([*args, "--records-dir", str(records)])
+
+    assert run(first, "first.json") == 0
+    (head,) = records.glob("*.json")
+    head_bytes = head.read_bytes()
+    capsys.readouterr()
+    assert run(second, "second.json") == 1
+    error = capsys.readouterr().err
+    assert "does not declare" in error
+    assert missing in error
+    assert list(records.glob("*.json")) == [head]
+    assert head.read_bytes() == head_bytes
+
+
+def test_a_record_of_another_family_is_not_superseded(tmp_path: Path) -> None:
+    rows = _growing_rows(tmp_path, 2)
+    records = tmp_path / "records"
+    base = ["--rows", str(rows), "--comparisons", str(_declare(tmp_path, 2))]
+    assert comparison.main([*base, "--records-dir", str(records)]) == 0
+    args = [*base, "--records-dir", str(records), "--dimension", "prompt_variant"]
+    assert comparison.main(args) == 0
+    assert all(_load(path)["supersedes"] == [] for path in records.glob("*.json"))
+
+
+@pytest.mark.parametrize(
+    ("content", "extra", "message"),
+    [
+        ("[]", [], "non-empty array"),
+        ("{", [], "is not JSON"),
+        ("[1]", [], "comparison 1 is not an object"),
+        ('[{"reference": {"run_id": 1}}]', [], "comparison 1: reference"),
+        (
+            (
+                '[{"reference": {"run_id": "run-1"}, "candidate": {"run_id": "r", '
+                '"where": {"model_id": 3}}}]'
+            ),
+            [],
+            "comparison 1: candidate",
+        ),
+        (None, [], "cannot read comparisons"),
+        ("[]", ["--reference", "run-1"], "replaces --reference"),
+    ],
+)
+def test_a_malformed_declaration_exits_1_writing_nothing(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    content: str | None,
+    extra: list[str],
+    message: str,
+) -> None:
+    declaration = tmp_path / "declare.json"
+    if content is not None:
+        declaration.write_text(content, "utf-8")
+    records = tmp_path / "records"
+    args = [
+        "--rows",
+        str(_growing_rows(tmp_path, 1)),
+        "--comparisons",
+        str(declaration),
+        "--records-dir",
+        str(records),
+        *extra,
+    ]
+    assert comparison.main(args) == 1
+    assert message in capsys.readouterr().err
+    assert not records.exists()
+
+
+def test_an_invocation_needs_its_comparisons_declared(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert comparison.main(["--reference", "run-1"]) == 1
+    assert "or --comparisons" in capsys.readouterr().err
+
+
+def test_an_invocation_spanning_two_suites_writes_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    rows = _growing_rows(tmp_path, 1)
+    extra = _binary_rows(
+        "run-2", "model-x", [True] * 20, suite_id="translation-x"
+    ) + _binary_rows("run-2", "model-y", [False] * 20, suite_id="translation-x")
+    with rows.open("a", encoding="utf-8") as handle:
+        handle.write("".join(json.dumps(row) + "\n" for row in extra))
+    declaration = json.loads(_declare(tmp_path, 1).read_text("utf-8"))
+    declaration.append(
+        {
+            "reference": {"run_id": "run-2", "where": {"model_id": "model-x"}},
+            "candidate": {"run_id": "run-2", "where": {"model_id": "model-y"}},
+        }
+    )
+    path = tmp_path / "two-suites.json"
+    path.write_text(json.dumps(declaration), "utf-8")
+    records = tmp_path / "records"
+    args = ["--rows", str(rows), "--comparisons", str(path)]
+    assert comparison.main([*args, "--records-dir", str(records)]) == 1
+    assert "more than one suite" in capsys.readouterr().err
+    assert not records.exists()
+
+
+def test_the_records_dir_skips_other_json_and_refuses_broken_json(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    records = tmp_path / "records"
+    records.mkdir()
+    (records / "notes.json").write_text('{"record_type": "other"}', "utf-8")
+    rows = _growing_rows(tmp_path, 1)
+    args = ["--rows", str(rows), "--comparisons", str(_declare(tmp_path, 1))]
+    assert comparison.main([*args, "--records-dir", str(records)]) == 0
+    assert len(list(records.glob("*.json"))) == 2
+    (records / "broken.json").write_text("{", "utf-8")
+    assert comparison.main([*args, "--records-dir", str(records)]) == 1
+    assert "broken.json is not JSON" in capsys.readouterr().err

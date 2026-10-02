@@ -2,10 +2,12 @@
 
 A claim that one configuration beats another is published here as a
 comparison record, never computed at read time: `main` reads the published
-quality rows, selects a reference side and a candidate side, and writes one
-immutable family record (`aidd_docs/results/comparisons/`) holding either a
-paired test or a refusal naming why the two sides cannot be compared (PRD
-Methodology 24).
+quality rows, runs every declared comparison (a reference side against a
+candidate side) and writes one immutable family record
+(`aidd_docs/results/comparisons/`) holding each one as a paired test or a
+refusal naming why its two sides cannot be compared, with Holm-adjusted
+p-values over that closed family (PRD Methodology 24). A family that grows is
+a new record superseding the old one by id; no published record is rewritten.
 
 The test is chosen by the rows' scoring kind, never by the caller: a binary
 exact-match score (`correct`) gets McNemar's exact test over the discordant
@@ -33,7 +35,7 @@ from typing import Any
 from wave_local_ai_v2 import settings
 
 RECORD_TYPE = "comparison_family"
-RECORD_VERSION = "1"
+RECORD_VERSION = "2"
 DEFAULT_ALPHA = 0.05
 COMPARISONS_DIR = Path("aidd_docs/results/comparisons")
 
@@ -74,6 +76,8 @@ NULL_PAIRED_N_BELOW_MINIMUM = "paired_n_below_minimum"
 NULL_NO_DISCORDANT_PAIRS = "no_discordant_pairs"
 NULL_ODDS_RATIO_EMPTY_CELL = "odds_ratio_empty_cell"
 NULL_ALL_DIFFERENCES_ZERO = "all_differences_zero"
+# A refused member carries no p-value, so none is adjusted.
+NULL_COMPARISON_REFUSED = "comparison_refused"
 
 # Both tests' own minimum: one paired item. Below it nothing is compared.
 MIN_PAIRED_N = 1
@@ -86,7 +90,8 @@ VERDICT_DISTINGUISHABLE = "distinguishable"
 VERDICT_NOT_DISTINGUISHABLE = "not distinguishable"
 VERDICT_NOT_COMPARABLE = "not comparable"
 VERDICT_RULE = (
-    "distinguishable when adjusted_p_value <= alpha; not distinguishable "
+    "distinguishable when the Holm-adjusted p over the family "
+    "(adjusted_p_value) <= alpha; not distinguishable "
     "otherwise, including a p left null because the sides never disagree; "
     "not comparable for a refusal, an observation (the sides differ outside "
     "the compared dimension or not on it, so no difference is attributable "
@@ -679,19 +684,23 @@ def _comparison_kind(
     return KIND_TEST, confounds, None
 
 
-def _verdict(kind: str, result: Mapping[str, Any], alpha: float) -> str:
-    """The reader-facing verdict of a member that was not refused.
+def _verdict(
+    kind: str,
+    result: Mapping[str, Any] | None,
+    adjusted_p_value: float | None,
+    alpha: float,
+) -> str:
+    """The reader-facing verdict of a member, read against its adjusted p.
 
     An observation reads `not comparable`: a reader of the verdict alone must
     never take a confounded pair for a finding. Its p stays in `result`, where
     a significant one reads as the bug signal it is.
     """
-    if kind == KIND_OBSERVATION:
+    if kind in (KIND_REFUSAL, KIND_OBSERVATION) or result is None:
         return VERDICT_NOT_COMPARABLE
     if result["p_value_null_reason"] == NULL_PAIRED_N_BELOW_MINIMUM:
         return VERDICT_NOT_COMPARABLE
-    p_value = result["p_value"]
-    if p_value is not None and p_value <= alpha:
+    if adjusted_p_value is not None and adjusted_p_value <= alpha:
         return VERDICT_DISTINGUISHABLE
     return VERDICT_NOT_DISTINGUISHABLE
 
@@ -756,8 +765,9 @@ def compare_sides(
             "test": None,
             "test_chosen_because": None,
             "result": None,
+            "raw_p_value": None,
             "adjusted_p_value": None,
-            "adjusted_p_value_null_reason": None,
+            "adjusted_p_value_null_reason": NULL_COMPARISON_REFUSED,
             "verdict": VERDICT_NOT_COMPARABLE,
         }
 
@@ -807,41 +817,220 @@ def compare_sides(
         "test": test,
         "test_chosen_because": TEST_CHOSEN_BECAUSE[test],
         "result": result,
-        # A family of one: Holm's adjusted p is the raw p.
+        "raw_p_value": result["p_value"],
+        # Alone, a member is a family of one: Holm's adjusted p is the raw p.
+        # `build_family_record` re-reads both over the family it belongs to.
         "adjusted_p_value": result["p_value"],
         "adjusted_p_value_null_reason": result["p_value_null_reason"],
-        "verdict": _verdict(comparison_kind, result, alpha),
+        "verdict": _verdict(comparison_kind, result, result["p_value"], alpha),
     }
+
+
+# --------------------------------------------------------------------------
+# The family
+
+
+FAMILY_RULE = (
+    "one suite crossed with one compared dimension, closed at analysis time: "
+    "every comparison this invocation declared, which must include every "
+    "comparison of the family's current record, so a family only grows and "
+    "each growth is a new record superseding the old by id (PRD Methodology 24)"
+)
+HOLM_FORMULA = (
+    "adjusted p_(i) = max over j <= i of min(1, (m - j + 1) * p_(j)), the m raw "
+    "p-values sorted ascending; computed exactly, so tied raw p-values share "
+    "one adjusted value and with m = 1 the adjusted p equals the raw p"
+)
+HOLM_ADJUSTED_OVER = (
+    "every member that was not refused, tests and observations alike, so "
+    "adjustment_size equals tested_count; a member whose p is left null with a "
+    "named reason enters as p = 1, which never lowers another member's "
+    "adjusted p, and keeps its own adjusted p null with that reason; a refused "
+    "member carries no p and enters no count"
+)
+
+
+class FamilyError(ComparisonInputError):
+    """The declared comparisons cannot form one family record."""
+
+
+def holm_adjust(p_values: Sequence[float]) -> list[float]:
+    """Holm's step-down adjusted p-values, in the order given.
+
+    `p~(i) = max_{j <= i} min(1, (m - j + 1) * p(j))` over the ascending raw
+    p-values, computed in `Fraction` from each float so the arithmetic adds no
+    rounding of its own.
+    """
+    m = len(p_values)
+    order = sorted(range(m), key=lambda index: p_values[index])
+    adjusted = [0.0] * m
+    running = Fraction(0)
+    for rank, index in enumerate(order):
+        scaled = min(Fraction(1), (m - rank) * Fraction(p_values[index]))
+        running = max(running, scaled)
+        adjusted[index] = float(running)
+    return adjusted
+
+
+def member_key(member: Mapping[str, Any]) -> tuple[str, str, str, str]:
+    """A member's identity: its two sides, run id plus selector."""
+    return (
+        member["reference_run_id"],
+        json.dumps(member["reference_selector"], sort_keys=True),
+        member["candidate_run_id"],
+        json.dumps(member["candidate_selector"], sort_keys=True),
+    )
+
+
+def _family_definition(members: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """One suite by one dimension; a member refused on suite identity joins it."""
+    dimensions = {member["compared_dimension"] for member in members}
+    if len(dimensions) != 1:
+        raise FamilyError(
+            "the comparisons span more than one compared dimension: "
+            + ", ".join(sorted(dimensions))
+        )
+    suites = {
+        (member["suite_id"], member["suite_version"])
+        for member in members
+        if member["suite_id"] is not None and member["suite_version"] is not None
+    }
+    if len(suites) > 1:
+        raise FamilyError(
+            "the comparisons span more than one suite, so more than one family: "
+            + ", ".join(f"{suite_id}@{version}" for suite_id, version in sorted(suites))
+            + "; one invocation writes one family record"
+        )
+    suite_id, suite_version = next(iter(suites)) if suites else (None, None)
+    return {
+        "suite_id": suite_id,
+        "suite_version": suite_version,
+        "compared_dimension": next(iter(dimensions)),
+        "rule": FAMILY_RULE,
+    }
+
+
+def family_key(record: Mapping[str, Any]) -> tuple[Any, Any, Any]:
+    """The family a record belongs to, whatever its record version."""
+    definition = record["family_definition"]
+    return (
+        definition["suite_id"],
+        definition["suite_version"],
+        definition["compared_dimension"],
+    )
 
 
 def _canonical(record: Mapping[str, Any]) -> str:
     return json.dumps(record, indent=2, sort_keys=True) + "\n"
 
 
-def build_family_record(
-    member: Mapping[str, Any], *, alpha: float, rows_source: str
-) -> dict[str, Any]:
-    """Wrap one comparison as a family of one, identified by its own content."""
-    record: dict[str, Any] = {
-        "record_type": RECORD_TYPE,
-        "record_version": RECORD_VERSION,
-        "family_definition": {
-            "suite_id": member["suite_id"],
-            "suite_version": member["suite_version"],
-            "compared_dimension": member["compared_dimension"],
-        },
-        "family_size": 1,
-        "alpha": alpha,
-        "multiplicity_correction": {
-            "method": "holm",
-            "note": "a family of one: each adjusted p equals its raw p",
-        },
-        "verdict_rule": VERDICT_RULE,
-        "rows_source": rows_source,
-        "members": [dict(member)],
+def superseded_ids(record: Mapping[str, Any]) -> list[str]:
+    """The family ids a record supersedes; none on a record that predates it."""
+    return [entry["family_id"] for entry in record.get("supersedes", [])]
+
+
+def _identified(body: Mapping[str, Any], supersedes: Sequence[str]) -> dict[str, Any]:
+    # Each id sits under its own `family_id` key, so it reads as an id.
+    record = {
+        **body,
+        "supersedes": [{"family_id": family_id} for family_id in sorted(supersedes)],
     }
     record["family_id"] = hashlib.sha256(_canonical(record).encode()).hexdigest()
     return record
+
+
+def build_family_record(
+    members: Sequence[Mapping[str, Any]],
+    *,
+    alpha: float,
+    rows_source: str,
+    supersedes: Sequence[str] = (),
+) -> dict[str, Any]:
+    """One closed family: every member, Holm over their raw p, one id.
+
+    Members are put in a canonical order, so the record does not depend on
+    the order they were declared in; each verdict is re-read against the
+    member's adjusted p. `family_id` hashes the content, `supersedes`
+    included.
+    """
+    if not members:
+        raise FamilyError("a family holds at least one comparison")
+    ordered = sorted((dict(member) for member in members), key=member_key)
+    keys = [member_key(member) for member in ordered]
+    duplicates = sorted({key for key in keys if keys.count(key) > 1})
+    if duplicates:
+        raise FamilyError(
+            "a comparison is declared twice: "
+            + "; ".join(f"{key[0]} {key[1]} vs {key[2]} {key[3]}" for key in duplicates)
+        )
+    definition = _family_definition(ordered)
+    adjusted_indexes = [
+        index
+        for index, member in enumerate(ordered)
+        if member["comparison_kind"] != KIND_REFUSAL
+    ]
+    # A tested member without a p counts as p = 1: the conservative reading.
+    adjusted = holm_adjust(
+        [
+            1.0
+            if ordered[index]["raw_p_value"] is None
+            else ordered[index]["raw_p_value"]
+            for index in adjusted_indexes
+        ]
+    )
+    for index, value in zip(adjusted_indexes, adjusted, strict=True):
+        if ordered[index]["raw_p_value"] is not None:
+            ordered[index]["adjusted_p_value"] = value
+            ordered[index]["adjusted_p_value_null_reason"] = None
+    for member in ordered:
+        member["verdict"] = _verdict(
+            member["comparison_kind"],
+            member["result"],
+            member["adjusted_p_value"],
+            alpha,
+        )
+    refused = sum(1 for member in ordered if member["comparison_kind"] == KIND_REFUSAL)
+    body: dict[str, Any] = {
+        "record_type": RECORD_TYPE,
+        "record_version": RECORD_VERSION,
+        "family_definition": definition,
+        "family_size": len(ordered),
+        "tested_count": len(ordered) - refused,
+        "refused_count": refused,
+        "alpha": alpha,
+        "multiplicity_correction": {
+            "method": "holm",
+            "formula": HOLM_FORMULA,
+            "adjusted_over": HOLM_ADJUSTED_OVER,
+            "adjustment_size": len(adjusted_indexes),
+        },
+        "verdict_rule": VERDICT_RULE,
+        "rows_source": rows_source,
+        "members": ordered,
+    }
+    return _identified(body, supersedes)
+
+
+def same_content(first: Mapping[str, Any], second: Mapping[str, Any]) -> bool:
+    """Two records equal but for their id and the ids they supersede."""
+    ignored = ("family_id", "supersedes")
+
+    def body(record: Mapping[str, Any]) -> dict[str, Any]:
+        return {key: value for key, value in record.items() if key not in ignored}
+
+    return body(first) == body(second)
+
+
+def heads(records: Sequence[Mapping[str, Any]]) -> list[str]:
+    """The ids no other record supersedes: the current record(s) of a family."""
+    superseded = {
+        family_id for record in records for family_id in superseded_ids(record)
+    }
+    return sorted(
+        record["family_id"]
+        for record in records
+        if record["family_id"] not in superseded
+    )
 
 
 def record_text(record: Mapping[str, Any]) -> str:
@@ -849,7 +1038,9 @@ def record_text(record: Mapping[str, Any]) -> str:
     return _canonical(record)
 
 
-def default_output_path(record: Mapping[str, Any]) -> Path:
+def default_output_path(
+    record: Mapping[str, Any], directory: Path | None = None
+) -> Path:
     definition = record["family_definition"]
     suite = (
         f"{definition['suite_id']}@{definition['suite_version']}"
@@ -857,7 +1048,7 @@ def default_output_path(record: Mapping[str, Any]) -> Path:
         else "mixed-suites"
     )
     name = f"{suite}.{definition['compared_dimension']}.{record['family_id'][:12]}.json"
-    return COMPARISONS_DIR / name
+    return (COMPARISONS_DIR if directory is None else directory) / name
 
 
 # --------------------------------------------------------------------------
@@ -901,12 +1092,125 @@ def _read_rows(path: Path) -> list[dict[str, Any]]:
         raise ComparisonInputError(f"{path} is not JSON lines: {error}") from error
 
 
+def _side_from_declaration(entry: Any, role: str, position: int) -> Side:
+    where = entry.get("where", {}) if isinstance(entry, dict) else None
+    if (
+        not isinstance(entry, dict)
+        or not isinstance(entry.get("run_id"), str)
+        or not isinstance(where, dict)
+        or not all(isinstance(value, str) for value in where.values())
+    ):
+        raise ComparisonInputError(
+            f"comparison {position}: {role} is not "
+            '{"run_id": "...", "where": {"field": "value"}}'
+        )
+    return Side(entry["run_id"], dict(where))
+
+
+def read_declaration(path: Path) -> list[tuple[Side, Side]]:
+    """The comparisons a declaration file names, as (reference, candidate) sides.
+
+    The file is a JSON array of `{"reference": {"run_id", "where"},
+    "candidate": {...}}` objects; `where` is optional.
+    """
+    try:
+        declared = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as error:
+        raise ComparisonInputError(
+            f"cannot read comparisons from {path}: {error}"
+        ) from error
+    except json.JSONDecodeError as error:
+        raise ComparisonInputError(f"{path} is not JSON: {error}") from error
+    if not isinstance(declared, list) or not declared:
+        raise ComparisonInputError(
+            f"{path} does not hold a non-empty array of comparisons"
+        )
+    pairs = []
+    for position, entry in enumerate(declared, start=1):
+        if not isinstance(entry, dict):
+            raise ComparisonInputError(f"comparison {position} is not an object")
+        pairs.append(
+            (
+                _side_from_declaration(entry.get("reference"), "reference", position),
+                _side_from_declaration(entry.get("candidate"), "candidate", position),
+            )
+        )
+    return pairs
+
+
+def read_family_records(directory: Path) -> list[dict[str, Any]]:
+    """Every family record published under `directory`, any record version."""
+    records = []
+    for path in sorted(directory.glob("*.json")) if directory.is_dir() else []:
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as error:
+            raise ComparisonInputError(f"{path} is not JSON: {error}") from error
+        if isinstance(record, dict) and record.get("record_type") == RECORD_TYPE:
+            records.append(record)
+    return records
+
+
+def resolve_family_record(
+    members: Sequence[Mapping[str, Any]],
+    published: Sequence[Mapping[str, Any]],
+    *,
+    alpha: float,
+    rows_source: str,
+) -> tuple[dict[str, Any], list[str] | None]:
+    """The record this analysis publishes, and what supersedes it if published.
+
+    A published record of the same family whose content equals this analysis
+    but for its id is returned as is, with the ids of the records superseding
+    it (empty when it is current): the same bundle and definition give the
+    identical record, even after the family grew. Otherwise the new record
+    supersedes every current record of its family by id, and only when it
+    holds every comparison they hold: a family grows, it never shrinks, so no
+    comparison can leave the current record to escape the adjustment. None is
+    ever edited. `None` in second place means the record is new.
+    """
+    fresh = build_family_record(members, alpha=alpha, rows_source=rows_source)
+    comparable = json.loads(record_text(fresh))
+    family = [record for record in published if family_key(record) == family_key(fresh)]
+    for record in family:
+        if same_content(record, comparable):
+            successors = sorted(
+                other["family_id"]
+                for other in family
+                if record["family_id"] in superseded_ids(other)
+            )
+            return dict(record), successors
+    current = heads(family)
+    declared = {member_key(member) for member in members}
+    missing = sorted(
+        {
+            member_key(member)
+            for record in family
+            if record["family_id"] in current
+            for member in record["members"]
+        }
+        - declared
+    )
+    if missing:
+        raise FamilyError(
+            "the current record of this family holds comparisons this invocation "
+            "does not declare: "
+            + "; ".join(f"{key[0]} {key[1]} vs {key[2]} {key[3]}" for key in missing)
+            + "; a family only grows, so declare every one of them"
+        )
+    superseding = build_family_record(
+        members, alpha=alpha, rows_source=rows_source, supersedes=current
+    )
+    return superseding, None
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="wave-local-ai-v2-compare",
         description=(
-            "Compare two published configurations on the same items: write a "
-            "family record holding a paired test or a refusal."
+            "Compare published configurations on the same items: write one "
+            "family record holding every declared comparison, each a paired "
+            "test or a refusal, with Holm-adjusted p-values over the family."
         ),
     )
     parser.add_argument(
@@ -914,8 +1218,8 @@ def _parser() -> argparse.ArgumentParser:
         default=settings.DEFAULT_QUALITY_REFERENCE_PATH,
         help="published quality rows (default: the reference bundle)",
     )
-    parser.add_argument("--reference", required=True, help="reference run_id")
-    parser.add_argument("--candidate", required=True, help="candidate run_id")
+    parser.add_argument("--reference", help="reference run_id (one comparison)")
+    parser.add_argument("--candidate", help="candidate run_id (one comparison)")
     parser.add_argument(
         "--reference-where",
         action="append",
@@ -931,48 +1235,115 @@ def _parser() -> argparse.ArgumentParser:
         help="row field selecting the candidate side within its run (repeatable)",
     )
     parser.add_argument(
+        "--comparisons",
+        default=None,
+        metavar="JSON",
+        help=(
+            "declaration file: a JSON array of {reference: {run_id, where}, "
+            "candidate: {...}}; replaces --reference/--candidate"
+        ),
+    )
+    parser.add_argument(
         "--dimension", choices=sorted(DIMENSIONS), default=DEFAULT_DIMENSION
     )
     parser.add_argument("--alpha", type=float, default=DEFAULT_ALPHA)
     parser.add_argument(
+        "--records-dir",
+        default=None,
+        help=(
+            "published family records a new record supersedes "
+            "(default: aidd_docs/results/comparisons/)"
+        ),
+    )
+    parser.add_argument(
         "--output",
         default=None,
-        help="record path (default: aidd_docs/results/comparisons/<name>.json)",
+        help="record path (default: <records-dir>/<name>.json)",
     )
     return parser
 
 
+def _declared_pairs(args: argparse.Namespace) -> list[tuple[Side, Side]]:
+    if args.comparisons is not None:
+        if (
+            args.reference is not None
+            or args.candidate is not None
+            or args.reference_where
+            or args.candidate_where
+        ):
+            raise ComparisonInputError(
+                "--comparisons replaces --reference/--candidate and their "
+                "selectors; give one or the other"
+            )
+        return read_declaration(Path(args.comparisons))
+    if args.reference is None or args.candidate is None:
+        raise ComparisonInputError("give --reference and --candidate, or --comparisons")
+    return [
+        (
+            Side(args.reference, _parse_selector(args.reference_where)),
+            Side(args.candidate, _parse_selector(args.candidate_where)),
+        )
+    ]
+
+
+def _member_line(member: Mapping[str, Any]) -> str:
+    refused = ", ".join(
+        f"{entry['field']} ({entry['reason']})" for entry in member["refusal"]
+    )
+    sides = " vs ".join(
+        member[f"{side}_run_id"][:8]
+        + "".join(
+            f" {key}={value}" for key, value in member[f"{side}_selector"].items()
+        )
+        for side in ("reference", "candidate")
+    )
+    return f"  {sides}: {member['comparison_kind']}, verdict {member['verdict']}" + (
+        f"; refused on {refused}" if refused else ""
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run one comparison and write its family record, write-once.
+    """Run the declared comparisons and write their one family record.
 
     Exits 0 when the record is written or already published byte for byte
-    (a refusal is a published record, not an error), 1 on unusable input or
-    an existing file with different content.
+    (a refusal is a published record, not an error), 1 on unusable input,
+    comparisons spanning two families, or an existing file with different
+    content. No published record is ever rewritten.
     """
     args = _parser().parse_args(argv)
     try:
         if not 0 < args.alpha < 1:
             raise ComparisonInputError(f"--alpha {args.alpha} is not in (0, 1)")
-        reference = Side(args.reference, _parse_selector(args.reference_where))
-        candidate = Side(args.candidate, _parse_selector(args.candidate_where))
+        pairs = _declared_pairs(args)
         rows_path = Path(args.rows)
         rows = _read_rows(rows_path)
-        member = compare_sides(
-            select_side(rows, reference),
-            select_side(rows, candidate),
-            reference,
-            candidate,
-            dimension=args.dimension,
+        members = [
+            compare_sides(
+                select_side(rows, reference),
+                select_side(rows, candidate),
+                reference,
+                candidate,
+                dimension=args.dimension,
+                alpha=args.alpha,
+            )
+            for reference, candidate in pairs
+        ]
+        records_dir = (
+            Path(args.records_dir) if args.records_dir is not None else COMPARISONS_DIR
+        )
+        record, successors = resolve_family_record(
+            members,
+            read_family_records(records_dir),
             alpha=args.alpha,
+            rows_source=rows_source_name(rows_path),
         )
     except ComparisonInputError as error:
         print(str(error), file=sys.stderr)
         return 1
-    record = build_family_record(
-        member, alpha=args.alpha, rows_source=rows_source_name(rows_path)
-    )
     text = record_text(record)
-    out_path = Path(args.output) if args.output else default_output_path(record)
+    out_path = (
+        Path(args.output) if args.output else default_output_path(record, records_dir)
+    )
     if out_path.exists():
         if out_path.read_text(encoding="utf-8") != text:
             print(
@@ -986,13 +1357,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(text, encoding="utf-8", newline="\n")
         status = "written"
-    refused = ", ".join(
-        f"{entry['field']} ({entry['reason']})" for entry in member["refusal"]
-    )
+    supersedes = ", ".join(family_id[:12] for family_id in superseded_ids(record))
     print(
-        f"{out_path} {status}: {member['comparison_kind']}, verdict "
-        f"{member['verdict']}" + (f"; refused on {refused}" if refused else "")
+        f"{out_path} {status}: family {record['family_id'][:12]} of "
+        f"{record['family_size']} ({record['tested_count']} tested, "
+        f"{record['refused_count']} refused, Holm over "
+        f"{record['multiplicity_correction']['adjustment_size']})"
+        + (f"; supersedes {supersedes}" if supersedes else "")
+        + ("; identical to a published record" if successors is not None else "")
+        + (
+            "; superseded by " + ", ".join(i[:12] for i in successors)
+            if successors
+            else ""
+        )
     )
+    for member in record["members"]:
+        print(_member_line(member))
     return 0
 
 

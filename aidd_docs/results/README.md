@@ -265,14 +265,14 @@ declaration. A reader who needs the claim checked has to check it against the na
 ## Paired comparisons: both committed pairs are refused (2026-10-02)
 
 `comparisons/` holds the comparison records `wave-local-ai-v2-compare` writes over this
-bundle. They are derived artifacts, not a sixth input: each one is recomputed from
-`quality-reference.jsonl` alone, and `tests/test_comparison.py` re-runs the command for
-every committed record and requires identical bytes. A record is a family of one
-comparison (its Holm-adjusted p stated equal to its raw p), names its reference and
-candidate by `run_id` plus the row field that selects each side within the run, and holds
-either a paired test chosen by scoring kind (McNemar's exact test for `correct`, Wilcoxon
-signed-rank for `item_score`) or a refusal naming every field that makes the sides
-incomparable.
+bundle. They are derived artifacts, not a sixth input, and none is ever rewritten. The two
+records below are `record_version` `"1"`: each is a family of one comparison (its
+Holm-adjusted p stated equal to its raw p), names its reference and candidate by `run_id`
+plus the row field that selects each side within the run, and holds either a paired test
+chosen by scoring kind (McNemar's exact test for `correct`, Wilcoxon signed-rank for
+`item_score`) or a refusal naming every field that makes the sides incomparable. Both are
+now superseded by the family record of the next section and kept unchanged;
+`tests/test_comparison.py` checks each still hashes to its own `family_id`.
 
 The bundle holds two pairable comparisons, each `Qwen3.6-35B-A3B` (reference) against
 `mistral-small-2603` (candidate) over the same 20 items of
@@ -304,6 +304,44 @@ item only Qwen got right and 4 only mistral got right, McNemar exact p = 0.375, 
 distinguishable` at alpha 0.05: a 15-point accuracy gap on 20 items is not
 distinguishable from noise. Once the bundle is regenerated with `thinking_policy` on
 every row, the same command over the new pairs publishes their tests.
+
+### One family record holds both pairs (2026-10-02)
+
+A multiplicity correction means nothing until the family is declared, so the unit published
+is the family, not the pair (PRD Methodology 24). One invocation of the command writes one
+immutable record holding every comparison it ran, the family definition (one suite crossed
+with one compared dimension, closed at analysis time), its size, how many members were
+tested and how many refused, and each member's Holm-adjusted p computed over exactly those
+members, with the raw p beside it and the verdict read against the adjusted p. Holm runs
+over every member that was not refused, so `multiplicity_correction.adjustment_size`
+equals `tested_count`: a tested member whose p is left null with a named reason enters as
+p = 1 (it can only raise the others' adjusted p) and keeps its own adjusted p null; a
+refused member carries no p and enters no count. A family that grows is a new record
+listing the ids it `supersedes`; the command finds the current record of the same
+definition in `comparisons/` itself. A family only grows: a declaration that leaves out
+any comparison the current record holds is refused (exit 1, nothing written, the missing
+comparisons named), so no pair can be re-published alone, outside the adjustment it was
+first counted in. A re-run over the same bundle and declaration returns the published
+record byte for byte, and says which record supersedes it if it is no longer current. A
+change of `--alpha` alone, over the same comparisons, also writes a superseding record:
+the family is the same comparisons, read at a different level.
+
+```
+uv run wave-local-ai-v2-compare --comparisons <declaration.json>
+```
+
+The declaration is a JSON array of `{"reference": {"run_id", "where"}, "candidate": {...}}`;
+the one used here is
+`aidd_docs/tasks/2026_10/2026_10_01_comparison-family-adjusted-and-superseded/evidence/classification-support-routing@2.model.comparisons.json`.
+
+| Record | Family | Size | Tested | Refused | Holm over | Supersedes |
+| --- | --- | --- | --- | --- | --- | --- |
+| `classification-support-routing@2.model.1e1658cbe073.json` | `classification-support-routing@2` x `model` | 2 | 0 | 2 | 0 | `d4641d06a525`, `2ef9fd3581d2` |
+
+Both members are still refused on `thinking_policy`, for the reason above, so the record
+adjusts nothing: it publishes the family, not a finding. `tests/test_comparison.py`
+recomputes it from `quality-reference.jsonl` with only the two records it supersedes on
+file and requires identical bytes.
 
 ## The use-case coverage record, and why it is not here yet
 
