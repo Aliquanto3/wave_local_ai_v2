@@ -558,7 +558,10 @@ def _item_by_id(item_id: str) -> ProbeItem:
 
 
 def _generate_local_outputs(
-    settings: Settings, flags: list[str], prompts: list[str]
+    settings: Settings,
+    flags: list[str],
+    prompts: list[str],
+    roster_entry: roster.RosterEntry,
 ) -> tuple[list[_ProbeCompletion], list[str], str]:
     """One llama-server launch, one chat completion per probe item.
 
@@ -568,19 +571,31 @@ def _generate_local_outputs(
     item was rendered to, and the template that rendered them -- the row
     publishes the first two and the hash of the third. `prompts` are the
     items' prompts as the declared variant left them, one per item.
+
+    The entry's thinking control is resolved before the server launches and
+    verified against the loaded template before the first item, exactly as
+    `quality_cli` does: these rows publish `thinking_policy` too.
     """
     completions: list[_ProbeCompletion] = []
     rendered_prompts: list[str] = []
     base_url = f"http://{server.HOST}:{server.PORT}"
+    thinking_kwargs = local_client.thinking_kwargs(THINKING_POLICY, roster_entry)
 
     with server.running_server(settings.llama_server_path, flags):
         template = local_client.chat_template(base_url, timeout=REQUEST_TIMEOUT_S)
+        if thinking_kwargs:
+            local_client.verify_thinking_control(
+                base_url,
+                roster_entry,
+                chat_template=template,
+                timeout=REQUEST_TIMEOUT_S,
+            )
         for prompt in prompts:
             rendered_prompts.append(
                 local_client.render_prompt(
                     base_url,
                     prompt,
-                    thinking_policy=THINKING_POLICY,
+                    thinking_kwargs=thinking_kwargs,
                     timeout=REQUEST_TIMEOUT_S,
                 )
             )
@@ -589,7 +604,7 @@ def _generate_local_outputs(
                 prompt,
                 max_tokens=MAX_OUTPUT_TOKENS,
                 sampling=LOCAL_SAMPLING,
-                thinking_policy=THINKING_POLICY,
+                thinking_kwargs=thinking_kwargs,
                 timeout=REQUEST_TIMEOUT_S,
             )
             completions.append(
@@ -795,7 +810,9 @@ def _run_local_batch(
         for item in JUDGE_PROBE_ITEMS
     ]
     local_batch, energy = measure_energy(
-        lambda: _generate_local_outputs(settings, flags, variant_prompts),
+        lambda: _generate_local_outputs(
+            settings, flags, variant_prompts, context.roster_entry
+        ),
         country_iso_code=settings.emission_country_iso_code,
     )
     completions, rendered_prompts, chat_template = local_batch

@@ -71,6 +71,24 @@ def test_four_tables_hold_one_row_per_bundle_record(committed_export: Path) -> N
         assert len(_read_csv(committed_export / f"{table}.csv")) == count, table
 
 
+def test_the_roster_table_holds_each_thinking_control_as_one_json_cell(
+    committed_export: Path,
+) -> None:
+    # One column whatever the control's spelling: a flattened object would
+    # add a column per family's argument names.
+    entries = json.loads(COMMITTED.roster.read_text(encoding="utf-8"))["entries"]
+    header = _header(committed_export / "roster.csv")
+
+    assert [name for name in header if name.startswith("thinking_control")] == [
+        "thinking_control"
+    ]
+    for row in _read_csv(committed_export / "roster.csv"):
+        assert (
+            json.loads(row["thinking_control"])
+            == entries[row["entry_id"]]["thinking_control"]
+        )
+
+
 def test_the_manifest_declares_the_schema_the_bundle_carries(
     committed_export: Path,
 ) -> None:

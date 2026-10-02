@@ -13,11 +13,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from wave_local_ai_v2 import local_client, prompt_provenance, row_contract
+from wave_local_ai_v2 import local_client, prompt_provenance, roster, row_contract
 
 BASE = "http://127.0.0.1:8080"
 TIMEOUT = 30.0
 SAMPLING: dict[str, Any] = {"seed": 1, "temperature": 0}
+# The control the four shipped Qwen entries declare.
+QWEN_CONTROL: dict[str, Any] = {"chat_template_kwargs": {"enable_thinking": False}}
 
 _CHAT_BODY = {
     "choices": [
@@ -56,7 +58,7 @@ def _complete(**overrides: Any) -> local_client.LocalCompletion:
             "hello",
             max_tokens=32,
             sampling=SAMPLING,
-            thinking_policy=row_contract.THINKING_POLICY_DISABLED,
+            thinking_kwargs=QWEN_CONTROL,
             timeout=TIMEOUT,
             **overrides,
         )
@@ -97,7 +99,7 @@ def test_an_empty_answer_is_returned_rather_than_refused() -> None:
             "hello",
             max_tokens=32,
             sampling=SAMPLING,
-            thinking_policy=row_contract.THINKING_POLICY_ALLOWED,
+            thinking_kwargs={},
             timeout=TIMEOUT,
         )
 
@@ -123,7 +125,7 @@ def test_a_malformed_chat_body_raises_the_named_error(body: Any) -> None:
             "hello",
             max_tokens=32,
             sampling=SAMPLING,
-            thinking_policy=row_contract.THINKING_POLICY_DISABLED,
+            thinking_kwargs=QWEN_CONTROL,
             timeout=TIMEOUT,
         )
 
@@ -136,7 +138,7 @@ def test_apply_template_returns_the_rendered_prompt() -> None:
             local_client.render_prompt(
                 BASE,
                 "hello",
-                thinking_policy=row_contract.THINKING_POLICY_ALLOWED,
+                thinking_kwargs={},
                 timeout=TIMEOUT,
             )
             == rendered
@@ -148,7 +150,7 @@ def test_apply_template_without_a_prompt_key_raises() -> None:
         local_client.render_prompt(
             BASE,
             "hello",
-            thinking_policy=row_contract.THINKING_POLICY_ALLOWED,
+            thinking_kwargs={},
             timeout=TIMEOUT,
         )
 
@@ -168,58 +170,6 @@ def test_props_without_a_usable_template_raises(payload: Any) -> None:
         local_client.chat_template(BASE, timeout=TIMEOUT)
 
 
-def test_disabled_sends_the_thinking_kwargs_on_both_calls() -> None:
-    expected = {"chat_template_kwargs": {"enable_thinking": False}}
-
-    with _post(_CHAT_BODY) as post:
-        local_client.complete_chat(
-            BASE,
-            "hello",
-            max_tokens=32,
-            sampling=SAMPLING,
-            thinking_policy=row_contract.THINKING_POLICY_DISABLED,
-            timeout=TIMEOUT,
-        )
-        chat_body = post.call_args.kwargs["json"]
-
-    with _post({"prompt": "rendered"}) as post:
-        local_client.render_prompt(
-            BASE,
-            "hello",
-            thinking_policy=row_contract.THINKING_POLICY_DISABLED,
-            timeout=TIMEOUT,
-        )
-        template_body = post.call_args.kwargs["json"]
-
-    # Both, and identically: a prompt rendered under one policy and answered
-    # under another would put a string on the row that the answering call
-    # never used.
-    assert chat_body["chat_template_kwargs"] == expected["chat_template_kwargs"]
-    assert template_body["chat_template_kwargs"] == expected["chat_template_kwargs"]
-
-
-def test_allowed_sends_the_thinking_kwargs_on_neither_call() -> None:
-    with _post(_CHAT_BODY) as post:
-        local_client.complete_chat(
-            BASE,
-            "hello",
-            max_tokens=32,
-            sampling=SAMPLING,
-            thinking_policy=row_contract.THINKING_POLICY_ALLOWED,
-            timeout=TIMEOUT,
-        )
-        assert "chat_template_kwargs" not in post.call_args.kwargs["json"]
-
-    with _post({"prompt": "rendered"}) as post:
-        local_client.render_prompt(
-            BASE,
-            "hello",
-            thinking_policy=row_contract.THINKING_POLICY_ALLOWED,
-            timeout=TIMEOUT,
-        )
-        assert "chat_template_kwargs" not in post.call_args.kwargs["json"]
-
-
 def test_the_chat_request_carries_the_cap_and_every_pinned_sampler_key() -> None:
     with _post(_CHAT_BODY) as post:
         local_client.complete_chat(
@@ -227,7 +177,7 @@ def test_the_chat_request_carries_the_cap_and_every_pinned_sampler_key() -> None
             "hello",
             max_tokens=32,
             sampling={"seed": 1, "temperature": 0, "top_k": 0, "top_p": 1.0},
-            thinking_policy=row_contract.THINKING_POLICY_DISABLED,
+            thinking_kwargs=QWEN_CONTROL,
             timeout=TIMEOUT,
         )
         body = post.call_args.kwargs["json"]
@@ -238,8 +188,204 @@ def test_the_chat_request_carries_the_cap_and_every_pinned_sampler_key() -> None
         assert key in body
 
 
+# --------------------------------------------------------------------------
+# The thinking control: the entry's declaration, never a module default.
+# --------------------------------------------------------------------------
+
+TEMPLATE = "{% for m in messages %}<|im_start|>{{ m.content }}{% endfor %}"
+
+
+def _entry(**declared: Any) -> roster.RosterEntry:
+    return roster.RosterEntry(
+        entry_id="fake-entry",
+        repo="fake/repo",
+        revision="main",
+        file="fake.gguf",
+        display_id="Fake",
+        quant="Q8_0",
+        sha256="0" * 64,
+        architecture=roster.Architecture(
+            kind="dense", expert_count=0, active_params_b=0.6
+        ),
+        server_flags={},
+        validated_host={},
+        **declared,
+    )
+
+
+def _render_router(*, honours_control: bool) -> Any:
+    """A stubbed `/apply-template` whose output does or does not move with the
+    control, and a chat endpoint that counts as a call if it is ever reached."""
+
+    def route(url: str, *args: Any, **kwargs: Any) -> MagicMock:
+        body = kwargs["json"]
+        if url.endswith(prompt_provenance.LOCAL_APPLY_TEMPLATE_ENDPOINT):
+            rendered = f"<|im_start|>user\n{body['messages'][0]['content']}"
+            if honours_control and "chat_template_kwargs" in body:
+                rendered += "\n<think>\n\n</think>\n\n"
+            return _response({"prompt": rendered})
+        return _response(_CHAT_BODY)
+
+    return route
+
+
+@pytest.mark.parametrize(
+    "declared",
+    [{}, {"thinking_control": "none"}, {"thinking_control": QWEN_CONTROL}],
+    ids=["undeclared", "none", "object"],
+)
+def test_allowed_sends_nothing_whatever_the_entry_declares(declared: Any) -> None:
+    assert (
+        local_client.thinking_kwargs(
+            row_contract.THINKING_POLICY_ALLOWED, _entry(**declared)
+        )
+        == {}
+    )
+
+
+def test_disabled_sends_the_entrys_declared_control_as_a_copy() -> None:
+    control = {"reasoning_effort": "none"}
+
+    kwargs = local_client.thinking_kwargs(
+        row_contract.THINKING_POLICY_DISABLED, _entry(thinking_control=control)
+    )
+
+    assert kwargs == control
+    assert kwargs is not control
+
+
+def test_disabled_sends_nothing_for_an_entry_declaring_none() -> None:
+    assert (
+        local_client.thinking_kwargs(
+            row_contract.THINKING_POLICY_DISABLED,
+            _entry(thinking_control=roster.THINKING_CONTROL_NONE),
+        )
+        == {}
+    )
+
+
+def test_disabled_refuses_an_entry_that_declares_no_control() -> None:
+    # No fallback to the Qwen spelling: it is the one a non-Qwen template
+    # would silently ignore.
+    with pytest.raises(
+        local_client.LocalRequestError,
+        match="'fake-entry' declares no thinking_control",
+    ):
+        local_client.thinking_kwargs(row_contract.THINKING_POLICY_DISABLED, _entry())
+
+
+def test_disabled_refuses_a_malformed_control_built_in_code() -> None:
+    with pytest.raises(local_client.LocalRequestError, match="malformed"):
+        local_client.thinking_kwargs(
+            row_contract.THINKING_POLICY_DISABLED, _entry(thinking_control="off")
+        )
+
+
 def test_an_unknown_thinking_policy_raises_rather_than_sending_nothing() -> None:
     with pytest.raises(local_client.LocalRequestError, match="unknown thinking_policy"):
-        local_client.render_prompt(
-            BASE, "hello", thinking_policy="maybe", timeout=TIMEOUT
+        local_client.thinking_kwargs("maybe", _entry(thinking_control=QWEN_CONTROL))
+
+
+def test_the_declared_control_is_what_both_calls_send() -> None:
+    control = {"reasoning_effort": "none"}
+
+    with _post(_CHAT_BODY) as post:
+        local_client.complete_chat(
+            BASE,
+            "hello",
+            max_tokens=32,
+            sampling=SAMPLING,
+            thinking_kwargs=control,
+            timeout=TIMEOUT,
         )
+        chat_body = post.call_args.kwargs["json"]
+    with _post({"prompt": "rendered"}) as post:
+        local_client.render_prompt(
+            BASE, "hello", thinking_kwargs=control, timeout=TIMEOUT
+        )
+        template_body = post.call_args.kwargs["json"]
+
+    # Both, and identically: a prompt rendered under one control and answered
+    # under another would put a string on the row the answering call never used.
+    for body in (chat_body, template_body):
+        assert body["reasoning_effort"] == "none"
+        assert "chat_template_kwargs" not in body
+
+
+def test_no_control_sends_no_thinking_argument_on_either_call() -> None:
+    with _post(_CHAT_BODY) as post:
+        local_client.complete_chat(
+            BASE,
+            "hello",
+            max_tokens=32,
+            sampling=SAMPLING,
+            thinking_kwargs={},
+            timeout=TIMEOUT,
+        )
+        assert "chat_template_kwargs" not in post.call_args.kwargs["json"]
+    with _post({"prompt": "rendered"}) as post:
+        local_client.render_prompt(BASE, "hello", thinking_kwargs={}, timeout=TIMEOUT)
+        assert "chat_template_kwargs" not in post.call_args.kwargs["json"]
+
+
+def test_a_control_the_template_ignores_is_refused_before_any_generation() -> None:
+    with (
+        patch(
+            "wave_local_ai_v2.local_client.requests.post",
+            side_effect=_render_router(honours_control=False),
+        ) as post,
+        pytest.raises(local_client.ThinkingControlRefused) as refused,
+    ):
+        local_client.verify_thinking_control(
+            BASE,
+            _entry(thinking_control=QWEN_CONTROL),
+            chat_template=TEMPLATE,
+            timeout=TIMEOUT,
+        )
+
+    message = str(refused.value)
+    assert "'fake-entry'" in message
+    assert '{"chat_template_kwargs": {"enable_thinking": false}}' in message
+    assert prompt_provenance.template_hash(TEMPLATE) in message
+    # Two renders and nothing else: no generation was asked for.
+    urls = [call.args[0] for call in post.call_args_list]
+    assert urls == [f"{BASE}{prompt_provenance.LOCAL_APPLY_TEMPLATE_ENDPOINT}"] * 2
+    bodies = [call.kwargs["json"] for call in post.call_args_list]
+    assert bodies[0]["chat_template_kwargs"] == QWEN_CONTROL["chat_template_kwargs"]
+    assert "chat_template_kwargs" not in bodies[1]
+    for body in bodies:
+        assert body["messages"] == [
+            {"role": "user", "content": local_client.THINKING_PROBE_MESSAGE}
+        ]
+
+
+def test_a_control_that_changes_the_render_passes_with_both_strings() -> None:
+    with patch(
+        "wave_local_ai_v2.local_client.requests.post",
+        side_effect=_render_router(honours_control=True),
+    ):
+        probe = local_client.verify_thinking_control(
+            BASE,
+            _entry(thinking_control=QWEN_CONTROL),
+            chat_template=TEMPLATE,
+            timeout=TIMEOUT,
+        )
+
+    assert probe["with_control"] != probe["without_control"]
+    assert probe["with_control"].endswith("<think>\n\n</think>\n\n")
+
+
+@pytest.mark.parametrize(
+    "declared",
+    [{}, {"thinking_control": "none"}],
+    ids=["undeclared", "none"],
+)
+def test_only_an_object_control_can_be_verified(declared: Any) -> None:
+    with (
+        patch("wave_local_ai_v2.local_client.requests.post") as post,
+        pytest.raises(local_client.LocalRequestError, match="no request arguments"),
+    ):
+        local_client.verify_thinking_control(
+            BASE, _entry(**declared), chat_template=TEMPLATE, timeout=TIMEOUT
+        )
+    assert post.call_count == 0

@@ -644,6 +644,13 @@ ROSTER_ENTRY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
         "The roster entry declares no family (the column name is then listed "
         "in fields_not_carried).",
     ),
+    ("thinking_control",): FieldDoc(
+        "Request arguments that disable reasoning under the entry's own chat "
+        "template, or none for a model that does not reason.",
+        f"{_JSON_OBJECT}, or the identifier none",
+        "The roster entry declares no thinking control (the column name is then "
+        "listed in fields_not_carried); it cannot run under a disabled policy.",
+    ),
     ("architecture", "kind"): FieldDoc("Architecture: moe or dense.", _ID),
     ("architecture", "expert_count"): FieldDoc(
         "Experts per MoE layer (0 for dense).", _COUNT
@@ -1248,7 +1255,16 @@ def build_tables(bundle: Bundle) -> dict[str, Table]:
                     {"entry_id": key},
                     _NEVER_EMPTY,
                 ),
-                Source("", "roster entry", ROSTER_ENTRY_FIELDS, entry, _RESOLVED_EMPTY),
+                Source(
+                    "",
+                    "roster entry",
+                    ROSTER_ENTRY_FIELDS,
+                    entry,
+                    _RESOLVED_EMPTY,
+                    # One cell, not one column per control spelling: the
+                    # object's keys differ by family.
+                    json_cells=frozenset({"thinking_control"}),
+                ),
             ]
             for key, entry in bundle.roster_entries.items()
         ],

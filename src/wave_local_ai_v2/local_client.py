@@ -23,13 +23,20 @@ through their own template with no policy sent. The same call with
 the argument decides whether a score exists, which makes it the suite's to
 declare rather than this module's to assume.
 
-Of the four reasoning controls b10537 documents, `chat_template_kwargs` is the
-one used, and the choice is evidence-backed rather than stylistic:
-`reasoning_budget: 0` had no effect as a request parameter, `reasoning_format:
-"none"` only stops the envelope being parsed out of `content`, and
-`reasoning_effort: "none"` worked on both models tested while their own
-`chat_template_caps` reports `supports_reasoning_effort: false` -- a benchmark
-should not rest on a capability the server says is absent.
+Which request arguments disable reasoning is the roster entry's declaration
+(`thinking_control`), not this module's: a Jinja chat template either declares
+a kwarg or silently ignores it, so a spelling that works for one family renders
+nothing for another while the row still publishes `thinking_policy:
+"disabled"`. The four shipped Qwen entries declare `chat_template_kwargs:
+{"enable_thinking": false}`, and that choice was evidence-backed: of the four
+reasoning controls b10537 documents, `reasoning_budget: 0` had no effect as a
+request parameter, `reasoning_format: "none"` only stops the envelope being
+parsed out of `content`, and `reasoning_effort: "none"` worked on both models
+tested while their own `chat_template_caps` reports
+`supports_reasoning_effort: false` -- a benchmark should not rest on a
+capability the server says is absent. `verify_thinking_control` is what makes
+a declaration more than a claim: it renders one fixed message with and without
+the control and refuses when the two strings are byte-identical.
 
 No retry logic lives here. The local path has no retryable error type, and a
 second retry policy beside `retry.py` would be one too many.
@@ -37,11 +44,14 @@ second retry policy beside `retry.py` would be one too many.
 
 from __future__ import annotations
 
+import copy
+import json
+from collections.abc import Mapping
 from typing import Any, TypedDict
 
 import requests
 
-from wave_local_ai_v2 import prompt_provenance, row_contract
+from wave_local_ai_v2 import prompt_provenance, roster, row_contract
 
 # `finish_reason` values that mean the answer was cut short rather than
 # completed. Named here for the same reason `mistral_client` and
@@ -50,8 +60,29 @@ from wave_local_ai_v2 import prompt_provenance, row_contract
 TRUNCATING_FINISH_REASONS = frozenset({"length"})
 
 
+# The one message `verify_thinking_control` renders. Fixed, so the two strings
+# a verification records are comparable across entries and runs; never an
+# item, so no suite content leaks into a check that precedes the suite.
+THINKING_PROBE_MESSAGE = "Reply with the single word: ready."
+
+
 class LocalRequestError(RuntimeError):
     """Raised when a local llama-server response has no usable content."""
+
+
+class ThinkingControlRefused(LocalRequestError):
+    """Raised when an entry's declared thinking control changes nothing.
+
+    A `LocalRequestError` so every caller that already turns a local failure
+    into a one-line refusal does the same here, before any item is generated.
+    """
+
+
+class ThinkingControlProbe(TypedDict):
+    """The two renders one verification compared, for the evidence it leaves."""
+
+    with_control: str
+    without_control: str
 
 
 class LocalCompletion(TypedDict):
@@ -64,20 +95,90 @@ class LocalCompletion(TypedDict):
     endpoint: str
 
 
-def _thinking_kwargs(thinking_policy: str) -> dict[str, Any]:
-    """The request arguments `thinking_policy` maps to, for both call shapes.
+def thinking_kwargs(thinking_policy: str, entry: roster.RosterEntry) -> dict[str, Any]:
+    """The request arguments `thinking_policy` maps to under `entry`'s template.
 
-    The one place the argument's spelling exists. `allowed` sends nothing,
-    which is the server's own default, rather than sending an explicit
-    `enable_thinking: true` a template might not declare.
+    Resolved once per batch and sent on both call shapes, so a prompt can never
+    be rendered under one control and answered under another. `allowed` sends
+    nothing, which is the server's own default, rather than an explicit
+    "think" argument a template might not declare. `disabled` sends the
+    entry's declared control, nothing for a `none` declaration, and refuses an
+    entry that declares neither -- there is no spelling to fall back on.
     """
-    if thinking_policy == row_contract.THINKING_POLICY_DISABLED:
-        return {"chat_template_kwargs": {"enable_thinking": False}}
     if thinking_policy == row_contract.THINKING_POLICY_ALLOWED:
         return {}
+    if thinking_policy != row_contract.THINKING_POLICY_DISABLED:
+        raise LocalRequestError(
+            f"unknown thinking_policy {thinking_policy!r}: expected one of "
+            f"{sorted(row_contract.THINKING_POLICIES)}"
+        )
+    control = entry.thinking_control
+    if control is None:
+        raise LocalRequestError(
+            f"roster entry {entry.entry_id!r} declares no thinking_control: it "
+            f"cannot run under thinking_policy {thinking_policy!r} (declare the "
+            "request arguments that disable reasoning under its template, or "
+            f"{roster.THINKING_CONTROL_NONE!r} for a model that does not reason)"
+        )
+    if control == roster.THINKING_CONTROL_NONE:
+        return {}
+    if isinstance(control, dict) and control:
+        # A copy: the roster entry is shared, and a request body is not its to
+        # own.
+        return copy.deepcopy(control)
+    # `load_roster` refuses this already; an entry built in code is not
+    # exempt from the same shape.
     raise LocalRequestError(
-        f"unknown thinking_policy {thinking_policy!r}: expected one of "
-        f"{sorted(row_contract.THINKING_POLICIES)}"
+        f"roster entry {entry.entry_id!r}: malformed thinking_control {control!r}"
+    )
+
+
+def verify_thinking_control(
+    base_url: str,
+    entry: roster.RosterEntry,
+    *,
+    chat_template: str,
+    timeout: float,
+) -> ThinkingControlProbe:
+    """Prove `entry`'s declared control changes the prompt its template renders.
+
+    Renders `THINKING_PROBE_MESSAGE` through `/apply-template` with the control
+    and without it. Two byte-identical strings mean the template ignores the
+    control, so a row would publish `thinking_policy: "disabled"` for a model
+    that reasoned anyway: `ThinkingControlRefused` names the entry, the control
+    and the template's hash. Needs a running server but no generation, which is
+    why a batch can afford it before its first item and the candidate gate can
+    reuse it on an entry not yet in the roster.
+
+    Only an object control is verifiable; `none` and an undeclared entry are
+    refused here because there is nothing to render with.
+    """
+    control = entry.thinking_control
+    if not isinstance(control, dict):
+        raise LocalRequestError(
+            f"roster entry {entry.entry_id!r} declares thinking_control "
+            f"{control!r}: there are no request arguments to verify"
+        )
+    with_control = render_prompt(
+        base_url,
+        THINKING_PROBE_MESSAGE,
+        thinking_kwargs=copy.deepcopy(control),
+        timeout=timeout,
+    )
+    without_control = render_prompt(
+        base_url, THINKING_PROBE_MESSAGE, thinking_kwargs={}, timeout=timeout
+    )
+    if with_control == without_control:
+        raise ThinkingControlRefused(
+            f"roster entry {entry.entry_id!r}: its thinking_control "
+            f"{json.dumps(control, sort_keys=True)} leaves the prompt "
+            "/apply-template renders byte-identical under chat template "
+            f"{prompt_provenance.template_hash(chat_template)}, so the template "
+            "ignores it; refusing a thinking_policy 'disabled' batch before "
+            "any generation"
+        )
+    return ThinkingControlProbe(
+        with_control=with_control, without_control=without_control
     )
 
 
@@ -106,14 +207,19 @@ def chat_template(base_url: str, *, timeout: float) -> str:
 
 
 def render_prompt(
-    base_url: str, prompt: str, *, thinking_policy: str, timeout: float
+    base_url: str,
+    prompt: str,
+    *,
+    thinking_kwargs: Mapping[str, Any],
+    timeout: float,
 ) -> str:
     """Return `prompt` as the chat endpoint will render it, from `/apply-template`.
 
     The chat response echoes the rendered prompt nowhere, so the string a row
-    publishes has to come from here. The policy is sent on this call too: with
-    thinking disabled the template appends an empty `<think></think>` block,
-    so omitting it would store a string the answering call never used. That is
+    publishes has to come from here. The thinking arguments are sent on this
+    call too: with Qwen's thinking disabled the template appends an empty
+    `<think></think>` block, so omitting them would store a string the
+    answering call never used. That is
     also why the row records `prompt_capture` as reconstructed rather than
     captured -- same server, same template, same arguments, but a different
     request from the one that produced the answer.
@@ -126,7 +232,7 @@ def render_prompt(
         f"{base_url}{prompt_provenance.LOCAL_APPLY_TEMPLATE_ENDPOINT}",
         {
             "messages": [{"role": "user", "content": prompt}],
-            **_thinking_kwargs(thinking_policy),
+            **thinking_kwargs,
         },
         timeout,
     )
@@ -144,7 +250,7 @@ def complete_chat(
     *,
     max_tokens: int,
     sampling: dict[str, Any],
-    thinking_policy: str,
+    thinking_kwargs: Mapping[str, Any],
     timeout: float,
 ) -> LocalCompletion:
     """Ask the loaded model to answer `prompt` through its own chat template."""
@@ -154,7 +260,7 @@ def complete_chat(
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": max_tokens,
             **sampling,
-            **_thinking_kwargs(thinking_policy),
+            **thinking_kwargs,
         },
         timeout,
     )

@@ -58,6 +58,10 @@ GOOGLE_MODEL_INFO = {
     "input_token_limit": 1_048_576,
 }
 
+# The control the four shipped Qwen entries declare, written out rather than
+# read from the tracked roster for the same reason FAKE_ROSTER is.
+QWEN_THINKING_CONTROL = {"chat_template_kwargs": {"enable_thinking": False}}
+
 # A minimal but structurally valid roster, independent of the tracked
 # aidd_docs/roster/models.json: these tests must not couple to its content.
 FAKE_ROSTER = {
@@ -70,6 +74,7 @@ FAKE_ROSTER = {
             "file": "fake.gguf",
             "quant": "UD-IQ4_XS",
             "sha256": "0" * 64,
+            "thinking_control": QWEN_THINKING_CONTROL,
             "architecture": {
                 "kind": "moe",
                 "expert_count": 40,
@@ -119,6 +124,28 @@ def fake_render(prompt: str) -> str:
     return f"<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"
 
 
+def fake_apply_template(body: dict) -> dict:
+    """The `/apply-template` body of a template that honours the declared
+    control: without it the render differs, so the batch's verification
+    passes. The string a row stores (rendered with the control) stays
+    `fake_render(prompt)`."""
+    rendered = fake_render(body["messages"][0]["content"])
+    if "chat_template_kwargs" not in body:
+        rendered += "<think>\n"
+    return {"prompt": rendered}
+
+
+def item_posts(post: MagicMock) -> list:
+    """The local POSTs the items made, without the verification's two renders
+    of the fixed probe message."""
+    return [
+        call
+        for call in post.call_args_list
+        if call.kwargs["json"]["messages"][0]["content"]
+        != local_client.THINKING_PROBE_MESSAGE
+    ]
+
+
 def local_post_router(
     *,
     content: str = "billing",
@@ -136,8 +163,7 @@ def local_post_router(
 
     def route(url, *args, **kwargs):
         if url.endswith("/apply-template"):
-            rendered = fake_render(kwargs["json"]["messages"][0]["content"])
-            payload: dict = {"prompt": rendered}
+            payload: dict = fake_apply_template(kwargs["json"])
         else:
             payload = (
                 chat_body
@@ -581,9 +607,10 @@ def test_local_server_started_exactly_once_for_the_whole_suite(stubbed_run) -> N
     quality_cli._run()
 
     assert started["running_server"].call_count == 1
-    # Two POSTs per item now -- render, then answer -- inside one launch. The
-    # model's template is one GET for the whole batch, never one per item.
-    assert started["post"].call_count == 2 * len(CLASSIFICATION_TASK_SUITE)
+    # Two POSTs per item -- render, then answer -- plus the thinking control's
+    # two probe renders, inside one launch. The model's template is one GET
+    # for the whole batch, never one per item.
+    assert started["post"].call_count == 2 * len(CLASSIFICATION_TASK_SUITE) + 2
     assert started["props"].call_count == 1
 
 
@@ -669,7 +696,7 @@ def test_the_variant_runs_before_templating_on_the_local_and_cloud_paths(
     quality_cli._run()
 
     marked = [mark_prompt(item["prompt"]) for item in CLASSIFICATION_TASK_SUITE]
-    local_bodies = [call.kwargs["json"] for call in started["post"].call_args_list]
+    local_bodies = [call.kwargs["json"] for call in item_posts(started["post"])]
     rendered_inputs = [body["messages"][0]["content"] for body in local_bodies[0::2]]
     chat_inputs = [body["messages"][0]["content"] for body in local_bodies[1::2]]
     # The local engine templated the variant's output, and answered it.
@@ -860,7 +887,7 @@ def test_run_still_runs_local_and_writes_its_rows_when_the_mistral_model_id_is_g
     # The local lifecycle runs unconditionally now: a cloud pre-flight
     # failure is a skip, not an abort, so it no longer gates the local batch.
     assert started["running_server"].call_count == 1
-    assert started["post"].call_count == 2 * len(CLASSIFICATION_TASK_SUITE)
+    assert len(item_posts(started["post"])) == 2 * len(CLASSIFICATION_TASK_SUITE)
     rows = read_rows(quality_results_path)
     assert {row["provider"] for row in rows} == {"local"}
 
@@ -1651,9 +1678,7 @@ def test_an_empty_translation_completion_scores_zero_and_stays_in_the_mean(
         if url.endswith("/apply-template"):
             return MagicMock(
                 status_code=200,
-                json=lambda: {
-                    "prompt": fake_render(kwargs["json"]["messages"][0]["content"])
-                },
+                json=lambda: fake_apply_template(kwargs["json"]),
                 raise_for_status=lambda: None,
             )
         payload = {
@@ -1802,7 +1827,7 @@ def test_the_local_chat_call_asks_the_model_not_to_think(stubbed_run) -> None:
 
     local_calls = [
         call
-        for call in started["post"].call_args_list
+        for call in item_posts(started["post"])
         if call.args[0].startswith("http://127.0.0.1:8080")
     ]
     assert local_calls
@@ -1819,7 +1844,7 @@ def test_the_rendered_prompt_and_the_answer_run_under_one_policy(stubbed_run) ->
     quality_cli._run()
 
     by_endpoint: dict[str, list] = {"render": [], "chat": []}
-    for call in started["post"].call_args_list:
+    for call in item_posts(started["post"]):
         key = "render" if call.args[0].endswith("/apply-template") else "chat"
         by_endpoint[key].append(call.kwargs["json"].get("chat_template_kwargs"))
     assert by_endpoint["render"] and by_endpoint["chat"]
@@ -1846,3 +1871,111 @@ def test_the_cloud_call_path_is_untouched_by_the_local_migration(stubbed_run) ->
     # switch for it.
     for call in started["complete_prompt"].call_args_list:
         assert "chat_template_kwargs" not in call.kwargs
+
+
+def _declare_thinking_control(started: dict, control: object) -> None:
+    """Rewrite the stubbed roster's entry with `control` (`None` removes it)."""
+    data = json.loads(json.dumps(FAKE_ROSTER))
+    entry = data["entries"][DEFAULT_ROSTER_ENTRY_ID]
+    if control is None:
+        del entry["thinking_control"]
+    else:
+        entry["thinking_control"] = control
+    started["load_settings"].return_value.roster_path.write_text(json.dumps(data))
+
+
+def _ignoring_template_router(url, *args, **kwargs):
+    """A template that does not declare the control: one render either way."""
+    if url.endswith("/apply-template"):
+        payload: dict = {
+            "prompt": fake_render(kwargs["json"]["messages"][0]["content"])
+        }
+    else:
+        payload = {
+            "choices": [{"finish_reason": "stop", "message": {"content": "billing"}}],
+            "usage": {"completion_tokens": 3, "prompt_tokens": 11},
+        }
+    return MagicMock(
+        status_code=200, json=lambda: payload, raise_for_status=lambda: None
+    )
+
+
+def test_a_control_the_template_ignores_refuses_the_batch_and_writes_no_row(
+    stubbed_run, capsys
+) -> None:
+    quality_results_path, started = stubbed_run
+    started["post"].side_effect = _ignoring_template_router
+
+    with pytest.raises(SystemExit) as exited:
+        quality_cli.main()
+
+    assert exited.value.code == 1
+    err = capsys.readouterr().err
+    assert repr(DEFAULT_ROSTER_ENTRY_ID) in err
+    assert '{"chat_template_kwargs": {"enable_thinking": false}}' in err
+    assert template_hash(FAKE_CHAT_TEMPLATE) in err
+    # Refused before the first item: two probe renders, no generation, and
+    # no cloud batch either.
+    urls = [call.args[0] for call in started["post"].call_args_list]
+    assert len(urls) == 2
+    assert all(url.endswith("/apply-template") for url in urls)
+    assert started["complete_prompt"].call_count == 0
+    assert read_rows(quality_results_path) == []
+
+
+def test_an_entry_declaring_none_sends_no_control_and_is_not_probed(
+    stubbed_run,
+) -> None:
+    quality_results_path, started = stubbed_run
+    _declare_thinking_control(started, "none")
+
+    quality_cli._run()
+
+    bodies = [call.kwargs["json"] for call in started["post"].call_args_list]
+    assert len(bodies) == 2 * len(CLASSIFICATION_TASK_SUITE)
+    for body in bodies:
+        assert "chat_template_kwargs" not in body
+        assert body["messages"][0]["content"] != local_client.THINKING_PROBE_MESSAGE
+    local_rows = [
+        row for row in read_rows(quality_results_path) if row["provider"] == "local"
+    ]
+    assert len(local_rows) == len(CLASSIFICATION_TASK_SUITE)
+
+
+def test_an_entry_declaring_no_control_refuses_before_the_server_launches(
+    stubbed_run,
+) -> None:
+    quality_results_path, started = stubbed_run
+    _declare_thinking_control(started, None)
+
+    with pytest.raises(
+        local_client.LocalRequestError,
+        match=f"{DEFAULT_ROSTER_ENTRY_ID!r} declares no thinking_control",
+    ):
+        quality_cli._run()
+
+    assert started["running_server"].call_count == 0
+    assert started["post"].call_count == 0
+    assert read_rows(quality_results_path) == []
+
+
+def test_the_shipped_qwen_control_renders_the_same_prompt_as_before(
+    stubbed_run,
+) -> None:
+    """The four shipped entries' declaration is the spelling every published
+    row already ran under, so their rendered prompts and template hash do not
+    move."""
+    quality_results_path, started = stubbed_run
+    shipped = json.loads(Path("aidd_docs/roster/models.json").read_text("utf-8"))
+    _declare_thinking_control(
+        started, shipped["entries"]["qwen3-0.6b-q8"]["thinking_control"]
+    )
+
+    quality_cli._run()
+
+    for call in item_posts(started["post"]):
+        assert call.kwargs["json"]["chat_template_kwargs"] == {"enable_thinking": False}
+    for row in read_rows(quality_results_path):
+        if row["provider"] == "local":
+            assert row["prompt"] == fake_render(row["prompt_before_template"])
+            assert row["prompt_template_hash"] == template_hash(FAKE_CHAT_TEMPLATE)

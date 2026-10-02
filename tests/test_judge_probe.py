@@ -13,6 +13,7 @@ from wave_local_ai_v2 import (
     judge_backends,
     judge_probe,
     judge_protocol,
+    local_client,
     mistral_client,
     quality_cli,
     row_contract,
@@ -55,6 +56,7 @@ FAKE_ROSTER = {
             "quant": "UD-IQ4_XS",
             "sha256": "0" * 64,
             "family": "qwen",
+            "thinking_control": {"chat_template_kwargs": {"enable_thinking": False}},
             "architecture": {
                 "kind": "moe",
                 "expert_count": 40,
@@ -139,9 +141,12 @@ def _local_post_router(finish_reason: str = "stop"):
 
     def route(url, *args, **kwargs):
         if url.endswith("/apply-template"):
-            payload: dict = {
-                "prompt": _fake_render(kwargs["json"]["messages"][0]["content"])
-            }
+            rendered = _fake_render(kwargs["json"]["messages"][0]["content"])
+            # A template that honours the declared control renders the
+            # verification's probe differently without it.
+            if "chat_template_kwargs" not in kwargs["json"]:
+                rendered += "<think>"
+            payload: dict = {"prompt": rendered}
         else:
             payload = {
                 "choices": [
@@ -498,9 +503,9 @@ def test_the_local_server_is_launched_once_for_the_whole_probe(stubbed_probe) ->
     judge_probe._run()
 
     assert started["running_server"].call_count == 1
-    # Two POSTs per item -- render, then answer -- and one /props GET for the
-    # whole batch.
-    assert started["post"].call_count == 2 * len(JUDGE_PROBE_ITEMS)
+    # Two POSTs per item -- render, then answer -- plus the thinking control's
+    # two probe renders, and one /props GET for the whole batch.
+    assert started["post"].call_count == 2 * len(JUDGE_PROBE_ITEMS) + 2
     assert started["props"].call_count == 1
 
 
@@ -577,6 +582,10 @@ def test_the_probe_subject_is_sent_the_variant_and_the_judges_the_authored_text(
         call.kwargs["json"]["messages"][0]["content"]
         for call in started["post"].call_args_list
     ]
+    # The batch opens on the thinking control's verification: one fixed
+    # message rendered with and without the control.
+    assert local_inputs[:2] == [local_client.THINKING_PROBE_MESSAGE] * 2
+    local_inputs = local_inputs[2:]
     # Rendered, then answered: each marked prompt reaches both local calls.
     assert local_inputs[0::2] == marked
     assert local_inputs[1::2] == marked
@@ -998,3 +1007,26 @@ def test_a_local_generation_cut_off_at_the_cap_is_recorded_as_truncated(
     assert len(local_rows) == len(JUDGE_PROBE_ITEMS)
     for row in local_rows:
         assert row["failure_reason"] == scoring.FAILURE_REASON_TRUNCATED_MAX_TOKENS
+
+
+def test_a_thinking_control_the_template_ignores_refuses_the_probe(
+    stubbed_probe,
+) -> None:
+    probe_path, _, started, _ = stubbed_probe
+
+    def ignoring_template(url, *args, **kwargs):
+        payload = {"prompt": _fake_render(kwargs["json"]["messages"][0]["content"])}
+        return MagicMock(
+            status_code=200, json=lambda: payload, raise_for_status=lambda: None
+        )
+
+    started["post"].side_effect = ignoring_template
+
+    with pytest.raises(local_client.ThinkingControlRefused):
+        judge_probe._run()
+
+    # The two probe renders and nothing after them: no item was generated or
+    # judged, and no row was written.
+    assert started["post"].call_count == 2
+    assert started["mistral_complete"].call_count == 0
+    assert read_rows(probe_path) == []

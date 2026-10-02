@@ -384,6 +384,59 @@ def test_the_shipped_moe_entry_still_loads_with_no_family_of_its_own() -> None:
     assert roster.family_of(entry.display_id, entry) == "qwen"
 
 
+@pytest.mark.parametrize(
+    "control",
+    [{}, None, "off", ["chat_template_kwargs"], 0],
+    ids=["empty_object", "null", "other_string", "list", "number"],
+)
+def test_load_roster_refuses_a_malformed_thinking_control(
+    tmp_path: Path, control: object
+) -> None:
+    path = _write_roster(
+        tmp_path / "roster.json",
+        {MOE_ENTRY_ID: {**MOE_ENTRY, "thinking_control": control}},
+    )
+
+    with pytest.raises(RosterError, match=f"{MOE_ENTRY_ID}.*'thinking_control'"):
+        roster.load_roster(path)
+
+
+@pytest.mark.parametrize(
+    ("declared", "expected"),
+    [
+        (
+            {"thinking_control": {"reasoning_effort": "none"}},
+            {"reasoning_effort": "none"},
+        ),
+        ({"thinking_control": "none"}, roster.THINKING_CONTROL_NONE),
+        ({}, None),
+    ],
+    ids=["request_arguments", "none", "undeclared"],
+)
+def test_a_well_formed_or_absent_thinking_control_loads(
+    tmp_path: Path, declared: dict, expected: object
+) -> None:
+    path = _write_roster(
+        tmp_path / "roster.json", {MOE_ENTRY_ID: {**MOE_ENTRY, **declared}}
+    )
+
+    entry = roster.resolve_entry(roster.load_roster(path), MOE_ENTRY_ID)
+
+    assert entry.thinking_control == expected
+
+
+def test_every_shipped_entry_declares_the_qwen_thinking_control() -> None:
+    # The control these four entries already ran under, now declared rather
+    # than assumed: every published row's rendered prompt stays reproducible.
+    loaded = roster.load_roster(REAL_ROSTER_PATH)
+
+    assert loaded.entries
+    for entry in loaded.entries.values():
+        assert entry.thinking_control == {
+            "chat_template_kwargs": {"enable_thinking": False}
+        }, entry.entry_id
+
+
 # The three dense entries, keyed by entry id, with the identity fields
 # `docs/setup.md` publishes. Written out rather than read from the roster so
 # the test can disagree with the file: a checksum or a revision edited by

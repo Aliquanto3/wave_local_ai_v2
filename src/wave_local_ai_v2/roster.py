@@ -62,6 +62,12 @@ REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
 
 _SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 
+# The one `thinking_control` value that is not a request-argument object: the
+# model does not reason, so `thinking_policy: disabled` has nothing to send.
+# The declaration is the entry's to justify; a live generation is where it is
+# checked, not here.
+THINKING_CONTROL_NONE = "none"
+
 # Model family: the attribute judge independence is enforced on (a judge never
 # scores output from its own family). Declared here rather than in `judge.py`
 # because it is an identity fact about a model, the same class of fact as the
@@ -123,6 +129,14 @@ class RosterEntry:
     # value when it is there and falls back to `MODEL_FAMILIES` until
     # Methodology 13's roster carries one.
     family: str | None = None
+    # The request arguments that disable reasoning under this entry's own chat
+    # template (merged into both the `/apply-template` and the chat request),
+    # `THINKING_CONTROL_NONE` for a model that does not reason, or `None` when
+    # the entry declares nothing -- which `local_client.thinking_kwargs`
+    # refuses under `thinking_policy: disabled` rather than guessing a
+    # spelling. Optional for the same reason `family` is: a constructed entry
+    # without it must still load so that refusal can name it.
+    thinking_control: dict[str, Any] | str | None = None
 
 
 @dataclass(frozen=True)
@@ -241,6 +255,31 @@ def _parse_entry(entry_id: str, raw_entry: Any) -> RosterEntry:
         server_flags=raw_entry["server_flags"],
         validated_host=raw_entry["validated_host"],
         family=raw_entry.get("family"),
+        thinking_control=_parse_thinking_control(entry_id, raw_entry),
+    )
+
+
+def _parse_thinking_control(
+    entry_id: str, raw_entry: dict[str, Any]
+) -> dict[str, Any] | str | None:
+    """The entry's declared thinking control, or `None` when it declares none.
+
+    A present key must be `THINKING_CONTROL_NONE` or a non-empty object of
+    request arguments. An empty object would send nothing while claiming a
+    control, and an explicit `null` is not the same statement as `"none"`;
+    both are refused here, naming the field, rather than read as either.
+    """
+    if "thinking_control" not in raw_entry:
+        return None
+    control = raw_entry["thinking_control"]
+    if control == THINKING_CONTROL_NONE:
+        return THINKING_CONTROL_NONE
+    if isinstance(control, dict) and control:
+        return control
+    raise RosterError(
+        f"roster entry {entry_id!r}: 'thinking_control' must be "
+        f"{THINKING_CONTROL_NONE!r} or a non-empty object of request "
+        f"arguments, got {control!r}"
     )
 
 

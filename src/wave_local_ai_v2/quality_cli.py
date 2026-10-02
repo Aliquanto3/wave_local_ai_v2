@@ -419,6 +419,11 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
         for item in spec.items
     ]
 
+    # Resolved once, before any process spawns: an entry that declares no
+    # thinking control cannot run a `disabled` suite, and every render and
+    # answer of the batch sends exactly these arguments.
+    thinking_kwargs = local_client.thinking_kwargs(spec.thinking_policy, roster_entry)
+
     # Refuses (roster.RosterError) before any process spawns when the
     # resolved n_cpu_moe cannot be applied to roster_entry -- the check lives
     # inside build_flags itself (server.py's one call site), and it runs on
@@ -473,7 +478,14 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
         # over, and the same repeated-batch-value pattern `suite_accuracy`
         # already uses.
         local_batch, local_energy = measure_energy(
-            lambda: _run_local_suite(settings, flags, spec, variant_prompts),
+            lambda: _run_local_suite(
+                settings,
+                flags,
+                spec,
+                variant_prompts,
+                roster_entry=roster_entry,
+                thinking_kwargs=thinking_kwargs,
+            ),
             country_iso_code=settings.emission_country_iso_code,
         )
         local_completions = local_batch["completions"]
@@ -765,7 +777,13 @@ def _local_model_path(settings: Settings, roster_entry: roster.RosterEntry) -> P
 
 
 def _run_local_suite(
-    settings: Settings, flags: list[str], spec: SuiteSpec, prompts: list[str]
+    settings: Settings,
+    flags: list[str],
+    spec: SuiteSpec,
+    prompts: list[str],
+    *,
+    roster_entry: roster.RosterEntry,
+    thinking_kwargs: dict[str, Any],
 ) -> _LocalBatch:
     """Answer every item through the loaded model's own chat template.
 
@@ -781,6 +799,11 @@ def _run_local_suite(
 
     `prompts` are the items' prompts as the declared variant left them, one
     per item: what is rendered and sent, never the authored text directly.
+
+    A non-empty `thinking_kwargs` is a declared control under `disabled`, and
+    it is verified against the loaded template before the first item: a
+    template that ignores it refuses the batch here, so no row can publish a
+    policy the model never applied.
     """
     completions: list[_Completion] = []
     rendered_prompts: list[str] = []
@@ -788,12 +811,19 @@ def _run_local_suite(
 
     with server.running_server(settings.llama_server_path, flags):
         template = local_client.chat_template(base_url, timeout=REQUEST_TIMEOUT_S)
+        if thinking_kwargs:
+            local_client.verify_thinking_control(
+                base_url,
+                roster_entry,
+                chat_template=template,
+                timeout=REQUEST_TIMEOUT_S,
+            )
         for prompt in prompts:
             rendered_prompts.append(
                 local_client.render_prompt(
                     base_url,
                     prompt,
-                    thinking_policy=spec.thinking_policy,
+                    thinking_kwargs=thinking_kwargs,
                     timeout=REQUEST_TIMEOUT_S,
                 )
             )
@@ -802,7 +832,7 @@ def _run_local_suite(
                 prompt,
                 max_tokens=spec.max_output_tokens,
                 sampling=LOCAL_SAMPLING,
-                thinking_policy=spec.thinking_policy,
+                thinking_kwargs=thinking_kwargs,
                 timeout=REQUEST_TIMEOUT_S,
             )
             completions.append(
