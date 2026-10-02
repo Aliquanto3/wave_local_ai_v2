@@ -117,7 +117,8 @@ def test_every_pointer_is_resolved_into_columns_of_its_row(
         path.stem: json.loads(path.read_text(encoding="utf-8"))
         for path in COMMITTED.fiche_dir.glob("*.json")
     }
-    entries = json.loads(COMMITTED.roster.read_text(encoding="utf-8"))["entries"]
+    roster_file = json.loads(COMMITTED.roster.read_text(encoding="utf-8"))
+    entries = roster_file["entries"]
 
     for table in ("quality_items", "runtime_aggregates"):
         for row in _read_csv(committed_export / f"{table}.csv"):
@@ -129,7 +130,9 @@ def test_every_pointer_is_resolved_into_columns_of_its_row(
             assert (
                 row["roster_entry_architecture_kind"] == entry["architecture"]["kind"]
             )
-            assert row["roster_file_version"] == "2"
+            # The version the export resolved against, not the one the row
+            # was produced under: it follows the file.
+            assert row["roster_file_version"] == str(roster_file["roster_version"])
     for row in _read_csv(committed_export / "quality_items.csv"):
         definition = json.loads(
             (
@@ -222,7 +225,19 @@ def test_blocks_owned_elsewhere_are_named_with_their_owner(
     }
 
     assert "a-score-is-published-with-its-interval" in owners["interval block"]
-    assert "every-size-class-spans-two-families" in owners["roster licence block"]
+    # The roster licence block is carried now, as roster-table columns.
+    assert "roster licence block" not in owners
+    roster_header = set(_header(committed_export / "roster.csv"))
+    assert {
+        "licence_id",
+        "licence_client_commercial_use",
+        "licence_read_on",
+        "licence_source_url",
+        "language_claim_languages",
+        "language_claim_source_url",
+        "language_claim_read_on",
+        "language_claim_statement",
+    } <= roster_header
     assert (
         "comparison-family-and-leader-set-records-read-as-a-fifth-table"
         in owners["comparison and family records"]

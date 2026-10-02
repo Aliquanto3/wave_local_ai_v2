@@ -218,7 +218,7 @@ stores are never merged (see `architecture.md`).
 Both commands resolve the model to launch through the tracked roster
 (`ROSTER_PATH`, default `aidd_docs/roster/models.json`) and select which
 entry to use via `ROSTER_ENTRY_ID`. The roster holds four entries at
-`roster_version` 2:
+`roster_version` 3:
 
 | Entry id | Model | Arch | Quant |
 | -------- | ----- | ---- | ----- |
@@ -236,6 +236,15 @@ control, renders one fixed probe through `/apply-template` with and without it
 before the first item (`local_client.verify_thinking_control`): two
 byte-identical renders refuse the batch, naming entry, control and template
 hash, with no row written.
+
+Each entry also carries a `licence` block (`id`, `client_commercial_use`,
+`read_on`, `source_url`) and a `language_claim` (`languages`, the subset of
+`en`/`fr`/`de` the model card names, plus `source_url`, `read_on` and the
+card's verbatim `statement` when it has one), both read off the repository at
+the entry's pinned revision. The claim is never written by a suite result. A
+declared `family` must be one of `roster.KNOWN_FAMILIES` (vendor lineage:
+`qwen`, `mistral`, `google`, `ibm`, `liquid`, `microsoft`); anything else, and
+any malformed block field, is refused at load naming the entry and the field.
 
 `ROSTER_ENTRY_ID` defaults to the MoE flagship. Running several entries in
 turn is a shell loop over the ids, not a runner script: `load_dotenv(override=

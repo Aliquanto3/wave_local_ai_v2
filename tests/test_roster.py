@@ -1,6 +1,8 @@
 import copy
+import dataclasses
 import json
 import re
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -362,24 +364,62 @@ def test_family_of_refuses_an_unknown_model_rather_than_defaulting() -> None:
         roster.family_of("some-unknown-model")
 
 
-def test_family_of_refuses_an_entry_declaring_an_unknown_family(tmp_path) -> None:
+@pytest.mark.parametrize("family", ["acme", "gemma", "", None, ["qwen"]])
+def test_load_roster_refuses_an_entry_declaring_an_unknown_family(
+    tmp_path: Path, family: object
+) -> None:
+    # Refused at load rather than when a row first resolves it: an entry the
+    # family guard cannot read never becomes a launchable entry. `gemma` is
+    # the model line, not the family (Q11: the family is the vendor).
     path = _write_roster(
-        tmp_path / "roster.json", {MOE_ENTRY_ID: {**MOE_ENTRY, "family": "acme"}}
+        tmp_path / "roster.json", {MOE_ENTRY_ID: {**MOE_ENTRY, "family": family}}
     )
-    entry = roster.resolve_entry(roster.load_roster(path), MOE_ENTRY_ID)
+
+    with pytest.raises(
+        RosterError, match=f"{MOE_ENTRY_ID}.*'family' {re.escape(repr(family))}"
+    ):
+        roster.load_roster(path)
+
+
+@pytest.mark.parametrize(
+    "family", ["qwen", "mistral", "google", "ibm", "liquid", "microsoft"]
+)
+def test_an_entry_declaring_a_candidate_vendor_family_loads_and_resolves(
+    tmp_path: Path, family: str
+) -> None:
+    path = _write_roster(
+        tmp_path / "roster.json", {DENSE_ENTRY_ID: {**DENSE_ENTRY, "family": family}}
+    )
+    entry = roster.resolve_entry(roster.load_roster(path), DENSE_ENTRY_ID)
+
+    assert roster.family_of(entry.display_id, entry) == family
+
+
+def test_family_of_still_refuses_a_constructed_entry_with_an_unknown_family(
+    tmp_path: Path,
+) -> None:
+    # The load check does not replace this one: an entry built in code never
+    # passes through `load_roster`.
+    entry = roster.resolve_entry(
+        roster.load_roster(
+            _write_roster(tmp_path / "r.json", {MOE_ENTRY_ID: MOE_ENTRY})
+        ),
+        MOE_ENTRY_ID,
+    )
 
     with pytest.raises(RosterError, match="acme"):
-        roster.family_of("Qwen3.6-35B-A3B", entry)
+        roster.family_of("Qwen3.6-35B-A3B", dataclasses.replace(entry, family="acme"))
 
 
 def test_the_shipped_moe_entry_still_loads_with_no_family_of_its_own() -> None:
     loaded = roster.load_roster(REAL_ROSTER_PATH)
     entry = roster.resolve_entry(loaded, "qwen3.6-35b-a3b-ud-iq4xs")
 
-    # roster_version 2 is the dense ladder's arrival: rows already published
-    # carry 1 and are not back-filled, so the assertion follows the file
-    # rather than pinning a version the file has moved past.
-    assert loaded.roster_version == 2
+    # roster_version 2 was the dense ladder's arrival, 3 the licence and
+    # language-claim blocks: rows already published carry the version they
+    # were produced under and are not back-filled, so the assertion follows
+    # the file rather than pinning a version the file has moved past.
+    assert loaded.roster_version == 3
     assert entry.family is None
     assert roster.family_of(entry.display_id, entry) == "qwen"
 
@@ -423,6 +463,126 @@ def test_a_well_formed_or_absent_thinking_control_loads(
     entry = roster.resolve_entry(roster.load_roster(path), MOE_ENTRY_ID)
 
     assert entry.thinking_control == expected
+
+
+LICENCE = {
+    "id": "Apache-2.0",
+    "client_commercial_use": True,
+    "read_on": "2026-10-02",
+    "source_url": "https://huggingface.co/fake/moe-repo/blob/main/LICENSE",
+}
+LANGUAGE_CLAIM = {
+    "languages": ["en", "fr"],
+    "source_url": "https://huggingface.co/fake/moe-repo/blob/main/README.md",
+    "read_on": "2026-10-02",
+    "statement": "Supports English and French.",
+}
+
+
+def _load_moe_with(tmp_path: Path, **blocks: object) -> roster.RosterEntry:
+    path = _write_roster(
+        tmp_path / "roster.json", {MOE_ENTRY_ID: {**MOE_ENTRY, **blocks}}
+    )
+    return roster.resolve_entry(roster.load_roster(path), MOE_ENTRY_ID)
+
+
+def test_a_well_formed_licence_and_language_claim_load(tmp_path: Path) -> None:
+    entry = _load_moe_with(tmp_path, licence=LICENCE, language_claim=LANGUAGE_CLAIM)
+
+    assert entry.licence == roster.Licence(
+        licence_id="Apache-2.0",
+        client_commercial_use=True,
+        read_on=date(2026, 10, 2),
+        source_url=LICENCE["source_url"],
+    )
+    assert entry.language_claim == roster.LanguageClaim(
+        languages=("en", "fr"),
+        source_url=LANGUAGE_CLAIM["source_url"],
+        read_on=date(2026, 10, 2),
+        statement="Supports English and French.",
+    )
+
+
+def test_absent_blocks_and_an_absent_statement_load_as_none(tmp_path: Path) -> None:
+    claim = {key: value for key, value in LANGUAGE_CLAIM.items() if key != "statement"}
+
+    assert _load_moe_with(tmp_path).licence is None
+    assert _load_moe_with(tmp_path).language_claim is None
+    assert (
+        _load_moe_with(tmp_path, language_claim=claim).language_claim.statement is None
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("client_commercial_use", "yes"),
+        ("client_commercial_use", 1),
+        ("client_commercial_use", None),
+        ("read_on", "2 October 2026"),
+        ("read_on", "2026-13-01"),
+        ("read_on", 20261002),
+        ("id", ""),
+        ("id", "   "),
+        ("id", None),
+        ("source_url", ""),
+    ],
+)
+def test_load_roster_refuses_a_malformed_licence_field_naming_it(
+    tmp_path: Path, field: str, value: object
+) -> None:
+    with pytest.raises(RosterError, match=f"{MOE_ENTRY_ID}.*'licence.{field}'"):
+        _load_moe_with(tmp_path, licence={**LICENCE, field: value})
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("languages", ["en", "es"]),
+        ("languages", ["fr", "fr"]),
+        ("languages", "en"),
+        ("languages", [{"en": True}]),
+        ("read_on", "yesterday"),
+        ("source_url", None),
+        ("statement", ""),
+    ],
+)
+def test_load_roster_refuses_a_malformed_language_claim_field_naming_it(
+    tmp_path: Path, field: str, value: object
+) -> None:
+    with pytest.raises(RosterError, match=f"{MOE_ENTRY_ID}.*'language_claim.{field}'"):
+        _load_moe_with(tmp_path, language_claim={**LANGUAGE_CLAIM, field: value})
+
+
+@pytest.mark.parametrize(
+    ("name", "block", "expected"),
+    [
+        ("licence", "Apache-2.0", "'licence' must be an object"),
+        ("language_claim", ["en"], "'language_claim' must be an object"),
+        ("licence", {"id": "MIT"}, "licence.client_commercial_use, licence.read_on"),
+        ("language_claim", {"languages": []}, "language_claim.source_url"),
+    ],
+)
+def test_load_roster_refuses_a_block_that_is_not_an_object_or_lacks_a_field(
+    tmp_path: Path, name: str, block: object, expected: str
+) -> None:
+    with pytest.raises(RosterError, match=f"{MOE_ENTRY_ID}.*{re.escape(expected)}"):
+        _load_moe_with(tmp_path, **{name: block})
+
+
+def test_every_shipped_entry_carries_a_licence_and_a_language_claim() -> None:
+    loaded = roster.load_roster(REAL_ROSTER_PATH)
+
+    assert len(loaded.entries) == 4
+    for entry in loaded.entries.values():
+        assert entry.licence is not None, entry.entry_id
+        assert entry.language_claim is not None, entry.entry_id
+        # Each term is read at the entry's own pinned revision (the flagship's
+        # is `main`, its read date standing in for the sha).
+        for url in (entry.licence.source_url, entry.language_claim.source_url):
+            assert url.startswith(
+                f"https://huggingface.co/{entry.repo}/blob/{entry.revision}/"
+            ), (entry.entry_id, url)
 
 
 def test_every_shipped_entry_declares_the_qwen_thinking_control() -> None:

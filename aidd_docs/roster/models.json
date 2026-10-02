@@ -1,5 +1,5 @@
 {
-  "roster_version": 2,
+  "roster_version": 3,
   "entries": {
     "qwen3.6-35b-a3b-ud-iq4xs": {
       "repo": "unsloth/Qwen3.6-35B-A3B-GGUF",
@@ -12,6 +12,17 @@
         "chat_template_kwargs": {
           "enable_thinking": false
         }
+      },
+      "licence": {
+        "id": "Apache-2.0",
+        "client_commercial_use": true,
+        "read_on": "2026-10-02",
+        "source_url": "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/blob/main/README.md"
+      },
+      "language_claim": {
+        "languages": [],
+        "source_url": "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/blob/main/README.md",
+        "read_on": "2026-10-02"
       },
       "architecture": {
         "kind": "moe",
@@ -52,6 +63,18 @@
           "enable_thinking": false
         }
       },
+      "licence": {
+        "id": "Apache-2.0",
+        "client_commercial_use": true,
+        "read_on": "2026-10-02",
+        "source_url": "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/blob/23749fefcc72300e3a2ad315e1317431b06b590a/LICENSE"
+      },
+      "language_claim": {
+        "languages": [],
+        "source_url": "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/blob/23749fefcc72300e3a2ad315e1317431b06b590a/README.md",
+        "read_on": "2026-10-02",
+        "statement": "Support of 100+ languages and dialects with strong capabilities for multilingual instruction following and translation."
+      },
       "architecture": {
         "kind": "dense",
         "expert_count": 0,
@@ -91,6 +114,18 @@
           "enable_thinking": false
         }
       },
+      "licence": {
+        "id": "Apache-2.0",
+        "client_commercial_use": true,
+        "read_on": "2026-10-02",
+        "source_url": "https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/blob/90862c4b9d2787eaed51d12237eafdfe7c5f6077/LICENSE"
+      },
+      "language_claim": {
+        "languages": [],
+        "source_url": "https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/blob/90862c4b9d2787eaed51d12237eafdfe7c5f6077/README.md",
+        "read_on": "2026-10-02",
+        "statement": "Support of 100+ languages and dialects with strong capabilities for multilingual instruction following and translation."
+      },
       "architecture": {
         "kind": "dense",
         "expert_count": 0,
@@ -129,6 +164,18 @@
         "chat_template_kwargs": {
           "enable_thinking": false
         }
+      },
+      "licence": {
+        "id": "Apache-2.0",
+        "client_commercial_use": true,
+        "read_on": "2026-10-02",
+        "source_url": "https://huggingface.co/Qwen/Qwen3-4B-GGUF/blob/bc640142c66e1fdd12af0bd68f40445458f3869b/LICENSE"
+      },
+      "language_claim": {
+        "languages": [],
+        "source_url": "https://huggingface.co/Qwen/Qwen3-4B-GGUF/blob/bc640142c66e1fdd12af0bd68f40445458f3869b/README.md",
+        "read_on": "2026-10-02",
+        "statement": "Support of 100+ languages and dialects with strong capabilities for multilingual instruction following and translation."
       },
       "architecture": {
         "kind": "dense",

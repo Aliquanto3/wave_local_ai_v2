@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Every roster entry states its family, its licence and its language
+  claim (`roster_version` 3)** — `roster.KNOWN_FAMILIES` grows to the
+  candidate vendors (`ibm`, `liquid`, `microsoft` beside `qwen`, `mistral`,
+  `google`: a family is the vendor lineage, so Gemma is `google` and
+  Ministral `mistral`), and a declared `family` outside it is refused at
+  load. An entry can carry a `licence` block (SPDX id, client-side
+  commercial use, read date, source URL) and a `language_claim` (which of
+  EN/FR/DE the model card names, its source, read date and verbatim
+  wording), each shape-checked at load. All four shipped entries carry
+  both, read off their cards at the pinned revision: `Apache-2.0`,
+  commercial use permitted; no card names EN, FR or DE, so every claim
+  lists none. The bundle's `roster.csv` carries both blocks as columns.
+  Published rows keep the roster version they were produced under.
+
 - **A suite is certified to its declared level (row schema "15")** — a
   suite definition declares `level`, `development` or `publication`.
   `development` keeps the 20-item, 25%-per-language gate and its

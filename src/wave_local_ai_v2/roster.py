@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -69,13 +70,32 @@ _SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 THINKING_CONTROL_NONE = "none"
 
 # Model family: the attribute judge independence is enforced on (a judge never
-# scores output from its own family). Declared here rather than in `judge.py`
-# because it is an identity fact about a model, the same class of fact as the
-# rest of this module.
+# scores output from its own family) and the roster composition rule counts.
+# Declared here rather than in `judge.py` because it is an identity fact about
+# a model, the same class of fact as the rest of this module. A family is the
+# vendor lineage, not the model line: Gemma is `google`, Ministral is
+# `mistral`, Granite is `ibm`, LFM2 is `liquid`, Phi is `microsoft`; the
+# entry's `display_id` keeps the model line visible.
 FAMILY_QWEN = "qwen"
 FAMILY_MISTRAL = "mistral"
 FAMILY_GOOGLE = "google"
-KNOWN_FAMILIES: frozenset[str] = frozenset({FAMILY_QWEN, FAMILY_MISTRAL, FAMILY_GOOGLE})
+FAMILY_IBM = "ibm"
+FAMILY_LIQUID = "liquid"
+FAMILY_MICROSOFT = "microsoft"
+KNOWN_FAMILIES: frozenset[str] = frozenset(
+    {
+        FAMILY_QWEN,
+        FAMILY_MISTRAL,
+        FAMILY_GOOGLE,
+        FAMILY_IBM,
+        FAMILY_LIQUID,
+        FAMILY_MICROSOFT,
+    }
+)
+
+# The languages a roster entry's language claim can name: the suites' own
+# EN/FR/DE set, never a wider one the suites cannot test.
+CLAIMABLE_LANGUAGES: tuple[str, ...] = ("en", "fr", "de")
 
 # Keyed by the literal dated model id, never by `mistral_client.MODEL` /
 # `google_client.MODEL` -- same rule and same reason as
@@ -101,6 +121,43 @@ class Architecture:
     kind: str
     expert_count: int
     active_params_b: float
+
+
+@dataclass(frozen=True)
+class Licence:
+    """The terms a roster entry's weights ship under, as read on a given day.
+
+    Terms move, so the entry says when and where they were read, the same
+    discipline Methodology 16 applies to a list price.
+    """
+
+    # SPDX identifier where one exists.
+    licence_id: str
+    # Whether the terms permit commercial use on a client's own machine.
+    client_commercial_use: bool
+    read_on: date
+    # The licence or model card the terms were read from, at the entry's
+    # revision.
+    source_url: str
+
+
+@dataclass(frozen=True)
+class LanguageClaim:
+    """Which of EN, FR and DE the vendor states the model supports.
+
+    A claim, never a score: only the roster file writes it, no suite result
+    does, and a suite row contradicting it leaves it in place, since that
+    contradiction is itself a finding about the model.
+    """
+
+    # The subset of `CLAIMABLE_LANGUAGES` the source names, possibly empty:
+    # a source claiming "many languages" without naming one names none.
+    languages: tuple[str, ...]
+    source_url: str
+    read_on: date
+    # The source's own wording on language support, verbatim, or `None` when
+    # it has none.
+    statement: str | None
 
 
 @dataclass(frozen=True)
@@ -137,6 +194,11 @@ class RosterEntry:
     # spelling. Optional for the same reason `family` is: a constructed entry
     # without it must still load so that refusal can name it.
     thinking_control: dict[str, Any] | str | None = None
+    # The licence block and the vendor's language claim, when the roster file
+    # carries them. Optional on the entry for the reason `family` is; the
+    # shipped file carries both on every entry, which its own test asserts.
+    licence: Licence | None = None
+    language_claim: LanguageClaim | None = None
 
 
 @dataclass(frozen=True)
@@ -238,6 +300,15 @@ def _parse_entry(entry_id: str, raw_entry: Any) -> RosterEntry:
             f"characters, got {sha256!r}"
         )
 
+    family = raw_entry.get("family")
+    if "family" in raw_entry and (
+        not isinstance(family, str) or family not in KNOWN_FAMILIES
+    ):
+        raise RosterError(
+            f"roster entry {entry_id!r}: 'family' {family!r} is not a known "
+            f"family ({', '.join(sorted(KNOWN_FAMILIES))})"
+        )
+
     raw_architecture = raw_entry["architecture"]
     return RosterEntry(
         entry_id=entry_id,
@@ -254,8 +325,104 @@ def _parse_entry(entry_id: str, raw_entry: Any) -> RosterEntry:
         ),
         server_flags=raw_entry["server_flags"],
         validated_host=raw_entry["validated_host"],
-        family=raw_entry.get("family"),
+        family=family,
         thinking_control=_parse_thinking_control(entry_id, raw_entry),
+        licence=_parse_licence(entry_id, raw_entry),
+        language_claim=_parse_language_claim(entry_id, raw_entry),
+    )
+
+
+def _optional_block(
+    entry_id: str, raw_entry: dict[str, Any], name: str, fields: tuple[str, ...]
+) -> dict[str, Any] | None:
+    """The optional block `name` as an object holding `fields`, or `None`."""
+    if name not in raw_entry:
+        return None
+    block = raw_entry[name]
+    if not isinstance(block, dict):
+        raise RosterError(f"roster entry {entry_id!r}: {name!r} must be an object")
+    missing = [key for key in fields if key not in block]
+    if missing:
+        raise RosterError(
+            f"roster entry {entry_id!r} is missing required field(s): "
+            f"{', '.join(f'{name}.{key}' for key in missing)}"
+        )
+    return block
+
+
+def _malformed(entry_id: str, field: str, expected: str, value: Any) -> RosterError:
+    return RosterError(
+        f"roster entry {entry_id!r}: {field!r} must be {expected}, got {value!r}"
+    )
+
+
+def _text(entry_id: str, field: str, value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise _malformed(entry_id, field, "a non-empty string", value)
+    return value
+
+
+def _read_on(entry_id: str, field: str, value: Any) -> date:
+    try:
+        return date.fromisoformat(value)
+    except (TypeError, ValueError):
+        raise _malformed(entry_id, field, "an ISO 8601 date", value) from None
+
+
+def _parse_licence(entry_id: str, raw_entry: dict[str, Any]) -> Licence | None:
+    """The entry's licence block, or `None` when it carries none."""
+    block = _optional_block(
+        entry_id,
+        raw_entry,
+        "licence",
+        ("id", "client_commercial_use", "read_on", "source_url"),
+    )
+    if block is None:
+        return None
+    commercial = block["client_commercial_use"]
+    # A "yes" or a 1 is an operator's guess at the terms, not a reading of them.
+    if not isinstance(commercial, bool):
+        raise _malformed(
+            entry_id, "licence.client_commercial_use", "a boolean", commercial
+        )
+    return Licence(
+        licence_id=_text(entry_id, "licence.id", block["id"]),
+        client_commercial_use=commercial,
+        read_on=_read_on(entry_id, "licence.read_on", block["read_on"]),
+        source_url=_text(entry_id, "licence.source_url", block["source_url"]),
+    )
+
+
+def _parse_language_claim(
+    entry_id: str, raw_entry: dict[str, Any]
+) -> LanguageClaim | None:
+    """The entry's language claim, or `None` when it carries none."""
+    block = _optional_block(
+        entry_id, raw_entry, "language_claim", ("languages", "source_url", "read_on")
+    )
+    if block is None:
+        return None
+    languages = block["languages"]
+    if (
+        not isinstance(languages, list)
+        or any(language not in CLAIMABLE_LANGUAGES for language in languages)
+        or len(set(languages)) != len(languages)
+    ):
+        raise _malformed(
+            entry_id,
+            "language_claim.languages",
+            f"a list of distinct values from {', '.join(CLAIMABLE_LANGUAGES)}",
+            languages,
+        )
+    return LanguageClaim(
+        languages=tuple(languages),
+        source_url=_text(entry_id, "language_claim.source_url", block["source_url"]),
+        read_on=_read_on(entry_id, "language_claim.read_on", block["read_on"]),
+        statement=(
+            _text(entry_id, "language_claim.statement", block["statement"])
+            if "statement" in block
+            else None
+        ),
     )
 
 

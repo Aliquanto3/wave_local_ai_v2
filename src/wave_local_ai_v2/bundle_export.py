@@ -672,6 +672,41 @@ ROSTER_ENTRY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
         "The roster entry declares no thinking control (the column name is then "
         "listed in fields_not_carried); it cannot run under a disabled policy.",
     ),
+    ("licence", "id"): FieldDoc(
+        "Licence the model's weights ship under, as the repository states it.",
+        "SPDX licence identifier",
+    ),
+    ("licence", "client_commercial_use"): FieldDoc(
+        "Whether the licence permits commercial use on a client's own machine.",
+        _BOOL,
+    ),
+    ("licence", "read_on"): FieldDoc(
+        "Date the licence terms were read; terms move, so the reading is dated.",
+        "ISO 8601 date",
+    ),
+    ("licence", "source_url"): FieldDoc(
+        "Licence file or model card the terms were read from, at the entry's revision.",
+        "URL",
+    ),
+    ("language_claim", "languages"): FieldDoc(
+        "Which of en, fr and de the vendor's model card names as supported. A "
+        "claim, not a measurement: the suites test it, and a row contradicting "
+        "it does not change it.",
+        f"{_JSON_ARRAY} of language codes; [] when the card names none of the three",
+    ),
+    ("language_claim", "source_url"): FieldDoc(
+        "Model card the language claim was read from, at the entry's revision.",
+        "URL",
+    ),
+    ("language_claim", "read_on"): FieldDoc(
+        "Date the language claim was read.", "ISO 8601 date"
+    ),
+    ("language_claim", "statement"): FieldDoc(
+        "The model card's own wording on language support, verbatim.",
+        _TEXT,
+        "The model card says nothing on language support (the column name is "
+        "then listed in fields_not_carried).",
+    ),
     ("architecture", "kind"): FieldDoc("Architecture: moe or dense.", _ID),
     ("architecture", "expert_count"): FieldDoc(
         "Experts per MoE layer (0 for dense).", _COUNT
@@ -790,13 +825,6 @@ NOT_CARRIED_ELSEWHERE: tuple[OwnedElsewhere, ...] = (
         "generator identity and version, draw-procedure id), the minimum "
         "detectable effect and any named null reason.",
         f"epic {_STATS_EPIC}",
-    ),
-    OwnedElsewhere(
-        ROSTER_TABLE,
-        "roster licence block",
-        "Each roster entry's licence id, client-side commercial-use flag and "
-        "the date its terms were read.",
-        "epic every-size-class-spans-two-families-or-says-it-does-not",
     ),
     OwnedElsewhere(
         "",

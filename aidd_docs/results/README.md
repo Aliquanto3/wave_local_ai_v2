@@ -49,7 +49,7 @@ uses the standard library alone.
 | `quality_items.csv` | quality row | every row field, nested blocks as named columns (`sampling_seed`, `language_breakdown_en_accuracy`, `failure_counts_unparseable`, `verdict_verdict`, ...), the cited fiche as `fiche_*`, the cited roster entry's model fields as `roster_entry_*` plus `roster_file_version`, and the cited suite definition as `suite_definition_*` |
 | `runtime_aggregates.csv` | runtime row | the same, minus the suite; the per-repetition arrays (`repetitions`, `warmup_repetitions`, `verdict.reference_repetitions`) stay in the bundle |
 | `fiches.csv` | stored fiche | `fiche_hash` (the file name) and every fiche field |
-| `roster.csv` | roster entry | every entry field, launch flags and validated host included |
+| `roster.csv` | roster entry | every entry field, launch flags, validated host, licence block and language claim included |
 | `column_dictionary.csv` | column | `table`, `column`, `carried`, `source`, `meaning`, `unit`, `empty_cell`, `owner` |
 | `bundle_manifest.csv` | bundle part | the path read, entries read, and the version values the part carries |
 
@@ -60,7 +60,7 @@ Read one table with no join: every pointer a row cites is resolved into columns 
 not from `row_contract.SCHEMA_VERSION`; each row also keeps its own `schema_version` column.
 A regenerated bundle declares its own version with no code change. The roster gap is shown,
 not reconciled: rows state `roster_version` `1`, the roster file they resolve against is
-`roster_file_version` `2`.
+`roster_file_version` `3`.
 
 **Absence stays absence.** An empty cell is either a recorded `null` or a field the source
 does not carry; the row's last column, `fields_not_carried`, lists the columns whose
@@ -72,9 +72,8 @@ its table and every header has one entry (`tests/test_bundle_export.py`). `carri
 entries name what the bundle read does not hold, with an owner: the row-contract fields
 added after `"7"` (`retries`, `resumed`, `thinking_policy`, the prompt-variant, graded and
 judge blocks, the energy-window fields, the suite level and the item licence, source and
-source revision), the per-repetition arrays, and three blocks owned elsewhere -- the
-interval block (`a-score-is-published-with-its-interval-a-difference-with-its-test`), the
-roster licence block (`every-size-class-spans-two-families-or-says-it-does-not`), and the
+source revision), the per-repetition arrays, and two blocks owned elsewhere -- the
+interval block (`a-score-is-published-with-its-interval-a-difference-with-its-test`) and the
 comparison and family records, which are the fifth table of
 `comparison-family-and-leader-set-records-read-as-a-fifth-table` rather than a table here.
 A row field the dictionary does not describe, an unresolved pointer or a non-finite float
@@ -636,7 +635,8 @@ not all share that provenance. Where each one lives:
 
 All four cite fiche `b9d1af56...`, which is committed, so those numbers resolve too.
 
-The model set is `roster_version` 2: the MoE flagship plus a dense Qwen3 size ladder. The
+The model set is the roster's four entries, unchanged since `roster_version` 2 (version 3
+adds licence and language metadata only): the MoE flagship plus a dense Qwen3 size ladder. The
 dense/MoE distinction is what the section is for, so it is in the table rather than in a
 footnote:
 
