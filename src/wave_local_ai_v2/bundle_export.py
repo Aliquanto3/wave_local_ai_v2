@@ -447,6 +447,19 @@ _QUALITY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     ("suite_level",): FieldDoc(
         "Level the suite was certified at: development or publication.", _ID
     ),
+    ("family",): FieldDoc(
+        "Model family (vendor lineage) of the row's subject: the local entry's "
+        "for a local row, the cloud model's own for a cloud row.",
+        _ID,
+        "The row predates schema 19 and does not carry the field.",
+    ),
+    ("size_class",): FieldDoc(
+        "Size class of the local entry the row's subject is (~0.5B, ~2B, ~4B, "
+        "~8B-and-up, banded on total parameters).",
+        _ID,
+        "A cloud subject, which has no size class; a local entry declaring none; "
+        "or the row predates schema 19 and does not carry the field.",
+    ),
     ("item_licence",): FieldDoc(
         "Licence the item is redistributed under, as its author declares it "
         "(CC-BY-4.0 for a hand-written item). Declared, not verified.",
@@ -770,6 +783,21 @@ ROSTER_ENTRY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     ("display_id",): FieldDoc("Model name as a human names it.", _TEXT),
     ("quant",): FieldDoc("Quantization of the model file.", _ID),
     ("sha256",): FieldDoc("Checksum of the model file.", _SHA),
+    ("size_class",): FieldDoc(
+        "Size class the composition rule counts the entry in, banded on total "
+        "parameters (below 1B ~0.5B, below 3B ~2B, below 6B ~4B, else "
+        "~8B-and-up).",
+        _ID,
+        "The roster entry declares no size class (the column name is then "
+        "listed in fields_not_carried); the composition check names it.",
+    ),
+    ("bytes_on_disk",): FieldDoc(
+        "Size of the model file on disk: the footprint published beside the "
+        "class, never banded.",
+        "bytes",
+        "The roster entry declares no size on disk (the column name is then "
+        "listed in fields_not_carried); the composition check names it.",
+    ),
     ("family",): FieldDoc(
         "Model family, when the roster entry declares one.",
         _ID,
@@ -824,6 +852,13 @@ ROSTER_ENTRY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     ),
     ("architecture", "active_params_b"): FieldDoc(
         "Parameters active per token.", "billions of parameters"
+    ),
+    ("architecture", "total_params"): FieldDoc(
+        "Every parameter the model file holds, summed over its tensors as the "
+        "GGUF header states them; the figure the size class is banded on.",
+        "parameters",
+        "The roster entry declares no total (the column name is then listed in "
+        "fields_not_carried); the composition check names it.",
     ),
     ("server_flags", "n_gpu_layers"): FieldDoc("Layers offloaded to GPU.", _COUNT),
     ("server_flags", "context_size"): FieldDoc("Context window launched.", "tokens"),

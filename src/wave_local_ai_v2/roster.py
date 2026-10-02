@@ -15,6 +15,7 @@ Deliberately does not import `server.py`: phase 2 imports this module from
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import re
 from dataclasses import dataclass
@@ -97,6 +98,32 @@ KNOWN_FAMILIES: frozenset[str] = frozenset(
 # EN/FR/DE set, never a wider one the suites cannot test.
 CLAIMABLE_LANGUAGES: tuple[str, ...] = ("en", "fr", "de")
 
+# The size classes Methodology 13's composition rule counts families in, in
+# order, each with the lowest total parameter count it holds (owner answer
+# Q10 (a)): below 1B is ~0.5B, 1B to below 3B is ~2B, 3B to below 6B is ~4B,
+# 6B and up is ~8B-and-up. Banded on total parameters, never on bytes on
+# disk: the bytes are the footprint published beside the class, and whether
+# an entry fits a machine is the machine epic's profiles' to say. The edges
+# are revisable after the first full-roster run; moving one is a value change
+# here and a re-class of the entries it crosses, never a rewrite of the
+# composition check, which reads this table.
+SIZE_CLASS_BANDS: tuple[tuple[str, int], ...] = (
+    ("~0.5B", 0),
+    ("~2B", 1_000_000_000),
+    ("~4B", 3_000_000_000),
+    ("~8B-and-up", 6_000_000_000),
+)
+SIZE_CLASSES: tuple[str, ...] = tuple(name for name, _ in SIZE_CLASS_BANDS)
+
+
+def size_class_for(total_params: int) -> str:
+    """The size class whose band holds `total_params`."""
+    for name, lower_edge in reversed(SIZE_CLASS_BANDS):
+        if total_params >= lower_edge:
+            return name
+    raise ValueError(f"total_params must not be negative, got {total_params!r}")
+
+
 # Keyed by the literal dated model id, never by `mistral_client.MODEL` /
 # `google_client.MODEL` -- same rule and same reason as
 # `cost.MISTRAL_PRICE_TABLE`'s own comment: keying by the variable would make
@@ -121,6 +148,11 @@ class Architecture:
     kind: str
     expert_count: int
     active_params_b: float
+    # Every parameter the file holds, summed over its tensors as the GGUF
+    # header states them: the figure the entry's size class is banded on.
+    # Optional at load for the reason `RosterEntry.family` is; the
+    # composition check names an entry without it.
+    total_params: int | None = None
 
 
 @dataclass(frozen=True)
@@ -199,14 +231,45 @@ class RosterEntry:
     # shipped file carries both on every entry, which its own test asserts.
     licence: Licence | None = None
     language_claim: LanguageClaim | None = None
+    # One of `SIZE_CLASSES`, and the GGUF's size on disk in bytes: the class
+    # the composition rule counts the entry in, and the footprint published
+    # beside it. Optional at load so the composition check can name an entry
+    # that omits them rather than the loader refusing it first.
+    size_class: str | None = None
+    bytes_on_disk: int | None = None
+
+
+@dataclass(frozen=True)
+class SizeClassDeclaration:
+    """What the roster states about one size class, beside its entries.
+
+    The entries say which families and architectures a class holds; only the
+    roster's author can say whether a single-family class is a deliberate
+    ladder and whether a MoE was looked for, so a blank is never read as
+    either.
+    """
+
+    # The class is published as a single-family ladder: a comparison of one
+    # vendor's line, not of the market.
+    single_family_ladder: bool
+    # A MoE candidate was searched for in this class.
+    moe_sought: bool
+    # The entry id of the MoE representing the class, or `None`.
+    moe_entry: str | None
+    # Why no MoE represents the class, or `None`.
+    moe_absent_reason: str | None
 
 
 @dataclass(frozen=True)
 class RosterFile:
-    """A parsed roster: its version and every entry, keyed by entry id."""
+    """A parsed roster: its version, every entry keyed by entry id, and the
+    per-class declarations keyed by size class (empty when it carries none)."""
 
     roster_version: int
     entries: dict[str, RosterEntry]
+    size_classes: dict[str, SizeClassDeclaration] = dataclasses.field(
+        default_factory=dict
+    )
 
 
 def load_roster(path: Path) -> RosterFile:
@@ -250,7 +313,58 @@ def load_roster(path: Path) -> RosterFile:
     for entry_id, raw_entry in raw_entries.items():
         entries[entry_id] = _parse_entry(entry_id, raw_entry)
 
-    return RosterFile(roster_version=roster_version, entries=entries)
+    return RosterFile(
+        roster_version=roster_version,
+        entries=entries,
+        size_classes=_parse_size_classes(path, raw.get("size_classes", {})),
+    )
+
+
+def _parse_size_classes(path: Path, raw_block: Any) -> dict[str, SizeClassDeclaration]:
+    """The per-class declarations, refusing a malformed one naming its class.
+
+    Shape only: whether a declaration agrees with the entries of its class is
+    the composition check's to say, where it is named rather than refused.
+    """
+    if not isinstance(raw_block, dict):
+        raise RosterError(f"roster file at {path}: 'size_classes' must be an object")
+    declarations: dict[str, SizeClassDeclaration] = {}
+    for size_class, raw in raw_block.items():
+        where = f"roster file at {path}: size class {size_class!r}"
+        if size_class not in SIZE_CLASSES:
+            raise RosterError(
+                f"{where} is not a size class ({', '.join(SIZE_CLASSES)})"
+            )
+        fields = (
+            "single_family_ladder",
+            "moe_sought",
+            "moe_entry",
+            "moe_absent_reason",
+        )
+        if not isinstance(raw, dict):
+            raise RosterError(f"{where} must be an object")
+        missing = [key for key in fields if key not in raw]
+        if missing:
+            raise RosterError(f"{where} is missing field(s): {', '.join(missing)}")
+        for key in ("single_family_ladder", "moe_sought"):
+            if not isinstance(raw[key], bool):
+                raise RosterError(
+                    f"{where}: {key!r} must be a boolean, got {raw[key]!r}"
+                )
+        for key in ("moe_entry", "moe_absent_reason"):
+            value = raw[key]
+            if value is not None and (not isinstance(value, str) or not value.strip()):
+                raise RosterError(
+                    f"{where}: {key!r} must be null or a non-empty string, "
+                    f"got {value!r}"
+                )
+        declarations[size_class] = SizeClassDeclaration(
+            single_family_ladder=raw["single_family_ladder"],
+            moe_sought=raw["moe_sought"],
+            moe_entry=raw["moe_entry"],
+            moe_absent_reason=raw["moe_absent_reason"],
+        )
+    return declarations
 
 
 def parse_entry(entry_id: str, raw_entry: Any) -> RosterEntry:
@@ -332,6 +446,9 @@ def _parse_entry(entry_id: str, raw_entry: Any) -> RosterEntry:
             kind=raw_architecture["kind"],
             expert_count=raw_architecture["expert_count"],
             active_params_b=raw_architecture["active_params_b"],
+            total_params=_optional_count(
+                entry_id, raw_architecture, "total_params", "architecture."
+            ),
         ),
         server_flags=raw_entry["server_flags"],
         validated_host=raw_entry["validated_host"],
@@ -339,7 +456,37 @@ def _parse_entry(entry_id: str, raw_entry: Any) -> RosterEntry:
         thinking_control=_parse_thinking_control(entry_id, raw_entry),
         licence=_parse_licence(entry_id, raw_entry),
         language_claim=_parse_language_claim(entry_id, raw_entry),
+        size_class=_parse_size_class(entry_id, raw_entry),
+        bytes_on_disk=_optional_count(entry_id, raw_entry, "bytes_on_disk"),
     )
+
+
+def _parse_size_class(entry_id: str, raw_entry: dict[str, Any]) -> str | None:
+    """The entry's declared size class, or `None` when it declares none."""
+    if "size_class" not in raw_entry:
+        return None
+    size_class = raw_entry["size_class"]
+    if size_class not in SIZE_CLASSES:
+        raise _malformed(
+            entry_id, "size_class", f"one of {', '.join(SIZE_CLASSES)}", size_class
+        )
+    return str(size_class)
+
+
+def _optional_count(
+    entry_id: str, block: dict[str, Any], key: str, prefix: str = ""
+) -> int | None:
+    """`block[key]` as a positive integer, or `None` when the key is absent.
+
+    A float is refused rather than rounded: both figures are read off the
+    file, where they are exact.
+    """
+    if key not in block:
+        return None
+    value = block[key]
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        raise _malformed(entry_id, prefix + key, "a positive integer", value)
+    return value
 
 
 def _optional_block(

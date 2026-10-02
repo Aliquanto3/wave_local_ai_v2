@@ -210,6 +210,16 @@ The command-line interface for running benchmarks.
   block, `refused`, or `deferred` (unknown architecture under the pinned
   build). Never writes `models.json`; exits `0`/`1`/`2` (pass / recorded
   refusal / nothing recorded). See `docs/setup.md` 3.2.
+- `wave-local-ai-v2-composition-check [--roster <models.json>]` — Methodology
+  13's composition rule (`composition_check.py`): per size class the families
+  it spans, dense/MoE presence, the single-family-ladder label and the MoE
+  declaration, then per entry its figures and licence terms. Exits `1` naming
+  the class or entry when a class spans one family unlabelled, has no MoE and
+  no reason, or an entry lacks a resolvable family, class, figures or licence,
+  or its class disagrees with its total parameters; `2` when the roster does
+  not load. Run before a roster table is published; not in the merge gate
+  while the shipped roster fails it (four unlabelled `qwen` classes, quoted in
+  `aidd_docs/results/README.md`).
 - `wave-local-ai-v2-serve` — read-only results service: four `GET` routes over
   the two stores, answering the views a pitch screen needs without a terminal.
   Writes nothing: every store file is opened for reading, and every non-`GET`
@@ -266,7 +276,7 @@ stores are never merged (see `architecture.md`).
 Both commands resolve the model to launch through the tracked roster
 (`ROSTER_PATH`, default `aidd_docs/roster/models.json`) and select which
 entry to use via `ROSTER_ENTRY_ID`. The roster holds four entries at
-`roster_version` 3:
+`roster_version` 4:
 
 | Entry id | Model | Arch | Quant |
 | -------- | ----- | ---- | ----- |
@@ -293,6 +303,14 @@ the entry's pinned revision. The claim is never written by a suite result. A
 declared `family` must be one of `roster.KNOWN_FAMILIES` (vendor lineage:
 `qwen`, `mistral`, `google`, `ibm`, `liquid`, `microsoft`); anything else, and
 any malformed block field, is refused at load naming the entry and the field.
+
+Each entry also declares its `size_class` (`~0.5B`, `~2B`, `~4B`,
+`~8B-and-up`, banded on total parameters at 1B/3B/6B, `roster.SIZE_CLASS_BANDS`)
+with the two figures that justify it, `architecture.total_params` and
+`bytes_on_disk`, both read off the GGUF; the file's top-level `size_classes`
+block declares per class `single_family_ladder`, `moe_sought`, `moe_entry`
+and `moe_absent_reason`. All are optional at load and shape-checked when
+present; `wave-local-ai-v2-composition-check` is what names an absence.
 
 `ROSTER_ENTRY_ID` defaults to the MoE flagship. Running several entries in
 turn is a shell loop over the ids, not a runner script: `load_dotenv(override=

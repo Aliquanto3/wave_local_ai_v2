@@ -1196,6 +1196,7 @@ def _score_and_write(
             "model_id": model_id,
             "provider": provider,
             "subject_egress": row_contract.subject_egress_for(provider),
+            **quality_rows.subject_composition_fields(model_id, provider, roster_entry),
             "fiche_hash": fiche_hash,
             **batch_fields,
             "task_suite": spec.task_suite,

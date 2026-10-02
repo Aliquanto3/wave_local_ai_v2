@@ -883,6 +883,9 @@ def _build_row(
         "provider": provider,
         # The subject call alone; what judging sent stays in `judge_egress`.
         "subject_egress": row_contract.subject_egress_for(provider),
+        **quality_rows.subject_composition_fields(
+            model_id, provider, context.roster_entry
+        ),
         "fiche_hash": context.fiche_hash,
         **batch_fields,
         "task_suite": TASK_SUITE,

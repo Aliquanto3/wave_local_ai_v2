@@ -416,10 +416,11 @@ def test_the_shipped_moe_entry_still_loads_with_no_family_of_its_own() -> None:
     entry = roster.resolve_entry(loaded, "qwen3.6-35b-a3b-ud-iq4xs")
 
     # roster_version 2 was the dense ladder's arrival, 3 the licence and
-    # language-claim blocks: rows already published carry the version they
-    # were produced under and are not back-filled, so the assertion follows
-    # the file rather than pinning a version the file has moved past.
-    assert loaded.roster_version == 3
+    # language-claim blocks, 4 the size classes and their figures: rows
+    # already published carry the version they were produced under and are
+    # not back-filled, so the assertion follows the file rather than pinning
+    # a version the file has moved past.
+    assert loaded.roster_version == 4
     assert entry.family is None
     assert roster.family_of(entry.display_id, entry) == "qwen"
 
@@ -689,3 +690,185 @@ def test_each_shipped_dense_entry_publishes_the_suites_context_cap(
     entry = roster.resolve_entry(roster.load_roster(REAL_ROSTER_PATH), entry_id)
 
     assert entry.server_flags["context_size"] == 32768
+
+
+# --------------------------------------------------------------------------
+# Size class, its two figures and the per-class declaration (Q10 (a))
+
+DECLARATION = {
+    "single_family_ladder": True,
+    "moe_sought": True,
+    "moe_entry": None,
+    "moe_absent_reason": "no MoE GGUF found below 1B",
+}
+
+
+def _load_file(tmp_path: Path, raw: dict) -> roster.RosterFile:
+    path = tmp_path / "roster.json"
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    return roster.load_roster(path)
+
+
+@pytest.mark.parametrize(
+    ("total_params", "expected"),
+    [
+        (1, "~0.5B"),
+        (999_999_999, "~0.5B"),
+        (1_000_000_000, "~2B"),
+        (2_999_999_999, "~2B"),
+        (3_000_000_000, "~4B"),
+        (5_999_999_999, "~4B"),
+        (6_000_000_000, "~8B-and-up"),
+        (35_000_000_000, "~8B-and-up"),
+    ],
+)
+def test_size_class_for_bands_total_parameters_at_the_q10_edges(
+    total_params: int, expected: str
+) -> None:
+    assert roster.size_class_for(total_params) == expected
+
+
+def test_size_class_for_refuses_a_negative_count() -> None:
+    with pytest.raises(ValueError, match="negative"):
+        roster.size_class_for(-1)
+
+
+def test_the_vocabulary_is_the_bands_names_in_order() -> None:
+    assert roster.SIZE_CLASSES == ("~0.5B", "~2B", "~4B", "~8B-and-up")
+    edges = [edge for _, edge in roster.SIZE_CLASS_BANDS]
+    assert edges == sorted(edges)
+
+
+def test_a_size_class_and_its_figures_load(tmp_path: Path) -> None:
+    architecture = {**MOE_ENTRY["architecture"], "total_params": 34_660_610_688}
+    entry = _load_moe_with(
+        tmp_path,
+        size_class="~8B-and-up",
+        bytes_on_disk=17_730_509_792,
+        architecture=architecture,
+    )
+
+    assert entry.size_class == "~8B-and-up"
+    assert entry.bytes_on_disk == 17_730_509_792
+    assert entry.architecture.total_params == 34_660_610_688
+
+
+def test_absent_size_figures_load_as_none(tmp_path: Path) -> None:
+    entry = _load_moe_with(tmp_path)
+
+    assert entry.size_class is None
+    assert entry.bytes_on_disk is None
+    assert entry.architecture.total_params is None
+
+
+@pytest.mark.parametrize("value", ["8B", "~8b-and-up", None, 4])
+def test_load_roster_refuses_a_size_class_outside_the_vocabulary(
+    tmp_path: Path, value: object
+) -> None:
+    with pytest.raises(RosterError, match=f"{MOE_ENTRY_ID}.*'size_class'"):
+        _load_moe_with(tmp_path, size_class=value)
+
+
+@pytest.mark.parametrize("value", [0, -5, 1.5e9, "1000", True, None])
+def test_load_roster_refuses_a_figure_that_is_not_a_positive_integer(
+    tmp_path: Path, value: object
+) -> None:
+    with pytest.raises(RosterError, match=f"{MOE_ENTRY_ID}.*'bytes_on_disk'"):
+        _load_moe_with(tmp_path, bytes_on_disk=value)
+    architecture = {**MOE_ENTRY["architecture"], "total_params": value}
+    with pytest.raises(
+        RosterError, match=f"{MOE_ENTRY_ID}.*'architecture.total_params'"
+    ):
+        _load_moe_with(tmp_path, architecture=architecture)
+
+
+def test_a_size_class_declaration_loads(tmp_path: Path) -> None:
+    loaded = _load_file(
+        tmp_path,
+        {"roster_version": 4, "size_classes": {"~0.5B": DECLARATION}, "entries": {}},
+    )
+
+    assert loaded.size_classes == {
+        "~0.5B": roster.SizeClassDeclaration(
+            single_family_ladder=True,
+            moe_sought=True,
+            moe_entry=None,
+            moe_absent_reason="no MoE GGUF found below 1B",
+        )
+    }
+
+
+def test_a_roster_without_declarations_loads_with_none(tmp_path: Path) -> None:
+    loaded = _load_file(tmp_path, {"roster_version": 4, "entries": {}})
+
+    assert loaded.size_classes == {}
+
+
+@pytest.mark.parametrize(
+    ("block", "expected"),
+    [
+        ([], "'size_classes' must be an object"),
+        ({"~1B": DECLARATION}, "size class '~1B' is not a size class"),
+        ({"~2B": "ladder"}, "size class '~2B' must be an object"),
+        (
+            {"~2B": {"single_family_ladder": True}},
+            "missing field(s): moe_sought, moe_entry, moe_absent_reason",
+        ),
+        (
+            {"~2B": {**DECLARATION, "single_family_ladder": "yes"}},
+            "'single_family_ladder' must be a boolean",
+        ),
+        ({"~2B": {**DECLARATION, "moe_sought": 1}}, "'moe_sought' must be a boolean"),
+        (
+            {"~2B": {**DECLARATION, "moe_entry": ""}},
+            "'moe_entry' must be null or a non-empty string",
+        ),
+        (
+            {"~2B": {**DECLARATION, "moe_absent_reason": "  "}},
+            "'moe_absent_reason' must be null or a non-empty string",
+        ),
+    ],
+)
+def test_load_roster_refuses_a_malformed_declaration_naming_its_class(
+    tmp_path: Path, block: object, expected: str
+) -> None:
+    with pytest.raises(RosterError, match=re.escape(expected)):
+        _load_file(
+            tmp_path, {"roster_version": 4, "size_classes": block, "entries": {}}
+        )
+
+
+# Read off the four GGUFs on the dev machine: `stat` for the bytes (the three
+# dense ones equal `docs/setup.md` step 3.1's table), the tensor sum of
+# `candidate_gate.read_gguf_facts` for the totals.
+SHIPPED_FIGURES = {
+    "qwen3.6-35b-a3b-ud-iq4xs": ("~8B-and-up", 34_660_610_688, 17_730_509_792),
+    "qwen3-0.6b-q8": ("~0.5B", 596_049_920, 639_446_688),
+    "qwen3-1.7b-q8": ("~2B", 1_720_574_976, 1_834_426_016),
+    "qwen3-4b-q4km": ("~4B", 4_022_468_096, 2_497_280_256),
+}
+
+
+@pytest.mark.parametrize("entry_id", sorted(SHIPPED_FIGURES))
+def test_each_shipped_entry_carries_its_class_and_the_figures_read_off_its_file(
+    entry_id: str,
+) -> None:
+    entry = roster.resolve_entry(roster.load_roster(REAL_ROSTER_PATH), entry_id)
+    size_class, total_params, bytes_on_disk = SHIPPED_FIGURES[entry_id]
+
+    assert entry.size_class == size_class
+    assert entry.architecture.total_params == total_params
+    assert entry.bytes_on_disk == bytes_on_disk
+    assert roster.size_class_for(total_params) == size_class
+
+
+def test_the_shipped_roster_declares_every_class_and_labels_none() -> None:
+    # Not labelled by this story: the search that would justify a ladder
+    # label or a MoE absence belongs to the per-class stories (orders 5-8).
+    loaded = roster.load_roster(REAL_ROSTER_PATH)
+
+    assert tuple(loaded.size_classes) == roster.SIZE_CLASSES
+    for declaration in loaded.size_classes.values():
+        assert declaration.single_family_ladder is False
+        assert declaration.moe_absent_reason is None
+    assert loaded.size_classes["~8B-and-up"].moe_entry == "qwen3.6-35b-a3b-ud-iq4xs"

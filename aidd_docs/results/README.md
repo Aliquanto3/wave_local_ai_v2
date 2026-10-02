@@ -60,7 +60,7 @@ Read one table with no join: every pointer a row cites is resolved into columns 
 not from `row_contract.SCHEMA_VERSION`; each row also keeps its own `schema_version` column.
 A regenerated bundle declares its own version with no code change. The roster gap is shown,
 not reconciled: rows state `roster_version` `1`, the roster file they resolve against is
-`roster_file_version` `3`.
+`roster_file_version` `4`.
 
 **Absence stays absence.** An empty cell is either a recorded `null` or a field the source
 does not carry; the row's last column, `fields_not_carried`, lists the columns whose
@@ -433,6 +433,88 @@ which names that same suite. That refusal is the current coverage reading
 the record appears here once the last entry resolves, and until then the
 overview's coverage absence above stays true.
 
+## Roster composition: four unlabelled single-family classes (2026-10-02)
+
+Methodology 13's composition rule is a command, not prose:
+`uv run wave-local-ai-v2-composition-check [--roster <models.json>]`
+(`composition_check.py`). It reads the roster, classes every entry by its
+declared `size_class`, and reports per class the families it spans
+(`roster.family_of`, so the flagship resolves through the in-code fallback
+like any row does), whether dense and MoE are both present, the
+single-family-ladder label and the MoE declaration; then per entry its total
+parameters, its bytes on disk, its licence id, whether client-side commercial
+use is permitted and the date the terms were read.
+
+**What a size class is.** Four classes, banded on total parameters (owner
+answer Q10 (a)): below 1B is `~0.5B`, 1B to below 3B is `~2B`, 3B to below 6B
+is `~4B`, 6B and up is `~8B-and-up`. The edges are configuration
+(`roster.SIZE_CLASS_BANDS`) and revisable after the first full-roster run;
+moving one is a re-class, not a rewrite of the check. Bytes on disk are the
+footprint published beside the class and are never banded: whether an entry
+fits a given machine is the machine epic's profiles' to say, not the class's.
+Each entry declares its class, `architecture.total_params` (read off the
+GGUF's tensors) and `bytes_on_disk` (read off the file), so the classing is
+checked against the entry rather than asserted by its author. The roster's
+`size_classes` block carries one declaration per class: whether it is a
+single-family ladder, whether a MoE was sought, which entry represents it,
+and the reason when none does.
+
+**What it refuses: silence, not a single-family roster.** It exits `1`
+naming the class or the entry when a class spans one family without the
+ladder label, when a class has no MoE and no recorded reason, when an entry
+has no resolvable family, no size class, no total parameters, no bytes on
+disk or no licence block, or when an entry's declared class disagrees with
+the band its total parameters fall in. It also names a ladder label on a
+class spanning two families and a MoE declaration that disagrees with the
+class's entries. A class spanning two families passes; a labelled
+single-family ladder passes; a class with no entries publishes nothing and
+is not failed. Exit `2` means the roster file could not be loaded at all.
+
+**Today it fails, which is the honest state.** Run on the shipped roster
+(`roster_version` 4) before any new entry is authored, it reports four
+classes, each spanning exactly one family (`qwen`), none labelled, and the
+three dense classes with no MoE searched for and no reason recorded. The
+roster is deliberately not labelled here: the search that would justify a
+ladder label or a MoE absence is the per-class stories' work. A check that
+passed on this roster would not be checking the rule.
+`tests/test_composition_check.py` fails when the block below drifts from the
+command's output.
+
+<!-- composition-check:start -->
+```text
+Roster composition: aidd_docs/roster/models.json (roster_version 4)
+Size classes, banded on total parameters: ~0.5B < 1,000,000,000 <= ~2B < 3,000,000,000 <= ~4B < 6,000,000,000 <= ~8B-and-up
+  ~0.5B: 1 entry; families: qwen; dense: yes; MoE: no; label: none; MoE sought: no; MoE absence reason: none
+  ~2B: 1 entry; families: qwen; dense: yes; MoE: no; label: none; MoE sought: no; MoE absence reason: none
+  ~4B: 1 entry; families: qwen; dense: yes; MoE: no; label: none; MoE sought: no; MoE absence reason: none
+  ~8B-and-up: 1 entry; families: qwen; dense: no; MoE: yes (qwen3.6-35b-a3b-ud-iq4xs); label: none; MoE sought: yes; MoE absence reason: n/a
+Entries
+  qwen3.6-35b-a3b-ud-iq4xs: ~8B-and-up; family qwen; moe; 34,660,610,688 total params; 17,730,509,792 bytes on disk; licence Apache-2.0, client commercial use yes, read 2026-10-02
+  qwen3-0.6b-q8: ~0.5B; family qwen; dense; 596,049,920 total params; 639,446,688 bytes on disk; licence Apache-2.0, client commercial use yes, read 2026-10-02
+  qwen3-1.7b-q8: ~2B; family qwen; dense; 1,720,574,976 total params; 1,834,426,016 bytes on disk; licence Apache-2.0, client commercial use yes, read 2026-10-02
+  qwen3-4b-q4km: ~4B; family qwen; dense; 4,022,468,096 total params; 2,497,280,256 bytes on disk; licence Apache-2.0, client commercial use yes, read 2026-10-02
+Failures (7)
+  size class ~0.5B: spans one family (qwen) without the single-family-ladder label
+  size class ~0.5B: has no MoE represented and no reason recorded
+  size class ~2B: spans one family (qwen) without the single-family-ladder label
+  size class ~2B: has no MoE represented and no reason recorded
+  size class ~4B: spans one family (qwen) without the single-family-ladder label
+  size class ~4B: has no MoE represented and no reason recorded
+  size class ~8B-and-up: spans one family (qwen) without the single-family-ladder label
+FAIL: 7 failure(s)
+```
+<!-- composition-check:end -->
+
+**When to run it.** Before a roster table is published, run the check and
+publish its output beside the table; a class it names is either fixed in the
+roster or published with the failure stated. It is not part of the merge gate
+or CI while the shipped roster is expected to fail it.
+
+Every quality row written from schema `"19"` on carries `family` (its
+subject's: the local entry's, or a cloud model's own) and `size_class` (the
+local entry's; `null` on a cloud row, whose model is not banded). Rows below
+`"19"` are not back-filled.
+
 ## This regeneration (Story 19 + Story 20, 2026-08-27)
 
 Both files were regenerated from scratch under the current schema (`schema_version` `"7"`),
@@ -700,7 +782,7 @@ not all share that provenance. Where each one lives:
 All four cite fiche `b9d1af56...`, which is committed, so those numbers resolve too.
 
 The model set is the roster's four entries, unchanged since `roster_version` 2 (version 3
-adds licence and language metadata only): the MoE flagship plus a dense Qwen3 size ladder. The
+adds licence and language metadata only, version 4 size classes and their figures): the MoE flagship plus a dense Qwen3 size ladder. The
 dense/MoE distinction is what the section is for, so it is in the table rather than in a
 footnote:
 

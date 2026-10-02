@@ -19,6 +19,7 @@ from wave_local_ai_v2 import (
     judge_protocol,
     prompt_provenance,
     prompt_variants,
+    roster,
     suite_gate,
     timings,
 )
@@ -143,7 +144,21 @@ from wave_local_ai_v2 import (
 # exclusion, no repetitions); `item_first_in_batch` marks the batch's cold
 # first generation. Energy stays per batch. The runtime row is untouched. A
 # row below "18" is read under its own version and never back-filled.
-SCHEMA_VERSION = "18"
+# "19": `family` and `size_class` became required on quality rows only (Story:
+# the composition check names every size class and refuses an unlabelled
+# single-family one). `family` is the row's *subject's* family as
+# `roster.family_of` resolves it -- never the family of the local entry a
+# cloud row cites as the one it ran beside -- and `size_class` is the local
+# entry's declared class, `null` on a cloud row, whose model has none. Both
+# are required only on a row whose own `schema_version` is "19" or later
+# (`SUBJECT_COMPOSITION_SCHEMA_VERSION`): a row below "19" still validates
+# without them and is never back-filled. The runtime row is untouched.
+SCHEMA_VERSION = "19"
+
+# The two subject-composition fields "19" added, and the version from which a
+# quality row owes them.
+SUBJECT_COMPOSITION_FIELDS: frozenset[str] = frozenset({"family", "size_class"})
+SUBJECT_COMPOSITION_SCHEMA_VERSION = "19"
 
 # The value `subject_egress` takes when the subject prompt never left the
 # machine, and the `provider` a quality row names for a subject served by the
@@ -404,6 +419,9 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
                 "item_measurement_kind",
                 "item_first_in_batch",
             ),
+            # quality_rows.subject_composition_fields: the subject's family and
+            # size class (schema "19"; not owed below it).
+            *SUBJECT_COMPOSITION_FIELDS,
         }
     ),
 }
@@ -574,6 +592,8 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
     counts as missing.
     """
     missing = REQUIRED_FIELDS[kind] - row.keys()
+    if kind == "quality" and _predates_subject_composition(row):
+        missing -= SUBJECT_COMPOSITION_FIELDS
     if missing:
         raise RowContractError(
             f"row of kind {kind!r} is missing required field(s): "
@@ -626,8 +646,54 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
         _validate_retry_budget(row)
         _validate_partial_failure(row)
         _validate_item_measurement(row)
+        _validate_subject_composition(row)
         _validate_judged_fields(row)
         _validate_graded_fields(row)
+
+
+def _predates_subject_composition(row: dict[str, Any]) -> bool:
+    """True when the row's own `schema_version` is below "19".
+
+    A version that is not an integer string is not read as old: the row is
+    held to the current contract rather than excused by a malformed field.
+    """
+    version = row.get("schema_version")
+    if not isinstance(version, str) or not version.isdigit():
+        return False
+    return int(version) < int(SUBJECT_COMPOSITION_SCHEMA_VERSION)
+
+
+def _validate_subject_composition(row: dict[str, Any]) -> None:
+    """Refuse an unknown family, an unknown size class, and a size class on a
+    cloud row.
+
+    A writer always knows its subject's family (`roster.family_of` refuses
+    rather than defaults), so `family` is never null. `size_class` is a local
+    entry's declaration: a cloud subject has none, and a local entry that
+    declares none publishes `null`, which the composition check names.
+    """
+    if not SUBJECT_COMPOSITION_FIELDS <= row.keys():
+        return
+    family = row["family"]
+    if not isinstance(family, str) or family not in roster.KNOWN_FAMILIES:
+        raise RowContractError(
+            f"row of kind 'quality' has family {family!r}, not one of "
+            f"{', '.join(sorted(roster.KNOWN_FAMILIES))}"
+        )
+    size_class = row["size_class"]
+    if size_class is None:
+        return
+    if size_class not in roster.SIZE_CLASSES:
+        raise RowContractError(
+            f"row of kind 'quality' has size_class {size_class!r}, not one of "
+            f"{', '.join(roster.SIZE_CLASSES)} or null"
+        )
+    if row["provider"] != SUBJECT_PROVIDER_LOCAL:
+        raise RowContractError(
+            f"row of kind 'quality' has size_class {size_class!r} but provider "
+            f"{row['provider']!r}: a cloud subject has no size class, so its "
+            "row records null"
+        )
 
 
 def subject_egress_for(provider: str) -> str:

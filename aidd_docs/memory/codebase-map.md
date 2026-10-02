@@ -35,4 +35,5 @@ flowchart TD
 - `wave-local-ai-v2-export` CLI command → `src/wave_local_ai_v2/bundle_export.py:main` (the bundle as flat CSV tables — see `cli.md`)
 - `wave-local-ai-v2-compare` CLI command → `src/wave_local_ai_v2/comparison.py:main` (paired comparison record — see `cli.md`)
 - `wave-local-ai-v2-candidate-gate` CLI command → `src/wave_local_ai_v2/candidate_gate.py:main` (the roster's candidate verification gate — see `cli.md`)
+- `wave-local-ai-v2-composition-check` CLI command → `src/wave_local_ai_v2/composition_check.py:main` (the roster's size-class composition rule — see `cli.md`)
 - Gap, not fixed here: `pyproject.toml` also declares `wave-local-ai-v2-judge-probe` → `judge_probe.py:main`, which this list has never named.

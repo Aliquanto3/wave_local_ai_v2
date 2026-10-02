@@ -294,8 +294,15 @@ def _entry_block(
     expert_count: int,
     licence: dict[str, Any] | None = None,
     language_claim: dict[str, Any] | None = None,
+    total_params: int | None = None,
+    bytes_on_disk: int | None = None,
 ) -> dict[str, Any]:
-    """The roster entry block, in `models.json`'s own key order."""
+    """The roster entry block, in `models.json`'s own key order.
+
+    With the figures read off the file, the block carries them and the size
+    class their total falls in (`roster.size_class_for`): a band, not a
+    judgement, so the composition check agrees with it by construction.
+    """
     block: dict[str, Any] = {
         "repo": candidate.repo,
         "revision": candidate.revision,
@@ -303,8 +310,12 @@ def _entry_block(
         "display_id": candidate.display_id,
         "quant": candidate.quant,
         "sha256": sha256,
-        "family": candidate.family,
     }
+    if total_params is not None:
+        block["size_class"] = roster.size_class_for(total_params)
+    if bytes_on_disk is not None:
+        block["bytes_on_disk"] = bytes_on_disk
+    block["family"] = candidate.family
     if candidate.thinking_control != THINKING_ALLOWED:
         block["thinking_control"] = candidate.thinking_control
     if licence is not None:
@@ -316,6 +327,8 @@ def _entry_block(
         "expert_count": expert_count,
         "active_params_b": candidate.active_params_b,
     }
+    if total_params is not None:
+        block["architecture"]["total_params"] = total_params
     block["server_flags"] = candidate.server_flags
     block["validated_host"] = candidate.validated_host
     return block
@@ -664,6 +677,8 @@ def run_gate(
         expert_count=facts.expert_count,
         licence=licence,
         language_claim=language_claim,
+        total_params=facts.total_params,
+        bytes_on_disk=size,
     )
     # Proven loadable by the roster's own parser, not by a copy of its rules.
     roster.parse_entry(candidate.entry_id, entry)

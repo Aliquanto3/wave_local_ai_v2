@@ -1,5 +1,31 @@
 {
-  "roster_version": 3,
+  "roster_version": 4,
+  "size_classes": {
+    "~0.5B": {
+      "single_family_ladder": false,
+      "moe_sought": false,
+      "moe_entry": null,
+      "moe_absent_reason": null
+    },
+    "~2B": {
+      "single_family_ladder": false,
+      "moe_sought": false,
+      "moe_entry": null,
+      "moe_absent_reason": null
+    },
+    "~4B": {
+      "single_family_ladder": false,
+      "moe_sought": false,
+      "moe_entry": null,
+      "moe_absent_reason": null
+    },
+    "~8B-and-up": {
+      "single_family_ladder": false,
+      "moe_sought": true,
+      "moe_entry": "qwen3.6-35b-a3b-ud-iq4xs",
+      "moe_absent_reason": null
+    }
+  },
   "entries": {
     "qwen3.6-35b-a3b-ud-iq4xs": {
       "repo": "unsloth/Qwen3.6-35B-A3B-GGUF",
@@ -8,6 +34,8 @@
       "display_id": "Qwen3.6-35B-A3B",
       "quant": "UD-IQ4_XS",
       "sha256": "649d7508507b84638732c4f52c24c8b15843c6dca2f3ff793ae07c14a67ebbb3",
+      "size_class": "~8B-and-up",
+      "bytes_on_disk": 17730509792,
       "thinking_control": {
         "chat_template_kwargs": {
           "enable_thinking": false
@@ -27,7 +55,8 @@
       "architecture": {
         "kind": "moe",
         "expert_count": 40,
-        "active_params_b": 3.1
+        "active_params_b": 3.1,
+        "total_params": 34660610688
       },
       "server_flags": {
         "n_gpu_layers": 99,
@@ -57,6 +86,8 @@
       "display_id": "Qwen3-0.6B",
       "quant": "Q8_0",
       "sha256": "9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031",
+      "size_class": "~0.5B",
+      "bytes_on_disk": 639446688,
       "family": "qwen",
       "thinking_control": {
         "chat_template_kwargs": {
@@ -78,7 +109,8 @@
       "architecture": {
         "kind": "dense",
         "expert_count": 0,
-        "active_params_b": 0.6
+        "active_params_b": 0.6,
+        "total_params": 596049920
       },
       "server_flags": {
         "n_gpu_layers": 99,
@@ -108,6 +140,8 @@
       "display_id": "Qwen3-1.7B",
       "quant": "Q8_0",
       "sha256": "061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a",
+      "size_class": "~2B",
+      "bytes_on_disk": 1834426016,
       "family": "qwen",
       "thinking_control": {
         "chat_template_kwargs": {
@@ -129,7 +163,8 @@
       "architecture": {
         "kind": "dense",
         "expert_count": 0,
-        "active_params_b": 1.7
+        "active_params_b": 1.7,
+        "total_params": 1720574976
       },
       "server_flags": {
         "n_gpu_layers": 99,
@@ -159,6 +194,8 @@
       "display_id": "Qwen3-4B",
       "quant": "Q4_K_M",
       "sha256": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
+      "size_class": "~4B",
+      "bytes_on_disk": 2497280256,
       "family": "qwen",
       "thinking_control": {
         "chat_template_kwargs": {
@@ -180,7 +217,8 @@
       "architecture": {
         "kind": "dense",
         "expert_count": 0,
-        "active_params_b": 4.0
+        "active_params_b": 4.0,
+        "total_params": 4022468096
       },
       "server_flags": {
         "n_gpu_layers": 99,

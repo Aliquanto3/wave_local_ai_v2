@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The roster composition check names every size class and refuses an
+  unlabelled single-family one (row schema "19", `roster_version` 4)** --
+  `wave-local-ai-v2-composition-check` reports per size class (`~0.5B`,
+  `~2B`, `~4B`, `~8B-and-up`, banded on total parameters at 1B/3B/6B) the
+  families it spans, dense and MoE presence, the single-family-ladder label
+  and the MoE declaration, then per entry its total parameters, bytes on
+  disk and licence terms. It exits `1` naming the class or entry when a
+  class spans one family unlabelled or has no MoE and no recorded reason,
+  or an entry lacks a resolvable family, a size class, its figures or a
+  licence block, or declares a class its total parameters disagree with.
+  Each roster entry now declares `size_class`, `architecture.total_params`
+  and `bytes_on_disk` (read off the GGUF), and the roster's `size_classes`
+  block declares each class. On the shipped roster it fails, naming four
+  unlabelled `qwen` classes; the output is quoted in
+  `aidd_docs/results/README.md`. Every quality row now carries its
+  subject's `family` and `size_class` (`null` on a cloud row); rows below
+  "19" are not back-filled.
+
 - **Each quality item records the tokens and the first-token time its
   generation took (row schema "18")** -- every quality row carries the
   item's own `item_tokens_in`, `item_tokens_out`, engine-reported

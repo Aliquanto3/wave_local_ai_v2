@@ -77,6 +77,8 @@ FAKE_ROSTER = {
             "file": "fake.gguf",
             "quant": "UD-IQ4_XS",
             "sha256": "0" * 64,
+            "family": "qwen",
+            "size_class": "~8B-and-up",
             "thinking_control": QWEN_THINKING_CONTROL,
             "architecture": {
                 "kind": "moe",
@@ -1219,6 +1221,24 @@ def test_every_row_records_where_its_subject_prompt_went(stubbed_run) -> None:
         "mistral": {"mistral"},
         "google": {"google"},
     }
+
+
+def test_every_row_names_its_subjects_family_and_size_class(stubbed_run) -> None:
+    quality_results_path, started = stubbed_run
+    _enable_google(started)
+
+    quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    composition = {(row["provider"], row["family"], row["size_class"]) for row in rows}
+    # The local subject is the entry; a cloud row cites that entry only as the
+    # one it ran beside, so it carries its own model's family and no class.
+    assert composition == {
+        ("local", "qwen", "~8B-and-up"),
+        ("mistral", "mistral", None),
+        ("google", "google", None),
+    }
+    assert {row["schema_version"] for row in rows} == {"19"}
 
 
 def test_google_batch_paces_every_request_under_the_free_tier_rpm_cap(

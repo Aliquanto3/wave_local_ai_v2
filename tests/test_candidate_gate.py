@@ -282,7 +282,14 @@ def test_a_passing_candidate_carries_every_field_a_roster_entry_requires(
         "kind": "dense",
         "expert_count": 0,
         "active_params_b": 0.6,
+        "total_params": 17,
     }
+    # The two figures read off the file, and the class their total bands in.
+    assert entry["bytes_on_disk"] == len(GGUF_BYTES)
+    assert entry["size_class"] == "~0.5B"
+    assert parsed.size_class == "~0.5B"
+    assert parsed.bytes_on_disk == len(GGUF_BYTES)
+    assert parsed.architecture.total_params == 17
     assert entry["licence"]["source_url"].endswith(f"/blob/{SHA}/LICENSE")
     assert entry["licence"]["read_on"] == "2026-10-02"
     observed = record["observed"]

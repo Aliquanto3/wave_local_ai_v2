@@ -72,6 +72,10 @@ NAMED_VALUES: dict[str, Any] = {
     "item_prompt_tokens_cached_null_reason": None,
     "item_measurement_kind": "single_generation",
     "item_first_in_batch": True,
+    # The fixture's provider is a placeholder, not `local`, so the row is read
+    # as a cloud subject's: a family and no size class.
+    "family": "qwen",
+    "size_class": None,
 }
 
 GRADED_VALUES: dict[str, Any] = {

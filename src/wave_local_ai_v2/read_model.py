@@ -375,6 +375,11 @@ QUALITY_FIELDS_NOT_RENDERED: frozenset[str] = frozenset(
         # call, and rendering them beside the runtime row's TTFT would invite
         # reading one generation as Methodology 6's aggregate.
         *row_contract.ITEM_MEASUREMENT_FIELDS,
+        # The subject's family and size class (schema "19"). On the row so a
+        # comparison of families is told from one of quants within a family;
+        # rendering the composition to a reader is the pitch epic's, which
+        # the size-class epic excludes.
+        *row_contract.SUBJECT_COMPOSITION_FIELDS,
     }
 )
 

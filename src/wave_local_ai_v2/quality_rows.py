@@ -19,7 +19,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from wave_local_ai_v2 import cost, emissions, timings
+from wave_local_ai_v2 import cost, emissions, roster, row_contract, timings
 from wave_local_ai_v2.energy import ENERGY_METHOD_UNAVAILABLE, EnergyResult
 from wave_local_ai_v2.settings import Settings
 from wave_local_ai_v2.suite_gate import SuiteGateResult
@@ -42,6 +42,27 @@ def suite_item_fields(
         "item_source": item.get("source"),
         "item_source_revision": item.get("source_revision"),
     }
+
+
+def subject_composition_fields(
+    model_id: str, provider: str, roster_entry: roster.RosterEntry
+) -> dict[str, Any]:
+    """The subject's family and size class, as one quality row carries them
+    (schema "19").
+
+    A local row's subject is `roster_entry` itself: its family resolves
+    through the entry (the flagship through the in-code fallback, with no
+    exception carved out) and its size class is the entry's declaration. A
+    cloud row cites the local entry only as the one it ran beside, so its
+    family is its own model's and its size class is `None`: a cloud model is
+    not banded.
+    """
+    if provider == row_contract.SUBJECT_PROVIDER_LOCAL:
+        return {
+            "family": roster.family_of(model_id, roster_entry),
+            "size_class": roster_entry.size_class,
+        }
+    return {"family": roster.family_of(model_id), "size_class": None}
 
 
 def item_measurement_fields(

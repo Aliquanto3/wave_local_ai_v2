@@ -1,3 +1,4 @@
+import dataclasses
 from pathlib import Path
 
 import pytest
@@ -7,6 +8,7 @@ from wave_local_ai_v2 import (
     aggregation,
     prompt_variants,
     quality_rows,
+    roster,
     suite_registry,
     timings,
 )
@@ -18,6 +20,8 @@ from wave_local_ai_v2.row_contract import (
     JUDGED_FIELDS,
     REQUIRED_FIELDS,
     SCHEMA_VERSION,
+    SUBJECT_COMPOSITION_FIELDS,
+    SUBJECT_COMPOSITION_SCHEMA_VERSION,
     RowContractError,
     subject_egress_for,
     validate_row,
@@ -231,6 +235,8 @@ COMPLETE_QUALITY_ROW = {
     "item_prompt_tokens_cached_null_reason": None,
     "item_measurement_kind": "single_generation",
     "item_first_in_batch": True,
+    "family": "qwen",
+    "size_class": "~8B-and-up",
 }
 
 
@@ -1067,14 +1073,14 @@ def test_the_schema_version_moved_once_for_the_thinking_policy() -> None:
     # `thinking_policy` is required on every quality row, because a score
     # produced with the subject allowed to reason and one produced without it
     # are not the same measurement and a row has to say which it is.
-    assert SCHEMA_VERSION == "18"
+    assert SCHEMA_VERSION == "19"
 
 
 def test_the_schema_version_moved_for_the_runtime_energy_window() -> None:
     # "12" fixes audit finding C3: the runtime row's energy figures used to
     # span the whole counted-repetition window, cooldowns included. Required
     # only on runtime rows -- quality rows carry no energy window at all.
-    assert SCHEMA_VERSION == "18"
+    assert SCHEMA_VERSION == "19"
     assert {"active_window_s", "idle_window_s", "energy_window_method"} <= (
         REQUIRED_FIELDS["runtime"]
     )
@@ -1087,7 +1093,7 @@ def test_the_schema_version_moved_for_the_judge_call_record_extension() -> None:
     # "13" adds five fields inside each judge call record. Additive inside the
     # conditional judge block: neither row kind's required set moves, so a
     # deterministic quality row validates unchanged.
-    assert SCHEMA_VERSION == "18"
+    assert SCHEMA_VERSION == "19"
     assert set(NEW_JUDGE_RECORD_FIELDS).isdisjoint(REQUIRED_FIELDS["quality"])
     assert set(NEW_JUDGE_RECORD_FIELDS).isdisjoint(JUDGED_FIELDS)
     validate_row("quality", COMPLETE_QUALITY_ROW)
@@ -1097,7 +1103,7 @@ def test_the_schema_version_moved_for_the_prompt_variant() -> None:
     # "14" makes both row kinds name the variant they ran under and carry the
     # prompt as the variant left it. Not conditional: every row ran under some
     # variant, and a row below "14" is never back-filled with `baseline`.
-    assert SCHEMA_VERSION == "18"
+    assert SCHEMA_VERSION == "19"
     for kind in ("runtime", "quality"):
         assert set(PROMPT_VARIANT_FIELDS) <= REQUIRED_FIELDS[kind]
 
@@ -1107,7 +1113,7 @@ def test_the_schema_version_moved_for_the_suite_level() -> None:
     # and its item's licence, source and source revision. Not conditional:
     # every suite is certified at some level. Quality rows only -- a runtime
     # row runs no suite.
-    assert SCHEMA_VERSION == "18"
+    assert SCHEMA_VERSION == "19"
     assert set(SUITE_LEVEL_FIELDS) <= REQUIRED_FIELDS["quality"]
     assert set(SUITE_LEVEL_FIELDS).isdisjoint(REQUIRED_FIELDS["runtime"])
 
@@ -1284,7 +1290,7 @@ def test_a_registered_non_baseline_variant_is_not_held_to_the_authored_text(
 def test_the_schema_version_moved_for_the_subject_egress() -> None:
     # "16" makes every row of either kind state where its subject prompt went.
     # Not conditional: every row was produced by sending a prompt somewhere.
-    assert SCHEMA_VERSION == "18"
+    assert SCHEMA_VERSION == "19"
     for kind in ("runtime", "quality"):
         assert "subject_egress" in REQUIRED_FIELDS[kind]
     # The subject field is not a member of the judge block, and the judge
@@ -1363,6 +1369,8 @@ def test_a_cloud_quality_row_recording_its_provider_validates(provider: str) -> 
             "provider": provider,
             "subject_egress": provider,
             "retry_budget": {provider: 4},
+            "family": provider,
+            "size_class": None,
         },
     )
 
@@ -1420,7 +1428,7 @@ def test_the_schema_version_moved_for_the_retry_budget_and_partial_batches() -> 
     # "17" makes every quality row name the retry budget its batch ran under
     # and whether that batch was left partial. The runtime row makes no cloud
     # call and has no resume, so it is untouched.
-    assert SCHEMA_VERSION == "18"
+    assert SCHEMA_VERSION == "19"
     for field in ("retry_budget", "partial_failure"):
         assert field in REQUIRED_FIELDS["quality"]
         assert field not in REQUIRED_FIELDS["runtime"]
@@ -1559,7 +1567,7 @@ def test_the_schema_version_moved_for_the_per_item_measurement() -> None:
     # "18" puts each item's own tokens, engine-reported TTFT and cached prompt
     # tokens on every quality row (Q24 (a)); the runtime row keeps its
     # Methodology 6 aggregate and is untouched.
-    assert SCHEMA_VERSION == "18"
+    assert SCHEMA_VERSION == "19"
     assert ITEM_MEASUREMENT_FIELDS <= REQUIRED_FIELDS["quality"]
     assert ITEM_MEASUREMENT_FIELDS.isdisjoint(REQUIRED_FIELDS["runtime"])
 
@@ -1671,3 +1679,112 @@ def test_the_first_generation_mark_is_a_boolean() -> None:
 
     with pytest.raises(RowContractError, match="item_first_in_batch"):
         validate_row("quality", row)
+
+
+# --------------------------------------------------------------------------
+# Schema "19": the subject's family and size class
+
+
+def test_the_schema_version_moved_for_the_subject_composition() -> None:
+    # "19" puts the subject's family and size class on every quality row; the
+    # runtime row is untouched.
+    assert SCHEMA_VERSION == "19"
+    assert SUBJECT_COMPOSITION_SCHEMA_VERSION == "19"
+    assert SUBJECT_COMPOSITION_FIELDS == {"family", "size_class"}
+    assert SUBJECT_COMPOSITION_FIELDS <= REQUIRED_FIELDS["quality"]
+    assert SUBJECT_COMPOSITION_FIELDS.isdisjoint(REQUIRED_FIELDS["runtime"])
+
+
+@pytest.mark.parametrize("field", ["family", "size_class"])
+def test_a_quality_row_without_family_or_size_class_is_refused_at_19(field) -> None:
+    row = {k: v for k, v in COMPLETE_QUALITY_ROW.items() if k != field}
+
+    with pytest.raises(RowContractError, match=field):
+        validate_row("quality", row)
+
+
+def test_an_earlier_version_row_without_either_field_still_validates() -> None:
+    row = {
+        k: v
+        for k, v in COMPLETE_QUALITY_ROW.items()
+        if k not in SUBJECT_COMPOSITION_FIELDS
+    }
+
+    validate_row("quality", {**row, "schema_version": "18"})
+
+
+@pytest.mark.parametrize("version", ["19", "20", "not-a-version", None])
+def test_a_row_at_or_past_19_or_with_no_readable_version_owes_both(version) -> None:
+    row = {k: v for k, v in COMPLETE_QUALITY_ROW.items() if k != "size_class"}
+
+    with pytest.raises(RowContractError, match="size_class"):
+        validate_row("quality", {**row, "schema_version": version})
+
+
+@pytest.mark.parametrize("family", ["gemma", None, "", ["qwen"]])
+def test_an_unknown_family_is_refused_by_value(family) -> None:
+    with pytest.raises(RowContractError, match="has family"):
+        validate_row("quality", {**COMPLETE_QUALITY_ROW, "family": family})
+
+
+@pytest.mark.parametrize("size_class", ["8B", "~8b-and-up", 4])
+def test_an_unknown_size_class_is_refused_by_value(size_class) -> None:
+    with pytest.raises(RowContractError, match="has size_class"):
+        validate_row("quality", {**COMPLETE_QUALITY_ROW, "size_class": size_class})
+
+
+def test_a_local_row_whose_entry_declares_no_class_records_null() -> None:
+    validate_row("quality", {**COMPLETE_QUALITY_ROW, "size_class": None})
+
+
+def test_a_cloud_row_with_a_size_class_is_refused() -> None:
+    row = {
+        **COMPLETE_QUALITY_ROW,
+        "provider": "mistral",
+        "subject_egress": "mistral",
+        "model_id": "mistral-small-2603",
+        "family": "mistral",
+        "retry_budget": {"mistral": 4},
+    }
+
+    validate_row("quality", {**row, "size_class": None})
+    with pytest.raises(RowContractError, match="a cloud subject has no size class"):
+        validate_row("quality", row)
+
+
+def _entry(**changes) -> roster.RosterEntry:
+    base = roster.RosterEntry(
+        entry_id="flagship",
+        repo="r",
+        revision="main",
+        file="f.gguf",
+        display_id="Qwen3.6-35B-A3B",
+        quant="q",
+        sha256="0" * 64,
+        architecture=roster.Architecture("moe", 40, 3.1),
+        server_flags={},
+        validated_host={},
+        size_class="~8B-and-up",
+    )
+    return dataclasses.replace(base, **changes)
+
+
+def test_the_writers_block_names_the_local_subject_and_its_class() -> None:
+    # The flagship declares no family of its own: it resolves through the
+    # in-code fallback, with no exception carved out.
+    block = quality_rows.subject_composition_fields(
+        "Qwen3.6-35B-A3B", "local", _entry()
+    )
+
+    assert block == {"family": "qwen", "size_class": "~8B-and-up"}
+    validate_row("quality", {**COMPLETE_QUALITY_ROW, **block})
+
+
+def test_the_writers_block_names_a_cloud_subject_by_its_own_family() -> None:
+    # The cloud row cites the local entry it ran beside; the family it carries
+    # is still its own model's, never the entry's.
+    block = quality_rows.subject_composition_fields(
+        "gemini-3.5-flash-lite", "google", _entry()
+    )
+
+    assert block == {"family": "google", "size_class": None}
