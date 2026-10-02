@@ -478,6 +478,42 @@ _QUALITY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
         "A cloud subject, which has no size class; a local entry declaring none; "
         "or the row predates schema 19 and does not carry the field.",
     ),
+    # The agentic harness that ran the row (schema "20", Methodology 23).
+    ("harness_id",): FieldDoc(
+        "Agentic harness the row ran under, one of direct (plain client calls, "
+        "no framework), smolagents, langgraph, pydantic-ai or llamaindex.",
+        _ID,
+        "The row predates schema 20 and does not carry the field.",
+    ),
+    ("harness_version",): FieldDoc(
+        "Installed version of the harness's package, read when the row was "
+        "written (for direct, the requests HTTP client its calls go through).",
+        _TEXT,
+        "The row predates schema 20 and does not carry the field.",
+    ),
+    ("harness_prompt_overhead",): FieldDoc(
+        "Per-call prompt overhead block: tokens and null_reason.",
+        _JSON_OBJECT,
+        "The row predates schema 20 and does not carry the field.",
+    ),
+    ("harness_prompt_overhead", "tokens"): FieldDoc(
+        "Tokens the harness added around the item's own prompt on this call: "
+        "the engine's prompt-token count minus the item's own rendered prompt "
+        "(its tool definitions included) under the same tokenizer.",
+        "tokens",
+        "No measurement exists; harness_prompt_overhead.null_reason says why "
+        "(never a zero in its place), or the row predates schema 20.",
+    ),
+    ("harness_prompt_overhead", "null_reason"): FieldDoc(
+        "Why harness_prompt_overhead.tokens is empty: unmeasurable (the harness "
+        "rewrites the item's prompt rather than wrapping it), "
+        "item_prompt_not_counted (no count of the item's own prompt under the "
+        "row's tokenizer, as for a cloud subject), or the engine count's own "
+        "reason (not_reported_by_engine, not_reported_by_provider, "
+        "no_generation_call).",
+        _ID,
+        "The overhead was measured, or the row predates schema 20.",
+    ),
     ("item_licence",): FieldDoc(
         "Licence the item is redistributed under, as its author declares it "
         "(CC-BY-4.0 for a hand-written item). Declared, not verified.",

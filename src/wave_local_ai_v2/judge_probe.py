@@ -358,6 +358,9 @@ class _ProbeCompletion(TypedDict):
     prompt_tokens: NotRequired[int]
     # The item's own engine-reported tokens and first-token time (schema "18").
     measurement: timings.ItemMeasurement
+    # The item's own rendered prompt under the loaded model's tokenizer, the
+    # `direct` overhead's subtrahend (schema "20"); absent on the cloud shape.
+    item_prompt_tokens: NotRequired[int]
 
 
 @dataclass(frozen=True)
@@ -727,13 +730,15 @@ def _generate_local_outputs(
                 timeout=REQUEST_TIMEOUT_S,
             )
         for prompt in prompts:
-            rendered_prompts.append(
-                local_client.render_prompt(
-                    base_url,
-                    prompt,
-                    thinking_kwargs=thinking_kwargs,
-                    timeout=REQUEST_TIMEOUT_S,
-                )
+            rendered = local_client.render_prompt(
+                base_url,
+                prompt,
+                thinking_kwargs=thinking_kwargs,
+                timeout=REQUEST_TIMEOUT_S,
+            )
+            rendered_prompts.append(rendered)
+            item_prompt_tokens = local_client.count_tokens(
+                base_url, rendered, timeout=REQUEST_TIMEOUT_S
             )
             response = local_client.complete_chat(
                 base_url,
@@ -754,6 +759,7 @@ def _generate_local_outputs(
                     retries=0,
                     prompt_tokens=response["prompt_tokens"],
                     measurement=response["measurement"],
+                    item_prompt_tokens=item_prompt_tokens,
                 )
             )
 
@@ -839,6 +845,8 @@ def _build_row(
     judge_block: dict[str, Any],
     # The item's own generation figures (`quality_rows.item_measurement_fields`).
     item_measurement: dict[str, Any],
+    # The harness that ran the subject call (`quality_rows.direct_harness_fields`).
+    harness_fields: dict[str, Any],
     failure_reason: str | None,
     failure_counts: dict[str, int],
     retries: int,
@@ -924,6 +932,7 @@ def _build_row(
             dict(partial_failure) if partial_failure is not None else None
         ),
         **item_measurement,
+        **harness_fields,
         "verdict": {
             "verdict": verdict.VERDICT_NOT_COMPARABLE,
             "reference_run_id": None,
@@ -1129,6 +1138,9 @@ def _run_local_batch(
             item_measurement=quality_rows.item_measurement_fields(
                 completion["measurement"], first_in_batch=position == 0
             ),
+            harness_fields=quality_rows.direct_harness_fields(
+                completion["measurement"], completion.get("item_prompt_tokens")
+            ),
             failure_reason=failure_reason,
             failure_counts=failure_counts,
             retries=completion["retries"],
@@ -1224,6 +1236,9 @@ def _run_cloud_subject_item(
         [response["prompt_tokens"]],
         response["generated_tokens"],
     )
+    measurement = quality_rows.cloud_item_measurement(
+        response["prompt_tokens"], response["generated_tokens"]
+    )
     row = _build_row(
         context,
         item=item,
@@ -1238,11 +1253,10 @@ def _run_cloud_subject_item(
         judge_block=block,
         # The probe's one cloud subject item is its batch's only generation.
         item_measurement=quality_rows.item_measurement_fields(
-            quality_rows.cloud_item_measurement(
-                response["prompt_tokens"], response["generated_tokens"]
-            ),
-            first_in_batch=True,
+            measurement, first_in_batch=True
         ),
+        # A plain client call; no count of the item under Google's tokenizer.
+        harness_fields=quality_rows.direct_harness_fields(measurement, None),
         failure_reason=failure_reason,
         failure_counts=_failure_counts([failure_reason]),
         retries=context_retries + generate_retries,

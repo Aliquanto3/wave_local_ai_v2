@@ -186,6 +186,76 @@ def test_apply_template_without_a_prompt_key_raises() -> None:
         )
 
 
+# One tool definition, in the OpenAI-compatible shape llama-server's chat
+# endpoint and `/apply-template` both take.
+_TOOLS: list[dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "Get the weather for a city",
+            "parameters": {
+                "type": "object",
+                "properties": {"city": {"type": "string"}},
+                "required": ["city"],
+            },
+        },
+    }
+]
+
+
+def test_an_items_tools_reach_the_render_and_the_answer_alike() -> None:
+    # Rendered with the tools, the item's own prompt holds them: they are
+    # counted as the item's, never as a harness's overhead.
+    with _post({"prompt": "rendered"}) as post:
+        local_client.render_prompt(
+            BASE, "weather?", thinking_kwargs={}, timeout=TIMEOUT, tools=_TOOLS
+        )
+    render_body = post.call_args.kwargs["json"]
+    with _post(_CHAT_BODY) as post:
+        local_client.complete_chat(
+            BASE,
+            "weather?",
+            max_tokens=8,
+            sampling=SAMPLING,
+            thinking_kwargs={},
+            timeout=TIMEOUT,
+            tools=_TOOLS,
+        )
+    chat_body = post.call_args.kwargs["json"]
+
+    assert render_body["tools"] == _TOOLS
+    assert chat_body["tools"] == _TOOLS
+
+
+def test_an_item_without_tools_sends_no_tools_key() -> None:
+    with _post({"prompt": "rendered"}) as post:
+        local_client.render_prompt(BASE, "hello", thinking_kwargs={}, timeout=TIMEOUT)
+
+    assert "tools" not in post.call_args.kwargs["json"]
+
+
+def test_count_tokens_counts_the_string_as_the_chat_endpoint_would() -> None:
+    with _post({"tokens": [151644, 872, 198]}) as post:
+        count = local_client.count_tokens(BASE, "<|im_start|>user", timeout=TIMEOUT)
+
+    assert count == 3
+    assert post.call_args.args[0] == f"{BASE}/tokenize"
+    assert post.call_args.kwargs["json"] == {
+        "content": "<|im_start|>user",
+        "add_special": True,
+    }
+
+
+@pytest.mark.parametrize("payload", [{}, {"tokens": 3}, {"error": "no model"}])
+def test_count_tokens_refuses_a_malformed_body(payload: Any) -> None:
+    with (
+        _post(payload),
+        pytest.raises(local_client.LocalRequestError, match="tokenize"),
+    ):
+        local_client.count_tokens(BASE, "hello", timeout=TIMEOUT)
+
+
 def test_props_returns_the_models_own_chat_template() -> None:
     with _get({"chat_template": "{% for m in messages %}{% endfor %}"}):
         assert local_client.chat_template(BASE, timeout=TIMEOUT).startswith("{% for")

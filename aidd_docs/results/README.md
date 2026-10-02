@@ -580,6 +580,17 @@ subject's: the local entry's, or a cloud model's own) and `size_class` (the
 local entry's; `null` on a cloud row, whose model is not banded). Rows below
 `"19"` are not back-filled.
 
+Every quality row written from schema `"20"` on names the agentic harness it
+ran under (`harness_id`, one of `direct`, `smolagents`, `langgraph`,
+`pydantic-ai`, `llamaindex`), that harness's installed version read when the
+row was written (`harness_version`; for `direct`, the `requests` client its
+calls go through), and its per-call prompt overhead
+(`harness_prompt_overhead`: `tokens`, the engine's prompt-token count minus
+the item's own rendered prompt with its tool definitions, or `null` with a
+`null_reason` -- `unmeasurable`, `item_prompt_not_counted` on a cloud row, or
+the engine count's own reason). Only `direct` is written today. Rows below
+`"20"` are not back-filled.
+
 ## This regeneration (Story 19 + Story 20, 2026-08-27)
 
 Both files were regenerated from scratch under the current schema (`schema_version` `"7"`),

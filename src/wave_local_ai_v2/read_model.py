@@ -384,6 +384,11 @@ QUALITY_FIELDS_NOT_RENDERED: frozenset[str] = frozenset(
         # rendering the composition to a reader is the pitch epic's, which
         # the size-class epic excludes.
         *row_contract.SUBJECT_COMPOSITION_FIELDS,
+        # The harness that ran the row, its installed version and its per-call
+        # prompt overhead (schema "20"). Recorded so the harness comparison
+        # can be read off the rows; rendering it is out of the harness task's
+        # scope and belongs to whichever view first compares harnesses.
+        *row_contract.HARNESS_FIELDS,
     }
 )
 

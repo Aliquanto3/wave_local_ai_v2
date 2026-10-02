@@ -161,6 +161,11 @@ class _Completion(TypedDict):
     # them, each null with its reason otherwise (schema "18"): the engine's
     # figures on the local path, the provider's token counts on a cloud one.
     measurement: timings.ItemMeasurement
+    # The item's own rendered prompt counted by the loaded model's tokenizer,
+    # which the `direct` harness overhead is measured against (schema "20").
+    # Local only: a cloud provider's tokenizer is not read, so a cloud
+    # completion leaves it out and its row's overhead is null with that reason.
+    item_prompt_tokens: NotRequired[int]
 
 
 class _LocalBatch(TypedDict):
@@ -818,13 +823,15 @@ def _run_local_suite(
                 timeout=REQUEST_TIMEOUT_S,
             )
         for prompt in prompts:
-            rendered_prompts.append(
-                local_client.render_prompt(
-                    base_url,
-                    prompt,
-                    thinking_kwargs=thinking_kwargs,
-                    timeout=REQUEST_TIMEOUT_S,
-                )
+            rendered = local_client.render_prompt(
+                base_url,
+                prompt,
+                thinking_kwargs=thinking_kwargs,
+                timeout=REQUEST_TIMEOUT_S,
+            )
+            rendered_prompts.append(rendered)
+            item_prompt_tokens = local_client.count_tokens(
+                base_url, rendered, timeout=REQUEST_TIMEOUT_S
             )
             response = local_client.complete_chat(
                 base_url,
@@ -848,6 +855,7 @@ def _run_local_suite(
                     retries=0,
                     prompt_tokens=response["prompt_tokens"],
                     measurement=response["measurement"],
+                    item_prompt_tokens=item_prompt_tokens,
                 )
             )
 
@@ -1248,6 +1256,12 @@ def _score_and_write(
             # exclude it; on a resume that is the first resumed item.
             **quality_rows.item_measurement_fields(
                 completions[position]["measurement"], first_in_batch=position == 0
+            ),
+            # Every subject call here is a plain client call: `direct`, its
+            # overhead measured against the item's own counted prompt.
+            **quality_rows.direct_harness_fields(
+                completions[position]["measurement"],
+                completions[position].get("item_prompt_tokens"),
             ),
         }
         # Extra, non-required keys (google rows' model_version/api_version):

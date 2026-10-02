@@ -1,6 +1,7 @@
 import dataclasses
 import json
 from datetime import datetime, timedelta
+from importlib import metadata
 from pathlib import Path
 from unittest.mock import DEFAULT, MagicMock, patch
 
@@ -140,6 +141,10 @@ def fake_apply_template(body: dict) -> dict:
     return {"prompt": rendered}
 
 
+# What the stubbed tokenizer counts every rendered item to.
+FAKE_ITEM_PROMPT_TOKENS = 7
+
+
 def item_posts(post: MagicMock) -> list:
     """The local POSTs the items made, without the verification's two renders
     of the fixed probe message."""
@@ -241,6 +246,13 @@ def stubbed_run(tmp_path, monkeypatch):
         "post": patch(
             "wave_local_ai_v2.local_client.requests.post",
             side_effect=local_post_router(),
+        ),
+        # The item's own rendered prompt under the model's tokenizer: a fixed
+        # count, so a row's overhead is the engine's prompt tokens minus it.
+        # `local_client.count_tokens` itself is covered in test_local_client.
+        "count_tokens": patch(
+            "wave_local_ai_v2.quality_cli.local_client.count_tokens",
+            return_value=FAKE_ITEM_PROMPT_TOKENS,
         ),
         "props": patch(
             "wave_local_ai_v2.local_client.requests.get",
@@ -1238,7 +1250,49 @@ def test_every_row_names_its_subjects_family_and_size_class(stubbed_run) -> None
         ("mistral", "mistral", None),
         ("google", "google", None),
     }
-    assert {row["schema_version"] for row in rows} == {"19"}
+    assert {row["schema_version"] for row in rows} == {"20"}
+
+
+def test_every_row_names_direct_its_version_and_its_measured_overhead(
+    stubbed_run,
+) -> None:
+    quality_results_path, started = stubbed_run
+    _enable_google(started)
+
+    quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    assert {row["harness_id"] for row in rows} == {"direct"}
+    assert {row["harness_version"] for row in rows} == {metadata.version("requests")}
+    overhead = {
+        row["provider"]: row["harness_prompt_overhead"]["tokens"]
+        if row["harness_prompt_overhead"]["tokens"] is not None
+        else row["harness_prompt_overhead"]["null_reason"]
+        for row in rows
+    }
+    # Local: the engine's 11 prompt tokens minus the item's own 7, read off the
+    # two counts. A cloud provider's tokenizer is not read, so its rows say so
+    # rather than publish a zero.
+    assert overhead == {
+        "local": 11 - FAKE_ITEM_PROMPT_TOKENS,
+        "mistral": "item_prompt_not_counted",
+        "google": "item_prompt_not_counted",
+    }
+
+
+def test_each_rendered_item_is_counted_under_the_models_tokenizer(
+    stubbed_run,
+) -> None:
+    quality_results_path, started = stubbed_run
+
+    quality_cli._run()
+
+    counted = [call.args[1] for call in started["count_tokens"].call_args_list]
+    local_rows = [
+        row for row in read_rows(quality_results_path) if row["provider"] == "local"
+    ]
+    # The string counted is the string the row publishes as rendered.
+    assert counted == [row["prompt"] for row in local_rows]
 
 
 def test_google_batch_paces_every_request_under_the_free_tier_rpm_cap(

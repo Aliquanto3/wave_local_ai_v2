@@ -1,0 +1,12 @@
+# Live check of the direct overhead rule (2026-10-02)
+# llama-server b10537 (Qwen3-0.6B-Q8_0, -c 4096 -np 1 --jinja -ngl 99, port 8093), thinking disabled.
+# Per item: local_client.render_prompt -> local_client.count_tokens (/tokenize, add_special) -> local_client.complete_chat,
+# then quality_rows.direct_harness_fields(measurement, item_prompt_tokens). Each item is asked twice: the engine's
+# prompt count stays the full count when its cache serves most of it. The tool item's definition renders into its
+# own prompt (158 tokens against the bare item's 19), so the engine's 158 leaves a direct overhead of 0.
+
+build_info: b10537-bf0040e15 model: D:/ia/models/Qwen3-0.6B/Qwen3-0.6B-Q8_0.gguf
+{"case": "classification item, no tools", "call": 1, "item_prompt_tokens": 34, "engine_prompt_tokens": 34, "engine_cached_tokens": 1, "harness_id": "direct", "harness_version": "2.34.2", "harness_prompt_overhead": {"tokens": 0, "null_reason": null}}
+{"case": "classification item, no tools", "call": 2, "item_prompt_tokens": 34, "engine_prompt_tokens": 34, "engine_cached_tokens": 33, "harness_id": "direct", "harness_version": "2.34.2", "harness_prompt_overhead": {"tokens": 0, "null_reason": null}}
+{"case": "tool item, one tool definition", "call": 1, "item_prompt_tokens": 158, "engine_prompt_tokens": 158, "engine_cached_tokens": 157, "harness_id": "direct", "harness_version": "2.34.2", "harness_prompt_overhead": {"tokens": 0, "null_reason": null}}
+{"case": "tool item, one tool definition", "call": 2, "item_prompt_tokens": 158, "engine_prompt_tokens": 158, "engine_cached_tokens": 157, "harness_id": "direct", "harness_version": "2.34.2", "harness_prompt_overhead": {"tokens": 0, "null_reason": null}}

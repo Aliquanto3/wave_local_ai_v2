@@ -495,6 +495,69 @@ def test_a_local_and_a_cloud_subject_differ_on_egress_without_a_confound() -> No
     assert member["confounds"] == []
 
 
+def test_a_harness_overhead_is_a_measurement_and_never_a_confound() -> None:
+    # Two models under the same harness spend different overheads: an
+    # outcome, like their tokens, so the comparison stays a clean test.
+    ref, cand = _pairs_outcomes(14, 1, 4, 1)
+    harness_fields = {"harness_id": "direct", "harness_version": "2.32.5"}
+    member = _compare(
+        _binary_rows(
+            "run-ref",
+            "model-a",
+            ref,
+            harness_prompt_overhead={"tokens": 0, "null_reason": None},
+            **harness_fields,
+        ),
+        _binary_rows(
+            "run-cand",
+            "model-b",
+            cand,
+            harness_prompt_overhead={"tokens": 3, "null_reason": None},
+            **harness_fields,
+        ),
+    )
+    assert member["comparison_kind"] == comparison.KIND_TEST
+    assert "harness_prompt_overhead" not in member["differing_fields"]
+
+
+def test_two_models_under_two_harnesses_are_confounded_by_the_harness() -> None:
+    ref, cand = _pairs_outcomes(14, 1, 4, 1)
+    member = _compare(
+        _binary_rows("run-ref", "model-a", ref, harness_id="direct"),
+        _binary_rows("run-cand", "model-b", cand, harness_id="smolagents"),
+    )
+    assert member["comparison_kind"] == comparison.KIND_OBSERVATION
+    assert "harness_id" in member["confounds"]
+
+
+def test_a_direct_client_bump_is_not_a_confound_between_two_direct_sides() -> None:
+    ref, cand = _pairs_outcomes(14, 1, 4, 1)
+    member = _compare(
+        _binary_rows(
+            "run-ref", "model-a", ref, harness_id="direct", harness_version="2.32.5"
+        ),
+        _binary_rows(
+            "run-cand", "model-b", cand, harness_id="direct", harness_version="2.34.2"
+        ),
+    )
+    assert member["comparison_kind"] == comparison.KIND_TEST
+    assert "harness_version" not in member["differing_fields"]
+
+
+def test_a_framework_version_bump_stays_a_confound() -> None:
+    ref, cand = _pairs_outcomes(14, 1, 4, 1)
+    member = _compare(
+        _binary_rows(
+            "run-ref", "model-a", ref, harness_id="smolagents", harness_version="1.0"
+        ),
+        _binary_rows(
+            "run-cand", "model-b", cand, harness_id="smolagents", harness_version="1.1"
+        ),
+    )
+    assert member["comparison_kind"] == comparison.KIND_OBSERVATION
+    assert "harness_version" in member["confounds"]
+
+
 def test_a_prompt_variant_dimension_is_a_clean_test() -> None:
     ref, cand = _pairs_outcomes(14, 1, 4, 1)
     member = compare_sides(

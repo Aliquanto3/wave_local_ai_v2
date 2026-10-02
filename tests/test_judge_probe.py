@@ -1,5 +1,6 @@
 import dataclasses
 import json
+from importlib import metadata
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -136,6 +137,10 @@ def _fake_render(prompt: str) -> str:
     return "<|im_start|>user\n" + prompt + " <|im_end|>"
 
 
+# What the stubbed tokenizer counts every rendered item to.
+FAKE_ITEM_PROMPT_TOKENS = 20
+
+
 def _local_post_router(finish_reason: str = "stop"):
     """Route a stubbed local POST by endpoint: render, then answer."""
 
@@ -249,6 +254,12 @@ def stubbed_probe(tmp_path, monkeypatch):
         "post": patch(
             "wave_local_ai_v2.local_client.requests.post",
             side_effect=_local_post_router(),
+        ),
+        # The item's own rendered prompt under the model's tokenizer, counted
+        # once per item; `local_client.count_tokens` is covered on its own.
+        "count_tokens": patch(
+            "wave_local_ai_v2.judge_probe.local_client.count_tokens",
+            return_value=FAKE_ITEM_PROMPT_TOKENS,
         ),
         "props": patch(
             "wave_local_ai_v2.local_client.requests.get",
@@ -483,6 +494,30 @@ def test_each_probe_row_carries_its_own_subject_generation_figures(
     assert len(cloud_rows) == 1
     assert cloud_rows[0]["item_ttft_ms_null_reason"] == "not_reported_by_provider"
     assert cloud_rows[0]["item_first_in_batch"] is True
+
+
+def test_each_probe_row_names_direct_and_its_measured_overhead(
+    stubbed_probe,
+) -> None:
+    probe_path, _, _, _ = stubbed_probe
+
+    judge_probe._run()
+
+    rows = read_rows(probe_path)
+    assert {row["harness_id"] for row in rows} == {"direct"}
+    assert {row["harness_version"] for row in rows} == {metadata.version("requests")}
+    local_rows = [row for row in rows if row["provider"] == "local"]
+    cloud_rows = [row for row in rows if row["provider"] != "local"]
+    # The engine's 23 prompt tokens minus the item's own counted prompt.
+    for row in local_rows:
+        assert row["harness_prompt_overhead"] == {
+            "tokens": 23 - FAKE_ITEM_PROMPT_TOKENS,
+            "null_reason": None,
+        }
+    assert cloud_rows[0]["harness_prompt_overhead"] == {
+        "tokens": None,
+        "null_reason": "item_prompt_not_counted",
+    }
 
 
 def test_every_row_publishes_null_labels_and_a_real_subject_output(

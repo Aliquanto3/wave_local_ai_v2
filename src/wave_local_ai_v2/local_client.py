@@ -46,7 +46,7 @@ from __future__ import annotations
 
 import copy
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any, TypedDict
 
 import requests
@@ -58,6 +58,13 @@ from wave_local_ai_v2 import prompt_provenance, roster, row_contract, timings
 # `google_client` name their own: the truncation decision is read off the
 # provider's own field, never inferred from a token count.
 TRUNCATING_FINISH_REASONS = frozenset({"length"})
+
+# Where the loaded model's own tokenizer counts a string. `add_special: true`
+# tokenizes the way the chat endpoint does its rendered prompt: verified live
+# on b10537 (2026-10-02), `/tokenize` over the `/apply-template` string
+# returns exactly the chat call's `usage.prompt_tokens`, with and without
+# tool definitions.
+LOCAL_TOKENIZE_ENDPOINT = "/tokenize"
 
 
 # The one message `verify_thinking_control` renders. Fixed, so the two strings
@@ -241,12 +248,18 @@ def chat_template(base_url: str, *, timeout: float) -> str:
     return template
 
 
+def _tools_body(tools: Sequence[Mapping[str, Any]] | None) -> dict[str, Any]:
+    """The `tools` key an item's own tool definitions travel under, if any."""
+    return {} if tools is None else {"tools": [dict(tool) for tool in tools]}
+
+
 def render_prompt(
     base_url: str,
     prompt: str,
     *,
     thinking_kwargs: Mapping[str, Any],
     timeout: float,
+    tools: Sequence[Mapping[str, Any]] | None = None,
 ) -> str:
     """Return `prompt` as the chat endpoint will render it, from `/apply-template`.
 
@@ -262,11 +275,16 @@ def render_prompt(
     `/apply-template` honouring `chat_template_kwargs` is undocumented in
     b10537's server README (which lists `messages` as its only option) and was
     verified live against the binary.
+
+    An item's own `tools` are sent here as on the answering call: the
+    template renders them into the string, so they are part of the item's
+    own prompt (owner answer Q33 (a)), never of a harness's overhead.
     """
     payload = _post_json(
         f"{base_url}{prompt_provenance.LOCAL_APPLY_TEMPLATE_ENDPOINT}",
         {
             "messages": [{"role": "user", "content": prompt}],
+            **_tools_body(tools),
             **thinking_kwargs,
         },
         timeout,
@@ -279,6 +297,24 @@ def render_prompt(
     return rendered
 
 
+def count_tokens(base_url: str, text: str, *, timeout: float) -> int:
+    """How many tokens the loaded model's own tokenizer makes of `text`.
+
+    Applied to an item's `render_prompt` string, this is the item's own
+    prompt under the tokenizer the row names, which the harness overhead
+    rule subtracts from what the engine reported receiving.
+    """
+    payload = _post_json(
+        f"{base_url}{LOCAL_TOKENIZE_ENDPOINT}",
+        {"content": text, "add_special": True},
+        timeout,
+    )
+    tokens = payload.get("tokens")
+    if not isinstance(tokens, list):
+        raise LocalRequestError(f"unexpected /tokenize response shape: {payload!r}")
+    return len(tokens)
+
+
 def complete_chat(
     base_url: str,
     prompt: str,
@@ -287,12 +323,14 @@ def complete_chat(
     sampling: dict[str, Any],
     thinking_kwargs: Mapping[str, Any],
     timeout: float,
+    tools: Sequence[Mapping[str, Any]] | None = None,
 ) -> LocalCompletion:
     """Ask the loaded model to answer `prompt` through its own chat template."""
     payload = _post_json(
         f"{base_url}{prompt_provenance.LOCAL_CHAT_ENDPOINT}",
         {
             "messages": [{"role": "user", "content": prompt}],
+            **_tools_body(tools),
             "max_tokens": max_tokens,
             **sampling,
             **thinking_kwargs,

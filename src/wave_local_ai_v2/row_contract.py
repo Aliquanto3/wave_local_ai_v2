@@ -15,6 +15,7 @@ from typing import Any, Literal
 from wave_local_ai_v2 import (
     aggregation,
     cost,
+    harness,
     judge,
     judge_protocol,
     prompt_provenance,
@@ -153,12 +154,31 @@ from wave_local_ai_v2 import (
 # are required only on a row whose own `schema_version` is "19" or later
 # (`SUBJECT_COMPOSITION_SCHEMA_VERSION`): a row below "19" still validates
 # without them and is never back-filled. The runtime row is untouched.
-SCHEMA_VERSION = "19"
+# "20": `harness_id`, `harness_version` and `harness_prompt_overhead` became
+# required on quality rows only (Task: register the closed harness candidate
+# set and its three row fields; Methodology 23, owner answer Q33 (a)). The id
+# is one of `harness.HARNESS_IDS`, closed at five; the version is read from
+# the harness's installed package when the row is written; the overhead is
+# `{"tokens", "null_reason"}`: per call, the engine's prompt-token count minus
+# the item's own rendered prompt's (tool definitions included) under the row's
+# tokenizer, or null with one of `harness.OVERHEAD_NULL_REASONS` --
+# `unmeasurable` for a harness that rewrites rather than wraps the item's
+# prompt -- and never a zero in place of a measurement. Owed only from "20"
+# (`HARNESS_SCHEMA_VERSION`): a row below "20" still validates without them
+# and is never back-filled. The runtime row is untouched.
+SCHEMA_VERSION = "20"
 
 # The two subject-composition fields "19" added, and the version from which a
 # quality row owes them.
 SUBJECT_COMPOSITION_FIELDS: frozenset[str] = frozenset({"family", "size_class"})
 SUBJECT_COMPOSITION_SCHEMA_VERSION = "19"
+
+# The three harness fields "20" added, and the version from which a quality
+# row owes them.
+HARNESS_FIELDS: frozenset[str] = frozenset(
+    {"harness_id", "harness_version", "harness_prompt_overhead"}
+)
+HARNESS_SCHEMA_VERSION = "20"
 
 # The value `subject_egress` takes when the subject prompt never left the
 # machine, and the `provider` a quality row names for a subject served by the
@@ -422,6 +442,10 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             # quality_rows.subject_composition_fields: the subject's family and
             # size class (schema "19"; not owed below it).
             *SUBJECT_COMPOSITION_FIELDS,
+            # harness.row_fields: the harness that ran the row, its installed
+            # version and its per-call prompt overhead (schema "20"; not owed
+            # below it).
+            *HARNESS_FIELDS,
         }
     ),
 }
@@ -592,8 +616,10 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
     counts as missing.
     """
     missing = REQUIRED_FIELDS[kind] - row.keys()
-    if kind == "quality" and _predates_subject_composition(row):
+    if kind == "quality" and _predates(row, SUBJECT_COMPOSITION_SCHEMA_VERSION):
         missing -= SUBJECT_COMPOSITION_FIELDS
+    if kind == "quality" and _predates(row, HARNESS_SCHEMA_VERSION):
+        missing -= HARNESS_FIELDS
     if missing:
         raise RowContractError(
             f"row of kind {kind!r} is missing required field(s): "
@@ -647,12 +673,13 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
         _validate_partial_failure(row)
         _validate_item_measurement(row)
         _validate_subject_composition(row)
+        _validate_harness(row)
         _validate_judged_fields(row)
         _validate_graded_fields(row)
 
 
-def _predates_subject_composition(row: dict[str, Any]) -> bool:
-    """True when the row's own `schema_version` is below "19".
+def _predates(row: dict[str, Any], since: str) -> bool:
+    """True when the row's own `schema_version` is below `since`.
 
     A version that is not an integer string is not read as old: the row is
     held to the current contract rather than excused by a malformed field.
@@ -660,7 +687,57 @@ def _predates_subject_composition(row: dict[str, Any]) -> bool:
     version = row.get("schema_version")
     if not isinstance(version, str) or not version.isdigit():
         return False
-    return int(version) < int(SUBJECT_COMPOSITION_SCHEMA_VERSION)
+    return int(version) < int(since)
+
+
+def _validate_harness(row: dict[str, Any]) -> None:
+    """Refuse a harness outside the closed five, a version that was not read,
+    and an overhead that is neither a count nor a null with its reason.
+
+    A negative count is refused: a harness only adds around the item's own
+    prompt, so the writer records `unmeasurable` where the subtraction comes
+    out below zero.
+    """
+    if not HARNESS_FIELDS <= row.keys():
+        return
+    harness_id = row["harness_id"]
+    if not isinstance(harness_id, str) or harness_id not in harness.HARNESS_IDS:
+        raise RowContractError(
+            f"row of kind 'quality' has harness_id {harness_id!r}, not one of "
+            f"{', '.join(sorted(harness.HARNESS_IDS))}"
+        )
+    version = row["harness_version"]
+    if not isinstance(version, str) or not version:
+        raise RowContractError(
+            f"row of kind 'quality' has harness_version {version!r}: the "
+            "harness's installed version, read when the row is written"
+        )
+    overhead = row["harness_prompt_overhead"]
+    if not isinstance(overhead, dict) or overhead.keys() != harness.OVERHEAD_KEYS:
+        raise RowContractError(
+            f"row of kind 'quality' has harness_prompt_overhead {overhead!r}: "
+            "an object carrying exactly tokens and null_reason"
+        )
+    tokens = overhead["tokens"]
+    reason = overhead["null_reason"]
+    if tokens is None:
+        if reason not in harness.OVERHEAD_NULL_REASONS:
+            raise RowContractError(
+                f"row of kind 'quality' has a null harness_prompt_overhead with "
+                f"null_reason {reason!r}, not one of "
+                f"{', '.join(sorted(harness.OVERHEAD_NULL_REASONS))}"
+            )
+        return
+    if isinstance(tokens, bool) or not isinstance(tokens, int) or tokens < 0:
+        raise RowContractError(
+            f"row of kind 'quality' has harness_prompt_overhead tokens "
+            f"{tokens!r}: a non-negative token count, or null with its reason"
+        )
+    if reason is not None:
+        raise RowContractError(
+            f"row of kind 'quality' has harness_prompt_overhead tokens {tokens!r} "
+            f"beside null_reason {reason!r}: a measured overhead has no reason"
+        )
 
 
 def _validate_subject_composition(row: dict[str, Any]) -> None:

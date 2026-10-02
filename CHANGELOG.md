@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Every quality row names its agentic harness, the harness's version and
+  its prompt overhead (row schema "20")** -- `harness.py` holds Methodology
+  23's candidate set, closed at five (`direct`, `smolagents`, `langgraph`,
+  `pydantic-ai`, `llamaindex`), and the writer gate refuses any other
+  `harness_id`. `harness_version` is read from the harness's installed package
+  when the row is written (`direct`: the `requests` client). The per-call
+  `harness_prompt_overhead` follows owner answer Q33 (a): the engine's
+  prompt-token count minus the item's own rendered prompt, tool definitions
+  included, under the model's tokenizer (`/tokenize` over the `/apply-template`
+  string, one extra local call per item), or `null` with its reason --
+  `unmeasurable` for a harness that rewrites rather than wraps the item's
+  prompt, `item_prompt_not_counted` on a cloud row, never a zero in place of a
+  measurement. Both quality writers record `direct`; the framework adapters
+  are later stories and none is a dependency. Rows below "20" are not
+  back-filled.
+
 - **Each suite and machine class publishes the local models not
   distinguishable from the best** -- `wave-local-ai-v2-compare --leader-sets`
   groups the published rows' local subjects by suite and by the machine class

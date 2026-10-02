@@ -6,6 +6,7 @@ import pytest
 from wave_local_ai_v2 import (
     FIXED_PROMPT,
     aggregation,
+    harness,
     prompt_variants,
     quality_rows,
     roster,
@@ -15,6 +16,8 @@ from wave_local_ai_v2 import (
 from wave_local_ai_v2.results import append_row
 from wave_local_ai_v2.row_contract import (
     GRADED_FIELDS,
+    HARNESS_FIELDS,
+    HARNESS_SCHEMA_VERSION,
     ITEM_MEASUREMENT_FIELDS,
     JUDGE_EGRESS_FIELDS,
     JUDGED_FIELDS,
@@ -237,6 +240,11 @@ COMPLETE_QUALITY_ROW = {
     "item_first_in_batch": True,
     "family": "qwen",
     "size_class": "~8B-and-up",
+    # The reference harness, its version read from the installed package and
+    # its overhead measured: the engine's 57 tokens were the item's own.
+    "harness_id": "direct",
+    "harness_version": harness.harness_version("direct"),
+    "harness_prompt_overhead": {"tokens": 0, "null_reason": None},
 }
 
 
@@ -1073,14 +1081,14 @@ def test_the_schema_version_moved_once_for_the_thinking_policy() -> None:
     # `thinking_policy` is required on every quality row, because a score
     # produced with the subject allowed to reason and one produced without it
     # are not the same measurement and a row has to say which it is.
-    assert SCHEMA_VERSION == "19"
+    assert SCHEMA_VERSION == "20"
 
 
 def test_the_schema_version_moved_for_the_runtime_energy_window() -> None:
     # "12" fixes audit finding C3: the runtime row's energy figures used to
     # span the whole counted-repetition window, cooldowns included. Required
     # only on runtime rows -- quality rows carry no energy window at all.
-    assert SCHEMA_VERSION == "19"
+    assert SCHEMA_VERSION == "20"
     assert {"active_window_s", "idle_window_s", "energy_window_method"} <= (
         REQUIRED_FIELDS["runtime"]
     )
@@ -1093,7 +1101,7 @@ def test_the_schema_version_moved_for_the_judge_call_record_extension() -> None:
     # "13" adds five fields inside each judge call record. Additive inside the
     # conditional judge block: neither row kind's required set moves, so a
     # deterministic quality row validates unchanged.
-    assert SCHEMA_VERSION == "19"
+    assert SCHEMA_VERSION == "20"
     assert set(NEW_JUDGE_RECORD_FIELDS).isdisjoint(REQUIRED_FIELDS["quality"])
     assert set(NEW_JUDGE_RECORD_FIELDS).isdisjoint(JUDGED_FIELDS)
     validate_row("quality", COMPLETE_QUALITY_ROW)
@@ -1103,7 +1111,7 @@ def test_the_schema_version_moved_for_the_prompt_variant() -> None:
     # "14" makes both row kinds name the variant they ran under and carry the
     # prompt as the variant left it. Not conditional: every row ran under some
     # variant, and a row below "14" is never back-filled with `baseline`.
-    assert SCHEMA_VERSION == "19"
+    assert SCHEMA_VERSION == "20"
     for kind in ("runtime", "quality"):
         assert set(PROMPT_VARIANT_FIELDS) <= REQUIRED_FIELDS[kind]
 
@@ -1113,7 +1121,7 @@ def test_the_schema_version_moved_for_the_suite_level() -> None:
     # and its item's licence, source and source revision. Not conditional:
     # every suite is certified at some level. Quality rows only -- a runtime
     # row runs no suite.
-    assert SCHEMA_VERSION == "19"
+    assert SCHEMA_VERSION == "20"
     assert set(SUITE_LEVEL_FIELDS) <= REQUIRED_FIELDS["quality"]
     assert set(SUITE_LEVEL_FIELDS).isdisjoint(REQUIRED_FIELDS["runtime"])
 
@@ -1290,7 +1298,7 @@ def test_a_registered_non_baseline_variant_is_not_held_to_the_authored_text(
 def test_the_schema_version_moved_for_the_subject_egress() -> None:
     # "16" makes every row of either kind state where its subject prompt went.
     # Not conditional: every row was produced by sending a prompt somewhere.
-    assert SCHEMA_VERSION == "19"
+    assert SCHEMA_VERSION == "20"
     for kind in ("runtime", "quality"):
         assert "subject_egress" in REQUIRED_FIELDS[kind]
     # The subject field is not a member of the judge block, and the judge
@@ -1428,7 +1436,7 @@ def test_the_schema_version_moved_for_the_retry_budget_and_partial_batches() -> 
     # "17" makes every quality row name the retry budget its batch ran under
     # and whether that batch was left partial. The runtime row makes no cloud
     # call and has no resume, so it is untouched.
-    assert SCHEMA_VERSION == "19"
+    assert SCHEMA_VERSION == "20"
     for field in ("retry_budget", "partial_failure"):
         assert field in REQUIRED_FIELDS["quality"]
         assert field not in REQUIRED_FIELDS["runtime"]
@@ -1567,7 +1575,7 @@ def test_the_schema_version_moved_for_the_per_item_measurement() -> None:
     # "18" puts each item's own tokens, engine-reported TTFT and cached prompt
     # tokens on every quality row (Q24 (a)); the runtime row keeps its
     # Methodology 6 aggregate and is untouched.
-    assert SCHEMA_VERSION == "19"
+    assert SCHEMA_VERSION == "20"
     assert ITEM_MEASUREMENT_FIELDS <= REQUIRED_FIELDS["quality"]
     assert ITEM_MEASUREMENT_FIELDS.isdisjoint(REQUIRED_FIELDS["runtime"])
 
@@ -1688,7 +1696,7 @@ def test_the_first_generation_mark_is_a_boolean() -> None:
 def test_the_schema_version_moved_for_the_subject_composition() -> None:
     # "19" puts the subject's family and size class on every quality row; the
     # runtime row is untouched.
-    assert SCHEMA_VERSION == "19"
+    assert int(SCHEMA_VERSION) >= 19
     assert SUBJECT_COMPOSITION_SCHEMA_VERSION == "19"
     assert SUBJECT_COMPOSITION_FIELDS == {"family", "size_class"}
     assert SUBJECT_COMPOSITION_FIELDS <= REQUIRED_FIELDS["quality"]
@@ -1788,3 +1796,163 @@ def test_the_writers_block_names_a_cloud_subject_by_its_own_family() -> None:
     )
 
     assert block == {"family": "google", "size_class": None}
+
+
+# Schema "20": the harness that ran the row, its version and its overhead
+
+
+def test_the_schema_version_moved_for_the_harness_fields() -> None:
+    # "20" puts the harness id, its installed version and its per-call prompt
+    # overhead on every quality row; the runtime row is untouched.
+    assert SCHEMA_VERSION == "20"
+    assert HARNESS_SCHEMA_VERSION == "20"
+    assert HARNESS_FIELDS == {
+        "harness_id",
+        "harness_version",
+        "harness_prompt_overhead",
+    }
+    assert HARNESS_FIELDS <= REQUIRED_FIELDS["quality"]
+    assert HARNESS_FIELDS.isdisjoint(REQUIRED_FIELDS["runtime"])
+
+
+def test_a_direct_fixture_row_carrying_all_three_validates() -> None:
+    # Built by the writers' own block: the engine received 57 prompt tokens,
+    # the item's own rendered prompt counts 57 under the same tokenizer.
+    measurement = timings.parse_item_measurement(
+        {"usage": {"prompt_tokens": 57, "completion_tokens": 2}}
+    )
+    block = quality_rows.direct_harness_fields(measurement, 57)
+
+    assert block == {
+        "harness_id": "direct",
+        "harness_version": harness.harness_version("direct"),
+        "harness_prompt_overhead": {"tokens": 0, "null_reason": None},
+    }
+    validate_row("quality", {**COMPLETE_QUALITY_ROW, **block})
+
+
+@pytest.mark.parametrize(
+    "harness_id", ["crewai", "autogen", "Direct", "llama-index", "", None, 1]
+)
+def test_a_row_naming_a_harness_outside_the_five_is_refused(harness_id) -> None:
+    with pytest.raises(RowContractError, match="has harness_id"):
+        validate_row("quality", {**COMPLETE_QUALITY_ROW, "harness_id": harness_id})
+
+
+@pytest.mark.parametrize(
+    "harness_id", ["direct", "smolagents", "langgraph", "pydantic-ai", "llamaindex"]
+)
+def test_each_of_the_five_candidates_is_accepted(harness_id) -> None:
+    validate_row("quality", {**COMPLETE_QUALITY_ROW, "harness_id": harness_id})
+
+
+@pytest.mark.parametrize("field", sorted(HARNESS_FIELDS))
+def test_a_quality_row_without_a_harness_field_is_refused_by_name(field) -> None:
+    row = {k: v for k, v in COMPLETE_QUALITY_ROW.items() if k != field}
+
+    with pytest.raises(RowContractError, match=field):
+        validate_row("quality", row)
+
+
+def test_an_earlier_version_row_without_the_harness_fields_still_validates() -> None:
+    row = {k: v for k, v in COMPLETE_QUALITY_ROW.items() if k not in HARNESS_FIELDS}
+
+    validate_row("quality", {**row, "schema_version": "19"})
+
+
+@pytest.mark.parametrize("version", ["20", "21", "not-a-version", None])
+def test_a_row_at_or_past_20_or_with_no_readable_version_owes_them(version) -> None:
+    row = {
+        k: v for k, v in COMPLETE_QUALITY_ROW.items() if k != "harness_prompt_overhead"
+    }
+
+    with pytest.raises(RowContractError, match="harness_prompt_overhead"):
+        validate_row("quality", {**row, "schema_version": version})
+
+
+@pytest.mark.parametrize("version", [None, "", 2])
+def test_a_harness_version_that_was_not_read_is_refused(version) -> None:
+    with pytest.raises(RowContractError, match="has harness_version"):
+        validate_row("quality", {**COMPLETE_QUALITY_ROW, "harness_version": version})
+
+
+@pytest.mark.parametrize(
+    "overhead",
+    [
+        None,
+        0,
+        "unmeasurable",
+        {"tokens": 0},
+        {"tokens": 0, "null_reason": None, "unit": "tokens"},
+    ],
+)
+def test_an_overhead_that_is_not_the_two_key_object_is_refused(overhead) -> None:
+    with pytest.raises(RowContractError, match="exactly tokens and null_reason"):
+        validate_row(
+            "quality", {**COMPLETE_QUALITY_ROW, "harness_prompt_overhead": overhead}
+        )
+
+
+@pytest.mark.parametrize("tokens", [-1, 1.5, True, "3"])
+def test_an_overhead_count_that_is_not_a_non_negative_integer_is_refused(
+    tokens,
+) -> None:
+    overhead = {"tokens": tokens, "null_reason": None}
+
+    with pytest.raises(RowContractError, match="non-negative token count"):
+        validate_row(
+            "quality", {**COMPLETE_QUALITY_ROW, "harness_prompt_overhead": overhead}
+        )
+
+
+def test_a_measured_overhead_beside_a_null_reason_is_refused() -> None:
+    overhead = {"tokens": 4, "null_reason": "unmeasurable"}
+
+    with pytest.raises(RowContractError, match="a measured overhead has no reason"):
+        validate_row(
+            "quality", {**COMPLETE_QUALITY_ROW, "harness_prompt_overhead": overhead}
+        )
+
+
+@pytest.mark.parametrize("reason", [None, "zero", "not_measured"])
+def test_a_null_overhead_without_a_known_reason_is_refused(reason) -> None:
+    overhead = {"tokens": None, "null_reason": reason}
+
+    with pytest.raises(RowContractError, match="null harness_prompt_overhead"):
+        validate_row(
+            "quality", {**COMPLETE_QUALITY_ROW, "harness_prompt_overhead": overhead}
+        )
+
+
+@pytest.mark.parametrize("reason", sorted(harness.OVERHEAD_NULL_REASONS))
+def test_a_null_overhead_with_its_reason_validates(reason) -> None:
+    overhead = {"tokens": None, "null_reason": reason}
+
+    validate_row(
+        "quality", {**COMPLETE_QUALITY_ROW, "harness_prompt_overhead": overhead}
+    )
+
+
+def test_a_harness_the_rule_cannot_measure_writes_unmeasurable_not_zero(
+    monkeypatch,
+) -> None:
+    # A fixture harness that rewrites the item's prompt: the engine's count is
+    # known, the item's too, and still no number is published. Its package is
+    # pointed at one this environment has, so the version read is real.
+    monkeypatch.setitem(harness.HARNESS_DISTRIBUTIONS, "smolagents", "pytest")
+    overhead = harness.prompt_overhead(
+        engine_prompt_tokens=57,
+        engine_null_reason=None,
+        item_prompt_tokens=57,
+        wraps_item_prompt=False,
+    )
+    row = {
+        **COMPLETE_QUALITY_ROW,
+        **harness.row_fields("smolagents", overhead),
+    }
+
+    assert row["harness_prompt_overhead"] == {
+        "tokens": None,
+        "null_reason": "unmeasurable",
+    }
+    validate_row("quality", row)

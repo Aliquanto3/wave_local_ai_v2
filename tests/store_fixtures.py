@@ -76,6 +76,11 @@ NAMED_VALUES: dict[str, Any] = {
     # as a cloud subject's: a family and no size class.
     "family": "qwen",
     "size_class": None,
+    # The reference harness, measured: the engine received the item's own
+    # prompt and nothing around it.
+    "harness_id": "direct",
+    "harness_version": "2.32.5",
+    "harness_prompt_overhead": {"tokens": 0, "null_reason": None},
 }
 
 GRADED_VALUES: dict[str, Any] = {

@@ -41,7 +41,7 @@ from pathlib import Path
 from statistics import NormalDist
 from typing import Any
 
-from wave_local_ai_v2 import settings
+from wave_local_ai_v2 import harness, settings
 
 RECORD_TYPE = "comparison_family"
 RECORD_VERSION = "2"
@@ -275,6 +275,10 @@ EXCLUDED_FROM_DIFFERING: frozenset[str] = frozenset(
         "item_prompt_tokens_cached_null_reason",
         "item_measurement_kind",
         "item_first_in_batch",
+        # a measurement: the tokens the harness added around the item's own
+        # prompt (schema "20"). The harness id and version are configuration
+        # and stay compared.
+        "harness_prompt_overhead",
     }
 )
 
@@ -766,10 +770,18 @@ def differing_fields(
     (`compute_mode`) still surfaces. Sorted, on `verdict.py`'s
     `differing_fields` shape.
     """
-    keys = {key for row in [*reference_rows, *candidate_rows] for key in row}
+    rows = [*reference_rows, *candidate_rows]
+    keys = {key for row in rows for key in row}
+    excluded = EXCLUDED_FROM_DIFFERING
+    if all(row.get("harness_id") == harness.HARNESS_DIRECT for row in rows):
+        # `direct`'s version is its HTTP client's (`requests`): a routine bump
+        # changes no prompt the engine receives, so between two `direct` sides
+        # it is not a configuration difference. Any other harness's version is
+        # the framework itself and stays compared.
+        excluded = excluded | {"harness_version"}
     return sorted(
         key
-        for key in keys - EXCLUDED_FROM_DIFFERING
+        for key in keys - excluded
         if _side_values(reference_rows, key) != _side_values(candidate_rows, key)
     )
 

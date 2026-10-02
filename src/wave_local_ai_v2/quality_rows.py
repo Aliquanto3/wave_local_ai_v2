@@ -19,7 +19,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from wave_local_ai_v2 import cost, emissions, roster, row_contract, timings
+from wave_local_ai_v2 import cost, emissions, harness, roster, row_contract, timings
 from wave_local_ai_v2.energy import ENERGY_METHOD_UNAVAILABLE, EnergyResult
 from wave_local_ai_v2.settings import Settings
 from wave_local_ai_v2.suite_gate import SuiteGateResult
@@ -93,6 +93,30 @@ def item_measurement_fields(
         "item_measurement_kind": timings.ITEM_MEASUREMENT_SINGLE_GENERATION,
         "item_first_in_batch": first_in_batch,
     }
+
+
+def direct_harness_fields(
+    measurement: timings.ItemMeasurement, item_prompt_tokens: int | None
+) -> dict[str, Any]:
+    """The harness block a `direct` row carries (schema "20").
+
+    `direct` sends the item's own rendered prompt and nothing around it, so
+    it wraps the item trivially and the rule measures it like any wrapper:
+    the engine's own prompt-token count (`measurement`'s, the row's
+    `item_tokens_in`) minus `item_prompt_tokens`, the item's rendered prompt
+    -- tool definitions included -- counted under the same tokenizer. A
+    cloud subject has no such count (`None`), and its overhead is null with
+    that reason rather than an assumed zero.
+    """
+    return harness.row_fields(
+        harness.HARNESS_DIRECT,
+        harness.prompt_overhead(
+            engine_prompt_tokens=measurement["tokens_in"],
+            engine_null_reason=measurement["tokens_in_null_reason"],
+            item_prompt_tokens=item_prompt_tokens,
+            wraps_item_prompt=True,
+        ),
+    )
 
 
 def cloud_item_measurement(
