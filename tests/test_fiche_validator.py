@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 from pathlib import Path
 from unittest.mock import patch
@@ -30,6 +31,14 @@ FICHE = {
     "quant": "UD-IQ4_XS",
     "flags": ["-ngl", "99"],
 }
+
+
+@pytest.fixture(autouse=True)
+def _isolate_from_outer_git(monkeypatch) -> None:
+    # A git hook (pre-push runs this suite) exports GIT_DIR and GIT_INDEX_FILE;
+    # inherited, they point the tmp-repo git calls at the real repository.
+    for name in [n for n in os.environ if n.startswith("GIT_")]:
+        monkeypatch.delenv(name)
 
 
 def _write_rows(path: Path, rows: list[dict]) -> None:
