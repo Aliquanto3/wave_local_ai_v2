@@ -22,6 +22,7 @@ import requests
 
 from wave_local_ai_v2 import candidate_gate as gate
 from wave_local_ai_v2 import engines, roster, server
+from wave_local_ai_v2 import settings as settings_module
 
 SHA = "23749fefcc72300e3a2ad315e1317431b06b590a"  # pragma: allowlist secret
 REPO = "Qwen/Qwen3-0.6B-GGUF"
@@ -754,6 +755,8 @@ def test_a_missing_server_path_exits_2(
 ) -> None:
     monkeypatch.setenv("SLM_MODELS_DIR", str(tmp_path))
     monkeypatch.delenv("LLAMA_SERVER_PATH", raising=False)
+    # The repo's real .env would set the path back.
+    monkeypatch.setattr(settings_module, "load_dotenv", lambda: None)
     code, records = _main(tmp_path, _declaration(), Stubs())
 
     assert code == 2
