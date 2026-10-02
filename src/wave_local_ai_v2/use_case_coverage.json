@@ -1,0 +1,52 @@
+{
+  "entries": [
+    {
+      "use_case": "classification",
+      "state": "exercised",
+      "suite_ids": ["classification-support-routing"]
+    },
+    {
+      "use_case": "translation",
+      "state": "exercised",
+      "suite_ids": ["translation-business-short-form"]
+    },
+    {
+      "use_case": "document-comparison",
+      "state": null
+    },
+    {
+      "use_case": "text-rewriting",
+      "state": "exercised",
+      "suite_ids": ["rewriting-business-email"]
+    },
+    {
+      "use_case": "code-generation",
+      "state": null
+    },
+    {
+      "use_case": "agentic-planning",
+      "state": null
+    },
+    {
+      "use_case": "agentic-tool-calling",
+      "state": null
+    },
+    {
+      "use_case": "web-research",
+      "state": null
+    },
+    {
+      "use_case": "rag-answer-generation",
+      "state": null
+    },
+    {
+      "use_case": "multilingual-en-fr-de",
+      "state": "covered-by-dimension",
+      "suite_ids": [
+        "classification-support-routing",
+        "translation-business-short-form",
+        "rewriting-business-email"
+      ]
+    }
+  ]
+}

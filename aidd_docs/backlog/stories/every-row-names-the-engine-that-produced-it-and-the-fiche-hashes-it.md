@@ -1,6 +1,6 @@
 ---
 type: story
-status: ready
+status: done
 source: aidd_docs/backlog/epics/the-engine-and-the-prompt-variant-are-measured-not-assumed.md
 parent: aidd_docs/backlog/epics/the-engine-and-the-prompt-variant-are-measured-not-assumed.md
 order: 1
@@ -21,7 +21,7 @@ Current state: `server.py` pins `HOST` and `PORT = 8080` (`server.py:28-29`) and
 ## Acceptance
 
 - A tracked engine registry holds one entry, `llama.cpp`, declared as the reference engine. The entry carries its stable `engine_id`; how its build identifier is read at run time (the live probe `build_probe.py` already performs, never a constant); its endpoint set (chat, health, prompt rendering, template source); its lifecycle, `spawned`; its default port; and its configuration defaults, each marked `declared` by this project or `engine_reported` by the running server. A registry entry missing any of these refuses to load, naming the field, the way `roster.load_roster` refuses an incomplete entry.
-- The thinking switch's spelling moves into the engine entry beside the roster entry's declared control: `local_client` reads it from the registry instead of hardcoding it. The llama.cpp entry's switch is verified by rendering one item through `/apply-template` with and without it and recording that the two prompts differ; a switch that changes nothing makes the row declare `thinking_policy: allowed`, never `disabled`.
+- The thinking switch's spelling moves into the engine entry beside the roster entry's declared control: `local_client` reads it from the registry instead of hardcoding it. The llama.cpp entry's switch is verified by rendering one item through `/apply-template` with and without it and recording that the two prompts differ; a declared switch that renders no difference refuses the batch before any generation (as `a-thinking-switch-the-template-ignores-is-refused-never-published-as-disabled` does); an engine that offers no switch declares `none`, checked by the candidate gate.
 - The fiche carries `engine_id` and `engine_build` (generalising `llama_cpp_build`) and an engine configuration hash computed over a path-free normalisation: for llama.cpp, the launch flag list with the absolute model path replaced by the roster entry reference. All three are inside the hashed projection; the raw `flags` stay outside it as evidence (Methodology 14). Whether llama.cpp's configuration hash enters the projection is Q20 (`aidd_docs/tasks/2026_10/2026_10_01_autonomous-slicing/owner-questions.md`); this bullet is written to its recommended default and a different answer changes this bullet only.
 - `engine_id` and `engine_build` replace `llama_cpp_build` among the runtime verdict's blocking fields. Two constructed fiches identical except for `engine_id` hash differently, and a reproduction verdict between their rows returns `not comparable` naming `engine_id`, never `not reproduced`.
 - Every runtime row and every local quality row carries `engine_id` and `engine_build`. The writer gate refuses a local row missing either, and a row whose `engine_id` is not a registry entry, naming the id. A row no local engine produced (a cloud subject's quality row, a judge row) states that the engine does not apply, on the precedent the machine epic sets for `compute_mode`, and never carries `llama.cpp`.
@@ -42,7 +42,7 @@ Current state: `server.py` pins `HOST` and `PORT = 8080` (`server.py:28-29`) and
 - `tests/test_hardware.py`: engine fields change the hash; the path-free configuration hash is identical for two model directories; key order irrelevant.
 - `tests/test_verdict.py`: engine mismatch is `not comparable` naming `engine_id`.
 - `tests/test_row_contract.py`: unregistered engine refused through the gate; cloud row states not applicable; schema-12 bundle still verifies.
-- Thinking switch: verified render difference recorded; a no-op switch yields `allowed`.
+- Thinking switch: verified render difference recorded; a no-op switch refuses the batch.
 
 ## Evidence it publishes
 

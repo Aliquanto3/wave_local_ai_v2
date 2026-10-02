@@ -1,15 +1,9 @@
-import copy
+from wave_local_ai_v2 import suite_registry
+from wave_local_ai_v2.classification_suite import LABELS
+from wave_local_ai_v2.suite_registry import prompt_set_hash
 
-from wave_local_ai_v2.classification_suite import (
-    CLASSIFICATION_TASK_SUITE,
-    CONTEXT_LENGTH,
-    LABELS,
-    MAX_OUTPUT_TOKENS,
-    STOP_SEQUENCES,
-    SUITE_ID,
-    SUITE_VERSION,
-    prompt_set_hash,
-)
+SUITE = suite_registry.resolve("classification-support-routing")
+CLASSIFICATION_TASK_SUITE = SUITE.items
 
 
 def test_suite_has_twenty_items() -> None:
@@ -61,12 +55,15 @@ def test_every_item_carries_consistent_language_provenance_and_risk_tags() -> No
         assert item["contamination_risk"] == (item["provenance"] == "public")
 
 
-def test_suite_declares_id_version_and_caps() -> None:
-    assert SUITE_ID
-    assert SUITE_VERSION
-    assert MAX_OUTPUT_TOKENS > 0
-    assert isinstance(STOP_SEQUENCES, list)
-    assert CONTEXT_LENGTH > 0
+def test_suite_declares_its_identity_its_caps_and_its_scoring_rule() -> None:
+    assert SUITE.suite_id == "classification-support-routing"
+    assert SUITE.suite_version == "4"
+    assert SUITE.task_suite == "classification"
+    assert SUITE.scoring_rule == "exact_label_match"
+    assert SUITE.max_output_tokens == 32
+    assert SUITE.stop_sequences == []
+    assert SUITE.thinking_policy == "disabled"
+    assert SUITE.context_length == 32768
 
 
 def test_prompt_set_hash_is_stable_across_calls() -> None:
@@ -137,7 +134,7 @@ def test_original_ten_english_items_are_unchanged() -> None:
 
 
 def test_prompt_set_hash_changes_when_a_prompt_is_edited() -> None:
-    edited = copy.deepcopy(CLASSIFICATION_TASK_SUITE)
+    edited = [dict(item) for item in CLASSIFICATION_TASK_SUITE]
     edited[0]["prompt"] += " edited"
 
     assert prompt_set_hash(edited) != prompt_set_hash(CLASSIFICATION_TASK_SUITE)

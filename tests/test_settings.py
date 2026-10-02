@@ -4,7 +4,8 @@ import pytest
 
 import wave_local_ai_v2.settings as settings_module
 from wave_local_ai_v2.settings import (
-    DEFAULT_CLOUD_RETRY_MAX_ATTEMPTS,
+    DEFAULT_CLOUD_RETRY_MIN_RETRIES,
+    DEFAULT_CLOUD_RETRY_RETRIES_PER_ITEM,
     DEFAULT_DASHBOARD_BUNDLE_DIR,
     DEFAULT_EMISSION_COUNTRY_ISO_CODE,
     DEFAULT_EMISSION_FACTOR_KG_PER_KWH,
@@ -14,6 +15,7 @@ from wave_local_ai_v2.settings import (
     DEFAULT_JUDGE_PROBE_REFERENCE_PATH,
     DEFAULT_KWH_PRICE_EUR,
     DEFAULT_KWH_PRICE_RECORDED_AT,
+    DEFAULT_LEADER_SETS_DIR,
     DEFAULT_MISTRAL_REQUEST_PACING_S,
     DEFAULT_QUALITY_REFERENCE_PATH,
     DEFAULT_QUALITY_RESULTS_PATH,
@@ -475,13 +477,15 @@ def test_load_settings_defaults_the_pacing_and_retry_fields_when_unset(
     monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
     monkeypatch.delenv("MISTRAL_REQUEST_PACING_S", raising=False)
     monkeypatch.delenv("GOOGLE_REQUEST_PACING_S", raising=False)
-    monkeypatch.delenv("CLOUD_RETRY_MAX_ATTEMPTS", raising=False)
+    monkeypatch.delenv("CLOUD_RETRY_MIN_RETRIES", raising=False)
+    monkeypatch.delenv("CLOUD_RETRY_RETRIES_PER_ITEM", raising=False)
 
     settings = load_settings()
 
     assert settings.mistral_request_pacing_s == DEFAULT_MISTRAL_REQUEST_PACING_S
     assert settings.google_request_pacing_s == DEFAULT_GOOGLE_REQUEST_PACING_S
-    assert settings.cloud_retry_max_attempts == DEFAULT_CLOUD_RETRY_MAX_ATTEMPTS
+    assert settings.cloud_retry_min_retries == DEFAULT_CLOUD_RETRY_MIN_RETRIES
+    assert settings.cloud_retry_retries_per_item == DEFAULT_CLOUD_RETRY_RETRIES_PER_ITEM
 
 
 def test_load_settings_reads_the_pacing_and_retry_overrides(
@@ -496,13 +500,15 @@ def test_load_settings_reads_the_pacing_and_retry_overrides(
     monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
     monkeypatch.setenv("MISTRAL_REQUEST_PACING_S", "2.5")
     monkeypatch.setenv("GOOGLE_REQUEST_PACING_S", "6")
-    monkeypatch.setenv("CLOUD_RETRY_MAX_ATTEMPTS", "9")
+    monkeypatch.setenv("CLOUD_RETRY_MIN_RETRIES", "9")
+    monkeypatch.setenv("CLOUD_RETRY_RETRIES_PER_ITEM", "0.5")
 
     settings = load_settings()
 
     assert settings.mistral_request_pacing_s == 2.5
     assert settings.google_request_pacing_s == 6.0
-    assert settings.cloud_retry_max_attempts == 9
+    assert settings.cloud_retry_min_retries == 9
+    assert settings.cloud_retry_retries_per_item == 0.5
 
 
 def test_load_settings_accepts_a_zero_pacing_interval(
@@ -533,11 +539,16 @@ def test_load_settings_accepts_a_zero_pacing_interval(
         ("MISTRAL_REQUEST_PACING_S", "not-a-number"),
         ("GOOGLE_REQUEST_PACING_S", "-0.1"),
         ("GOOGLE_REQUEST_PACING_S", "not-a-number"),
-        # Zero attempts would make the budget refuse every retry, which is not
-        # "no retry configuration" but a batch that gives up on its first 429.
-        ("CLOUD_RETRY_MAX_ATTEMPTS", "0"),
-        ("CLOUD_RETRY_MAX_ATTEMPTS", "not-a-number"),
-        ("CLOUD_RETRY_MAX_ATTEMPTS", "1.5"),
+        # A zero floor would let a small batch refuse every retry, which is
+        # not "no retry configuration" but a batch that gives up on its first
+        # 429.
+        ("CLOUD_RETRY_MIN_RETRIES", "0"),
+        ("CLOUD_RETRY_MIN_RETRIES", "not-a-number"),
+        ("CLOUD_RETRY_MIN_RETRIES", "1.5"),
+        ("CLOUD_RETRY_RETRIES_PER_ITEM", "-0.1"),
+        ("CLOUD_RETRY_RETRIES_PER_ITEM", "not-a-number"),
+        ("CLOUD_RETRY_RETRIES_PER_ITEM", "inf"),
+        ("CLOUD_RETRY_RETRIES_PER_ITEM", "nan"),
     ],
 )
 def test_load_settings_refuses_invalid_pacing_and_retry_values(
@@ -669,6 +680,7 @@ SERVICE_ENV_VARS = (
     "FICHE_REGISTRY_DIR",
     "ROSTER_PATH",
     "SUITE_DEFINITIONS_DIR",
+    "LEADER_SETS_DIR",
     "DASHBOARD_BUNDLE_DIR",
     "DASHBOARD_ORIGIN",
     "SERVICE_TLS_CERTFILE",
@@ -716,6 +728,7 @@ def test_load_service_settings_defaults_everything_but_the_key_and_tls(
     assert settings.fiche_registry_dir == Path(DEFAULT_FICHE_REGISTRY_DIR)
     assert settings.roster_path == Path(DEFAULT_ROSTER_PATH)
     assert settings.suite_definitions_dir == Path(DEFAULT_SUITE_DEFINITIONS_DIR)
+    assert settings.leader_sets_dir == Path(DEFAULT_LEADER_SETS_DIR)
     assert settings.dashboard_bundle_dir == Path(DEFAULT_DASHBOARD_BUNDLE_DIR)
     # Not a separate hardcoded default: computed from the bound host/port so
     # it cannot drift from the address the service actually binds. https,
@@ -749,6 +762,7 @@ def test_load_service_settings_reads_every_override(
     monkeypatch.setenv("FICHE_REGISTRY_DIR", str(tmp_path / "fiches"))
     monkeypatch.setenv("ROSTER_PATH", str(tmp_path / "models.json"))
     monkeypatch.setenv("SUITE_DEFINITIONS_DIR", str(tmp_path / "suites"))
+    monkeypatch.setenv("LEADER_SETS_DIR", str(tmp_path / "leader-sets"))
     monkeypatch.setenv("DASHBOARD_BUNDLE_DIR", str(tmp_path / "dashboard-dist"))
     monkeypatch.setenv("DASHBOARD_ORIGIN", "https://dashboard.example")
 
@@ -764,6 +778,7 @@ def test_load_service_settings_reads_every_override(
     assert settings.fiche_registry_dir == tmp_path / "fiches"
     assert settings.roster_path == tmp_path / "models.json"
     assert settings.suite_definitions_dir == tmp_path / "suites"
+    assert settings.leader_sets_dir == tmp_path / "leader-sets"
     assert settings.dashboard_bundle_dir == tmp_path / "dashboard-dist"
     assert settings.dashboard_origin == "https://dashboard.example"
 
@@ -863,6 +878,7 @@ def test_service_settings_repr_omits_the_api_key(tmp_path: Path) -> None:
         fiche_registry_dir=tmp_path / "fiches",
         roster_path=tmp_path / "models.json",
         suite_definitions_dir=tmp_path / "suites",
+        leader_sets_dir=tmp_path / "leader-sets",
         dashboard_bundle_dir=tmp_path / "dashboard-dist",
         dashboard_origin="https://127.0.0.1:8000",
         tls_certfile=tmp_path / "cert.pem",

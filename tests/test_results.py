@@ -4,20 +4,31 @@ from pathlib import Path
 
 import pytest
 
+from wave_local_ai_v2 import suite_registry
 from wave_local_ai_v2.results import (
     UNREADABLE_BELOW_FLOOR,
     UNREADABLE_NO_SCHEMA_VERSION,
     UNREADABLE_UNPARSABLE_LINE,
     UnreadableRows,
     append_row,
+    batch_rows,
     captured_at,
     new_run_id,
     read_rows,
     read_rows_from_floor,
-    resume_skip_reason,
+    resume_missing_items,
     rows_for_run,
 )
-from wave_local_ai_v2.row_contract import RowContractError
+from wave_local_ai_v2.row_contract import RowContractError, subject_egress_for
+
+# The authored text of the item the quality fixture names: a baseline
+# row carries it unchanged, and the gate checks that it does.
+_AUTHORED_PROMPT = next(
+    item["prompt"]
+    for item in suite_registry.resolve("classification-support-routing").items
+    if item["item_id"] == "billing-01"
+)
+
 
 COMPLETE_QUALITY_ROW = {
     "schema_version": "1",
@@ -32,8 +43,14 @@ COMPLETE_QUALITY_ROW = {
     "prompt_template_id": "none",
     "prompt_template_hash": None,
     "prompt_capture": "captured",
+    "prompt_variant_id": "baseline",
+    "prompt_variant_version": "1",
+    "prompt_before_template": _AUTHORED_PROMPT,
     "model_id": "Qwen3.6-35B-A3B",
     "provider": "local",
+    "subject_egress": "none",
+    "engine_id": "llama.cpp",
+    "engine_build": "b10537",
     "fiche_hash": "a" * 64,
     "cpu_energy_kwh": 0.0003,
     "cpu_energy_method": "estimated_tdp",
@@ -81,13 +98,19 @@ COMPLETE_QUALITY_ROW = {
     "thinking_policy": "disabled",
     "context_length": 32768,
     "suite_id": "classification-support-routing",
-    "suite_version": "1",
+    "suite_version": suite_registry.resolve(
+        "classification-support-routing"
+    ).suite_version,
     "prompt_set_hash": "deadbeef",
     "language": "en",
     "provenance": "hand_written",
     "contamination_risk": False,
     "indicative": True,
     "indicative_reasons": ["item_count 10 is below the minimum of 20"],
+    "suite_level": "development",
+    "item_licence": "CC-BY-4.0",
+    "item_source": None,
+    "item_source_revision": None,
     "failure_reason": None,
     "failure_counts": {
         "empty": 0,
@@ -97,6 +120,19 @@ COMPLETE_QUALITY_ROW = {
     },
     "retries": 0,
     "resumed": False,
+    "retry_budget": {},
+    "partial_failure": None,
+    "item_tokens_in": 57,
+    "item_tokens_in_null_reason": None,
+    "item_tokens_out": 2,
+    "item_tokens_out_null_reason": None,
+    "item_ttft_ms": 13.7,
+    "item_ttft_ms_null_reason": None,
+    "item_ttft_source": "server_reported",
+    "item_prompt_tokens_cached": 0,
+    "item_prompt_tokens_cached_null_reason": None,
+    "item_measurement_kind": "single_generation",
+    "item_first_in_batch": True,
 }
 
 
@@ -196,10 +232,14 @@ def _write_items(
     path: Path,
     run_id: str,
     provider: str,
-    item_ids: list[str],
+    item_count: int,
     task_suite: str = "classification",
 ) -> None:
-    for item_id in item_ids:
+    # Real items, not placeholder ids: the writer gate checks a baseline row's
+    # pre-template prompt against the authored text of the item it names.
+    for item in suite_registry.resolve("classification-support-routing").items[
+        :item_count
+    ]:
         append_row(
             path,
             "quality",
@@ -207,88 +247,135 @@ def _write_items(
                 **COMPLETE_QUALITY_ROW,
                 "run_id": run_id,
                 "provider": provider,
-                "item_id": item_id,
+                "subject_egress": subject_egress_for(provider),
+                "retry_budget": {} if provider == "local" else {provider: 4},
+                # A cloud provider's rows were produced by no local engine.
+                **(
+                    {}
+                    if provider == "local"
+                    else {"engine_id": "not_applicable", "engine_build": None}
+                ),
+                "item_id": item["item_id"],
+                "prompt_before_template": item["prompt"],
                 "task_suite": task_suite,
             },
         )
 
 
-def test_resume_skip_reason_runs_a_batch_that_wrote_nothing(tmp_path: Path) -> None:
+_IDS = [
+    item["item_id"]
+    for item in suite_registry.resolve("classification-support-routing").items
+]
+
+
+def test_resume_missing_items_returns_every_id_of_a_batch_that_wrote_nothing(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "quality.jsonl"
-    _write_items(path, "run-1", "local", ["a", "b", "c"])
+    _write_items(path, "run-1", "local", 3)
 
     # Another provider's completed batch says nothing about this one.
     assert (
-        resume_skip_reason(path, "run-1", "mistral", 3, task_suite="classification")
-        is None
+        resume_missing_items(
+            path, "run-1", "mistral", _IDS[:3], task_suite="classification"
+        )
+        == _IDS[:3]
     )
     # Nor does another run's.
     assert (
-        resume_skip_reason(path, "run-2", "local", 3, task_suite="classification")
-        is None
+        resume_missing_items(
+            path, "run-2", "local", _IDS[:3], task_suite="classification"
+        )
+        == _IDS[:3]
     )
     # Nor does an absent store.
     assert (
-        resume_skip_reason(
-            tmp_path / "absent.jsonl", "run-1", "local", 3, task_suite="classification"
+        resume_missing_items(
+            tmp_path / "absent.jsonl",
+            "run-1",
+            "local",
+            _IDS[:3],
+            task_suite="classification",
         )
-        is None
+        == _IDS[:3]
     )
 
 
-def test_resume_skip_reason_skips_a_complete_batch_by_name(tmp_path: Path) -> None:
+def test_resume_missing_items_returns_none_for_a_complete_batch(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "quality.jsonl"
-    _write_items(path, "run-1", "local", ["a", "b", "c"])
+    _write_items(path, "run-1", "local", 3)
 
     assert (
-        resume_skip_reason(path, "run-1", "local", 3, task_suite="classification")
-        == "run run-1 already complete"
+        resume_missing_items(
+            path, "run-1", "local", _IDS[:3], task_suite="classification"
+        )
+        == []
     )
 
 
-def test_resume_skip_reason_refuses_a_partially_written_batch(tmp_path: Path) -> None:
+def test_resume_missing_items_returns_exactly_the_ids_a_partial_batch_never_wrote(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "quality.jsonl"
-    _write_items(path, "run-1", "local", ["a", "b"])
+    _write_items(path, "run-1", "local", 2)
 
-    assert resume_skip_reason(
-        path, "run-1", "local", 5, task_suite="classification"
-    ) == ("run run-1 is partially written (2/5 items); re-running would duplicate them")
+    # In the caller's order, not the store's: a resume runs them as the
+    # suite declares them.
+    assert (
+        resume_missing_items(
+            path, "run-1", "local", _IDS[:5], task_suite="classification"
+        )
+        == _IDS[2:5]
+    )
 
 
-def test_resume_skip_reason_decides_against_the_callers_own_item_count(
+def test_resume_missing_items_decides_against_the_callers_own_items(
     tmp_path: Path,
 ) -> None:
     # The same two rows are a complete batch for a two-item caller and a
-    # partial one for a five-item caller: the count is the caller's, not a
-    # suite length read from a module.
+    # partial one for a five-item caller: the item list is the caller's, not
+    # a suite read from a module.
     path = tmp_path / "probe.jsonl"
-    _write_items(path, "run-1", "google", ["a", "b"])
+    _write_items(path, "run-1", "google", 2)
 
-    assert resume_skip_reason(
-        path, "run-1", "google", 2, task_suite="classification"
-    ) == ("run run-1 already complete")
-    assert "partially written (2/5" in str(
-        resume_skip_reason(path, "run-1", "google", 5, task_suite="classification")
+    assert (
+        resume_missing_items(
+            path, "run-1", "google", _IDS[:2], task_suite="classification"
+        )
+        == []
+    )
+    assert (
+        resume_missing_items(
+            path, "run-1", "google", _IDS[:5], task_suite="classification"
+        )
+        == _IDS[2:5]
     )
 
 
-def test_resume_never_skips_a_batch_on_the_strength_of_another_suites_rows(
+def test_resume_never_counts_another_suites_rows_under_the_same_run_id(
     tmp_path: Path,
 ) -> None:
     # One store now holds two suites. A run_id complete under classification
     # says nothing about the same run_id under translation: without the
-    # task_suite filter, `--resume <id> --suite translation` would skip a
-    # batch that was never run and publish nothing for it.
+    # task_suite filter, `--resume <id> --suite translation-business-short-form`
+    # would skip a batch that was never run and publish nothing for it.
     path = tmp_path / "quality.jsonl"
-    _write_items(path, "run-1", "local", ["a", "b", "c"], task_suite="classification")
+    _write_items(path, "run-1", "local", 3, task_suite="classification")
 
     assert (
-        resume_skip_reason(path, "run-1", "local", 3, task_suite="translation") is None
+        resume_missing_items(path, "run-1", "local", _IDS[:3], task_suite="translation")
+        == _IDS[:3]
     )
     assert (
-        resume_skip_reason(path, "run-1", "local", 3, task_suite="classification")
-        == "run run-1 already complete"
+        resume_missing_items(
+            path, "run-1", "local", _IDS[:3], task_suite="classification"
+        )
+        == []
     )
+    assert batch_rows(path, "run-1", "local", task_suite="translation") == []
+    assert len(batch_rows(path, "run-1", "local", task_suite="classification")) == 3
 
 
 def _write_lines(path: Path, lines: list[str]) -> None:
@@ -457,6 +544,8 @@ def test_the_existing_readers_are_untouched_by_the_floor_aware_path(
     assert read_rows(path, schema_version="7") == [row_v7]
     assert rows_for_run(path, "run-2") == [row_v11]
     assert (
-        resume_skip_reason(path, "run-1", "local", 1, task_suite="classification")
-        == "run run-1 already complete"
+        resume_missing_items(
+            path, "run-1", "local", ["billing-01"], task_suite="classification"
+        )
+        == []
     )

@@ -6,6 +6,11 @@ verbatim, but sources every model-intrinsic flag from a roster entry
 settings, instead of from module constants. `--n-cpu-moe` falls back to the
 entry's own `validated_host` value when the host sets none, which is how a
 dense entry launches without the flag at all.
+
+Where the server listens, which path answers its health check and whether
+this harness may spawn it at all come from the engine registry entry
+(`engines.py`), never from module constants. Every function takes the entry
+and defaults to the tracked reference engine (llama.cpp).
 """
 
 from __future__ import annotations
@@ -23,10 +28,7 @@ from typing import IO
 
 import requests
 
-from wave_local_ai_v2 import roster
-
-HOST = "127.0.0.1"
-PORT = 8080
+from wave_local_ai_v2 import engines, roster
 
 PORT_PROBE_TIMEOUT_S = 0.5
 READY_POLL_INTERVAL_S = 1.0
@@ -43,13 +45,18 @@ def build_flags(
     host_n_cpu_moe: int | None,
     host_threads: int,
     model_path: Path,
+    *,
+    engine: engines.EngineEntry | None = None,
 ) -> list[str]:
     """Build the full launch flag list for `entry` on this host.
 
     Model-intrinsic flags (`-ngl`, `-c`, `-fa`, `--jinja`, `-np`,
     `--load-mode`, the sampler flags) come from `entry.server_flags`;
     `--n-cpu-moe` and `-t` come from the host parameters; `--host`/`--port`
-    stay module constants. This is the one call site for
+    come from the engine entry (`engine`, default the tracked reference
+    engine), and stay outside the fiche's hashed projection: the engine
+    configuration hash drops them (`engines.normalise_config`). This is the
+    one call site for
     `roster.validate_host_fit`: it runs before any flag is built, so a
     mismatched flag set refuses before `running_server` ever spawns a
     process.
@@ -67,6 +74,7 @@ def build_flags(
         entry.validated_host["n_cpu_moe"] if host_n_cpu_moe is None else host_n_cpu_moe
     )
     roster.validate_host_fit(entry, resolved_n_cpu_moe)
+    engine = engine or engines.tracked_reference_engine()
 
     flags = entry.server_flags
     sampler = flags["sampler"]
@@ -104,9 +112,9 @@ def build_flags(
         "--presence-penalty",
         str(sampler["presence_penalty"]),
         "--host",
-        HOST,
+        engine.host,
         "--port",
-        str(PORT),
+        str(engine.default_port),
     ]
     return result
 
@@ -140,33 +148,48 @@ def _port_is_open(host: str, port: int, timeout: float = PORT_PROBE_TIMEOUT_S) -
 
 
 def start_server(
-    server_path: Path, flags: list[str], *, stderr_sink: IO[bytes] | None = None
+    server_path: Path,
+    flags: list[str],
+    *,
+    stderr_sink: IO[bytes] | None = None,
+    engine: engines.EngineEntry | None = None,
 ) -> subprocess.Popen[bytes]:
     """Launch llama-server and poll until it reports ready. Raises on timeout or crash.
+
+    Only a `spawned` engine is launched here: an `attached` engine is a daemon
+    this harness does not own, and spawning a second copy of it would be the
+    wrong process to measure.
 
     `stderr_sink`, when given, receives the child's stderr and is neither opened
     nor closed here: `running_server` owns one for the whole context so a
     mid-run crash still has readable diagnostics. With None a temporary file is
     opened and closed around the readiness wait, as before.
     """
+    engine = engine or engines.tracked_reference_engine()
+    if engine.lifecycle != engines.LIFECYCLE_SPAWNED:
+        raise ServerStartupError(
+            f"engine {engine.engine_id!r} is declared {engine.lifecycle!r}, not "
+            f"{engines.LIFECYCLE_SPAWNED!r}: this harness does not launch it"
+        )
     # A stale llama-server still holding the port would answer the first /health
     # poll with 200, so the doomed process we just spawned would pass readiness
     # and every metric of the run would be attributed to the wrong process.
-    if _port_is_open(HOST, PORT):
+    if _port_is_open(engine.host, engine.default_port):
         raise ServerStartupError(
-            f"port {PORT} on {HOST} is already accepting connections; "
-            f"a previous llama-server is likely still running. "
+            f"port {engine.default_port} on {engine.host} is already accepting "
+            f"connections; a previous llama-server is likely still running. "
             f"Stop it before starting a measured run."
         )
 
+    health_url = f"{engines.base_url(engine)}{engine.endpoints['health']}"
     if stderr_sink is not None:
-        return _spawn_and_wait_ready(server_path, flags, stderr_sink)
+        return _spawn_and_wait_ready(server_path, flags, stderr_sink, health_url)
     with tempfile.TemporaryFile() as stderr_file:
-        return _spawn_and_wait_ready(server_path, flags, stderr_file)
+        return _spawn_and_wait_ready(server_path, flags, stderr_file, health_url)
 
 
 def _spawn_and_wait_ready(
-    server_path: Path, flags: list[str], stderr_file: IO[bytes]
+    server_path: Path, flags: list[str], stderr_file: IO[bytes], health_url: str
 ) -> subprocess.Popen[bytes]:
     popen_kwargs: dict[str, object] = {
         "stderr": stderr_file,
@@ -187,7 +210,7 @@ def _spawn_and_wait_ready(
                 f"{_read_stderr_tail(stderr_file)}"
             )
         try:
-            response = requests.get(f"http://{HOST}:{PORT}/health", timeout=2)
+            response = requests.get(health_url, timeout=2)
             if response.status_code == 200:
                 return process
         except requests.exceptions.RequestException:
@@ -222,6 +245,7 @@ def running_server(
     flags: list[str],
     *,
     quiet_exceptions: tuple[type[BaseException], ...] = (),
+    engine: engines.EngineEntry | None = None,
 ) -> Iterator[subprocess.Popen[bytes]]:
     """Context manager: start the server, guarantee shutdown on exit or exception.
 
@@ -237,7 +261,9 @@ def running_server(
     still propagate untouched, they just do not trigger the dump.
     """
     with tempfile.TemporaryFile() as stderr_file:
-        process = start_server(server_path, flags, stderr_sink=stderr_file)
+        process = start_server(
+            server_path, flags, stderr_sink=stderr_file, engine=engine
+        )
         try:
             yield process
         except Exception as exc:

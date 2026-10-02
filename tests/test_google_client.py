@@ -103,6 +103,108 @@ def test_complete_prompt_returns_content_and_sends_expected_request() -> None:
     assert "stopSequences" not in kwargs["json"]
 
 
+def _complete(body: dict) -> dict:
+    with patch(
+        "wave_local_ai_v2.google_client.requests.post",
+        return_value=MagicMock(status_code=200, json=lambda: body),
+    ):
+        return complete_prompt("x", "fake-key", **SAMPLING, max_tokens=MAX_TOKENS)
+
+
+def test_the_pinned_models_usage_shape_yields_a_derived_reasoning_count() -> None:
+    # The pinned model's real shape: no thoughtsTokenCount, and
+    # totalTokenCount == promptTokenCount + candidatesTokenCount
+    # (aidd_docs/memory/external/google-ai-studio-api.md). The 0 is the
+    # response's own arithmetic, and the completion says it was derived.
+    result = _complete(_generate())
+
+    assert result["reasoning_tokens"] == 0
+    assert result["reasoning_tokens_derived"] is True
+
+
+def test_hidden_tokens_in_the_total_are_derived_as_reasoning() -> None:
+    body = _generate(
+        usageMetadata={
+            "candidatesTokenCount": 1,
+            "promptTokenCount": 12,
+            "totalTokenCount": 99,
+        }
+    )
+
+    result = _complete(body)
+
+    assert result["reasoning_tokens"] == 86
+    assert result["reasoning_tokens_derived"] is True
+
+
+@pytest.mark.parametrize(
+    "missing", ["totalTokenCount", "promptTokenCount", "candidatesTokenCount"]
+)
+def test_with_no_thoughts_count_and_a_total_missing_the_count_is_none(
+    missing,
+) -> None:
+    usage = {"candidatesTokenCount": 3, "promptTokenCount": 12, "totalTokenCount": 15}
+    del usage[missing]
+
+    result = _complete(_generate(usageMetadata=usage))
+
+    # Never an assumed zero: with nothing to derive from, it is unknown.
+    assert result["reasoning_tokens"] is None
+    assert result["reasoning_tokens_derived"] is False
+
+
+def test_totals_that_contradict_themselves_are_refused() -> None:
+    body = _generate(
+        usageMetadata={
+            "candidatesTokenCount": 3,
+            "promptTokenCount": 12,
+            "totalTokenCount": 10,
+        }
+    )
+    with (
+        patch(
+            "wave_local_ai_v2.google_client.requests.post",
+            return_value=MagicMock(status_code=200, json=lambda: body),
+        ),
+        pytest.raises(GoogleRequestError, match="contradict"),
+    ):
+        complete_prompt("x", "fake-key", **SAMPLING, max_tokens=MAX_TOKENS)
+
+
+def test_a_reported_thoughts_count_is_kept_apart_from_the_output_count() -> None:
+    body = _generate(
+        usageMetadata={
+            "candidatesTokenCount": 3,
+            "promptTokenCount": 12,
+            "thoughtsTokenCount": 84,
+            "totalTokenCount": 99,
+        }
+    )
+    with patch(
+        "wave_local_ai_v2.google_client.requests.post",
+        return_value=MagicMock(status_code=200, json=lambda: body),
+    ):
+        result = complete_prompt("x", "fake-key", **SAMPLING, max_tokens=MAX_TOKENS)
+
+    assert result["reasoning_tokens"] == 84
+    assert result["reasoning_tokens_derived"] is False
+    assert result["generated_tokens"] == 3
+
+
+def test_a_non_integer_thoughts_count_is_refused() -> None:
+    body = _generate(
+        usageMetadata={"candidatesTokenCount": 3, "thoughtsTokenCount": "84"}
+    )
+    with (
+        patch(
+            "wave_local_ai_v2.google_client.requests.post",
+            return_value=MagicMock(status_code=200, json=lambda: body),
+        ),
+        pytest.raises(GoogleRequestError, match="thoughtsTokenCount"),
+    ):
+        complete_prompt("x", "fake-key", **SAMPLING, max_tokens=MAX_TOKENS)
+
+
 def test_complete_prompt_raises_on_non_200_status() -> None:
     with (
         patch(

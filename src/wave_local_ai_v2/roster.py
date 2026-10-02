@@ -15,9 +15,11 @@ Deliberately does not import `server.py`: phase 2 imports this module from
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import re
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -62,14 +64,65 @@ REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
 
 _SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 
+# The one `thinking_control` value that is not a request-argument object: the
+# model does not reason, so `thinking_policy: disabled` has nothing to send.
+# The declaration is the entry's to justify; a live generation is where it is
+# checked, not here.
+THINKING_CONTROL_NONE = "none"
+
 # Model family: the attribute judge independence is enforced on (a judge never
-# scores output from its own family). Declared here rather than in `judge.py`
-# because it is an identity fact about a model, the same class of fact as the
-# rest of this module.
+# scores output from its own family) and the roster composition rule counts.
+# Declared here rather than in `judge.py` because it is an identity fact about
+# a model, the same class of fact as the rest of this module. A family is the
+# vendor lineage, not the model line: Gemma is `google`, Ministral is
+# `mistral`, Granite is `ibm`, LFM2 is `liquid`, Phi is `microsoft`; the
+# entry's `display_id` keeps the model line visible.
 FAMILY_QWEN = "qwen"
 FAMILY_MISTRAL = "mistral"
 FAMILY_GOOGLE = "google"
-KNOWN_FAMILIES: frozenset[str] = frozenset({FAMILY_QWEN, FAMILY_MISTRAL, FAMILY_GOOGLE})
+FAMILY_IBM = "ibm"
+FAMILY_LIQUID = "liquid"
+FAMILY_MICROSOFT = "microsoft"
+KNOWN_FAMILIES: frozenset[str] = frozenset(
+    {
+        FAMILY_QWEN,
+        FAMILY_MISTRAL,
+        FAMILY_GOOGLE,
+        FAMILY_IBM,
+        FAMILY_LIQUID,
+        FAMILY_MICROSOFT,
+    }
+)
+
+# The languages a roster entry's language claim can name: the suites' own
+# EN/FR/DE set, never a wider one the suites cannot test.
+CLAIMABLE_LANGUAGES: tuple[str, ...] = ("en", "fr", "de")
+
+# The size classes Methodology 13's composition rule counts families in, in
+# order, each with the lowest total parameter count it holds (owner answer
+# Q10 (a)): below 1B is ~0.5B, 1B to below 3B is ~2B, 3B to below 6B is ~4B,
+# 6B and up is ~8B-and-up. Banded on total parameters, never on bytes on
+# disk: the bytes are the footprint published beside the class, and whether
+# an entry fits a machine is the machine epic's profiles' to say. The edges
+# are revisable after the first full-roster run; moving one is a value change
+# here and a re-class of the entries it crosses, never a rewrite of the
+# composition check, which reads this table.
+SIZE_CLASS_BANDS: tuple[tuple[str, int], ...] = (
+    ("~0.5B", 0),
+    ("~2B", 1_000_000_000),
+    ("~4B", 3_000_000_000),
+    ("~8B-and-up", 6_000_000_000),
+)
+SIZE_CLASSES: tuple[str, ...] = tuple(name for name, _ in SIZE_CLASS_BANDS)
+
+
+def size_class_for(total_params: int) -> str:
+    """The size class whose band holds `total_params`."""
+    for name, lower_edge in reversed(SIZE_CLASS_BANDS):
+        if total_params >= lower_edge:
+            return name
+    raise ValueError(f"total_params must not be negative, got {total_params!r}")
+
 
 # Keyed by the literal dated model id, never by `mistral_client.MODEL` /
 # `google_client.MODEL` -- same rule and same reason as
@@ -95,6 +148,48 @@ class Architecture:
     kind: str
     expert_count: int
     active_params_b: float
+    # Every parameter the file holds, summed over its tensors as the GGUF
+    # header states them: the figure the entry's size class is banded on.
+    # Optional at load for the reason `RosterEntry.family` is; the
+    # composition check names an entry without it.
+    total_params: int | None = None
+
+
+@dataclass(frozen=True)
+class Licence:
+    """The terms a roster entry's weights ship under, as read on a given day.
+
+    Terms move, so the entry says when and where they were read, the same
+    discipline Methodology 16 applies to a list price.
+    """
+
+    # SPDX identifier where one exists.
+    licence_id: str
+    # Whether the terms permit commercial use on a client's own machine.
+    client_commercial_use: bool
+    read_on: date
+    # The licence or model card the terms were read from, at the entry's
+    # revision.
+    source_url: str
+
+
+@dataclass(frozen=True)
+class LanguageClaim:
+    """Which of EN, FR and DE the vendor states the model supports.
+
+    A claim, never a score: only the roster file writes it, no suite result
+    does, and a suite row contradicting it leaves it in place, since that
+    contradiction is itself a finding about the model.
+    """
+
+    # The subset of `CLAIMABLE_LANGUAGES` the source names, possibly empty:
+    # a source claiming "many languages" without naming one names none.
+    languages: tuple[str, ...]
+    source_url: str
+    read_on: date
+    # The source's own wording on language support, verbatim, or `None` when
+    # it has none.
+    statement: str | None
 
 
 @dataclass(frozen=True)
@@ -123,14 +218,58 @@ class RosterEntry:
     # value when it is there and falls back to `MODEL_FAMILIES` until
     # Methodology 13's roster carries one.
     family: str | None = None
+    # The request arguments that disable reasoning under this entry's own chat
+    # template (merged into both the `/apply-template` and the chat request),
+    # `THINKING_CONTROL_NONE` for a model that does not reason, or `None` when
+    # the entry declares nothing -- which `local_client.thinking_kwargs`
+    # refuses under `thinking_policy: disabled` rather than guessing a
+    # spelling. Optional for the same reason `family` is: a constructed entry
+    # without it must still load so that refusal can name it.
+    thinking_control: dict[str, Any] | str | None = None
+    # The licence block and the vendor's language claim, when the roster file
+    # carries them. Optional on the entry for the reason `family` is; the
+    # shipped file carries both on every entry, which its own test asserts.
+    licence: Licence | None = None
+    language_claim: LanguageClaim | None = None
+    # One of `SIZE_CLASSES`, and the GGUF's size on disk in bytes: the class
+    # the composition rule counts the entry in, and the footprint published
+    # beside it. Optional at load so the composition check can name an entry
+    # that omits them rather than the loader refusing it first.
+    size_class: str | None = None
+    bytes_on_disk: int | None = None
+
+
+@dataclass(frozen=True)
+class SizeClassDeclaration:
+    """What the roster states about one size class, beside its entries.
+
+    The entries say which families and architectures a class holds; only the
+    roster's author can say whether a single-family class is a deliberate
+    ladder and whether a MoE was looked for, so a blank is never read as
+    either.
+    """
+
+    # The class is published as a single-family ladder: a comparison of one
+    # vendor's line, not of the market.
+    single_family_ladder: bool
+    # A MoE candidate was searched for in this class.
+    moe_sought: bool
+    # The entry id of the MoE representing the class, or `None`.
+    moe_entry: str | None
+    # Why no MoE represents the class, or `None`.
+    moe_absent_reason: str | None
 
 
 @dataclass(frozen=True)
 class RosterFile:
-    """A parsed roster: its version and every entry, keyed by entry id."""
+    """A parsed roster: its version, every entry keyed by entry id, and the
+    per-class declarations keyed by size class (empty when it carries none)."""
 
     roster_version: int
     entries: dict[str, RosterEntry]
+    size_classes: dict[str, SizeClassDeclaration] = dataclasses.field(
+        default_factory=dict
+    )
 
 
 def load_roster(path: Path) -> RosterFile:
@@ -174,7 +313,68 @@ def load_roster(path: Path) -> RosterFile:
     for entry_id, raw_entry in raw_entries.items():
         entries[entry_id] = _parse_entry(entry_id, raw_entry)
 
-    return RosterFile(roster_version=roster_version, entries=entries)
+    return RosterFile(
+        roster_version=roster_version,
+        entries=entries,
+        size_classes=_parse_size_classes(path, raw.get("size_classes", {})),
+    )
+
+
+def _parse_size_classes(path: Path, raw_block: Any) -> dict[str, SizeClassDeclaration]:
+    """The per-class declarations, refusing a malformed one naming its class.
+
+    Shape only: whether a declaration agrees with the entries of its class is
+    the composition check's to say, where it is named rather than refused.
+    """
+    if not isinstance(raw_block, dict):
+        raise RosterError(f"roster file at {path}: 'size_classes' must be an object")
+    declarations: dict[str, SizeClassDeclaration] = {}
+    for size_class, raw in raw_block.items():
+        where = f"roster file at {path}: size class {size_class!r}"
+        if size_class not in SIZE_CLASSES:
+            raise RosterError(
+                f"{where} is not a size class ({', '.join(SIZE_CLASSES)})"
+            )
+        fields = (
+            "single_family_ladder",
+            "moe_sought",
+            "moe_entry",
+            "moe_absent_reason",
+        )
+        if not isinstance(raw, dict):
+            raise RosterError(f"{where} must be an object")
+        missing = [key for key in fields if key not in raw]
+        if missing:
+            raise RosterError(f"{where} is missing field(s): {', '.join(missing)}")
+        for key in ("single_family_ladder", "moe_sought"):
+            if not isinstance(raw[key], bool):
+                raise RosterError(
+                    f"{where}: {key!r} must be a boolean, got {raw[key]!r}"
+                )
+        for key in ("moe_entry", "moe_absent_reason"):
+            value = raw[key]
+            if value is not None and (not isinstance(value, str) or not value.strip()):
+                raise RosterError(
+                    f"{where}: {key!r} must be null or a non-empty string, "
+                    f"got {value!r}"
+                )
+        declarations[size_class] = SizeClassDeclaration(
+            single_family_ladder=raw["single_family_ladder"],
+            moe_sought=raw["moe_sought"],
+            moe_entry=raw["moe_entry"],
+            moe_absent_reason=raw["moe_absent_reason"],
+        )
+    return declarations
+
+
+def parse_entry(entry_id: str, raw_entry: Any) -> RosterEntry:
+    """Parse one entry under exactly the rules `load_roster` applies to the file.
+
+    For a caller holding an entry that is not in a roster file yet -- the
+    candidate gate's pass record -- so "it would load" is proven by the same
+    code, not by a copy of it.
+    """
+    return _parse_entry(entry_id, raw_entry)
 
 
 def _block_at(raw_entry: dict[str, Any], path: str) -> Any:
@@ -224,6 +424,15 @@ def _parse_entry(entry_id: str, raw_entry: Any) -> RosterEntry:
             f"characters, got {sha256!r}"
         )
 
+    family = raw_entry.get("family")
+    if "family" in raw_entry and (
+        not isinstance(family, str) or family not in KNOWN_FAMILIES
+    ):
+        raise RosterError(
+            f"roster entry {entry_id!r}: 'family' {family!r} is not a known "
+            f"family ({', '.join(sorted(KNOWN_FAMILIES))})"
+        )
+
     raw_architecture = raw_entry["architecture"]
     return RosterEntry(
         entry_id=entry_id,
@@ -237,10 +446,164 @@ def _parse_entry(entry_id: str, raw_entry: Any) -> RosterEntry:
             kind=raw_architecture["kind"],
             expert_count=raw_architecture["expert_count"],
             active_params_b=raw_architecture["active_params_b"],
+            total_params=_optional_count(
+                entry_id, raw_architecture, "total_params", "architecture."
+            ),
         ),
         server_flags=raw_entry["server_flags"],
         validated_host=raw_entry["validated_host"],
-        family=raw_entry.get("family"),
+        family=family,
+        thinking_control=_parse_thinking_control(entry_id, raw_entry),
+        licence=_parse_licence(entry_id, raw_entry),
+        language_claim=_parse_language_claim(entry_id, raw_entry),
+        size_class=_parse_size_class(entry_id, raw_entry),
+        bytes_on_disk=_optional_count(entry_id, raw_entry, "bytes_on_disk"),
+    )
+
+
+def _parse_size_class(entry_id: str, raw_entry: dict[str, Any]) -> str | None:
+    """The entry's declared size class, or `None` when it declares none."""
+    if "size_class" not in raw_entry:
+        return None
+    size_class = raw_entry["size_class"]
+    if size_class not in SIZE_CLASSES:
+        raise _malformed(
+            entry_id, "size_class", f"one of {', '.join(SIZE_CLASSES)}", size_class
+        )
+    return str(size_class)
+
+
+def _optional_count(
+    entry_id: str, block: dict[str, Any], key: str, prefix: str = ""
+) -> int | None:
+    """`block[key]` as a positive integer, or `None` when the key is absent.
+
+    A float is refused rather than rounded: both figures are read off the
+    file, where they are exact.
+    """
+    if key not in block:
+        return None
+    value = block[key]
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        raise _malformed(entry_id, prefix + key, "a positive integer", value)
+    return value
+
+
+def _optional_block(
+    entry_id: str, raw_entry: dict[str, Any], name: str, fields: tuple[str, ...]
+) -> dict[str, Any] | None:
+    """The optional block `name` as an object holding `fields`, or `None`."""
+    if name not in raw_entry:
+        return None
+    block = raw_entry[name]
+    if not isinstance(block, dict):
+        raise RosterError(f"roster entry {entry_id!r}: {name!r} must be an object")
+    missing = [key for key in fields if key not in block]
+    if missing:
+        raise RosterError(
+            f"roster entry {entry_id!r} is missing required field(s): "
+            f"{', '.join(f'{name}.{key}' for key in missing)}"
+        )
+    return block
+
+
+def _malformed(entry_id: str, field: str, expected: str, value: Any) -> RosterError:
+    return RosterError(
+        f"roster entry {entry_id!r}: {field!r} must be {expected}, got {value!r}"
+    )
+
+
+def _text(entry_id: str, field: str, value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise _malformed(entry_id, field, "a non-empty string", value)
+    return value
+
+
+def _read_on(entry_id: str, field: str, value: Any) -> date:
+    try:
+        return date.fromisoformat(value)
+    except (TypeError, ValueError):
+        raise _malformed(entry_id, field, "an ISO 8601 date", value) from None
+
+
+def _parse_licence(entry_id: str, raw_entry: dict[str, Any]) -> Licence | None:
+    """The entry's licence block, or `None` when it carries none."""
+    block = _optional_block(
+        entry_id,
+        raw_entry,
+        "licence",
+        ("id", "client_commercial_use", "read_on", "source_url"),
+    )
+    if block is None:
+        return None
+    commercial = block["client_commercial_use"]
+    # A "yes" or a 1 is an operator's guess at the terms, not a reading of them.
+    if not isinstance(commercial, bool):
+        raise _malformed(
+            entry_id, "licence.client_commercial_use", "a boolean", commercial
+        )
+    return Licence(
+        licence_id=_text(entry_id, "licence.id", block["id"]),
+        client_commercial_use=commercial,
+        read_on=_read_on(entry_id, "licence.read_on", block["read_on"]),
+        source_url=_text(entry_id, "licence.source_url", block["source_url"]),
+    )
+
+
+def _parse_language_claim(
+    entry_id: str, raw_entry: dict[str, Any]
+) -> LanguageClaim | None:
+    """The entry's language claim, or `None` when it carries none."""
+    block = _optional_block(
+        entry_id, raw_entry, "language_claim", ("languages", "source_url", "read_on")
+    )
+    if block is None:
+        return None
+    languages = block["languages"]
+    if (
+        not isinstance(languages, list)
+        or any(language not in CLAIMABLE_LANGUAGES for language in languages)
+        or len(set(languages)) != len(languages)
+    ):
+        raise _malformed(
+            entry_id,
+            "language_claim.languages",
+            f"a list of distinct values from {', '.join(CLAIMABLE_LANGUAGES)}",
+            languages,
+        )
+    return LanguageClaim(
+        languages=tuple(languages),
+        source_url=_text(entry_id, "language_claim.source_url", block["source_url"]),
+        read_on=_read_on(entry_id, "language_claim.read_on", block["read_on"]),
+        statement=(
+            _text(entry_id, "language_claim.statement", block["statement"])
+            if "statement" in block
+            else None
+        ),
+    )
+
+
+def _parse_thinking_control(
+    entry_id: str, raw_entry: dict[str, Any]
+) -> dict[str, Any] | str | None:
+    """The entry's declared thinking control, or `None` when it declares none.
+
+    A present key must be `THINKING_CONTROL_NONE` or a non-empty object of
+    request arguments. An empty object would send nothing while claiming a
+    control, and an explicit `null` is not the same statement as `"none"`;
+    both are refused here, naming the field, rather than read as either.
+    """
+    if "thinking_control" not in raw_entry:
+        return None
+    control = raw_entry["thinking_control"]
+    if control == THINKING_CONTROL_NONE:
+        return THINKING_CONTROL_NONE
+    if isinstance(control, dict) and control:
+        return control
+    raise RosterError(
+        f"roster entry {entry_id!r}: 'thinking_control' must be "
+        f"{THINKING_CONTROL_NONE!r} or a non-empty object of request "
+        f"arguments, got {control!r}"
     )
 
 

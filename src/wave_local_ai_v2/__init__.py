@@ -12,12 +12,13 @@ import requests
 
 from wave_local_ai_v2 import (
     aggregation,
-    build_probe,
     cost,
     emissions,
     energy,
+    engines,
     fiche_registry,
     prompt_provenance,
+    prompt_variants,
     provenance,
     results,
     roster,
@@ -174,6 +175,11 @@ FIXED_PROMPT = (
 FIXED_MAX_TOKENS = 128
 REQUEST_TIMEOUT_S = 300
 
+# The prompt variant every runtime row runs under, resolved through the
+# registry once per run. A declaration, not a call-site choice: the campaign
+# declaration that will carry it as data is a later story.
+PROMPT_VARIANT_ID = prompt_variants.BASELINE_ID
+
 
 def _is_exceed_context_refusal(response: requests.Response) -> bool:
     """True only for llama-server's documented refusal of an over-long prompt.
@@ -224,6 +230,9 @@ def _run() -> None:
     # any structurally invalid entry before any HTTP call is made.
     loaded_roster = roster.load_roster(settings.roster_path)
     roster_entry = roster.resolve_entry(loaded_roster, settings.roster_entry_id)
+    # The engine that will produce the row, from the tracked registry: where it
+    # listens, how its build is probed, how its launch configuration is hashed.
+    engine = engines.tracked_reference_engine()
 
     model_path = settings.slm_models_dir / roster_entry.file
     if not model_path.exists():
@@ -235,7 +244,11 @@ def _run() -> None:
     # the resolved value: settings.host_n_cpu_moe when set, the entry's own
     # validated_host value when unset.
     flags = server.build_flags(
-        roster_entry, settings.host_n_cpu_moe, settings.host_threads, model_path
+        roster_entry,
+        settings.host_n_cpu_moe,
+        settings.host_threads,
+        model_path,
+        engine=engine,
     )
     # The five sampler values already reach the model through `flags`; only
     # `seed` is sent per request, so a request never diverges from what the
@@ -247,11 +260,19 @@ def _run() -> None:
     # Probing the binary itself doesn't need the server running, so this is
     # done before launch rather than costing readiness-wait time. An
     # unreadable build is an explicit None, never a fallback string.
-    llama_cpp_build = build_probe.probe_build(settings.llama_server_path)
+    engine_fields = engines.fiche_fields(
+        engine, settings.llama_server_path, flags, roster_entry.entry_id
+    )
+
+    # The fixed prompt passes through the declared variant like every suite
+    # item does. `/completion` applies no template, so what the variant
+    # returns is also the string the engine receives and the row publishes.
+    prompt_variant = prompt_variants.resolve(PROMPT_VARIANT_ID)
+    sent_prompt = prompt_variants.apply_variant(prompt_variant, FIXED_PROMPT)
 
     run_fiche = build_fiche(
         fiche,
-        llama_cpp_build=llama_cpp_build,
+        **engine_fields,
         roster_entry_id=roster_entry.entry_id,
         model_sha256=roster_entry.sha256,
         quant=roster_entry.quant,
@@ -265,7 +286,10 @@ def _run() -> None:
     # process answered normally, so its stderr tail would bury the one-line
     # diagnosis the operator actually needs under unrelated log.
     with server.running_server(
-        settings.llama_server_path, flags, quiet_exceptions=(RepetitionFailure,)
+        settings.llama_server_path,
+        flags,
+        quiet_exceptions=(RepetitionFailure,),
+        engine=engine,
     ) as process:
         # A streamed request was tried here to get an independent wall-clock TTFT
         # from the time of the first received SSE chunk, then reverted:
@@ -298,9 +322,9 @@ def _run() -> None:
         # them -- the isolation held on this run.
         def send_request() -> dict[str, Any]:
             response = requests.post(
-                f"http://{server.HOST}:{server.PORT}/completion",
+                f"{engines.base_url(engine)}{prompt_provenance.LOCAL_COMPLETION_ENDPOINT}",
                 json={
-                    "prompt": FIXED_PROMPT,
+                    "prompt": sent_prompt,
                     "n_predict": FIXED_MAX_TOKENS,
                     "cache_prompt": False,
                     "seed": RUNTIME_SEED,
@@ -403,8 +427,16 @@ def _run() -> None:
         "prompt_template_id": prompt_provenance.TEMPLATE_ID_NONE,
         "prompt_template_hash": None,
         "prompt_capture": prompt_provenance.PROMPT_CAPTURE_CAPTURED,
+        "prompt_variant_id": prompt_variant.variant_id,
+        "prompt_variant_version": prompt_variant.version,
+        "prompt_before_template": sent_prompt,
+        # The runtime benchmark serves its prompt from the local llama-server
+        # only: nothing left the machine.
+        "subject_egress": row_contract.SUBJECT_EGRESS_NONE,
+        "engine_id": engine.engine_id,
+        "engine_build": engine_fields["engine_build"],
         "fiche_hash": fiche_hash_value,
-        "prompt": FIXED_PROMPT,
+        "prompt": sent_prompt,
         "max_tokens": FIXED_MAX_TOKENS,
         "sampling": dict(runtime_sampling),
         "seed_pinned": True,

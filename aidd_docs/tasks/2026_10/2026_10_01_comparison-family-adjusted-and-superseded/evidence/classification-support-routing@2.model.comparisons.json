@@ -1,0 +1,10 @@
+[
+  {
+    "reference": {"run_id": "5e13166da0654390a7d63f346ea5d4f1", "where": {"model_id": "Qwen3.6-35B-A3B"}},
+    "candidate": {"run_id": "5e13166da0654390a7d63f346ea5d4f1", "where": {"model_id": "mistral-small-2603"}}
+  },
+  {
+    "reference": {"run_id": "d20afbda710c40378e6ad5ca8d9b6558", "where": {"model_id": "Qwen3.6-35B-A3B"}},
+    "candidate": {"run_id": "d20afbda710c40378e6ad5ca8d9b6558", "where": {"model_id": "mistral-small-2603"}}
+  }
+]

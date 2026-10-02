@@ -1,8 +1,8 @@
 """The three-state reproduction verdict: a re-run against a named reference
 receives `reproduced`, `not_reproduced`, or `not_comparable`, stored on the row.
 
-Reference matching never uses CPU, RAM, driver, or OS: only
-`llama_cpp_build`, `quant`, `gpu_name` and the raw `flags` list decide whether
+Reference matching never uses CPU, RAM, driver, or OS: only `engine_id`,
+`engine_build`, `quant`, `gpu_name` and the raw `flags` list decide whether
 a candidate and a reference row are the same run to compare (PRD Methodology
 8; plan.md's Decisions table resolves the tension between "shares the
 re-run's fiche hash" and "CPU/RAM/driver/OS never block a comparison" by
@@ -11,7 +11,11 @@ hash).
 
 A blocking field that is null on either side never matches, not even another
 null: two unknown builds or GPUs are not evidence of the same run, so such a
-pair is `not_comparable`, naming the null field.
+pair is `not_comparable`, naming the null field. A fiche written under the
+legacy projection carries no engine field at all (`hardware.FICHE_PROJECTIONS`
+"1"); that absence reads as null here, so a run against such a reference is
+`not_comparable` naming the engine fields rather than matched on a
+`llama_cpp_build` nobody tied to an engine.
 """
 
 from __future__ import annotations
@@ -25,7 +29,10 @@ VERDICT_REPRODUCED = "reproduced"
 VERDICT_NOT_REPRODUCED = "not_reproduced"
 VERDICT_NOT_COMPARABLE = "not_comparable"
 
-_RUNTIME_BLOCKING_FIELDS = ("llama_cpp_build", "quant", "gpu_name", "flags")
+# `engine_id` and `engine_build` generalise `llama_cpp_build`: two engines on
+# one machine with one model are never the same run, so a mismatch is
+# `not_comparable` naming the engine, never a false `not_reproduced`.
+_RUNTIME_BLOCKING_FIELDS = ("engine_id", "engine_build", "quant", "gpu_name", "flags")
 
 # The two per-item values a quality batch can be compared on, in the order
 # they are tried. Methodology 8's "identical per-item predicted labels or
@@ -41,12 +48,12 @@ class ReferenceMatch(TypedDict):
 
 def runtime_blocking_fields(fiche: dict[str, Any]) -> dict[str, Any]:
     """Project `fiche` to exactly the fields a runtime reference match compares."""
-    return {key: fiche[key] for key in _RUNTIME_BLOCKING_FIELDS}
+    return {key: fiche.get(key) for key in _RUNTIME_BLOCKING_FIELDS}
 
 
 def null_blocking_fields(fiche: dict[str, Any]) -> list[str]:
     """The blocking fields `fiche` leaves null, in declaration order."""
-    return [key for key in _RUNTIME_BLOCKING_FIELDS if fiche[key] is None]
+    return [key for key in _RUNTIME_BLOCKING_FIELDS if fiche.get(key) is None]
 
 
 def _resolve_fiche(row: dict[str, Any], registry_dir: Path) -> dict[str, Any] | None:
@@ -230,7 +237,7 @@ def select_quality_references(
     """Reference rows sharing the candidate's suite, model, suite version and seed.
 
     `task_suite` is part of the key for the same reason it is part of
-    `results.resume_skip_reason`'s: one store -- and so one reference file --
+    `results.batch_rows`'s: one store -- and so one reference file --
     now holds rows from more than one suite, and two suites version
     themselves independently, so `model_id` + `suite_version` + seed is not
     on its own evidence that two rows describe the same batch. Without it, a

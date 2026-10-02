@@ -10,10 +10,10 @@ reference by chrF and publishes a graded block. One row never carries both
 "the score column" would otherwise be reading an accuracy half the time and
 a character-n-gram F-score the other half.
 
-`_SUITES` is a two-entry dispatch table, not a registry: the full suite
-registry belongs to the `no-use-case-is-silently-absent` story, and this is
-the minimum that stops the CLI being hard-wired to one suite -- the same
-discipline `_CLOUD_PROVIDERS` follows for providers.
+`--suite` names a registered suite id, resolved through `suite_registry`: a
+suite is a data definition plus a named scoring rule (`scoring_rules.py`),
+so this module imports no suite and holds no per-suite branch. Registering a
+further suite is a new definition, never an edit here.
 
 Deliberately collects none of the runtime harness's fields (fiche, timings,
 GPU stats, energy): a quality row must be readable on its own, without any
@@ -43,35 +43,33 @@ from __future__ import annotations
 import argparse
 import sys
 import time
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, NotRequired, TypedDict
 
 import requests
 
 from wave_local_ai_v2 import (
-    build_probe,
-    chrf,
-    classification_suite,
     cost,
+    engines,
     fiche_registry,
     google_client,
     local_client,
     mistral_client,
     prompt_provenance,
+    prompt_variants,
     provenance,
     quality_rows,
     results,
     retry,
     roster,
     row_contract,
+    score_interval,
     server,
-    suite_gate,
-    translation_suite,
+    suite_registry,
+    timings,
     verdict,
 )
-from wave_local_ai_v2.classification_suite import CLASSIFICATION_TASK_SUITE
 from wave_local_ai_v2.energy import measure_energy
 from wave_local_ai_v2.hardware import build_fiche, capture_fiche
 from wave_local_ai_v2.mistral_client import MistralCompletion, MistralRequestError
@@ -79,18 +77,18 @@ from wave_local_ai_v2.results import append_row, captured_at, new_run_id
 from wave_local_ai_v2.scoring import (
     FAILURE_REASON_TRUNCATED_CONTEXT,
     FAILURE_REASON_TRUNCATED_MAX_TOKENS,
-    score_graded_suite,
-    score_graded_suite_by_language,
-    score_item,
-    score_suite,
-    score_suite_by_language,
-    score_translation_item,
 )
 from wave_local_ai_v2.settings import Settings, SettingsError, load_settings
 from wave_local_ai_v2.suite_gate import SuiteGateError, SuiteGateResult
-from wave_local_ai_v2.translation_suite import TRANSLATION_TASK_SUITE
+from wave_local_ai_v2.suite_registry import SuiteDefinition, SuiteRegistryError
 
 REQUEST_TIMEOUT_S = 300
+
+# The prompt variant every row of an invocation runs under, resolved through
+# the registry once per run and applied to each item's authored prompt before
+# any provider's templating. A declaration, not a call-site choice: the
+# campaign declaration that will carry it as data is a later story.
+PROMPT_VARIANT_ID = prompt_variants.BASELINE_ID
 
 # A quality score is only meaningful if a second run reproduces it
 # (`aidd_docs/memory/architecture.md`: "quality scores are reproducible (model +
@@ -160,6 +158,15 @@ class _Completion(TypedDict):
     # why `quality_rows.local_batch_fields` can publish `tokens_in_total` at
     # all; the two cloud paths total their own separately and leave this None.
     prompt_tokens: NotRequired[int]
+    # The item's own tokens and first-token time as its provider reported
+    # them, each null with its reason otherwise (schema "18"): the engine's
+    # figures on the local path, the provider's token counts on a cloud one.
+    measurement: timings.ItemMeasurement
+    # The item's own rendered prompt counted by the loaded model's tokenizer,
+    # which the `direct` harness overhead is measured against (schema "20").
+    # Local only: a cloud provider's tokenizer is not read, so a cloud
+    # completion leaves it out and its row's overhead is null with that reason.
+    item_prompt_tokens: NotRequired[int]
 
 
 class _LocalBatch(TypedDict):
@@ -172,162 +179,9 @@ class _LocalBatch(TypedDict):
     chat_template: str
 
 
-# A suite item, as everything downstream of the suite module needs it: a
-# mapping exposing `item_id`, `prompt` and the gate's tags. Duck-typed rather
-# than one suite's TypedDict, the same choice `suite_gate.gate_suite` and
-# `classification_suite.prompt_set_hash` already document -- the two suites
-# carry different item shapes and neither is the CLI's business.
-SuiteItem = Mapping[str, Any]
-
-# One batch's scoring, as a suite supplies it: the items and their
-# completions in, one dict of row fields per item plus one dict shared by the
-# whole batch out. Everything suite-specific about a score lives behind this
-# one callable, which is why the row builder below reads the same for an
-# exact-match row and a graded one.
-ScoreBatch = Callable[
-    [Sequence[SuiteItem], list[_Completion]],
-    tuple[list[dict[str, Any]], dict[str, Any]],
-]
-
-
-@dataclass(frozen=True)
-class SuiteSpec:
-    """One selectable suite: its identity, its caps, its items, its scorer."""
-
-    task_suite: str
-    items: Sequence[SuiteItem]
-    suite_id: str
-    suite_version: str
-    prompt_set_hash: str
-    max_output_tokens: int
-    stop_sequences: list[str]
-    # Whether the subject may spend its cap reasoning before answering. Only
-    # the local path can enforce it today (llama-server's
-    # `chat_template_kwargs`); every row of the batch publishes it regardless,
-    # because it is the suite's declaration and not a per-provider report.
-    thinking_policy: str
-    context_length: int
-    score_batch: ScoreBatch
-
-
-def _score_classification_batch(
-    items: Sequence[Any], completions: list[_Completion]
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Exact-label-match scoring: today's fields, and no graded block."""
-    scored_items = [
-        score_item(
-            item,
-            completion["content"],
-            truncated=completion["truncated"],
-            generated_tokens=completion["generated_tokens"],
-            max_output_tokens=classification_suite.MAX_OUTPUT_TOKENS,
-            truncation_reason=completion["truncation_reason"],
-        )
-        for item, completion in zip(items, completions, strict=True)
-    ]
-    suite_score = score_suite(scored_items)
-    per_item = [
-        {
-            "expected_label": scored["expected_label"],
-            "predicted_label": scored["predicted_label"],
-            "correct": scored["correct"],
-            "failure_reason": scored["failure_reason"],
-        }
-        for scored in scored_items
-    ]
-    batch = {
-        "suite_accuracy": suite_score["accuracy"],
-        "language_breakdown": score_suite_by_language(items, scored_items),
-        "failure_counts": dict(suite_score["failure_counts"]),
-    }
-    return per_item, batch
-
-
-def _score_translation_batch(
-    items: Sequence[Any], completions: list[_Completion]
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """chrF scoring against each item's written reference.
-
-    Every row carries `reference_output` beside its `subject_output` and the
-    metric parameters the score ran under, so a reader who disputes a number
-    can recompute it with sacreBLEU rather than take it on trust. The
-    exact-match fields are explicitly nulled: `correct` is a boolean, a chrF
-    is not, and `suite_accuracy` names an exact-match rate this suite never
-    computed.
-    """
-    graded_items = [
-        score_translation_item(
-            item,
-            completion["content"],
-            truncated=completion["truncated"],
-            generated_tokens=completion["generated_tokens"],
-            max_output_tokens=translation_suite.MAX_OUTPUT_TOKENS,
-            truncation_reason=completion["truncation_reason"],
-        )
-        for item, completion in zip(items, completions, strict=True)
-    ]
-    suite_score = score_graded_suite(graded_items)
-    per_item = [
-        {
-            "expected_label": None,
-            "predicted_label": None,
-            "correct": None,
-            "failure_reason": graded["failure_reason"],
-            "item_score": graded["item_score"],
-            "subject_output": completion["content"],
-            "reference_output": item["reference"],
-            "metric_id": chrf.METRIC_ID,
-            "metric_version": chrf.METRIC_VERSION,
-            # Copied, never shared: `chrf.METRIC_PARAMS` is one frozen object
-            # and each row owns its own plain dict of it.
-            "metric_params": dict(chrf.METRIC_PARAMS),
-        }
-        for item, completion, graded in zip(
-            items, completions, graded_items, strict=True
-        )
-    ]
-    batch = {
-        "suite_accuracy": None,
-        "language_breakdown": None,
-        "suite_score": suite_score["suite_score"],
-        "score_breakdown": score_graded_suite_by_language(items, graded_items),
-        "failure_counts": dict(suite_score["failure_counts"]),
-    }
-    return per_item, batch
-
-
-# Exactly two entries, built from the two suite modules. The boundary is
-# deliberate: a suite registry -- discovery, per-suite config, a manifest --
-# belongs to `no-use-case-is-silently-absent.md`. This is a literal dict, and
-# adding a third suite here is meant to feel like the moment to build that.
-_SUITES: dict[str, SuiteSpec] = {
-    "classification": SuiteSpec(
-        task_suite="classification",
-        items=CLASSIFICATION_TASK_SUITE,
-        suite_id=classification_suite.SUITE_ID,
-        suite_version=classification_suite.SUITE_VERSION,
-        prompt_set_hash=classification_suite.PROMPT_SET_HASH,
-        max_output_tokens=classification_suite.MAX_OUTPUT_TOKENS,
-        stop_sequences=classification_suite.STOP_SEQUENCES,
-        thinking_policy=classification_suite.THINKING_POLICY,
-        context_length=classification_suite.CONTEXT_LENGTH,
-        score_batch=_score_classification_batch,
-    ),
-    "translation": SuiteSpec(
-        task_suite="translation",
-        items=TRANSLATION_TASK_SUITE,
-        suite_id=translation_suite.SUITE_ID,
-        suite_version=translation_suite.SUITE_VERSION,
-        prompt_set_hash=translation_suite.PROMPT_SET_HASH,
-        max_output_tokens=translation_suite.MAX_OUTPUT_TOKENS,
-        stop_sequences=translation_suite.STOP_SEQUENCES,
-        thinking_policy=translation_suite.THINKING_POLICY,
-        context_length=translation_suite.CONTEXT_LENGTH,
-        score_batch=_score_translation_batch,
-    ),
-}
-
-DEFAULT_SUITE = "classification"
+# The suite an invocation with no `--suite` runs, so every invocation written
+# before the flag existed still scores the same suite.
+DEFAULT_SUITE = "classification-support-routing"
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -339,21 +193,19 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "Resume a prior invocation's run_id: a provider whose rows for "
             "that run_id and this suite are already complete is skipped, "
-            "never re-paid for; an incomplete one is re-run from item 1. "
-            "Every row this invocation writes is marked resumed=true, "
-            "including a provider resume re-ran from scratch."
+            "never re-paid for; an incomplete one runs only the items it "
+            "never wrote. Every row this invocation writes is marked "
+            "resumed=true."
         ),
     )
     parser.add_argument(
         "--suite",
-        choices=list(_SUITES),
+        metavar="SUITE_ID",
         default=DEFAULT_SUITE,
         help=(
-            "Which task suite to score. 'classification' routes support "
-            "messages to one of four labels and publishes an exact-match "
-            "accuracy; 'translation' translates short business sentences in "
-            "three directions and publishes a chrF score against a written "
-            "reference. Default: %(default)s."
+            "The registered suite id to score (registered: "
+            f"{', '.join(suite_registry.registered_ids())}). An unregistered "
+            "id is refused naming the registered ones. Default: %(default)s."
         ),
     )
     return parser.parse_args(argv)
@@ -380,13 +232,21 @@ def main() -> None:
         # Only a local-suite failure still aborts the whole run.
         local_client.LocalRequestError,
         SuiteGateError,
+        # An unregistered `--suite`, an unknown scoring rule or a malformed
+        # definition: refused before any process spawns, naming what is wrong.
+        SuiteRegistryError,
+        # `--resume` over rows written under another configuration: refused
+        # before any process spawns or any row is written, naming the field.
+        results.ResumeConfigurationError,
     ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(1)
 
 
 def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
-    spec = _SUITES[suite]
+    # Resolved first: an unregistered id, or a definition the registry or the
+    # gate refuses, aborts before settings, the roster or any process.
+    spec = suite_registry.resolve(suite)
     settings = load_settings()
     # One id for the whole invocation: the local and cloud batches are two
     # halves of one comparison, and a reader must be able to tell which local
@@ -400,9 +260,30 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
     loaded_roster = roster.load_roster(settings.roster_path)
     roster_entry = roster.resolve_entry(loaded_roster, settings.roster_entry_id)
     model_path = _local_model_path(settings, roster_entry)
-    # Offline, cheap: a refused suite (missing/inconsistent tags) must abort
-    # before the multi-minute local run, let alone any network call.
-    gate_result = suite_gate.gate_suite(spec.items)
+    # Computed when the definition loaded: a suite the gate refuses never
+    # resolves, so it aborts before the multi-minute local run, let alone any
+    # network call.
+    gate_result = spec.gate
+    # Applied once, here, to every item: the local and both cloud paths send
+    # these strings, and every row publishes its own as
+    # `prompt_before_template`.
+    prompt_variant = prompt_variants.resolve(PROMPT_VARIANT_ID)
+    variant_prompts = [
+        prompt_variants.apply_variant(prompt_variant, item["prompt"])
+        for item in spec.items
+    ]
+
+    # The engine the local half runs on, from the tracked registry: where it
+    # listens, how its build is probed, how its reasoning switch is spelled.
+    engine = engines.tracked_reference_engine()
+
+    # Resolved once, before any process spawns: an entry that declares no
+    # thinking control cannot run a `disabled` suite, and every render and
+    # answer of the batch sends exactly these arguments. An entry whose
+    # control the engine has no switch to carry is refused here too.
+    thinking_kwargs = local_client.thinking_kwargs(
+        spec.thinking_policy, roster_entry, engine
+    )
 
     # Refuses (roster.RosterError) before any process spawns when the
     # resolved n_cpu_moe cannot be applied to roster_entry -- the check lives
@@ -410,12 +291,33 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
     # the resolved value: settings.host_n_cpu_moe when set, the entry's own
     # validated_host value when unset.
     flags = server.build_flags(
-        roster_entry, settings.host_n_cpu_moe, settings.host_threads, model_path
+        roster_entry,
+        settings.host_n_cpu_moe,
+        settings.host_threads,
+        model_path,
+        engine=engine,
     )
     # Probing the binary itself doesn't need the server running, so this is
     # done before launch rather than costing readiness-wait time. An
     # unreadable build is an explicit None, never a fallback string.
-    llama_cpp_build = build_probe.probe_build(settings.llama_server_path)
+    engine_fields = engines.fiche_fields(
+        engine, settings.llama_server_path, flags, roster_entry.entry_id
+    )
+    local_engine_fields = quality_rows.local_engine_fields(engine_fields)
+
+    # After the build probe, because the engine and its build are part of the
+    # configuration a resumed batch must match; still before the server
+    # spawns or the fiche or any row is written, so a refusal writes nothing.
+    if is_resume:
+        _refuse_a_resume_under_another_configuration(
+            settings,
+            spec,
+            run_id=run_id,
+            roster_entry=roster_entry,
+            prompt_variant=prompt_variant,
+            local_engine_fields=local_engine_fields,
+        )
+
     # One fiche per invocation, built from the one local launch this run
     # performs, cited by both the local-provider and the mistral-provider
     # rows it also writes (plan.md's Decisions table): the run-specific
@@ -423,7 +325,7 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
     # established below.
     run_fiche = build_fiche(
         capture_fiche(),
-        llama_cpp_build=llama_cpp_build,
+        **engine_fields,
         roster_entry_id=roster_entry.entry_id,
         model_sha256=roster_entry.sha256,
         quant=roster_entry.quant,
@@ -433,32 +335,33 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
         run_fiche, settings.fiche_registry_dir
     )
 
-    # `--resume` on a run_id whose local rows are already all on disk skips the
-    # local batch entirely, before the server is even launched: the fiche
-    # above is still built (cheap, no process spawn) because the cloud
-    # batches below cite the same fiche_hash regardless of whether local ran
-    # this invocation.
-    local_skip_reason = (
-        results.resume_skip_reason(
-            settings.quality_results_path,
-            run_id,
-            "local",
-            len(spec.items),
-            task_suite=spec.task_suite,
-        )
-        if is_resume
-        else None
+    # `--resume` runs only the local items this run_id never wrote, and skips
+    # the batch entirely -- before the server is even launched -- when it
+    # wrote them all: the fiche above is still built (cheap, no process
+    # spawn) because the cloud batches below cite the same fiche_hash
+    # regardless of whether local ran this invocation.
+    local_indexes = _indexes_to_run(
+        settings, spec, run_id=run_id, provider="local", is_resume=is_resume
     )
-    if local_skip_reason is not None:
-        print(f"local skipped: {local_skip_reason}", file=sys.stderr)
+    if not local_indexes:
+        print(f"local skipped: run {run_id} already complete", file=sys.stderr)
     else:
+        local_prompts = [variant_prompts[index] for index in local_indexes]
         # The tracker spans the whole suite loop (server launch, every item,
         # the server's own teardown when the `with` block exits), not per
         # item -- the same span `__init__.py`'s runtime harness measures
         # over, and the same repeated-batch-value pattern `suite_accuracy`
         # already uses.
         local_batch, local_energy = measure_energy(
-            lambda: _run_local_suite(settings, flags, spec),
+            lambda: _run_local_suite(
+                settings,
+                flags,
+                spec,
+                local_prompts,
+                roster_entry=roster_entry,
+                thinking_kwargs=thinking_kwargs,
+                engine=engine,
+            ),
             country_iso_code=settings.emission_country_iso_code,
         )
         local_completions = local_batch["completions"]
@@ -470,6 +373,7 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
             settings,
             spec=spec,
             run_id=run_id,
+            indexes=local_indexes,
             # The entry the local half actually launched names itself: a row
             # can never report one model while its `roster_entry_id` cites
             # another.
@@ -482,11 +386,17 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
             roster_entry=roster_entry,
             roster_version=loaded_roster.roster_version,
             call_path_fields=_local_call_path(local_batch["chat_template"]),
+            prompt_variant=prompt_variant,
+            variant_prompts=variant_prompts,
             fiche_hash=fiche_hash_value,
+            engine_row_fields=local_engine_fields,
             batch_fields=quality_rows.local_batch_fields(
                 settings, local_energy, local_completions
             ),
             resumed=is_resume,
+            # The local path makes no cloud call, so it drew on no budget.
+            retry_budget={},
+            partial_failure=None,
             # Methodology 2: the row stores the final prompt string as
             # rendered for that provider. On this path that is not the item
             # text, so the local batch overrides it per item.
@@ -505,97 +415,246 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
             roster_entry=roster_entry,
             roster_version=loaded_roster.roster_version,
             fiche_hash=fiche_hash_value,
+            prompt_variant=prompt_variant,
+            variant_prompts=variant_prompts,
         )
 
 
+class _CloudBatch(TypedDict):
+    """What one cloud batch returns: the items it answered, and why it stopped.
+
+    `completions` (and `extra_row_fields`) cover the items answered before
+    `failure`, in order; `failure` is `None` when every item it was handed
+    answered.
+    """
+
+    model_id: str
+    sampling: dict[str, Any]
+    completions: list[_Completion]
+    call_path_fields: dict[str, Any]
+    batch_fields: dict[str, Any]
+    extra_row_fields: list[dict[str, Any]] | None
+    failure: dict[str, str] | None
+
+
 def _mistral_batch(
-    settings: Settings, api_key: str, spec: SuiteSpec
-) -> tuple[
-    str, dict[str, Any], list[_Completion], dict[str, Any], dict[str, Any], None
-]:
+    settings: Settings,
+    api_key: str,
+    spec: SuiteDefinition,
+    prompts: list[str],
+    item_ids: list[str],
+    budget: retry.RetryBudget,
+) -> _CloudBatch:
     deprecation_notice = mistral_client.check_model_available(api_key)
     if deprecation_notice:
         # A retirement date is news, not a failure: the model still answers
         # until then. stderr keeps stdout to the score lines the operator
         # parses.
         print(deprecation_notice, file=sys.stderr)
-    completions, call_path_fields, batch_fields, _ = _run_cloud_batch(
+    completions, call_path_fields, batch_fields, _, failure = _run_cloud_batch(
         settings,
         api_key,
-        spec,
+        prompts,
+        item_ids,
         mistral_client.MODEL,
         cost.PRICE_TABLES["mistral"],
-        _make_mistral_complete_item(settings, spec.max_output_tokens),
+        _make_mistral_complete_item(settings, spec.max_output_tokens, budget),
         _mistral_call_path,
+        provider="mistral",
     )
-    return (
-        mistral_client.MODEL,
-        CLOUD_SAMPLING,
-        completions,
-        call_path_fields,
-        batch_fields,
-        None,
+    return _CloudBatch(
+        model_id=mistral_client.MODEL,
+        sampling=CLOUD_SAMPLING,
+        completions=completions,
+        call_path_fields=call_path_fields,
+        batch_fields=batch_fields,
+        extra_row_fields=None,
+        failure=failure,
     )
 
 
 def _google_batch(
-    settings: Settings, api_key: str, spec: SuiteSpec
-) -> tuple[
-    str,
-    dict[str, Any],
-    list[_Completion],
-    dict[str, Any],
-    dict[str, Any],
-    list[dict[str, Any]],
-]:
+    settings: Settings,
+    api_key: str,
+    spec: SuiteDefinition,
+    prompts: list[str],
+    item_ids: list[str],
+    budget: retry.RetryBudget,
+) -> _CloudBatch:
     model_info = google_client.check_model_available(api_key)
-    completions, call_path_fields, batch_fields, extra_row_fields = _run_cloud_batch(
-        settings,
-        api_key,
-        spec,
-        google_client.MODEL,
-        cost.PRICE_TABLES["google"],
-        _make_google_complete_item(model_info, settings, spec.max_output_tokens),
-        _google_call_path,
-        extra_row_fields_fn=lambda response: _google_extra_fields(response, model_info),
+    completions, call_path_fields, batch_fields, extra_row_fields, failure = (
+        _run_cloud_batch(
+            settings,
+            api_key,
+            prompts,
+            item_ids,
+            google_client.MODEL,
+            cost.PRICE_TABLES["google"],
+            _make_google_complete_item(
+                model_info, settings, spec.max_output_tokens, budget
+            ),
+            _google_call_path,
+            provider="google",
+            extra_row_fields_fn=lambda response: _google_extra_fields(
+                response, model_info
+            ),
+        )
     )
-    return (
-        google_client.MODEL,
-        GOOGLE_SAMPLING,
-        completions,
-        call_path_fields,
-        batch_fields,
-        extra_row_fields,
+    return _CloudBatch(
+        model_id=google_client.MODEL,
+        sampling=GOOGLE_SAMPLING,
+        completions=completions,
+        call_path_fields=call_path_fields,
+        batch_fields=batch_fields,
+        extra_row_fields=extra_row_fields,
+        failure=failure,
     )
+
+
+# The errors that mean "this provider failed on this call", for both cloud
+# providers: the provider's own request error, a transport failure, and a
+# retry budget exhausted by a rate limit that outlived it. Before the first
+# item (the pre-flight) one skips the provider; mid-batch it stops the batch
+# at the item it failed on, and the items already answered are written as a
+# partial batch -- never discarded, never aborting the run.
+_PROVIDER_FAILURES: tuple[type[Exception], ...] = (
+    MistralRequestError,
+    google_client.GoogleRequestError,
+    requests.RequestException,
+    retry.RetryBudgetExhausted,
+)
 
 
 # The one dispatch table both cloud providers run through: an api-key getter,
-# the env var name to name in a skip line, the request-error type that means
-# "this provider failed, skip it" (never abort the run), and the batch runner
-# itself (pre-flight + suite loop, in one function so a mid-batch failure --
-# Google's GoogleBlockedError included -- is caught by the same except clause
-# as a pre-flight failure and never partially writes a row).
+# the env var name to name in a skip line, and the batch runner itself
+# (pre-flight + suite loop).
 _CLOUD_PROVIDERS: dict[str, dict[str, Any]] = {
     "mistral": {
         "api_key": lambda settings: settings.mistral_api_key,
         "env_var": "MISTRAL_API_KEY",
-        "error_type": MistralRequestError,
         "run_batch": _mistral_batch,
     },
     "google": {
         "api_key": lambda settings: settings.google_api_key,
         "env_var": "GOOGLE_API_KEY",
-        "error_type": google_client.GoogleRequestError,
         "run_batch": _google_batch,
     },
 }
+
+
+def _indexes_to_run(
+    settings: Settings,
+    spec: SuiteDefinition,
+    *,
+    run_id: str,
+    provider: str,
+    is_resume: bool,
+) -> list[int]:
+    """The positions in `spec.items` this invocation issues calls for.
+
+    Every item on a fresh run; under `--resume`, exactly the items this
+    `(run_id, provider, task_suite)` batch never wrote -- none when it is
+    complete.
+    """
+    if not is_resume:
+        return list(range(len(spec.items)))
+    item_ids = [item["item_id"] for item in spec.items]
+    missing = set(
+        results.resume_missing_items(
+            settings.quality_results_path,
+            run_id,
+            provider,
+            item_ids,
+            task_suite=spec.task_suite,
+        )
+    )
+    return [index for index, item_id in enumerate(item_ids) if item_id in missing]
+
+
+def _refuse_a_resume_under_another_configuration(
+    settings: Settings,
+    spec: SuiteDefinition,
+    *,
+    run_id: str,
+    roster_entry: roster.RosterEntry,
+    prompt_variant: prompt_variants.PromptVariant,
+    local_engine_fields: Mapping[str, str | None],
+) -> None:
+    """Raise `ResumeConfigurationError` unless every row this run already
+    wrote for this suite was produced the way this invocation would.
+
+    A resume folds the rows on disk into the completed batch's score, so a
+    row written under another model, suite version, prompt set, prompt
+    variant, sampler, endpoint, roster entry, thinking policy, engine or
+    engine build would make one published score span two configurations.
+    A cloud batch is held to the engine not applying. Checked for every provider
+    before anything spawns or is written, so a refusal writes nothing.
+    """
+    shared = {
+        "suite_version": spec.suite_version,
+        "prompt_set_hash": spec.prompt_set_hash,
+        "prompt_variant_id": prompt_variant.variant_id,
+        "prompt_variant_version": prompt_variant.version,
+        "roster_entry_id": roster_entry.entry_id,
+        "thinking_policy": spec.thinking_policy,
+    }
+    by_provider = {
+        "local": (
+            roster_entry.display_id,
+            LOCAL_SAMPLING,
+            prompt_provenance.LOCAL_CHAT_ENDPOINT,
+            local_engine_fields,
+        ),
+        "mistral": (
+            mistral_client.MODEL,
+            CLOUD_SAMPLING,
+            mistral_client.CHAT_COMPLETIONS_URL,
+            quality_rows.ENGINE_NOT_APPLICABLE_FIELDS,
+        ),
+        "google": (
+            google_client.MODEL,
+            GOOGLE_SAMPLING,
+            google_client.GENERATE_URL,
+            quality_rows.ENGINE_NOT_APPLICABLE_FIELDS,
+        ),
+    }
+    for provider, (model_id, sampling, endpoint, engine_fields) in by_provider.items():
+        prior_rows = results.batch_rows(
+            settings.quality_results_path, run_id, provider, task_suite=spec.task_suite
+        )
+        conflict = results.resume_configuration_conflict(
+            prior_rows,
+            {
+                **shared,
+                "model_id": model_id,
+                "sampling": dict(sampling),
+                "endpoint": endpoint,
+                **engine_fields,
+            },
+        )
+        if conflict is not None:
+            raise results.ResumeConfigurationError(
+                f"refusing --resume {run_id}: the {provider} batch's {conflict}; "
+                "a resumed batch's score would span two configurations"
+            )
+
+
+def _batch_retry_budget(settings: Settings, item_count: int) -> retry.RetryBudget:
+    """The budget a batch of `item_count` items runs under, by the configured rule."""
+    return retry.RetryBudget(
+        retry.derived_retry_budget(
+            item_count,
+            per_item=settings.cloud_retry_retries_per_item,
+            minimum=settings.cloud_retry_min_retries,
+        )
+    )
 
 
 def _try_run_cloud_provider(
     provider: str,
     settings: Settings,
     *,
-    spec: SuiteSpec,
+    spec: SuiteDefinition,
     run_id: str,
     is_resume: bool,
     gate_result: SuiteGateResult,
@@ -603,13 +662,17 @@ def _try_run_cloud_provider(
     roster_entry: roster.RosterEntry,
     roster_version: int,
     fiche_hash: str,
+    prompt_variant: prompt_variants.PromptVariant,
+    variant_prompts: list[str],
 ) -> None:
     """Run one cloud provider's batch, or skip it with one stderr line.
 
-    A configured provider whose key is missing or whose pre-flight/batch call
-    fails is skipped, never aborts the run: this is what makes the quality
-    CLI's cloud provider set configuration rather than two hard-wired,
-    all-or-nothing calls. Nothing about a skipped provider lands in the rows.
+    A configured provider whose key is missing or whose pre-flight fails is
+    skipped, never aborts the run: this is what makes the quality CLI's cloud
+    provider set configuration rather than two hard-wired, all-or-nothing
+    calls. A provider that fails mid-batch leaves the items it already
+    answered on disk as a partial batch naming the provider and the item it
+    failed on; `--resume` completes it per item.
     """
     provider_spec = _CLOUD_PROVIDERS[provider]
     if provider not in settings.quality_providers:
@@ -624,59 +687,68 @@ def _try_run_cloud_provider(
         )
         return
 
-    skip_reason = (
-        results.resume_skip_reason(
-            settings.quality_results_path,
-            run_id,
-            provider,
-            len(spec.items),
-            task_suite=spec.task_suite,
-        )
-        if is_resume
-        else None
+    indexes = _indexes_to_run(
+        settings, spec, run_id=run_id, provider=provider, is_resume=is_resume
     )
-    if skip_reason is not None:
-        print(f"{provider} skipped: {skip_reason}", file=sys.stderr)
+    if not indexes:
+        print(f"{provider} skipped: run {run_id} already complete", file=sys.stderr)
         return
 
+    budget = _batch_retry_budget(settings, len(indexes))
     try:
-        (
-            model_id,
-            sampling,
-            completions,
-            call_path_fields,
-            batch_fields,
-            extra_row_fields,
-        ) = provider_spec["run_batch"](settings, api_key, spec)
-    except (
-        provider_spec["error_type"],
-        requests.RequestException,
-        # A retry-budget exhaustion is this provider still failing, the same
-        # way a 429 that outlives its own retries always was -- caught
-        # alongside the provider's own error type and requests.RequestException
-        # rather than reaching main's OSError clause and aborting the run.
-        retry.RetryBudgetExhausted,
-    ) as exc:
+        batch: _CloudBatch = provider_spec["run_batch"](
+            settings,
+            api_key,
+            spec,
+            [variant_prompts[index] for index in indexes],
+            [spec.items[index]["item_id"] for index in indexes],
+            budget,
+        )
+    except _PROVIDER_FAILURES as exc:
+        # The pre-flight: nothing was answered, nothing is written.
         print(f"{provider} skipped: {exc}", file=sys.stderr)
         return
+
+    failure = batch["failure"]
+    answered = len(batch["completions"])
+    if failure is not None and answered == 0:
+        print(
+            f"{provider} skipped: failed on item {failure['item_id']!r}: "
+            f"{failure['reason']}",
+            file=sys.stderr,
+        )
+        return
+    if failure is not None:
+        print(
+            f"{provider} partial: run {run_id} failed on item "
+            f"{failure['item_id']!r} after {answered} item(s) this invocation: "
+            f"{failure['reason']}; resume with --resume {run_id}",
+            file=sys.stderr,
+        )
 
     _score_and_write(
         settings,
         spec=spec,
         run_id=run_id,
-        model_id=model_id,
+        indexes=indexes[:answered],
+        model_id=batch["model_id"],
         provider=provider,
-        completions=completions,
-        sampling=sampling,
+        completions=batch["completions"],
+        sampling=batch["sampling"],
         gate_result=gate_result,
         provenance_fields=provenance_fields,
         roster_entry=roster_entry,
         roster_version=roster_version,
-        call_path_fields=call_path_fields,
+        call_path_fields=batch["call_path_fields"],
+        prompt_variant=prompt_variant,
+        variant_prompts=variant_prompts,
         fiche_hash=fiche_hash,
-        batch_fields=batch_fields,
-        extra_row_fields=extra_row_fields,
+        batch_fields=batch["batch_fields"],
+        extra_row_fields=batch["extra_row_fields"],
+        engine_row_fields=quality_rows.ENGINE_NOT_APPLICABLE_FIELDS,
         resumed=is_resume,
+        retry_budget={provider: budget.total},
+        partial_failure=failure,
     )
 
 
@@ -733,6 +805,20 @@ def _google_call_path(
     }
 
 
+def _thinking_switch_record(
+    engine: engines.EngineEntry, probe: local_client.ThinkingControlProbe
+) -> str:
+    """One line recording that the engine's switch changed the rendered prompt."""
+    with_hash = prompt_provenance.template_hash(probe["with_control"])
+    without_hash = prompt_provenance.template_hash(probe["without_control"])
+    return (
+        f"thinking switch verified: engine={engine.engine_id} "
+        f"field={engine.thinking_switch['request_field']} "  # type: ignore[index]
+        f"renders_differ={with_hash != without_hash} "
+        f"with={with_hash} without={without_hash}"
+    )
+
+
 def _local_model_path(settings: Settings, roster_entry: roster.RosterEntry) -> Path:
     """Resolve the local GGUF, or raise: a missing file must cost no network call."""
     model_path = settings.slm_models_dir / roster_entry.file
@@ -742,7 +828,14 @@ def _local_model_path(settings: Settings, roster_entry: roster.RosterEntry) -> P
 
 
 def _run_local_suite(
-    settings: Settings, flags: list[str], spec: SuiteSpec
+    settings: Settings,
+    flags: list[str],
+    spec: SuiteDefinition,
+    prompts: list[str],
+    *,
+    roster_entry: roster.RosterEntry,
+    thinking_kwargs: dict[str, Any],
+    engine: engines.EngineEntry,
 ) -> _LocalBatch:
     """Answer every item through the loaded model's own chat template.
 
@@ -755,28 +848,48 @@ def _run_local_suite(
     The rendered prompt comes back beside each completion because the row
     publishes it: Methodology 2 asks for "the final prompt string as rendered
     for that provider", and on this path that string is not the item text.
+
+    `prompts` are the items' prompts as the declared variant left them, one
+    per item: what is rendered and sent, never the authored text directly.
+
+    A non-empty `thinking_kwargs` is a declared control under `disabled`, and
+    it is verified against the loaded template before the first item: a
+    template that ignores it refuses the batch here, so no row can publish a
+    policy the model never applied.
     """
     completions: list[_Completion] = []
     rendered_prompts: list[str] = []
-    base_url = f"http://{server.HOST}:{server.PORT}"
+    base_url = engines.base_url(engine)
 
-    with server.running_server(settings.llama_server_path, flags):
+    with server.running_server(settings.llama_server_path, flags, engine=engine):
         template = local_client.chat_template(base_url, timeout=REQUEST_TIMEOUT_S)
-        for item in spec.items:
-            rendered_prompts.append(
-                local_client.render_prompt(
-                    base_url,
-                    item["prompt"],
-                    thinking_policy=spec.thinking_policy,
-                    timeout=REQUEST_TIMEOUT_S,
-                )
+        if thinking_kwargs:
+            probe = local_client.verify_thinking_control(
+                base_url,
+                roster_entry,
+                chat_template=template,
+                timeout=REQUEST_TIMEOUT_S,
+            )
+            # The verification's own record: the two renders differ, and which
+            # bytes they are, so the evidence is more than "it did not refuse".
+            print(_thinking_switch_record(engine, probe), file=sys.stderr)
+        for prompt in prompts:
+            rendered = local_client.render_prompt(
+                base_url,
+                prompt,
+                thinking_kwargs=thinking_kwargs,
+                timeout=REQUEST_TIMEOUT_S,
+            )
+            rendered_prompts.append(rendered)
+            item_prompt_tokens = local_client.count_tokens(
+                base_url, rendered, timeout=REQUEST_TIMEOUT_S
             )
             response = local_client.complete_chat(
                 base_url,
-                item["prompt"],
+                prompt,
                 max_tokens=spec.max_output_tokens,
                 sampling=LOCAL_SAMPLING,
-                thinking_policy=spec.thinking_policy,
+                thinking_kwargs=thinking_kwargs,
                 timeout=REQUEST_TIMEOUT_S,
             )
             completions.append(
@@ -792,6 +905,8 @@ def _run_local_suite(
                     truncation_reason=None,
                     retries=0,
                     prompt_tokens=response["prompt_tokens"],
+                    measurement=response["measurement"],
+                    item_prompt_tokens=item_prompt_tokens,
                 )
             )
 
@@ -803,17 +918,17 @@ def _run_local_suite(
 
 
 def _make_mistral_complete_item(
-    settings: Settings, max_output_tokens: int
-) -> Callable[[SuiteItem, str], tuple[_Completion, MistralCompletion]]:
+    settings: Settings, max_output_tokens: int, budget: retry.RetryBudget
+) -> Callable[[str, str], tuple[_Completion, MistralCompletion]]:
     """Build this batch's per-item completion function, closed over one Pacer/RetryBudget pair.
 
-    A closure, not a plain function: a `Pacer` and a `RetryBudget` are built
-    once per batch and shared across every item, the same reason Google's
-    counterpart is a closure over `model_info`. The budget is run-scoped, not
-    per-item -- a batch's retries are spent as a shared pool.
+    A closure, not a plain function: a `Pacer` is built once per batch and,
+    with the caller's `RetryBudget`, shared across every item, the same
+    reason Google's counterpart is a closure over `model_info`. The budget is
+    batch-scoped, not per-item -- a batch's retries are spent as a shared
+    pool, sized to the batch by the caller.
     """
     pacer = retry.Pacer(settings.mistral_request_pacing_s, sleep=time.sleep)
-    budget = retry.RetryBudget(settings.cloud_retry_max_attempts)
 
     def _is_retryable(exc: Exception) -> bool:
         return isinstance(exc, mistral_client.RetryableRequestError)
@@ -826,7 +941,7 @@ def _make_mistral_complete_item(
         )
 
     def complete_item(
-        item: SuiteItem, api_key: str
+        prompt: str, api_key: str
     ) -> tuple[_Completion, MistralCompletion]:
         pacer.wait()
         # The same cap the local half runs under (`n_predict` above): the
@@ -836,7 +951,7 @@ def _make_mistral_complete_item(
         # claim about a limit that was never applied.
         response, retries_taken = retry.call_with_retry(
             lambda: mistral_client.complete_prompt(
-                item["prompt"],
+                prompt,
                 api_key,
                 temperature=CLOUD_SAMPLING["temperature"],
                 random_seed=CLOUD_SAMPLING["random_seed"],
@@ -858,6 +973,9 @@ def _make_mistral_complete_item(
             generated_tokens=response["generated_tokens"],
             truncation_reason=None,
             retries=retries_taken,
+            measurement=quality_rows.cloud_item_measurement(
+                response["prompt_tokens"], response["generated_tokens"]
+            ),
         )
         return completion, response
 
@@ -868,20 +986,18 @@ def _make_google_complete_item(
     model_info: google_client.GoogleModelInfo,
     settings: Settings,
     max_output_tokens: int,
-) -> Callable[
-    [SuiteItem, str], tuple[_Completion, google_client.GoogleCompletion | None]
-]:
+    budget: retry.RetryBudget,
+) -> Callable[[str, str], tuple[_Completion, google_client.GoogleCompletion | None]]:
     """Build this batch's per-item completion function, closed over `model_info`.
 
     A closure, not a plain function, because Google's per-item call needs the
     pre-flight's `input_token_limit` -- known only after `check_model_available`
     runs, once per batch, not once per item. Also closes over one `Pacer` and
-    one `RetryBudget`, shared across the whole batch: an item's own two
+    the caller's `RetryBudget`, shared across the whole batch: an item's own two
     requests (context-fits, generateContent) take turns waiting on the same
     pacer, and every item's retries draw from the same run-scoped budget.
     """
     pacer = retry.Pacer(settings.google_request_pacing_s, sleep=time.sleep)
-    budget = retry.RetryBudget(settings.cloud_retry_max_attempts)
 
     def _is_retryable(exc: Exception) -> bool:
         return isinstance(exc, google_client.RetryableRequestError)
@@ -894,14 +1010,14 @@ def _make_google_complete_item(
         )
 
     def complete_item(
-        item: SuiteItem, api_key: str
+        prompt: str, api_key: str
     ) -> tuple[_Completion, google_client.GoogleCompletion | None]:
         pacer.wait()
         context_retries = 0
         try:
             _, context_retries = retry.call_with_retry(
                 lambda: google_client.check_context_fits(
-                    item["prompt"], api_key, model_info["input_token_limit"]
+                    prompt, api_key, model_info["input_token_limit"]
                 ),
                 is_retryable=_is_retryable,
                 retry_hint_s=_retry_hint_s,
@@ -926,6 +1042,9 @@ def _make_google_complete_item(
                     generated_tokens=0,
                     truncation_reason=FAILURE_REASON_TRUNCATED_CONTEXT,
                     retries=context_retries,
+                    measurement=quality_rows.cloud_item_measurement(
+                        None, None, called=False
+                    ),
                 ),
                 None,
             )
@@ -933,7 +1052,7 @@ def _make_google_complete_item(
         pacer.wait()
         response, generate_retries = retry.call_with_retry(
             lambda: google_client.complete_prompt(
-                item["prompt"],
+                prompt,
                 api_key,
                 temperature=GOOGLE_SAMPLING["temperature"],
                 top_p=GOOGLE_SAMPLING["top_p"],
@@ -962,6 +1081,9 @@ def _make_google_complete_item(
                 FAILURE_REASON_TRUNCATED_MAX_TOKENS if truncated else None
             ),
             retries=context_retries + generate_retries,
+            measurement=quality_rows.cloud_item_measurement(
+                response["prompt_tokens"], response["generated_tokens"]
+            ),
         )
         return completion, response
 
@@ -989,13 +1111,22 @@ def _google_extra_fields(
 def _run_cloud_batch(
     settings: Settings,
     api_key: str,
-    spec: SuiteSpec,
+    prompts: list[str],
+    item_ids: list[str],
     model: str,
     price_table: dict[str, cost.Price],
-    complete_item: Callable[[SuiteItem, str], tuple[_Completion, Any]],
+    complete_item: Callable[[str, str], tuple[_Completion, Any]],
     call_path_fields_fn: Callable[[list[Any]], dict[str, Any]],
+    *,
+    provider: str,
     extra_row_fields_fn: Callable[[Any], dict[str, Any]] = lambda _response: {},
-) -> tuple[list[_Completion], dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
+) -> tuple[
+    list[_Completion],
+    dict[str, Any],
+    dict[str, Any],
+    list[dict[str, Any]],
+    dict[str, str] | None,
+]:
     """Run one cloud provider's suite loop, then derive its call-path and cost fields.
 
     The one dispatch shape both cloud providers run through: `complete_item`
@@ -1004,13 +1135,28 @@ def _run_cloud_batch(
     collected. A `None` response (Google's context-fits refusal) costs
     nothing -- known-zero, not unknown -- rather than making the whole
     batch's token total undefined.
+
+    A provider failure on an item stops the loop there and is returned as
+    the batch's `failure` (provider, item, reason) beside the items answered
+    before it: those calls are paid for, so their rows are written rather
+    than thrown away with the exception. The derived fields then describe
+    the calls actually made. With nothing answered, they are not derived at
+    all -- there is no row to carry them.
     """
     completions: list[_Completion] = []
     responses: list[Any] = []
-    for item in spec.items:
-        completion, response = complete_item(item, api_key)
+    failure: dict[str, str] | None = None
+    for prompt, item_id in zip(prompts, item_ids, strict=True):
+        try:
+            completion, response = complete_item(prompt, api_key)
+        except _PROVIDER_FAILURES as exc:
+            failure = {"provider": provider, "item_id": item_id, "reason": str(exc)}
+            break
         completions.append(completion)
         responses.append(response)
+
+    if not completions:
+        return [], {}, {}, [], failure
 
     prompt_tokens = [
         response["prompt_tokens"] if response is not None else 0
@@ -1025,14 +1171,15 @@ def _run_cloud_batch(
     )
     call_path_fields = call_path_fields_fn(responses)
     extra_row_fields = [extra_row_fields_fn(response) for response in responses]
-    return completions, call_path_fields, batch_fields, extra_row_fields
+    return completions, call_path_fields, batch_fields, extra_row_fields, failure
 
 
 def _score_and_write(
     settings: Settings,
     *,
-    spec: SuiteSpec,
+    spec: SuiteDefinition,
     run_id: str,
+    indexes: list[int],
     model_id: str,
     provider: str,
     completions: list[_Completion],
@@ -1042,22 +1189,61 @@ def _score_and_write(
     roster_entry: roster.RosterEntry,
     roster_version: int,
     call_path_fields: dict[str, Any],
+    prompt_variant: prompt_variants.PromptVariant,
+    variant_prompts: list[str],
     fiche_hash: str,
+    engine_row_fields: Mapping[str, str | None],
     batch_fields: dict[str, Any],
     resumed: bool,
+    retry_budget: dict[str, int],
+    partial_failure: dict[str, str] | None,
     extra_row_fields: list[dict[str, Any]] | None = None,
     prompts: list[str] | None = None,
 ) -> None:
-    per_item_fields, batch_score_fields = spec.score_batch(spec.items, completions)
-    # What each row publishes as `prompt`. The two cloud paths send the item
-    # text and declare the wrapper their template applies, so the item text is
-    # the rendered string for them; the local chat path renders the item into
-    # something else and supplies it here.
-    row_prompts = prompts or [item["prompt"] for item in spec.items]
+    """Score the items this invocation answered and append one row per item.
+
+    `indexes` are the positions in `spec.items` that `completions` (and
+    `prompts`, `extra_row_fields`) answer, in order; `variant_prompts` is the
+    whole suite's. On a resume, the batch's rows already on disk are left
+    untouched and only the new items are appended. The suite-level fields
+    are computed over every item the batch has now written -- the prior
+    rows' per-item outcomes plus the new ones, through the suite's one
+    aggregate -- so a batch completed by resume publishes the score an
+    uninterrupted batch over the same responses would. A partial batch
+    (`partial_failure` set) publishes none: its score fields are null.
+    """
+    items = [spec.items[index] for index in indexes]
+    per_item_fields = spec.score_items(items, completions)
+    prior_rows = (
+        results.batch_rows(
+            settings.quality_results_path, run_id, provider, task_suite=spec.task_suite
+        )
+        if resumed
+        else []
+    )
+    outcome_by_item: dict[str, dict[str, Any]] = {
+        row["item_id"]: row for row in prior_rows
+    }
+    outcome_by_item.update(
+        {
+            item["item_id"]: fields
+            for item, fields in zip(items, per_item_fields, strict=True)
+        }
+    )
+    written_items = [item for item in spec.items if item["item_id"] in outcome_by_item]
+    batch_score_fields = spec.aggregate_batch(
+        written_items, [outcome_by_item[item["item_id"]] for item in written_items]
+    )
+    if partial_failure is not None:
+        # Only the fields this suite's shape publishes: nulling a graded
+        # field onto an exact-match row would declare it graded.
+        for field in row_contract.PARTIAL_NULL_SCORE_FIELDS:
+            if field in batch_score_fields:
+                batch_score_fields[field] = None
 
     rows: list[dict[str, Any]] = []
-    for index, (item, item_score_fields) in enumerate(
-        zip(spec.items, per_item_fields, strict=True)
+    for position, (index, item, item_score_fields) in enumerate(
+        zip(indexes, items, per_item_fields, strict=True)
     ):
         row = {
             "schema_version": row_contract.SCHEMA_VERSION,
@@ -1069,11 +1255,23 @@ def _score_and_write(
             **call_path_fields,
             "model_id": model_id,
             "provider": provider,
+            "subject_egress": row_contract.subject_egress_for(provider),
+            **quality_rows.subject_composition_fields(model_id, provider, roster_entry),
+            **engine_row_fields,
             "fiche_hash": fiche_hash,
             **batch_fields,
             "task_suite": spec.task_suite,
             "item_id": item["item_id"],
-            "prompt": row_prompts[index],
+            # What each row publishes as `prompt`. The two cloud paths send
+            # the variant's output and declare the wrapper their template
+            # applies, so that string is the rendered one for them; the local
+            # chat path renders it into something else and supplies it here.
+            "prompt": (
+                prompts[position] if prompts is not None else variant_prompts[index]
+            ),
+            "prompt_variant_id": prompt_variant.variant_id,
+            "prompt_variant_version": prompt_variant.version,
+            "prompt_before_template": variant_prompts[index],
             # Everything the suite's own scorer decided: the exact-match
             # fields on one suite, the graded block on the other, each
             # nulling the shape it does not publish so a reader never meets
@@ -1098,29 +1296,54 @@ def _score_and_write(
             "contamination_risk": item["contamination_risk"],
             "indicative": gate_result["indicative"],
             "indicative_reasons": list(gate_result["indicative_reasons"]),
-            "retries": completions[index]["retries"],
+            **quality_rows.suite_item_fields(gate_result, item),
+            "retries": completions[position]["retries"],
             "resumed": resumed,
+            "retry_budget": dict(retry_budget),
+            "partial_failure": (
+                dict(partial_failure) if partial_failure is not None else None
+            ),
+            # The item's own generation figures. The first generation this
+            # invocation made is the batch's cold one -- a freshly launched
+            # server on the local path -- and is marked so a reader can
+            # exclude it; on a resume that is the first resumed item.
+            **quality_rows.item_measurement_fields(
+                completions[position]["measurement"], first_in_batch=position == 0
+            ),
+            # Every subject call here is a plain client call: `direct`, its
+            # overhead measured against the item's own counted prompt.
+            **quality_rows.direct_harness_fields(
+                completions[position]["measurement"],
+                completions[position].get("item_prompt_tokens"),
+            ),
         }
         # Extra, non-required keys (google rows' model_version/api_version):
         # applied after every contract field, never overriding one.
         if extra_row_fields is not None:
-            row.update(extra_row_fields[index])
+            row.update(extra_row_fields[position])
         rows.append(row)
 
     # The verdict is per suite-run, not per item: every row of this
     # (model, provider) batch shares it, the same pattern suite_accuracy
-    # already uses.
+    # already uses. Decided over every row the batch now holds, so a batch
+    # completed by resume is compared item for item, and a partial one is
+    # `not_comparable` (the reference covers items it does not).
     reference_rows = [
         row
         for row in results.read_rows(settings.quality_reference_path)
         if row.get("model_id") == model_id
     ]
-    batch_verdict = verdict.quality_verdict(rows, reference_rows)
+    batch_verdict = verdict.quality_verdict(prior_rows + rows, reference_rows)
+    # Before anything is appended: the interval qualifies the score over the
+    # same items, on every row of the batch that publishes one. Rows a
+    # partial run wrote before this resume carry no block and stay as written.
+    score_interval.check_batch_invariants(prior_rows + rows)
     for row in rows:
         row["verdict"] = batch_verdict
         append_row(settings.quality_results_path, "quality", row)
 
-    print(f"model={model_id} provider={provider} {_headline(batch_score_fields)}")
+    if partial_failure is None:
+        print(f"model={model_id} provider={provider} {_headline(batch_score_fields)}")
 
 
 def _headline(batch_score_fields: dict[str, Any]) -> str:

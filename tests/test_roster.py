@@ -1,11 +1,13 @@
 import copy
+import dataclasses
 import json
 import re
+from datetime import date
 from pathlib import Path
 
 import pytest
 
-from wave_local_ai_v2 import roster, server
+from wave_local_ai_v2 import engines, roster, server
 from wave_local_ai_v2.roster import RosterError
 
 MOE_ENTRY_ID = "fake-moe-model"
@@ -290,8 +292,8 @@ def test_shipped_roster_entry_matches_the_validated_baseline_flags() -> None:
         ("-m", str(dummy_model_path)),
         ("--n-cpu-moe", str(host_n_cpu_moe)),
         ("-t", str(host_threads)),
-        ("--host", server.HOST),
-        ("--port", str(server.PORT)),
+        ("--host", engines.tracked_reference_engine().host),
+        ("--port", str(engines.tracked_reference_engine().default_port)),
     }
     stripped_flags: list[str] = []
     i = 0
@@ -362,26 +364,238 @@ def test_family_of_refuses_an_unknown_model_rather_than_defaulting() -> None:
         roster.family_of("some-unknown-model")
 
 
-def test_family_of_refuses_an_entry_declaring_an_unknown_family(tmp_path) -> None:
+@pytest.mark.parametrize("family", ["acme", "gemma", "", None, ["qwen"]])
+def test_load_roster_refuses_an_entry_declaring_an_unknown_family(
+    tmp_path: Path, family: object
+) -> None:
+    # Refused at load rather than when a row first resolves it: an entry the
+    # family guard cannot read never becomes a launchable entry. `gemma` is
+    # the model line, not the family (Q11: the family is the vendor).
     path = _write_roster(
-        tmp_path / "roster.json", {MOE_ENTRY_ID: {**MOE_ENTRY, "family": "acme"}}
+        tmp_path / "roster.json", {MOE_ENTRY_ID: {**MOE_ENTRY, "family": family}}
     )
-    entry = roster.resolve_entry(roster.load_roster(path), MOE_ENTRY_ID)
+
+    with pytest.raises(
+        RosterError, match=f"{MOE_ENTRY_ID}.*'family' {re.escape(repr(family))}"
+    ):
+        roster.load_roster(path)
+
+
+@pytest.mark.parametrize(
+    "family", ["qwen", "mistral", "google", "ibm", "liquid", "microsoft"]
+)
+def test_an_entry_declaring_a_candidate_vendor_family_loads_and_resolves(
+    tmp_path: Path, family: str
+) -> None:
+    path = _write_roster(
+        tmp_path / "roster.json", {DENSE_ENTRY_ID: {**DENSE_ENTRY, "family": family}}
+    )
+    entry = roster.resolve_entry(roster.load_roster(path), DENSE_ENTRY_ID)
+
+    assert roster.family_of(entry.display_id, entry) == family
+
+
+def test_family_of_still_refuses_a_constructed_entry_with_an_unknown_family(
+    tmp_path: Path,
+) -> None:
+    # The load check does not replace this one: an entry built in code never
+    # passes through `load_roster`.
+    entry = roster.resolve_entry(
+        roster.load_roster(
+            _write_roster(tmp_path / "r.json", {MOE_ENTRY_ID: MOE_ENTRY})
+        ),
+        MOE_ENTRY_ID,
+    )
 
     with pytest.raises(RosterError, match="acme"):
-        roster.family_of("Qwen3.6-35B-A3B", entry)
+        roster.family_of("Qwen3.6-35B-A3B", dataclasses.replace(entry, family="acme"))
 
 
 def test_the_shipped_moe_entry_still_loads_with_no_family_of_its_own() -> None:
     loaded = roster.load_roster(REAL_ROSTER_PATH)
     entry = roster.resolve_entry(loaded, "qwen3.6-35b-a3b-ud-iq4xs")
 
-    # roster_version 2 is the dense ladder's arrival: rows already published
-    # carry 1 and are not back-filled, so the assertion follows the file
-    # rather than pinning a version the file has moved past.
-    assert loaded.roster_version == 2
+    # roster_version 2 was the dense ladder's arrival, 3 the licence and
+    # language-claim blocks, 4 the size classes and their figures: rows
+    # already published carry the version they were produced under and are
+    # not back-filled, so the assertion follows the file rather than pinning
+    # a version the file has moved past.
+    assert loaded.roster_version == 4
     assert entry.family is None
     assert roster.family_of(entry.display_id, entry) == "qwen"
+
+
+@pytest.mark.parametrize(
+    "control",
+    [{}, None, "off", ["chat_template_kwargs"], 0],
+    ids=["empty_object", "null", "other_string", "list", "number"],
+)
+def test_load_roster_refuses_a_malformed_thinking_control(
+    tmp_path: Path, control: object
+) -> None:
+    path = _write_roster(
+        tmp_path / "roster.json",
+        {MOE_ENTRY_ID: {**MOE_ENTRY, "thinking_control": control}},
+    )
+
+    with pytest.raises(RosterError, match=f"{MOE_ENTRY_ID}.*'thinking_control'"):
+        roster.load_roster(path)
+
+
+@pytest.mark.parametrize(
+    ("declared", "expected"),
+    [
+        (
+            {"thinking_control": {"reasoning_effort": "none"}},
+            {"reasoning_effort": "none"},
+        ),
+        ({"thinking_control": "none"}, roster.THINKING_CONTROL_NONE),
+        ({}, None),
+    ],
+    ids=["request_arguments", "none", "undeclared"],
+)
+def test_a_well_formed_or_absent_thinking_control_loads(
+    tmp_path: Path, declared: dict, expected: object
+) -> None:
+    path = _write_roster(
+        tmp_path / "roster.json", {MOE_ENTRY_ID: {**MOE_ENTRY, **declared}}
+    )
+
+    entry = roster.resolve_entry(roster.load_roster(path), MOE_ENTRY_ID)
+
+    assert entry.thinking_control == expected
+
+
+LICENCE = {
+    "id": "Apache-2.0",
+    "client_commercial_use": True,
+    "read_on": "2026-10-02",
+    "source_url": "https://huggingface.co/fake/moe-repo/blob/main/LICENSE",
+}
+LANGUAGE_CLAIM = {
+    "languages": ["en", "fr"],
+    "source_url": "https://huggingface.co/fake/moe-repo/blob/main/README.md",
+    "read_on": "2026-10-02",
+    "statement": "Supports English and French.",
+}
+
+
+def _load_moe_with(tmp_path: Path, **blocks: object) -> roster.RosterEntry:
+    path = _write_roster(
+        tmp_path / "roster.json", {MOE_ENTRY_ID: {**MOE_ENTRY, **blocks}}
+    )
+    return roster.resolve_entry(roster.load_roster(path), MOE_ENTRY_ID)
+
+
+def test_a_well_formed_licence_and_language_claim_load(tmp_path: Path) -> None:
+    entry = _load_moe_with(tmp_path, licence=LICENCE, language_claim=LANGUAGE_CLAIM)
+
+    assert entry.licence == roster.Licence(
+        licence_id="Apache-2.0",
+        client_commercial_use=True,
+        read_on=date(2026, 10, 2),
+        source_url=LICENCE["source_url"],
+    )
+    assert entry.language_claim == roster.LanguageClaim(
+        languages=("en", "fr"),
+        source_url=LANGUAGE_CLAIM["source_url"],
+        read_on=date(2026, 10, 2),
+        statement="Supports English and French.",
+    )
+
+
+def test_absent_blocks_and_an_absent_statement_load_as_none(tmp_path: Path) -> None:
+    claim = {key: value for key, value in LANGUAGE_CLAIM.items() if key != "statement"}
+
+    assert _load_moe_with(tmp_path).licence is None
+    assert _load_moe_with(tmp_path).language_claim is None
+    assert (
+        _load_moe_with(tmp_path, language_claim=claim).language_claim.statement is None
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("client_commercial_use", "yes"),
+        ("client_commercial_use", 1),
+        ("client_commercial_use", None),
+        ("read_on", "2 October 2026"),
+        ("read_on", "2026-13-01"),
+        ("read_on", 20261002),
+        ("id", ""),
+        ("id", "   "),
+        ("id", None),
+        ("source_url", ""),
+    ],
+)
+def test_load_roster_refuses_a_malformed_licence_field_naming_it(
+    tmp_path: Path, field: str, value: object
+) -> None:
+    with pytest.raises(RosterError, match=f"{MOE_ENTRY_ID}.*'licence.{field}'"):
+        _load_moe_with(tmp_path, licence={**LICENCE, field: value})
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("languages", ["en", "es"]),
+        ("languages", ["fr", "fr"]),
+        ("languages", "en"),
+        ("languages", [{"en": True}]),
+        ("read_on", "yesterday"),
+        ("source_url", None),
+        ("statement", ""),
+    ],
+)
+def test_load_roster_refuses_a_malformed_language_claim_field_naming_it(
+    tmp_path: Path, field: str, value: object
+) -> None:
+    with pytest.raises(RosterError, match=f"{MOE_ENTRY_ID}.*'language_claim.{field}'"):
+        _load_moe_with(tmp_path, language_claim={**LANGUAGE_CLAIM, field: value})
+
+
+@pytest.mark.parametrize(
+    ("name", "block", "expected"),
+    [
+        ("licence", "Apache-2.0", "'licence' must be an object"),
+        ("language_claim", ["en"], "'language_claim' must be an object"),
+        ("licence", {"id": "MIT"}, "licence.client_commercial_use, licence.read_on"),
+        ("language_claim", {"languages": []}, "language_claim.source_url"),
+    ],
+)
+def test_load_roster_refuses_a_block_that_is_not_an_object_or_lacks_a_field(
+    tmp_path: Path, name: str, block: object, expected: str
+) -> None:
+    with pytest.raises(RosterError, match=f"{MOE_ENTRY_ID}.*{re.escape(expected)}"):
+        _load_moe_with(tmp_path, **{name: block})
+
+
+def test_every_shipped_entry_carries_a_licence_and_a_language_claim() -> None:
+    loaded = roster.load_roster(REAL_ROSTER_PATH)
+
+    assert len(loaded.entries) == 4
+    for entry in loaded.entries.values():
+        assert entry.licence is not None, entry.entry_id
+        assert entry.language_claim is not None, entry.entry_id
+        # Each term is read at the entry's own pinned revision (the flagship's
+        # is `main`, its read date standing in for the sha).
+        for url in (entry.licence.source_url, entry.language_claim.source_url):
+            assert url.startswith(
+                f"https://huggingface.co/{entry.repo}/blob/{entry.revision}/"
+            ), (entry.entry_id, url)
+
+
+def test_every_shipped_entry_declares_the_qwen_thinking_control() -> None:
+    # The control these four entries already ran under, now declared rather
+    # than assumed: every published row's rendered prompt stays reproducible.
+    loaded = roster.load_roster(REAL_ROSTER_PATH)
+
+    assert loaded.entries
+    for entry in loaded.entries.values():
+        assert entry.thinking_control == {
+            "chat_template_kwargs": {"enable_thinking": False}
+        }, entry.entry_id
 
 
 # The three dense entries, keyed by entry id, with the identity fields
@@ -476,3 +690,185 @@ def test_each_shipped_dense_entry_publishes_the_suites_context_cap(
     entry = roster.resolve_entry(roster.load_roster(REAL_ROSTER_PATH), entry_id)
 
     assert entry.server_flags["context_size"] == 32768
+
+
+# --------------------------------------------------------------------------
+# Size class, its two figures and the per-class declaration (Q10 (a))
+
+DECLARATION = {
+    "single_family_ladder": True,
+    "moe_sought": True,
+    "moe_entry": None,
+    "moe_absent_reason": "no MoE GGUF found below 1B",
+}
+
+
+def _load_file(tmp_path: Path, raw: dict) -> roster.RosterFile:
+    path = tmp_path / "roster.json"
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    return roster.load_roster(path)
+
+
+@pytest.mark.parametrize(
+    ("total_params", "expected"),
+    [
+        (1, "~0.5B"),
+        (999_999_999, "~0.5B"),
+        (1_000_000_000, "~2B"),
+        (2_999_999_999, "~2B"),
+        (3_000_000_000, "~4B"),
+        (5_999_999_999, "~4B"),
+        (6_000_000_000, "~8B-and-up"),
+        (35_000_000_000, "~8B-and-up"),
+    ],
+)
+def test_size_class_for_bands_total_parameters_at_the_q10_edges(
+    total_params: int, expected: str
+) -> None:
+    assert roster.size_class_for(total_params) == expected
+
+
+def test_size_class_for_refuses_a_negative_count() -> None:
+    with pytest.raises(ValueError, match="negative"):
+        roster.size_class_for(-1)
+
+
+def test_the_vocabulary_is_the_bands_names_in_order() -> None:
+    assert roster.SIZE_CLASSES == ("~0.5B", "~2B", "~4B", "~8B-and-up")
+    edges = [edge for _, edge in roster.SIZE_CLASS_BANDS]
+    assert edges == sorted(edges)
+
+
+def test_a_size_class_and_its_figures_load(tmp_path: Path) -> None:
+    architecture = {**MOE_ENTRY["architecture"], "total_params": 34_660_610_688}
+    entry = _load_moe_with(
+        tmp_path,
+        size_class="~8B-and-up",
+        bytes_on_disk=17_730_509_792,
+        architecture=architecture,
+    )
+
+    assert entry.size_class == "~8B-and-up"
+    assert entry.bytes_on_disk == 17_730_509_792
+    assert entry.architecture.total_params == 34_660_610_688
+
+
+def test_absent_size_figures_load_as_none(tmp_path: Path) -> None:
+    entry = _load_moe_with(tmp_path)
+
+    assert entry.size_class is None
+    assert entry.bytes_on_disk is None
+    assert entry.architecture.total_params is None
+
+
+@pytest.mark.parametrize("value", ["8B", "~8b-and-up", None, 4])
+def test_load_roster_refuses_a_size_class_outside_the_vocabulary(
+    tmp_path: Path, value: object
+) -> None:
+    with pytest.raises(RosterError, match=f"{MOE_ENTRY_ID}.*'size_class'"):
+        _load_moe_with(tmp_path, size_class=value)
+
+
+@pytest.mark.parametrize("value", [0, -5, 1.5e9, "1000", True, None])
+def test_load_roster_refuses_a_figure_that_is_not_a_positive_integer(
+    tmp_path: Path, value: object
+) -> None:
+    with pytest.raises(RosterError, match=f"{MOE_ENTRY_ID}.*'bytes_on_disk'"):
+        _load_moe_with(tmp_path, bytes_on_disk=value)
+    architecture = {**MOE_ENTRY["architecture"], "total_params": value}
+    with pytest.raises(
+        RosterError, match=f"{MOE_ENTRY_ID}.*'architecture.total_params'"
+    ):
+        _load_moe_with(tmp_path, architecture=architecture)
+
+
+def test_a_size_class_declaration_loads(tmp_path: Path) -> None:
+    loaded = _load_file(
+        tmp_path,
+        {"roster_version": 4, "size_classes": {"~0.5B": DECLARATION}, "entries": {}},
+    )
+
+    assert loaded.size_classes == {
+        "~0.5B": roster.SizeClassDeclaration(
+            single_family_ladder=True,
+            moe_sought=True,
+            moe_entry=None,
+            moe_absent_reason="no MoE GGUF found below 1B",
+        )
+    }
+
+
+def test_a_roster_without_declarations_loads_with_none(tmp_path: Path) -> None:
+    loaded = _load_file(tmp_path, {"roster_version": 4, "entries": {}})
+
+    assert loaded.size_classes == {}
+
+
+@pytest.mark.parametrize(
+    ("block", "expected"),
+    [
+        ([], "'size_classes' must be an object"),
+        ({"~1B": DECLARATION}, "size class '~1B' is not a size class"),
+        ({"~2B": "ladder"}, "size class '~2B' must be an object"),
+        (
+            {"~2B": {"single_family_ladder": True}},
+            "missing field(s): moe_sought, moe_entry, moe_absent_reason",
+        ),
+        (
+            {"~2B": {**DECLARATION, "single_family_ladder": "yes"}},
+            "'single_family_ladder' must be a boolean",
+        ),
+        ({"~2B": {**DECLARATION, "moe_sought": 1}}, "'moe_sought' must be a boolean"),
+        (
+            {"~2B": {**DECLARATION, "moe_entry": ""}},
+            "'moe_entry' must be null or a non-empty string",
+        ),
+        (
+            {"~2B": {**DECLARATION, "moe_absent_reason": "  "}},
+            "'moe_absent_reason' must be null or a non-empty string",
+        ),
+    ],
+)
+def test_load_roster_refuses_a_malformed_declaration_naming_its_class(
+    tmp_path: Path, block: object, expected: str
+) -> None:
+    with pytest.raises(RosterError, match=re.escape(expected)):
+        _load_file(
+            tmp_path, {"roster_version": 4, "size_classes": block, "entries": {}}
+        )
+
+
+# Read off the four GGUFs on the dev machine: `stat` for the bytes (the three
+# dense ones equal `docs/setup.md` step 3.1's table), the tensor sum of
+# `candidate_gate.read_gguf_facts` for the totals.
+SHIPPED_FIGURES = {
+    "qwen3.6-35b-a3b-ud-iq4xs": ("~8B-and-up", 34_660_610_688, 17_730_509_792),
+    "qwen3-0.6b-q8": ("~0.5B", 596_049_920, 639_446_688),
+    "qwen3-1.7b-q8": ("~2B", 1_720_574_976, 1_834_426_016),
+    "qwen3-4b-q4km": ("~4B", 4_022_468_096, 2_497_280_256),
+}
+
+
+@pytest.mark.parametrize("entry_id", sorted(SHIPPED_FIGURES))
+def test_each_shipped_entry_carries_its_class_and_the_figures_read_off_its_file(
+    entry_id: str,
+) -> None:
+    entry = roster.resolve_entry(roster.load_roster(REAL_ROSTER_PATH), entry_id)
+    size_class, total_params, bytes_on_disk = SHIPPED_FIGURES[entry_id]
+
+    assert entry.size_class == size_class
+    assert entry.architecture.total_params == total_params
+    assert entry.bytes_on_disk == bytes_on_disk
+    assert roster.size_class_for(total_params) == size_class
+
+
+def test_the_shipped_roster_declares_every_class_and_labels_none() -> None:
+    # Not labelled by this story: the search that would justify a ladder
+    # label or a MoE absence belongs to the per-class stories (orders 5-8).
+    loaded = roster.load_roster(REAL_ROSTER_PATH)
+
+    assert tuple(loaded.size_classes) == roster.SIZE_CLASSES
+    for declaration in loaded.size_classes.values():
+        assert declaration.single_family_ladder is False
+        assert declaration.moe_absent_reason is None
+    assert loaded.size_classes["~8B-and-up"].moe_entry == "qwen3.6-35b-a3b-ud-iq4xs"

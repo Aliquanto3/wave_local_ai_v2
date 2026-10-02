@@ -2,11 +2,14 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from store_fixtures import make_row
 
 from wave_local_ai_v2 import (
+    cost,
     google_client,
     judge,
     judge_backends,
+    judge_probe,
     mistral_client,
     retry,
     row_contract,
@@ -54,6 +57,12 @@ class _ScriptedBackend:
             tokens_in=120,
             tokens_out=3,
             retries=0,
+            answering_provider="stub",
+            answering_provider_source=judge.ANSWERING_PROVIDER_FROM_DIRECT_ENDPOINT,
+            reasoning_effort=judge.REASONING_EFFORT_NOT_SENT,
+            reasoning_tokens=None,
+            reasoning_tokens_source=None,
+            reasoning_tokens_null_reason=judge.REASONING_TOKENS_NOT_REPORTED_BY_PROVIDER,
         )
 
 
@@ -174,7 +183,13 @@ GOOGLE_JUDGE_BODY = {
 }
 
 
-def _fixed_score_backend(provider: str, family: str, model_id: str, score: int):
+def _fixed_score_backend(
+    provider: str,
+    family: str,
+    model_id: str,
+    score: int,
+    answering_provider: str | None = None,
+):
     def call(prompt: str) -> JudgeResponse:
         return JudgeResponse(
             content=str(score),
@@ -184,6 +199,33 @@ def _fixed_score_backend(provider: str, family: str, model_id: str, score: int):
             tokens_in=200,
             tokens_out=1,
             retries=0,
+            answering_provider=answering_provider or provider,
+            answering_provider_source=(
+                judge.ANSWERING_PROVIDER_FROM_DIRECT_ENDPOINT
+                if answering_provider is None
+                else judge.ANSWERING_PROVIDER_FROM_RESPONSE
+            ),
+            reasoning_effort=judge.REASONING_EFFORT_NOT_SENT,
+            # What each real backend records on its provider's real usage
+            # shape: Google's pinned model yields a 0 derived from its totals,
+            # Mistral reports no reasoning count at all.
+            **(
+                {
+                    "reasoning_tokens": 0,
+                    "reasoning_tokens_source": (
+                        judge.REASONING_TOKENS_DERIVED_FROM_TOTALS
+                    ),
+                    "reasoning_tokens_null_reason": None,
+                }
+                if provider == "google"
+                else {
+                    "reasoning_tokens": None,
+                    "reasoning_tokens_source": None,
+                    "reasoning_tokens_null_reason": (
+                        judge.REASONING_TOKENS_NOT_REPORTED_BY_PROVIDER
+                    ),
+                }
+            ),
         )
 
     return call
@@ -424,3 +466,209 @@ def test_the_judged_block_costs_each_judge_at_its_own_providers_rates() -> None:
     assert per_provider["mistral"]["list_price_input_per_million"] == 0.15
     assert per_provider["google"]["list_price_input_per_million"] == 0.30
     assert block["judge_cost"]["tokens_in_total"] == 400
+
+
+# --- Who answered, the effort sent, and the reasoning tokens ---
+
+
+def test_a_call_record_carries_the_answering_provider_effort_and_reasoning() -> None:
+    record = run_judge_call(_ScriptedBackend("3"), RENDERED, OPEN_ENDED_QUALITY_1_TO_5)
+
+    assert record["answering_provider"] == "stub"
+    assert record["answering_provider_source"] == "direct_endpoint"
+    assert record["reasoning_effort"] == "not_sent"
+    assert record["reasoning_tokens"] is None
+    assert record["reasoning_tokens_null_reason"] == (
+        "provider_reports_no_reasoning_count"
+    )
+
+
+def test_the_mistral_backend_sends_no_effort_control_and_records_that() -> None:
+    backend = judge_backends.mistral_judge_backend(
+        "fake-key",
+        pacer=retry.Pacer(0.0),
+        budget=retry.RetryBudget(2),
+        temperature=0,
+        random_seed=20260906,
+        max_tokens=8,
+    )
+
+    with patch(
+        "wave_local_ai_v2.mistral_client.requests.post",
+        return_value=MagicMock(status_code=200, json=lambda: MISTRAL_JUDGE_BODY),
+    ) as post:
+        record = run_judge_call(backend, RENDERED, OPEN_ENDED_QUALITY_1_TO_5)
+
+    sent = post.call_args.kwargs["json"]
+    # The whole body, so any effort control added later fails this test.
+    assert set(sent) == {
+        "model",
+        "messages",
+        "temperature",
+        "random_seed",
+        "max_tokens",
+    }
+    assert record["reasoning_effort"] == judge.REASONING_EFFORT_NOT_SENT
+    assert record["reasoning_effort"] not in {"disabled", "minimal"}
+    # Mistral's body names no serving provider: the direct endpoint's owner.
+    assert record["answering_provider"] == "mistral"
+    assert record["answering_provider_source"] == "direct_endpoint"
+    # No reasoning counter in Mistral's usage: null with a reason, not zero.
+    assert record["reasoning_tokens"] is None
+    assert record["reasoning_tokens_source"] is None
+    assert record["reasoning_tokens_null_reason"] == (
+        judge.REASONING_TOKENS_NOT_REPORTED_BY_PROVIDER
+    )
+    assert record["tokens_out"] == 1
+
+
+def _google_backend() -> judge.JudgeBackend:
+    return judge_backends.google_judge_backend(
+        "fake-key",
+        pacer=retry.Pacer(0.0),
+        budget=retry.RetryBudget(2),
+        temperature=0,
+        top_p=1,
+        top_k=1,
+        seed=20260906,
+        max_tokens=8,
+    )
+
+
+def test_the_google_backend_sends_no_thinking_config_and_records_that() -> None:
+    with patch(
+        "wave_local_ai_v2.google_client.requests.post",
+        return_value=MagicMock(status_code=200, json=lambda: GOOGLE_JUDGE_BODY),
+    ) as post:
+        record = run_judge_call(_google_backend(), RENDERED, OPEN_ENDED_QUALITY_1_TO_5)
+
+    sent = post.call_args.kwargs["json"]
+    assert set(sent) == {"contents", "generationConfig"}
+    assert set(sent["generationConfig"]) == {
+        "temperature",
+        "topP",
+        "topK",
+        "seed",
+        "maxOutputTokens",
+        "candidateCount",
+    }
+    assert record["reasoning_effort"] == judge.REASONING_EFFORT_NOT_SENT
+    assert record["answering_provider"] == "google"
+    assert record["answering_provider_source"] == "direct_endpoint"
+    # The pinned model's real body: no thoughtsTokenCount, and the total
+    # equals prompt + candidates, so the count is a derived 0, tagged so.
+    assert record["reasoning_tokens"] == 0
+    assert record["reasoning_tokens_source"] == (
+        judge.REASONING_TOKENS_DERIVED_FROM_TOTALS
+    )
+    assert record["reasoning_tokens_null_reason"] is None
+
+
+def test_a_google_body_with_no_totals_records_a_null_count_with_its_reason() -> None:
+    body = {
+        **GOOGLE_JUDGE_BODY,
+        "usageMetadata": {"candidatesTokenCount": 1},
+    }
+    with patch(
+        "wave_local_ai_v2.google_client.requests.post",
+        return_value=MagicMock(status_code=200, json=lambda: body),
+    ):
+        record = run_judge_call(_google_backend(), RENDERED, OPEN_ENDED_QUALITY_1_TO_5)
+
+    assert record["reasoning_tokens"] is None
+    assert record["reasoning_tokens_source"] is None
+    assert record["reasoning_tokens_null_reason"] == (
+        judge.REASONING_TOKENS_ABSENT_FROM_RESPONSE
+    )
+
+
+def test_a_google_judge_on_the_pinned_usage_shape_keeps_a_reportable_cost() -> None:
+    with patch(
+        "wave_local_ai_v2.google_client.requests.post",
+        return_value=MagicMock(status_code=200, json=lambda: GOOGLE_JUDGE_BODY),
+    ):
+        record = run_judge_call(_google_backend(), RENDERED, OPEN_ENDED_QUALITY_1_TO_5)
+
+    judge_cost = cost.judge_cost_fields([record])
+    (entry,) = judge_cost["per_provider"]
+
+    assert entry["reasoning_tokens"] == 0
+    assert entry["reasoning_tokens_billing"] == "beside_output"
+    assert entry["cost_total"] == cost.cloud_cost(
+        190, 1, cost.GOOGLE_PRICE_TABLE["gemini-3.5-flash-lite"]
+    )
+    assert judge_cost["cost_total"] is not None
+
+
+def test_a_reported_google_thoughts_count_is_recorded_apart_from_output() -> None:
+    body = {
+        **GOOGLE_JUDGE_BODY,
+        "usageMetadata": {
+            "candidatesTokenCount": 1,
+            "promptTokenCount": 190,
+            "thoughtsTokenCount": 86,
+            "totalTokenCount": 277,
+        },
+    }
+    with patch(
+        "wave_local_ai_v2.google_client.requests.post",
+        return_value=MagicMock(status_code=200, json=lambda: body),
+    ):
+        record = run_judge_call(_google_backend(), RENDERED, OPEN_ENDED_QUALITY_1_TO_5)
+
+    assert record["reasoning_tokens"] == 86
+    assert record["reasoning_tokens_source"] == judge.REASONING_TOKENS_REPORTED
+    assert record["tokens_out"] == 1
+    assert record["reasoning_tokens_null_reason"] is None
+
+
+def _baseline_probe_row() -> dict:
+    """A complete quality row over a real probe item, as a genuine baseline.
+
+    The gate checks a baseline row's pre-template prompt against the authored
+    text of the item it names, so a row the judge tests expect to reach the
+    judge-block checks has to name a real item.
+    """
+    item = judge_probe.JUDGE_PROBE_ITEMS[0]
+    return make_row(
+        "quality",
+        suite_id=judge_probe.SUITE_ID,
+        suite_version=judge_probe.SUITE_VERSION,
+        item_id=item["item_id"],
+        prompt_before_template=item["prompt"],
+        provider="local",
+        subject_egress="none",
+        engine_id="llama.cpp",
+        engine_build="b10537",
+    )
+
+
+def test_a_stubbed_response_naming_another_answering_provider_is_refused() -> None:
+    substituted = judge.Judge(
+        model_id="gemini-3.5-flash-lite",
+        provider="google",
+        family="google",
+        backend=_fixed_score_backend(
+            "google",
+            "google",
+            "gemini-3.5-flash-lite",
+            4,
+            answering_provider="some-router-fallback",
+        ),
+    )
+    block = _judge_item("qwen", "local", [_mistral_judge(4), substituted])
+    # The record is a faithful copy of what answered; the writer refuses it.
+    assert block["judges"][1]["answering_provider"] == "some-router-fallback"
+
+    with pytest.raises(row_contract.RowContractError) as excinfo:
+        row_contract.validate_row("quality", {**_baseline_probe_row(), **block})
+
+    message = str(excinfo.value)
+    assert "'some-router-fallback'" in message
+    assert "'google'" in message
+
+
+def test_a_judged_block_whose_judges_answered_as_bound_is_written() -> None:
+    block = _judge_item("qwen", "local", [_mistral_judge(4), _google_judge(4)])
+
+    row_contract.validate_row("quality", {**_baseline_probe_row(), **block})

@@ -1,0 +1,14 @@
+$ uv run python -m wave_local_ai_v2.use_case_coverage
+coverage record refused, nothing written: 8 coverage entries without a resolvable state:
+- document-comparison: has no state
+- text-rewriting: suite 'rewriting-business-email' does not resolve in the registry
+- code-generation: has no state
+- agentic-planning: has no state
+- agentic-tool-calling: has no state
+- web-research: has no state
+- rag-answer-generation: has no state
+- multilingual-en-fr-de: suite 'rewriting-business-email' does not resolve in the registry
+exit code: 1
+
+$ ls aidd_docs/results/use-case-coverage.json
+cannot access 'aidd_docs/results/use-case-coverage.json': No such file or directory

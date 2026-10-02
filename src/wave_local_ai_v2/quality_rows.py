@@ -1,5 +1,6 @@
-"""The per-batch energy/emissions/cost fields every quality row carries,
-declared once for both CLIs that write quality rows.
+"""The per-batch energy/emissions/cost fields and the per-item suite-level
+fields every quality row carries, declared once for both CLIs that write
+quality rows.
 
 `quality_cli.py`'s four batches (local, mistral, google) and `judge_probe.py`'s
 two (local, google) derive the same block. A second copy would be a parallel
@@ -16,11 +17,151 @@ by the CLIs, not the other way round.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from types import MappingProxyType
 from typing import Any
 
-from wave_local_ai_v2 import cost, emissions
+from wave_local_ai_v2 import cost, emissions, harness, roster, row_contract, timings
 from wave_local_ai_v2.energy import ENERGY_METHOD_UNAVAILABLE, EnergyResult
+from wave_local_ai_v2.engines import EngineFicheFields
 from wave_local_ai_v2.settings import Settings
+from wave_local_ai_v2.suite_gate import SuiteGateResult
+
+# What a cloud subject's quality row carries for the engine: no local engine
+# produced it, which the row states rather than leaving null.
+ENGINE_NOT_APPLICABLE_FIELDS: Mapping[str, str | None] = MappingProxyType(
+    {"engine_id": row_contract.ENGINE_NOT_APPLICABLE, "engine_build": None}
+)
+
+
+def local_engine_fields(fiche_fields: EngineFicheFields) -> dict[str, str | None]:
+    """The two engine fields a local row carries, read off its own fiche's."""
+    return {
+        "engine_id": fiche_fields["engine_id"],
+        "engine_build": fiche_fields["engine_build"],
+    }
+
+
+def suite_item_fields(
+    gate_result: SuiteGateResult, item: Mapping[str, Any]
+) -> dict[str, Any]:
+    """The level the suite was certified at and the item's own licence and
+    source declarations, as one quality row carries them.
+
+    The level is the gate's certified one, never the suite's raw
+    declaration: the two are equal only because the gate refuses a suite
+    that falls short. An item that declares no source (a hand-written one)
+    publishes `None`, a recorded absence, never an invented provenance.
+    """
+    return {
+        "suite_level": gate_result["level"],
+        "item_licence": item.get("licence"),
+        "item_source": item.get("source"),
+        "item_source_revision": item.get("source_revision"),
+    }
+
+
+def subject_composition_fields(
+    model_id: str, provider: str, roster_entry: roster.RosterEntry
+) -> dict[str, Any]:
+    """The subject's family and size class, as one quality row carries them
+    (schema "19").
+
+    A local row's subject is `roster_entry` itself: its family resolves
+    through the entry (the flagship through the in-code fallback, with no
+    exception carved out) and its size class is the entry's declaration. A
+    cloud row cites the local entry only as the one it ran beside, so its
+    family is its own model's and its size class is `None`: a cloud model is
+    not banded.
+    """
+    if provider == row_contract.SUBJECT_PROVIDER_LOCAL:
+        return {
+            "family": roster.family_of(model_id, roster_entry),
+            "size_class": roster_entry.size_class,
+        }
+    return {"family": roster.family_of(model_id), "size_class": None}
+
+
+def item_measurement_fields(
+    measurement: timings.ItemMeasurement, *, first_in_batch: bool
+) -> dict[str, Any]:
+    """The per-item measurement block one quality row carries (schema "18").
+
+    The item's own tokens in and out, its engine-reported first-token time
+    under its `ttft_source` label, and the prompt tokens the engine reused
+    from its cache, each a value or null with its reason. Labelled a single
+    per-item generation (no warm-up exclusion, no repetitions), so it is
+    never read as Methodology 6's runtime figure, and the batch's first
+    generation -- the one a freshly launched server served cold -- is marked
+    so a reader can exclude it.
+    """
+    return {
+        "item_tokens_in": measurement["tokens_in"],
+        "item_tokens_in_null_reason": measurement["tokens_in_null_reason"],
+        "item_tokens_out": measurement["tokens_out"],
+        "item_tokens_out_null_reason": measurement["tokens_out_null_reason"],
+        "item_ttft_ms": measurement["ttft_ms"],
+        "item_ttft_ms_null_reason": measurement["ttft_ms_null_reason"],
+        "item_ttft_source": measurement["ttft_source"],
+        "item_prompt_tokens_cached": measurement["prompt_tokens_cached"],
+        "item_prompt_tokens_cached_null_reason": measurement[
+            "prompt_tokens_cached_null_reason"
+        ],
+        "item_measurement_kind": timings.ITEM_MEASUREMENT_SINGLE_GENERATION,
+        "item_first_in_batch": first_in_batch,
+    }
+
+
+def direct_harness_fields(
+    measurement: timings.ItemMeasurement, item_prompt_tokens: int | None
+) -> dict[str, Any]:
+    """The harness block a `direct` row carries (schema "20").
+
+    `direct` sends the item's own rendered prompt and nothing around it, so
+    it wraps the item trivially and the rule measures it like any wrapper:
+    the engine's own prompt-token count (`measurement`'s, the row's
+    `item_tokens_in`) minus `item_prompt_tokens`, the item's rendered prompt
+    -- tool definitions included -- counted under the same tokenizer. A
+    cloud subject has no such count (`None`), and its overhead is null with
+    that reason rather than an assumed zero.
+    """
+    return harness.row_fields(
+        harness.HARNESS_DIRECT,
+        harness.prompt_overhead(
+            engine_prompt_tokens=measurement["tokens_in"],
+            engine_null_reason=measurement["tokens_in_null_reason"],
+            item_prompt_tokens=item_prompt_tokens,
+            wraps_item_prompt=True,
+        ),
+    )
+
+
+def cloud_item_measurement(
+    prompt_tokens: int | None, generated_tokens: int | None, *, called: bool = True
+) -> timings.ItemMeasurement:
+    """One cloud item's measurement: the provider's own per-call token counts.
+
+    A cloud provider reports no first-token time and no prompt-cache count, so
+    both are null with `not_reported_by_provider`; a token count the response
+    did not carry is null with the same reason. An item refused before any
+    generation call (`called=False`, Google's context pre-flight) has nothing
+    to report at all: every value is null with `no_generation_call`.
+    """
+    if not called:
+        absent = timings.ITEM_NULL_NO_GENERATION_CALL
+        prompt_tokens = generated_tokens = None
+    else:
+        absent = timings.ITEM_NULL_NOT_REPORTED_BY_PROVIDER
+    return timings.ItemMeasurement(
+        tokens_in=prompt_tokens,
+        tokens_in_null_reason=absent if prompt_tokens is None else None,
+        tokens_out=generated_tokens,
+        tokens_out_null_reason=absent if generated_tokens is None else None,
+        ttft_ms=None,
+        ttft_ms_null_reason=absent,
+        ttft_source=None,
+        prompt_tokens_cached=None,
+        prompt_tokens_cached_null_reason=absent,
+    )
 
 
 def local_batch_fields(

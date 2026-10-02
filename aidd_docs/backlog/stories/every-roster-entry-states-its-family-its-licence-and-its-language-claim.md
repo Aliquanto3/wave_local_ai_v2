@@ -1,6 +1,6 @@
 ---
 type: story
-status: ready
+status: done
 source: aidd_docs/backlog/epics/every-size-class-spans-two-families-or-says-it-does-not.md
 parent: aidd_docs/backlog/epics/every-size-class-spans-two-families-or-says-it-does-not.md
 order: 1

@@ -1,13 +1,49 @@
+import dataclasses
+from pathlib import Path
+
 import pytest
 
-from wave_local_ai_v2 import aggregation
+from wave_local_ai_v2 import (
+    FIXED_PROMPT,
+    aggregation,
+    engines,
+    harness,
+    prompt_variants,
+    quality_rows,
+    roster,
+    score_interval,
+    suite_registry,
+    timings,
+)
+from wave_local_ai_v2.results import append_row
 from wave_local_ai_v2.row_contract import (
+    ENGINE_FICHE_SCHEMA_VERSION,
+    ENGINE_NOT_APPLICABLE,
     GRADED_FIELDS,
+    HARNESS_FIELDS,
+    HARNESS_SCHEMA_VERSION,
+    ITEM_MEASUREMENT_FIELDS,
+    JUDGE_EGRESS_FIELDS,
     JUDGED_FIELDS,
+    PARTIAL_NULL_SCORE_FIELDS,
     REQUIRED_FIELDS,
     SCHEMA_VERSION,
+    SCORE_INTERVAL_FIELDS,
+    SCORE_INTERVAL_SCHEMA_VERSION,
+    SUBJECT_COMPOSITION_FIELDS,
+    SUBJECT_COMPOSITION_SCHEMA_VERSION,
     RowContractError,
+    subject_egress_for,
     validate_row,
+)
+
+_CLASSIFICATION = suite_registry.resolve("classification-support-routing")
+_TRANSLATION = suite_registry.resolve("translation-business-short-form")
+
+# The authored text of the item the quality fixture names: a baseline
+# row carries it unchanged, and the gate checks that it does.
+_AUTHORED_PROMPT = next(
+    item["prompt"] for item in _CLASSIFICATION.items if item["item_id"] == "billing-01"
 )
 
 
@@ -41,6 +77,12 @@ COMPLETE_RUNTIME_ROW = {
     "prompt_template_id": "none",
     "prompt_template_hash": None,
     "prompt_capture": "captured",
+    "prompt_variant_id": "baseline",
+    "prompt_variant_version": "1",
+    "prompt_before_template": FIXED_PROMPT,
+    "subject_egress": "none",
+    "engine_id": "llama.cpp",
+    "engine_build": "b10537",
     "fiche_hash": "a" * 64,
     "verdict": {"verdict": "not_comparable", "reference_run_id": None},
     "prompt": "hello",
@@ -119,8 +161,14 @@ COMPLETE_QUALITY_ROW = {
     "prompt_template_id": "none",
     "prompt_template_hash": None,
     "prompt_capture": "captured",
+    "prompt_variant_id": "baseline",
+    "prompt_variant_version": "1",
+    "prompt_before_template": _AUTHORED_PROMPT,
     "model_id": "Qwen3.6-35B-A3B",
     "provider": "local",
+    "subject_egress": "none",
+    "engine_id": "llama.cpp",
+    "engine_build": "b10537",
     "fiche_hash": "a" * 64,
     "cpu_energy_kwh": 0.0003,
     "cpu_energy_method": "estimated_tdp",
@@ -168,13 +216,17 @@ COMPLETE_QUALITY_ROW = {
     "thinking_policy": "disabled",
     "context_length": 32768,
     "suite_id": "classification-support-routing",
-    "suite_version": "1",
+    "suite_version": _CLASSIFICATION.suite_version,
     "prompt_set_hash": "deadbeef",
     "language": "en",
     "provenance": "hand_written",
     "contamination_risk": False,
     "indicative": True,
     "indicative_reasons": ["item_count 10 is below the minimum of 20"],
+    "suite_level": "development",
+    "item_licence": "CC-BY-4.0",
+    "item_source": None,
+    "item_source_revision": None,
     "failure_reason": None,
     "failure_counts": {
         "empty": 0,
@@ -184,6 +236,31 @@ COMPLETE_QUALITY_ROW = {
     },
     "retries": 0,
     "resumed": False,
+    "retry_budget": {},
+    "partial_failure": None,
+    "item_tokens_in": 57,
+    "item_tokens_in_null_reason": None,
+    "item_tokens_out": 2,
+    "item_tokens_out_null_reason": None,
+    "item_ttft_ms": 13.7,
+    "item_ttft_ms_null_reason": None,
+    "item_ttft_source": "server_reported",
+    "item_prompt_tokens_cached": 0,
+    "item_prompt_tokens_cached_null_reason": None,
+    "item_measurement_kind": "single_generation",
+    "item_first_in_batch": True,
+    "family": "qwen",
+    "size_class": "~8B-and-up",
+    # The reference harness, its version read from the installed package and
+    # its overhead measured: the engine's 57 tokens were the item's own.
+    "harness_id": "direct",
+    "harness_version": harness.harness_version("direct"),
+    "harness_prompt_overhead": {"tokens": 0, "null_reason": None},
+    # The batch's interval over its one item: constant, so zero_width; the
+    # two empty language cells name no_items.
+    "score_interval": score_interval.interval_block(
+        [{"item_id": "billing-01", "language": "en"}], [1.0]
+    ),
 }
 
 
@@ -198,7 +275,42 @@ def _judge_record(provider: str, family: str, model_id: str, score: int) -> dict
         "tokens_in": 120,
         "tokens_out": 2,
         "retries": 0,
+        "answering_provider": provider,
+        "answering_provider_source": "direct_endpoint",
+        "reasoning_effort": "not_sent",
+        "reasoning_tokens": None,
+        "reasoning_tokens_source": None,
+        "reasoning_tokens_null_reason": "provider_reports_no_reasoning_count",
     }
+
+
+# The six fields schema "13" added to every judge call record.
+NEW_JUDGE_RECORD_FIELDS = (
+    "answering_provider",
+    "answering_provider_source",
+    "reasoning_effort",
+    "reasoning_tokens",
+    "reasoning_tokens_source",
+    "reasoning_tokens_null_reason",
+)
+
+
+def _cost_entry(**changes) -> dict:
+    entry = {
+        "provider": "mistral",
+        "model_id": "mistral-small-2603",
+        "tokens_in": 120,
+        "tokens_out": 2,
+        "reasoning_tokens": None,
+        "reasoning_tokens_null_reason": "provider_reports_no_reasoning_count",
+        "reasoning_tokens_billing": "inside_output",
+        "cost_total": 0.00003,
+        "list_price_input_per_million": 0.15,
+        "list_price_output_per_million": 0.60,
+        "list_price_retrieved_at": "2026-08-27",
+    }
+    entry.update(changes)
+    return entry
 
 
 JUDGE_BLOCK = {
@@ -273,7 +385,10 @@ COMPLETE_GRADED_QUALITY_ROW = {
     **COMPLETE_QUALITY_ROW,
     **GRADED_BLOCK,
     "task_suite": "translation",
+    "suite_id": _TRANSLATION.suite_id,
+    "suite_version": _TRANSLATION.suite_version,
     "item_id": "en-fr-01",
+    "prompt_before_template": _TRANSLATION.items[0]["prompt"],
     "expected_label": None,
     "predicted_label": None,
     "correct": None,
@@ -526,6 +641,169 @@ def test_a_judge_record_missing_raw_text_is_refused_by_name() -> None:
 
     with pytest.raises(RowContractError, match="raw_text"):
         validate_row("quality", row)
+
+
+@pytest.mark.parametrize("field", NEW_JUDGE_RECORD_FIELDS)
+def test_a_judge_record_missing_a_schema_13_field_is_refused_by_name(
+    field: str,
+) -> None:
+    first, second = COMPLETE_JUDGED_QUALITY_ROW["judges"]
+    stripped = {k: v for k, v in first.items() if k != field}
+    row = {**COMPLETE_JUDGED_QUALITY_ROW, "judges": [stripped, second]}
+
+    with pytest.raises(
+        RowContractError, match=rf"judges\[0\] missing field\(s\): {field}$"
+    ):
+        validate_row("quality", row)
+
+
+def _with_first_record(**changes) -> dict:
+    first, second = COMPLETE_JUDGED_QUALITY_ROW["judges"]
+    return {**COMPLETE_JUDGED_QUALITY_ROW, "judges": [{**first, **changes}, second]}
+
+
+def test_a_record_answered_by_another_provider_is_refused_naming_both() -> None:
+    row = _with_first_record(answering_provider="deepinfra")
+
+    with pytest.raises(RowContractError) as excinfo:
+        validate_row("quality", row)
+
+    message = str(excinfo.value)
+    assert "'deepinfra'" in message
+    assert "'mistral'" in message
+
+
+def test_a_record_answered_as_bound_read_from_the_response_validates() -> None:
+    validate_row("quality", _with_first_record(answering_provider_source="response"))
+
+
+def test_an_unknown_answering_provider_source_is_refused_by_value() -> None:
+    with pytest.raises(RowContractError, match="'guessed'"):
+        validate_row("quality", _with_first_record(answering_provider_source="guessed"))
+
+
+@pytest.mark.parametrize("effort", ["", None])
+def test_a_record_with_no_stated_reasoning_effort_is_refused(effort) -> None:
+    with pytest.raises(RowContractError, match="reasoning_effort"):
+        validate_row("quality", _with_first_record(reasoning_effort=effort))
+
+
+@pytest.mark.parametrize("tokens", ["12", -1, True, 1.5])
+def test_a_reasoning_count_that_is_not_a_non_negative_integer_is_refused(
+    tokens,
+) -> None:
+    row = _with_first_record(
+        reasoning_tokens=tokens,
+        reasoning_tokens_source="reported",
+        reasoning_tokens_null_reason=None,
+    )
+
+    with pytest.raises(RowContractError, match="non-negative integer"):
+        validate_row("quality", row)
+
+
+def test_a_reasoning_count_with_no_source_is_refused() -> None:
+    row = _with_first_record(
+        reasoning_tokens=0,
+        reasoning_tokens_source=None,
+        reasoning_tokens_null_reason=None,
+    )
+
+    with pytest.raises(RowContractError, match="reasoning_tokens_source None"):
+        validate_row("quality", row)
+
+
+def test_a_null_reasoning_count_with_a_source_is_refused() -> None:
+    row = _with_first_record(reasoning_tokens_source="derived_from_totals")
+
+    with pytest.raises(RowContractError, match="a null count has no source"):
+        validate_row("quality", row)
+
+
+def test_a_derived_zero_reasoning_count_validates() -> None:
+    row = _with_first_record(
+        reasoning_tokens=0,
+        reasoning_tokens_source="derived_from_totals",
+        reasoning_tokens_null_reason=None,
+    )
+
+    validate_row("quality", row)
+
+
+def _with_cost_entries(*entries) -> dict:
+    return {
+        **COMPLETE_JUDGED_QUALITY_ROW,
+        "judge_cost": {
+            **COMPLETE_JUDGED_QUALITY_ROW["judge_cost"],
+            "per_provider": list(entries),
+        },
+    }
+
+
+def test_a_complete_per_provider_cost_entry_validates() -> None:
+    validate_row("quality", _with_cost_entries(_cost_entry()))
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["reasoning_tokens", "reasoning_tokens_null_reason", "reasoning_tokens_billing"],
+)
+def test_a_per_provider_cost_entry_missing_a_reasoning_field_is_refused_by_name(
+    field,
+) -> None:
+    entry = {k: v for k, v in _cost_entry().items() if k != field}
+
+    with pytest.raises(RowContractError, match=rf"per_provider\[0\].*{field}"):
+        validate_row("quality", _with_cost_entries(entry))
+
+
+def test_a_per_provider_cost_entry_with_an_unknown_billing_basis_is_refused() -> None:
+    entry = _cost_entry(reasoning_tokens_billing="unknown")
+
+    with pytest.raises(RowContractError, match="'unknown'"):
+        validate_row("quality", _with_cost_entries(entry))
+
+
+@pytest.mark.parametrize("per_provider", [None, ["not-an-object"]])
+def test_a_malformed_per_provider_cost_record_is_refused(per_provider) -> None:
+    row = {
+        **COMPLETE_JUDGED_QUALITY_ROW,
+        "judge_cost": {
+            **COMPLETE_JUDGED_QUALITY_ROW["judge_cost"],
+            "per_provider": per_provider,
+        },
+    }
+
+    with pytest.raises(RowContractError, match="per_provider"):
+        validate_row("quality", row)
+
+
+def test_a_null_reasoning_count_without_a_reason_is_refused() -> None:
+    row = _with_first_record(reasoning_tokens=None, reasoning_tokens_null_reason=None)
+
+    with pytest.raises(RowContractError, match="reasoning_tokens=None"):
+        validate_row("quality", row)
+
+
+def test_a_reported_reasoning_count_carrying_a_null_reason_is_refused() -> None:
+    row = _with_first_record(
+        reasoning_tokens=12,
+        reasoning_tokens_source="reported",
+        reasoning_tokens_null_reason="provider_reports_no_reasoning_count",
+    )
+
+    with pytest.raises(RowContractError, match="reasoning_tokens=12"):
+        validate_row("quality", row)
+
+
+def test_a_reported_reasoning_count_validates() -> None:
+    row = _with_first_record(
+        reasoning_tokens=12,
+        reasoning_tokens_source="reported",
+        reasoning_tokens_null_reason=None,
+    )
+
+    validate_row("quality", row)
 
 
 def test_a_judged_row_in_an_unsupported_language_is_refused_by_value() -> None:
@@ -819,17 +1097,1142 @@ def test_the_schema_version_moved_once_for_the_thinking_policy() -> None:
     # `thinking_policy` is required on every quality row, because a score
     # produced with the subject allowed to reason and one produced without it
     # are not the same measurement and a row has to say which it is.
-    assert SCHEMA_VERSION == "12"
+    assert SCHEMA_VERSION == "22"
 
 
 def test_the_schema_version_moved_for_the_runtime_energy_window() -> None:
     # "12" fixes audit finding C3: the runtime row's energy figures used to
     # span the whole counted-repetition window, cooldowns included. Required
     # only on runtime rows -- quality rows carry no energy window at all.
-    assert SCHEMA_VERSION == "12"
+    assert SCHEMA_VERSION == "22"
     assert {"active_window_s", "idle_window_s", "energy_window_method"} <= (
         REQUIRED_FIELDS["runtime"]
     )
     assert {"active_window_s", "idle_window_s", "energy_window_method"}.isdisjoint(
         REQUIRED_FIELDS["quality"]
     )
+
+
+def test_the_schema_version_moved_for_the_judge_call_record_extension() -> None:
+    # "13" adds five fields inside each judge call record. Additive inside the
+    # conditional judge block: neither row kind's required set moves, so a
+    # deterministic quality row validates unchanged.
+    assert SCHEMA_VERSION == "22"
+    assert set(NEW_JUDGE_RECORD_FIELDS).isdisjoint(REQUIRED_FIELDS["quality"])
+    assert set(NEW_JUDGE_RECORD_FIELDS).isdisjoint(JUDGED_FIELDS)
+    validate_row("quality", COMPLETE_QUALITY_ROW)
+
+
+def test_the_schema_version_moved_for_the_prompt_variant() -> None:
+    # "14" makes both row kinds name the variant they ran under and carry the
+    # prompt as the variant left it. Not conditional: every row ran under some
+    # variant, and a row below "14" is never back-filled with `baseline`.
+    assert SCHEMA_VERSION == "22"
+    for kind in ("runtime", "quality"):
+        assert set(PROMPT_VARIANT_FIELDS) <= REQUIRED_FIELDS[kind]
+
+
+def test_the_schema_version_moved_for_the_engine() -> None:
+    # "22" makes every row name the engine that produced it and its build,
+    # and moves the cited fiche to the projection carrying the engine fields.
+    assert SCHEMA_VERSION == "22"
+    assert ENGINE_FICHE_SCHEMA_VERSION == "22"
+    for kind in ("runtime", "quality"):
+        assert {"engine_id", "engine_build"} <= REQUIRED_FIELDS[kind]
+
+
+@pytest.mark.parametrize(
+    ("kind", "row"),
+    [("runtime", COMPLETE_RUNTIME_ROW), ("quality", COMPLETE_QUALITY_ROW)],
+    ids=["runtime", "local-quality"],
+)
+@pytest.mark.parametrize("field", ["engine_id", "engine_build"])
+def test_a_local_row_missing_an_engine_field_is_refused_naming_it(
+    kind: str, row: dict, field: str
+) -> None:
+    incomplete = {key: value for key, value in row.items() if key != field}
+
+    with pytest.raises(RowContractError, match=field):
+        validate_row(kind, incomplete)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("kind", "row"),
+    [("runtime", COMPLETE_RUNTIME_ROW), ("quality", COMPLETE_QUALITY_ROW)],
+    ids=["runtime", "local-quality"],
+)
+def test_an_unregistered_engine_is_refused_through_the_gate_naming_it(
+    tmp_path, kind: str, row: dict
+) -> None:
+    path = tmp_path / f"{kind}.jsonl"
+
+    with pytest.raises(RowContractError, match="engine_id 'ollama'.*not a registered"):
+        append_row(path, kind, {**row, "engine_id": "ollama"})  # type: ignore[arg-type]
+
+    assert not path.exists()
+
+
+def test_a_local_row_with_an_unreadable_build_still_validates() -> None:
+    validate_row("runtime", {**COMPLETE_RUNTIME_ROW, "engine_build": None})
+
+
+@pytest.mark.parametrize("build", ["", 10537])
+def test_a_malformed_engine_build_is_refused(build: object) -> None:
+    with pytest.raises(RowContractError, match="malformed engine_build"):
+        validate_row("runtime", {**COMPLETE_RUNTIME_ROW, "engine_build": build})
+
+
+# What a cloud subject's row states for the engine: none produced it.
+_NO_ENGINE = {"engine_id": ENGINE_NOT_APPLICABLE, "engine_build": None}
+
+
+def _cloud_row(provider: str, **changes: object) -> dict:
+    """A complete quality row for a `provider` subject, before `changes`."""
+    return {
+        **COMPLETE_QUALITY_ROW,
+        "provider": provider,
+        "subject_egress": provider,
+        "retry_budget": {provider: 4},
+        "family": provider,
+        "size_class": None,
+        **_NO_ENGINE,
+        **changes,
+    }
+
+
+def test_a_cloud_row_states_the_engine_does_not_apply() -> None:
+    validate_row("quality", _cloud_row("mistral"))
+
+
+def test_a_row_below_the_engine_schema_validates_without_the_engine_fields() -> None:
+    old = {
+        key: value
+        for key, value in COMPLETE_QUALITY_ROW.items()
+        if key not in {"engine_id", "engine_build"}
+    }
+
+    validate_row("quality", {**old, "schema_version": "21"})
+    with pytest.raises(RowContractError, match="engine_build, engine_id"):
+        validate_row("quality", {**old, "schema_version": "22"})
+
+
+def test_a_row_below_the_engine_schema_is_not_held_to_the_registry() -> None:
+    # A "21" row predates the engine fields: whatever it carries under those
+    # keys is not this contract's to judge, and it is never back-filled.
+    validate_row(
+        "quality",
+        {**COMPLETE_QUALITY_ROW, "schema_version": "21", "engine_id": "ollama"},
+    )
+
+
+@pytest.mark.parametrize(
+    ("engine_id", "engine_build"),
+    [
+        ("llama.cpp", "b10537"),
+        ("llama.cpp", None),
+        ("not_applicable", "b10537"),
+        (None, None),
+    ],
+)
+def test_a_cloud_row_never_carries_an_engine(
+    engine_id: object, engine_build: object
+) -> None:
+    cloud = _cloud_row("google", engine_id=engine_id, engine_build=engine_build)
+
+    with pytest.raises(RowContractError, match="produced by no local engine"):
+        validate_row("quality", cloud)
+
+
+def test_an_unreadable_engine_registry_refuses_the_row(monkeypatch) -> None:
+    def unreadable() -> frozenset[str]:
+        raise engines.EngineRegistryError("engine registry not readable")
+
+    monkeypatch.setattr(engines, "registered_engine_ids", unreadable)
+
+    with pytest.raises(RowContractError, match="engine registry cannot be read"):
+        validate_row("runtime", COMPLETE_RUNTIME_ROW)
+
+
+def test_the_schema_version_moved_for_the_suite_level() -> None:
+    # "15" makes every quality row name the level its suite was certified at
+    # and its item's licence, source and source revision. Not conditional:
+    # every suite is certified at some level. Quality rows only -- a runtime
+    # row runs no suite.
+    assert SCHEMA_VERSION == "22"
+    assert set(SUITE_LEVEL_FIELDS) <= REQUIRED_FIELDS["quality"]
+    assert set(SUITE_LEVEL_FIELDS).isdisjoint(REQUIRED_FIELDS["runtime"])
+
+
+SUITE_LEVEL_FIELDS = (
+    "suite_level",
+    "item_licence",
+    "item_source",
+    "item_source_revision",
+)
+
+
+@pytest.mark.parametrize("field", SUITE_LEVEL_FIELDS)
+def test_a_quality_row_missing_a_suite_level_field_is_refused_by_name(field) -> None:
+    row = {k: v for k, v in COMPLETE_QUALITY_ROW.items() if k != field}
+
+    with pytest.raises(RowContractError, match=field):
+        validate_row("quality", row)
+
+
+def test_a_quality_row_with_an_unknown_level_is_refused() -> None:
+    row = {**COMPLETE_QUALITY_ROW, "suite_level": "draft"}
+
+    with pytest.raises(RowContractError, match="suite_level 'draft'"):
+        validate_row("quality", row)
+
+
+_PUBLICATION_ROW = {
+    **COMPLETE_QUALITY_ROW,
+    "suite_level": "publication",
+    "item_licence": "MIT",
+    "item_source": "example-benchmark",
+    "item_source_revision": "abc123",
+}
+
+
+def test_a_publication_row_naming_its_licence_and_source_validates() -> None:
+    validate_row("quality", _PUBLICATION_ROW)
+
+
+@pytest.mark.parametrize("field", SUITE_LEVEL_FIELDS[1:])
+def test_a_publication_row_with_a_null_item_declaration_is_refused(field) -> None:
+    row = {**_PUBLICATION_ROW, field: None}
+
+    with pytest.raises(RowContractError, match=f"{field} is null"):
+        validate_row("quality", row)
+
+
+@pytest.mark.parametrize("value", ["", 7])
+def test_a_malformed_item_declaration_is_refused(value) -> None:
+    row = {**COMPLETE_QUALITY_ROW, "item_licence": value}
+
+    with pytest.raises(RowContractError, match="malformed item_licence"):
+        validate_row("quality", row)
+
+
+PROMPT_VARIANT_FIELDS = (
+    "prompt_variant_id",
+    "prompt_variant_version",
+    "prompt_before_template",
+)
+
+
+@pytest.mark.parametrize("kind", ["runtime", "quality"])
+@pytest.mark.parametrize("field", PROMPT_VARIANT_FIELDS)
+def test_a_row_missing_a_prompt_variant_field_is_refused_by_name(
+    kind: str, field: str
+) -> None:
+    complete = COMPLETE_RUNTIME_ROW if kind == "runtime" else COMPLETE_QUALITY_ROW
+    row = {key: value for key, value in complete.items() if key != field}
+
+    with pytest.raises(RowContractError, match=field):
+        validate_row(kind, row)
+
+
+def test_a_hand_built_baseline_row_with_a_transformed_prompt_is_refused() -> None:
+    # Epic success check 1, the variant half: the row claims `baseline` while
+    # the prompt it carries before templating was transformed -- here, the
+    # authored item with a terse-output instruction appended, which is what an
+    # output-compression variant would have sent.
+    hand_built = {
+        **COMPLETE_QUALITY_ROW,
+        "prompt_before_template": _AUTHORED_PROMPT + "\nAnswer in one word.",
+    }
+
+    with pytest.raises(RowContractError, match="prompt_before_template") as excinfo:
+        validate_row("quality", hand_built)
+
+    # Printed so `pytest -s` publishes the gate's own words as the evidence.
+    print(f"refused: {excinfo.value}")
+
+
+def test_a_baseline_runtime_row_with_a_transformed_fixed_prompt_is_refused() -> None:
+    hand_built = {
+        **COMPLETE_RUNTIME_ROW,
+        "prompt_before_template": FIXED_PROMPT.upper(),
+    }
+
+    with pytest.raises(RowContractError, match="prompt_before_template"):
+        validate_row("runtime", hand_built)
+
+
+def test_a_genuine_baseline_row_of_each_kind_passes() -> None:
+    assert COMPLETE_QUALITY_ROW["prompt_before_template"] == _AUTHORED_PROMPT
+    validate_row("quality", COMPLETE_QUALITY_ROW)
+    validate_row("runtime", COMPLETE_RUNTIME_ROW)
+
+
+def test_an_unregistered_prompt_variant_is_refused_naming_the_field() -> None:
+    row = {**COMPLETE_QUALITY_ROW, "prompt_variant_id": "output_compressed"}
+
+    with pytest.raises(RowContractError, match="prompt_variant_id 'output_compressed'"):
+        validate_row("quality", row)
+
+
+def test_an_unregistered_prompt_variant_version_is_refused_naming_the_field() -> None:
+    row = {**COMPLETE_RUNTIME_ROW, "prompt_variant_version": "2"}
+
+    with pytest.raises(RowContractError, match="prompt_variant_version '2'"):
+        validate_row("runtime", row)
+
+
+@pytest.mark.parametrize(
+    ("changes", "reason"),
+    [
+        ({"suite_id": "an-unknown-suite"}, "not a suite this code defines"),
+        ({"suite_version": "1"}, "is at version"),
+        ({"item_id": "no-such-item"}, "has no item 'no-such-item'"),
+    ],
+)
+def test_a_baseline_row_whose_authored_text_cannot_be_resolved_is_refused(
+    changes: dict, reason: str
+) -> None:
+    # An unresolvable item leaves the claim unchecked, and an unchecked
+    # `baseline` is the label this gate exists to stop trusting.
+    row = {**COMPLETE_QUALITY_ROW, **changes}
+
+    with pytest.raises(RowContractError, match="prompt_before_template") as excinfo:
+        validate_row("quality", row)
+    assert reason in str(excinfo.value)
+
+
+def test_a_registered_non_baseline_variant_is_not_held_to_the_authored_text(
+    monkeypatch,
+) -> None:
+    # The authored-text rule is baseline's own: another variant's job is to
+    # transform the prompt, so its pre-template string differs by design.
+    definition = {"transformation": "identity", "description": "test-only"}
+    registry = prompt_variants.load_registry(
+        [
+            *prompt_variants.REGISTERED_VARIANTS,
+            {
+                "variant_id": "test_variant",
+                "version": "1",
+                "definition": definition,
+                "definition_hash": prompt_variants.definition_hash(definition),
+            },
+        ]
+    )
+    monkeypatch.setattr(prompt_variants, "REGISTRY", registry)
+    row = {
+        **COMPLETE_QUALITY_ROW,
+        "prompt_variant_id": "test_variant",
+        "prompt_before_template": "anything at all",
+    }
+
+    validate_row("quality", row)
+
+
+# --------------------------------------------------------------------------
+# Subject egress (schema "16"): where the subject prompt went, on every row.
+
+
+def test_the_schema_version_moved_for_the_subject_egress() -> None:
+    # "16" makes every row of either kind state where its subject prompt went.
+    # Not conditional: every row was produced by sending a prompt somewhere.
+    assert SCHEMA_VERSION == "22"
+    for kind in ("runtime", "quality"):
+        assert "subject_egress" in REQUIRED_FIELDS[kind]
+    # The subject field is not a member of the judge block, and the judge
+    # block's own egress record keeps its shape.
+    assert "subject_egress" not in JUDGED_FIELDS
+    assert "subject_egress" not in JUDGE_EGRESS_FIELDS
+
+
+def _complete_row(kind: str) -> dict:
+    return dict(COMPLETE_RUNTIME_ROW if kind == "runtime" else COMPLETE_QUALITY_ROW)
+
+
+@pytest.mark.parametrize("kind", ["runtime", "quality"])
+def test_a_row_missing_its_subject_egress_is_refused_by_name(kind: str) -> None:
+    row = {k: v for k, v in _complete_row(kind).items() if k != "subject_egress"}
+
+    with pytest.raises(RowContractError, match="subject_egress"):
+        validate_row(kind, row)
+
+
+@pytest.mark.parametrize("kind", ["runtime", "quality"])
+def test_a_row_with_a_null_subject_egress_is_refused_by_name(kind: str) -> None:
+    row = {**_complete_row(kind), "subject_egress": None}
+
+    with pytest.raises(RowContractError, match="subject_egress null"):
+        validate_row(kind, row)
+
+
+@pytest.mark.parametrize("kind", ["runtime", "quality"])
+@pytest.mark.parametrize("value", ["", "  ", 7, True])
+def test_a_malformed_subject_egress_is_refused(kind: str, value: object) -> None:
+    row = {**_complete_row(kind), "subject_egress": value}
+
+    with pytest.raises(RowContractError, match="malformed subject_egress"):
+        validate_row(kind, row)
+
+
+@pytest.mark.parametrize("kind", ["runtime", "quality"])
+def test_the_writer_gate_appends_nothing_for_a_row_without_subject_egress(
+    kind: str, tmp_path: Path
+) -> None:
+    path = tmp_path / "rows.jsonl"
+    row = {k: v for k, v in _complete_row(kind).items() if k != "subject_egress"}
+
+    with pytest.raises(RowContractError, match="subject_egress"):
+        append_row(path, kind, row)
+
+    assert not path.exists()
+
+
+def test_a_runtime_row_recording_none_validates() -> None:
+    assert COMPLETE_RUNTIME_ROW["subject_egress"] == "none"
+    validate_row("runtime", COMPLETE_RUNTIME_ROW)
+
+
+@pytest.mark.parametrize("egress", ["mistral", "google"])
+def test_a_runtime_row_recording_a_provider_is_refused(egress: str) -> None:
+    row = {**COMPLETE_RUNTIME_ROW, "subject_egress": egress}
+
+    with pytest.raises(RowContractError, match=f"subject_egress {egress!r}"):
+        validate_row("runtime", row)
+
+
+def test_a_local_quality_row_recording_none_validates() -> None:
+    assert COMPLETE_QUALITY_ROW["provider"] == "local"
+    assert COMPLETE_QUALITY_ROW["subject_egress"] == "none"
+    validate_row("quality", COMPLETE_QUALITY_ROW)
+
+
+@pytest.mark.parametrize("provider", ["mistral", "google"])
+def test_a_cloud_quality_row_recording_its_provider_validates(provider: str) -> None:
+    validate_row(
+        "quality",
+        {
+            **COMPLETE_QUALITY_ROW,
+            "provider": provider,
+            "subject_egress": provider,
+            "retry_budget": {provider: 4},
+            "family": provider,
+            "size_class": None,
+            **_NO_ENGINE,
+        },
+    )
+
+
+@pytest.mark.parametrize("egress", ["mistral", "google"])
+def test_a_local_quality_row_recording_a_provider_is_refused(egress: str) -> None:
+    row = {**COMPLETE_QUALITY_ROW, "subject_egress": egress}
+
+    with pytest.raises(RowContractError) as excinfo:
+        validate_row("quality", row)
+
+    message = str(excinfo.value)
+    assert f"subject_egress {egress!r}" in message
+    assert "provider 'local'" in message
+
+
+@pytest.mark.parametrize("provider", ["mistral", "google"])
+def test_a_cloud_quality_row_recording_none_is_refused(provider: str) -> None:
+    row = {**COMPLETE_QUALITY_ROW, "provider": provider, "subject_egress": "none"}
+
+    with pytest.raises(RowContractError) as excinfo:
+        validate_row("quality", row)
+
+    message = str(excinfo.value)
+    assert "subject_egress 'none'" in message
+    assert f"provider {provider!r}" in message
+
+
+def test_a_cloud_quality_row_recording_another_provider_is_refused() -> None:
+    row = {**COMPLETE_QUALITY_ROW, "provider": "mistral", "subject_egress": "google"}
+
+    with pytest.raises(RowContractError, match="subject_egress 'google'"):
+        validate_row("quality", row)
+
+
+def test_subject_egress_for_maps_local_to_none_and_a_cloud_provider_to_itself() -> None:
+    assert subject_egress_for("local") == "none"
+    assert subject_egress_for("mistral") == "mistral"
+    assert subject_egress_for("google") == "google"
+
+
+def test_a_judged_row_keeps_its_judge_egress_beside_the_subject_egress() -> None:
+    # A local subject judged by two cloud judges: the subject prompt stayed on
+    # the machine, the item left it for judging. Two facts, two fields, and
+    # neither is merged into the other.
+    row = COMPLETE_JUDGED_QUALITY_ROW
+    assert row["subject_egress"] == "none"
+    assert row["judge_egress"]["item_left_machine"] is True
+    assert set(row["judge_egress"]) == JUDGE_EGRESS_FIELDS
+
+    validate_row("quality", row)
+
+
+def test_the_schema_version_moved_for_the_retry_budget_and_partial_batches() -> None:
+    # "17" makes every quality row name the retry budget its batch ran under
+    # and whether that batch was left partial. The runtime row makes no cloud
+    # call and has no resume, so it is untouched.
+    assert SCHEMA_VERSION == "22"
+    for field in ("retry_budget", "partial_failure"):
+        assert field in REQUIRED_FIELDS["quality"]
+        assert field not in REQUIRED_FIELDS["runtime"]
+
+
+@pytest.mark.parametrize("field", ["retry_budget", "partial_failure"])
+def test_a_quality_row_without_a_schema_17_field_is_refused_by_name(field: str) -> None:
+    row = {key: value for key, value in COMPLETE_QUALITY_ROW.items() if key != field}
+
+    with pytest.raises(RowContractError, match=field):
+        validate_row("quality", row)
+
+
+@pytest.mark.parametrize(
+    "budget",
+    [None, [], {"mistral": -1}, {"mistral": True}, {"mistral": 1.5}, {"": 3}],
+)
+def test_a_malformed_retry_budget_is_refused(budget: object) -> None:
+    row = {**COMPLETE_QUALITY_ROW, "retry_budget": budget}
+
+    with pytest.raises(RowContractError, match="retry_budget"):
+        validate_row("quality", row)
+
+
+def test_a_cloud_row_that_does_not_name_its_own_providers_budget_is_refused() -> None:
+    row = {
+        **COMPLETE_QUALITY_ROW,
+        "provider": "mistral",
+        "subject_egress": "mistral",
+        "retry_budget": {"google": 4},
+        **_NO_ENGINE,
+    }
+
+    with pytest.raises(RowContractError, match="no retry_budget entry for it"):
+        validate_row("quality", row)
+
+
+def test_a_row_whose_retries_exceed_its_providers_budget_is_refused() -> None:
+    row = {
+        **COMPLETE_QUALITY_ROW,
+        "provider": "google",
+        "subject_egress": "google",
+        "retry_budget": {"google": 2},
+        "retries": 3,
+        **_NO_ENGINE,
+    }
+
+    with pytest.raises(RowContractError, match="above its provider's retry_budget"):
+        validate_row("quality", row)
+
+
+_PARTIAL = {"provider": "mistral", "item_id": "billing-02", "reason": "429"}
+
+
+def test_a_partial_row_naming_its_failure_and_carrying_no_score_validates() -> None:
+    validate_row(
+        "quality",
+        {
+            **COMPLETE_QUALITY_ROW,
+            "partial_failure": dict(_PARTIAL),
+            "suite_accuracy": None,
+            "language_breakdown": None,
+            "score_interval": None,
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "429",
+        {"provider": "mistral", "item_id": "billing-02"},
+        {"provider": "", "item_id": "billing-02", "reason": "429"},
+        {"provider": "mistral", "item_id": None, "reason": "429"},
+    ],
+)
+def test_a_malformed_partial_failure_is_refused(failure: object) -> None:
+    row = {
+        **COMPLETE_QUALITY_ROW,
+        "partial_failure": failure,
+        "suite_accuracy": None,
+        "language_breakdown": None,
+    }
+
+    with pytest.raises(RowContractError, match="partial_failure"):
+        validate_row("quality", row)
+
+
+def test_a_partial_row_publishing_a_suite_score_is_refused_by_name() -> None:
+    # A mean over the items that finished before the failure is a biased
+    # sample, not a partial score.
+    row = {
+        **COMPLETE_QUALITY_ROW,
+        "partial_failure": dict(_PARTIAL),
+        "language_breakdown": None,
+    }
+
+    with pytest.raises(RowContractError, match="suite_accuracy"):
+        validate_row("quality", row)
+
+
+def test_a_partial_graded_row_validates_with_its_suite_score_null() -> None:
+    validate_row(
+        "quality",
+        {
+            **COMPLETE_GRADED_QUALITY_ROW,
+            "partial_failure": dict(_PARTIAL),
+            "suite_score": None,
+            "score_breakdown": None,
+            "score_interval": None,
+        },
+    )
+
+
+def test_a_complete_graded_row_with_a_null_suite_score_is_still_refused() -> None:
+    row = {**COMPLETE_GRADED_QUALITY_ROW, "suite_score": None}
+
+    with pytest.raises(RowContractError, match="suite_score"):
+        validate_row("quality", row)
+
+
+def test_a_partial_judged_row_publishing_a_headline_is_refused_by_name() -> None:
+    row = {
+        **COMPLETE_JUDGED_QUALITY_ROW,
+        "partial_failure": dict(_PARTIAL),
+        "suite_accuracy": None,
+        "language_breakdown": None,
+        "judged_headline_score": 4.0,
+    }
+
+    with pytest.raises(RowContractError, match="judged_headline_score"):
+        validate_row("quality", row)
+
+
+# --------------------------------------------------------------------------
+# Schema "18": the item's own tokens and first-token time
+
+
+def test_the_schema_version_moved_for_the_per_item_measurement() -> None:
+    # "18" puts each item's own tokens, engine-reported TTFT and cached prompt
+    # tokens on every quality row (Q24 (a)); the runtime row keeps its
+    # Methodology 6 aggregate and is untouched.
+    assert SCHEMA_VERSION == "22"
+    assert ITEM_MEASUREMENT_FIELDS <= REQUIRED_FIELDS["quality"]
+    assert ITEM_MEASUREMENT_FIELDS.isdisjoint(REQUIRED_FIELDS["runtime"])
+
+
+def test_the_row_block_the_writers_build_is_exactly_the_contracts() -> None:
+    block = quality_rows.item_measurement_fields(
+        timings.parse_item_measurement({}), first_in_batch=False
+    )
+
+    assert set(block) == ITEM_MEASUREMENT_FIELDS
+    validate_row("quality", {**COMPLETE_QUALITY_ROW, **block})
+
+
+@pytest.mark.parametrize("field", sorted(ITEM_MEASUREMENT_FIELDS))
+def test_a_quality_row_missing_a_per_item_field_is_refused_by_name(field) -> None:
+    row = {k: v for k, v in COMPLETE_QUALITY_ROW.items() if k != field}
+
+    with pytest.raises(RowContractError, match=field):
+        validate_row("quality", row)
+
+
+@pytest.mark.parametrize(
+    "field", ["item_tokens_in", "item_tokens_out", "item_prompt_tokens_cached"]
+)
+def test_a_null_value_without_its_reason_is_refused(field) -> None:
+    row = {**COMPLETE_QUALITY_ROW, field: None}
+
+    with pytest.raises(RowContractError, match=f"{field} null"):
+        validate_row("quality", row)
+
+
+def test_a_null_ttft_with_its_reason_and_no_source_validates() -> None:
+    validate_row(
+        "quality",
+        {
+            **COMPLETE_QUALITY_ROW,
+            "item_ttft_ms": None,
+            "item_ttft_ms_null_reason": "not_reported_by_engine",
+            "item_ttft_source": None,
+        },
+    )
+
+
+def test_a_reported_value_beside_a_null_reason_is_refused() -> None:
+    row = {
+        **COMPLETE_QUALITY_ROW,
+        "item_tokens_out_null_reason": "not_reported_by_engine",
+    }
+
+    with pytest.raises(RowContractError, match="item_tokens_out=2 beside"):
+        validate_row("quality", row)
+
+
+def test_an_unknown_null_reason_is_refused() -> None:
+    row = {
+        **COMPLETE_QUALITY_ROW,
+        "item_tokens_in": None,
+        "item_tokens_in_null_reason": "zero",
+    }
+
+    with pytest.raises(RowContractError, match="item_tokens_in null"):
+        validate_row("quality", row)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("item_tokens_in", -1),
+        ("item_tokens_out", 2.5),
+        ("item_prompt_tokens_cached", True),
+        ("item_ttft_ms", "13.7"),
+        ("item_ttft_ms", -0.1),
+    ],
+)
+def test_a_malformed_per_item_value_is_refused(field, value) -> None:
+    row = {**COMPLETE_QUALITY_ROW, field: value}
+
+    with pytest.raises(RowContractError, match=f"malformed {field}"):
+        validate_row("quality", row)
+
+
+def test_a_ttft_must_name_a_recognised_source() -> None:
+    row = {**COMPLETE_QUALITY_ROW, "item_ttft_source": "stopwatch"}
+
+    with pytest.raises(RowContractError, match="unrecognised item_ttft_source"):
+        validate_row("quality", row)
+
+
+def test_a_source_without_a_ttft_is_refused() -> None:
+    row = {
+        **COMPLETE_QUALITY_ROW,
+        "item_ttft_ms": None,
+        "item_ttft_ms_null_reason": "not_reported_by_provider",
+    }
+
+    with pytest.raises(RowContractError, match="item_ttft_source"):
+        validate_row("quality", row)
+
+
+def test_the_measurement_kind_is_the_single_generation_label() -> None:
+    row = {**COMPLETE_QUALITY_ROW, "item_measurement_kind": "median_of_5"}
+
+    with pytest.raises(RowContractError, match="item_measurement_kind"):
+        validate_row("quality", row)
+
+
+def test_the_first_generation_mark_is_a_boolean() -> None:
+    row = {**COMPLETE_QUALITY_ROW, "item_first_in_batch": None}
+
+    with pytest.raises(RowContractError, match="item_first_in_batch"):
+        validate_row("quality", row)
+
+
+# --------------------------------------------------------------------------
+# Schema "19": the subject's family and size class
+
+
+def test_the_schema_version_moved_for_the_subject_composition() -> None:
+    # "19" puts the subject's family and size class on every quality row; the
+    # runtime row is untouched.
+    assert int(SCHEMA_VERSION) >= 19
+    assert SUBJECT_COMPOSITION_SCHEMA_VERSION == "19"
+    assert SUBJECT_COMPOSITION_FIELDS == {"family", "size_class"}
+    assert SUBJECT_COMPOSITION_FIELDS <= REQUIRED_FIELDS["quality"]
+    assert SUBJECT_COMPOSITION_FIELDS.isdisjoint(REQUIRED_FIELDS["runtime"])
+
+
+@pytest.mark.parametrize("field", ["family", "size_class"])
+def test_a_quality_row_without_family_or_size_class_is_refused_at_19(field) -> None:
+    row = {k: v for k, v in COMPLETE_QUALITY_ROW.items() if k != field}
+
+    with pytest.raises(RowContractError, match=field):
+        validate_row("quality", row)
+
+
+def test_an_earlier_version_row_without_either_field_still_validates() -> None:
+    row = {
+        k: v
+        for k, v in COMPLETE_QUALITY_ROW.items()
+        if k not in SUBJECT_COMPOSITION_FIELDS
+    }
+
+    validate_row("quality", {**row, "schema_version": "18"})
+
+
+@pytest.mark.parametrize("version", ["19", "20", "not-a-version", None])
+def test_a_row_at_or_past_19_or_with_no_readable_version_owes_both(version) -> None:
+    row = {k: v for k, v in COMPLETE_QUALITY_ROW.items() if k != "size_class"}
+
+    with pytest.raises(RowContractError, match="size_class"):
+        validate_row("quality", {**row, "schema_version": version})
+
+
+@pytest.mark.parametrize("family", ["gemma", None, "", ["qwen"]])
+def test_an_unknown_family_is_refused_by_value(family) -> None:
+    with pytest.raises(RowContractError, match="has family"):
+        validate_row("quality", {**COMPLETE_QUALITY_ROW, "family": family})
+
+
+@pytest.mark.parametrize("size_class", ["8B", "~8b-and-up", 4])
+def test_an_unknown_size_class_is_refused_by_value(size_class) -> None:
+    with pytest.raises(RowContractError, match="has size_class"):
+        validate_row("quality", {**COMPLETE_QUALITY_ROW, "size_class": size_class})
+
+
+def test_a_local_row_whose_entry_declares_no_class_records_null() -> None:
+    validate_row("quality", {**COMPLETE_QUALITY_ROW, "size_class": None})
+
+
+def test_a_cloud_row_with_a_size_class_is_refused() -> None:
+    row = {
+        **COMPLETE_QUALITY_ROW,
+        "provider": "mistral",
+        "subject_egress": "mistral",
+        "model_id": "mistral-small-2603",
+        "family": "mistral",
+        "retry_budget": {"mistral": 4},
+        **_NO_ENGINE,
+    }
+
+    validate_row("quality", {**row, "size_class": None})
+    with pytest.raises(RowContractError, match="a cloud subject has no size class"):
+        validate_row("quality", row)
+
+
+def _entry(**changes) -> roster.RosterEntry:
+    base = roster.RosterEntry(
+        entry_id="flagship",
+        repo="r",
+        revision="main",
+        file="f.gguf",
+        display_id="Qwen3.6-35B-A3B",
+        quant="q",
+        sha256="0" * 64,
+        architecture=roster.Architecture("moe", 40, 3.1),
+        server_flags={},
+        validated_host={},
+        size_class="~8B-and-up",
+    )
+    return dataclasses.replace(base, **changes)
+
+
+def test_the_writers_block_names_the_local_subject_and_its_class() -> None:
+    # The flagship declares no family of its own: it resolves through the
+    # in-code fallback, with no exception carved out.
+    block = quality_rows.subject_composition_fields(
+        "Qwen3.6-35B-A3B", "local", _entry()
+    )
+
+    assert block == {"family": "qwen", "size_class": "~8B-and-up"}
+    validate_row("quality", {**COMPLETE_QUALITY_ROW, **block})
+
+
+def test_the_writers_block_names_a_cloud_subject_by_its_own_family() -> None:
+    # The cloud row cites the local entry it ran beside; the family it carries
+    # is still its own model's, never the entry's.
+    block = quality_rows.subject_composition_fields(
+        "gemini-3.5-flash-lite", "google", _entry()
+    )
+
+    assert block == {"family": "google", "size_class": None}
+
+
+# Schema "20": the harness that ran the row, its version and its overhead
+
+
+def test_the_schema_version_moved_for_the_harness_fields() -> None:
+    # "20" puts the harness id, its installed version and its per-call prompt
+    # overhead on every quality row; the runtime row is untouched.
+    assert SCHEMA_VERSION == "22"
+    assert HARNESS_SCHEMA_VERSION == "20"
+    assert HARNESS_FIELDS == {
+        "harness_id",
+        "harness_version",
+        "harness_prompt_overhead",
+    }
+    assert HARNESS_FIELDS <= REQUIRED_FIELDS["quality"]
+    assert HARNESS_FIELDS.isdisjoint(REQUIRED_FIELDS["runtime"])
+
+
+def test_a_direct_fixture_row_carrying_all_three_validates() -> None:
+    # Built by the writers' own block: the engine received 57 prompt tokens,
+    # the item's own rendered prompt counts 57 under the same tokenizer.
+    measurement = timings.parse_item_measurement(
+        {"usage": {"prompt_tokens": 57, "completion_tokens": 2}}
+    )
+    block = quality_rows.direct_harness_fields(measurement, 57)
+
+    assert block == {
+        "harness_id": "direct",
+        "harness_version": harness.harness_version("direct"),
+        "harness_prompt_overhead": {"tokens": 0, "null_reason": None},
+    }
+    validate_row("quality", {**COMPLETE_QUALITY_ROW, **block})
+
+
+@pytest.mark.parametrize(
+    "harness_id", ["crewai", "autogen", "Direct", "llama-index", "", None, 1]
+)
+def test_a_row_naming_a_harness_outside_the_five_is_refused(harness_id) -> None:
+    with pytest.raises(RowContractError, match="has harness_id"):
+        validate_row("quality", {**COMPLETE_QUALITY_ROW, "harness_id": harness_id})
+
+
+@pytest.mark.parametrize(
+    "harness_id", ["direct", "smolagents", "langgraph", "pydantic-ai", "llamaindex"]
+)
+def test_each_of_the_five_candidates_is_accepted(harness_id) -> None:
+    validate_row("quality", {**COMPLETE_QUALITY_ROW, "harness_id": harness_id})
+
+
+@pytest.mark.parametrize("field", sorted(HARNESS_FIELDS))
+def test_a_quality_row_without_a_harness_field_is_refused_by_name(field) -> None:
+    row = {k: v for k, v in COMPLETE_QUALITY_ROW.items() if k != field}
+
+    with pytest.raises(RowContractError, match=field):
+        validate_row("quality", row)
+
+
+def test_an_earlier_version_row_without_the_harness_fields_still_validates() -> None:
+    row = {k: v for k, v in COMPLETE_QUALITY_ROW.items() if k not in HARNESS_FIELDS}
+
+    validate_row("quality", {**row, "schema_version": "19"})
+
+
+@pytest.mark.parametrize("version", ["20", "21", "not-a-version", None])
+def test_a_row_at_or_past_20_or_with_no_readable_version_owes_them(version) -> None:
+    row = {
+        k: v for k, v in COMPLETE_QUALITY_ROW.items() if k != "harness_prompt_overhead"
+    }
+
+    with pytest.raises(RowContractError, match="harness_prompt_overhead"):
+        validate_row("quality", {**row, "schema_version": version})
+
+
+@pytest.mark.parametrize("version", [None, "", 2])
+def test_a_harness_version_that_was_not_read_is_refused(version) -> None:
+    with pytest.raises(RowContractError, match="has harness_version"):
+        validate_row("quality", {**COMPLETE_QUALITY_ROW, "harness_version": version})
+
+
+@pytest.mark.parametrize(
+    "overhead",
+    [
+        None,
+        0,
+        "unmeasurable",
+        {"tokens": 0},
+        {"tokens": 0, "null_reason": None, "unit": "tokens"},
+    ],
+)
+def test_an_overhead_that_is_not_the_two_key_object_is_refused(overhead) -> None:
+    with pytest.raises(RowContractError, match="exactly tokens and null_reason"):
+        validate_row(
+            "quality", {**COMPLETE_QUALITY_ROW, "harness_prompt_overhead": overhead}
+        )
+
+
+@pytest.mark.parametrize("tokens", [-1, 1.5, True, "3"])
+def test_an_overhead_count_that_is_not_a_non_negative_integer_is_refused(
+    tokens,
+) -> None:
+    overhead = {"tokens": tokens, "null_reason": None}
+
+    with pytest.raises(RowContractError, match="non-negative token count"):
+        validate_row(
+            "quality", {**COMPLETE_QUALITY_ROW, "harness_prompt_overhead": overhead}
+        )
+
+
+def test_a_measured_overhead_beside_a_null_reason_is_refused() -> None:
+    overhead = {"tokens": 4, "null_reason": "unmeasurable"}
+
+    with pytest.raises(RowContractError, match="a measured overhead has no reason"):
+        validate_row(
+            "quality", {**COMPLETE_QUALITY_ROW, "harness_prompt_overhead": overhead}
+        )
+
+
+@pytest.mark.parametrize("reason", [None, "zero", "not_measured"])
+def test_a_null_overhead_without_a_known_reason_is_refused(reason) -> None:
+    overhead = {"tokens": None, "null_reason": reason}
+
+    with pytest.raises(RowContractError, match="null harness_prompt_overhead"):
+        validate_row(
+            "quality", {**COMPLETE_QUALITY_ROW, "harness_prompt_overhead": overhead}
+        )
+
+
+@pytest.mark.parametrize("reason", sorted(harness.OVERHEAD_NULL_REASONS))
+def test_a_null_overhead_with_its_reason_validates(reason) -> None:
+    overhead = {"tokens": None, "null_reason": reason}
+
+    validate_row(
+        "quality", {**COMPLETE_QUALITY_ROW, "harness_prompt_overhead": overhead}
+    )
+
+
+def test_a_harness_the_rule_cannot_measure_writes_unmeasurable_not_zero(
+    monkeypatch,
+) -> None:
+    # A fixture harness that rewrites the item's prompt: the engine's count is
+    # known, the item's too, and still no number is published. Its package is
+    # pointed at one this environment has, so the version read is real.
+    monkeypatch.setitem(harness.HARNESS_DISTRIBUTIONS, "smolagents", "pytest")
+    overhead = harness.prompt_overhead(
+        engine_prompt_tokens=57,
+        engine_null_reason=None,
+        item_prompt_tokens=57,
+        wraps_item_prompt=False,
+    )
+    row = {
+        **COMPLETE_QUALITY_ROW,
+        **harness.row_fields("smolagents", overhead),
+    }
+
+    assert row["harness_prompt_overhead"] == {
+        "tokens": None,
+        "null_reason": "unmeasurable",
+    }
+    validate_row("quality", row)
+
+
+# --- score_interval (schema "21") -----------------------------------------
+
+
+def test_the_interval_block_is_owed_from_schema_21_on_quality_rows_only() -> None:
+    assert SCORE_INTERVAL_SCHEMA_VERSION == "21"
+    assert SCORE_INTERVAL_FIELDS == {"score_interval"}
+    assert SCORE_INTERVAL_FIELDS <= REQUIRED_FIELDS["quality"]
+    assert SCORE_INTERVAL_FIELDS.isdisjoint(REQUIRED_FIELDS["runtime"])
+    assert "score_interval" in PARTIAL_NULL_SCORE_FIELDS
+
+
+def test_a_schema_21_row_without_its_interval_is_refused_by_name() -> None:
+    row = {k: v for k, v in COMPLETE_QUALITY_ROW.items() if k != "score_interval"}
+    with pytest.raises(RowContractError, match="score_interval"):
+        validate_row("quality", row)
+
+
+def test_a_row_below_schema_21_validates_without_an_interval() -> None:
+    row = {k: v for k, v in COMPLETE_QUALITY_ROW.items() if k != "score_interval"}
+    validate_row("quality", {**row, "schema_version": "20"})
+
+
+def _with_suite_cell(**cell: object) -> dict:
+    block = COMPLETE_QUALITY_ROW["score_interval"]
+    return {
+        **COMPLETE_QUALITY_ROW,
+        "score_interval": {**block, "suite": {**block["suite"], **cell}},
+    }
+
+
+def test_a_defined_interval_cell_validates() -> None:
+    validate_row(
+        "quality",
+        _with_suite_cell(
+            lower=0.9, upper=1.0, minimum_detectable_effect=0.05, null_reason=None
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "cell",
+    [
+        # A value beside a reason.
+        {"lower": 0.9, "upper": 1.0, "minimum_detectable_effect": 0.05},
+        # A reason outside the closed set.
+        {"null_reason": "too_small"},
+        # Neither values nor a reason.
+        {"null_reason": None},
+        # A boolean is not a bound.
+        {
+            "lower": True,
+            "upper": 1.0,
+            "minimum_detectable_effect": 0.0,
+            "null_reason": None,
+        },
+    ],
+)
+def test_an_interval_cell_is_values_or_one_reason_never_both(cell: dict) -> None:
+    with pytest.raises(RowContractError, match="score_interval suite cell"):
+        validate_row("quality", _with_suite_cell(**cell))
+
+
+@pytest.mark.parametrize("n", [-1, True, "1"])
+def test_an_interval_cell_counts_its_items(n: object) -> None:
+    with pytest.raises(RowContractError, match="score_interval suite n="):
+        validate_row("quality", _with_suite_cell(n=n))
+
+
+@pytest.mark.parametrize(
+    ("key", "value", "match"),
+    [
+        ("resamples", 100, "resamples=100"),
+        ("confidence_level", 0.9, "confidence_level=0.9"),
+        ("method", "bca", "method='bca'"),
+        ("draw_procedure_id", "other/1", "draw_procedure_id='other/1'"),
+        ("seed", "7", "seed '7'"),
+        ("generator", {"library": "numpy"}, "generator"),
+        ("by_language", {"en": {}}, "by_language"),
+        ("suite", None, "suite cell None"),
+    ],
+)
+def test_a_malformed_interval_header_is_refused_naming_it(
+    key: str, value: object, match: str
+) -> None:
+    block = {**COMPLETE_QUALITY_ROW["score_interval"], key: value}
+    with pytest.raises(RowContractError, match=match):
+        validate_row("quality", {**COMPLETE_QUALITY_ROW, "score_interval": block})
+
+
+def test_an_interval_block_missing_a_key_is_refused() -> None:
+    block = dict(COMPLETE_QUALITY_ROW["score_interval"])
+    del block["seed"]
+    with pytest.raises(RowContractError, match="carrying exactly"):
+        validate_row("quality", {**COMPLETE_QUALITY_ROW, "score_interval": block})
+
+
+def test_a_published_score_without_its_interval_is_refused() -> None:
+    with pytest.raises(RowContractError, match="null score_interval"):
+        validate_row("quality", {**COMPLETE_QUALITY_ROW, "score_interval": None})
+
+
+def test_an_interval_beside_no_published_score_is_refused() -> None:
+    row = {**COMPLETE_QUALITY_ROW, "suite_accuracy": None, "language_breakdown": None}
+    with pytest.raises(RowContractError, match="beside no suite score"):
+        validate_row("quality", row)
+
+
+def test_a_partial_row_carrying_an_interval_is_refused() -> None:
+    row = {
+        **COMPLETE_QUALITY_ROW,
+        "partial_failure": dict(_PARTIAL),
+        "suite_accuracy": None,
+        "language_breakdown": None,
+    }
+    with pytest.raises(RowContractError, match="is partial but carries score_interval"):
+        validate_row("quality", row)
+
+
+@pytest.mark.parametrize(
+    "cell",
+    [
+        {"n": 1, "null_reason": "no_items"},
+        {"n": 0, "null_reason": "zero_width"},
+        {
+            "n": 0,
+            "lower": 0.5,
+            "upper": 0.9,
+            "minimum_detectable_effect": 0.2,
+            "null_reason": None,
+        },
+    ],
+)
+def test_an_interval_reason_is_only_the_one_its_item_count_names(cell: dict) -> None:
+    with pytest.raises(RowContractError, match=r"n=\d"):
+        validate_row("quality", _with_suite_cell(**cell))

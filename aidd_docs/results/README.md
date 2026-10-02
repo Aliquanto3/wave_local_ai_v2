@@ -36,6 +36,138 @@ runs in a quiet thermal window, two quality runs, the validator proof, this READ
 tables rebuilt), filed in `aidd_docs/backlog/tech-debt.md`, not something a schema bump
 does to the published bytes on its way past.
 
+## The bundle as five flat tables (`wave-local-ai-v2-export`)
+
+`uv run wave-local-ai-v2-export --output-dir <dir>` reads the five parts above plus the
+analysis records in `comparisons/` and `leader-sets/` (by default the committed reference
+files and directories, never the untracked `runtime.jsonl` / `quality.jsonl` unless
+`--runtime-rows` / `--quality-rows` point at them; `--comparisons-dir` / `--leader-sets-dir`
+name other record directories) and writes seven CSV files into `<dir>`. It
+runs no benchmark, changes no bundle file, refuses to write into a bundle directory, and
+uses the standard library alone.
+
+| File | One row per | What it holds |
+| ---- | ----------- | ------------- |
+| `quality_items.csv` | quality row | every row field, nested blocks as named columns (`sampling_seed`, `language_breakdown_en_accuracy`, `failure_counts_unparseable`, `verdict_verdict`, ...), the cited fiche as `fiche_*`, the cited roster entry's model fields as `roster_entry_*` plus `roster_file_version`, and the cited suite definition as `suite_definition_*` |
+| `runtime_aggregates.csv` | runtime row | the same, minus the suite; the per-repetition arrays (`repetitions`, `warmup_repetitions`, `verdict.reference_repetitions`) stay in the bundle |
+| `fiches.csv` | stored fiche | `fiche_hash` (the file name) and every fiche field |
+| `roster.csv` | roster entry | every entry field, launch flags, validated host, licence block and language claim included |
+| `comparison_records.csv` | comparison-family record, comparison, leader-set record, leader-set subject | `record_kind` names which and `record_file` the record's file; the family record's fields as `family_*` (on its comparisons' rows too, so each comparison carries its family), the comparison's as `comparison_*` (`result_*` for the test block), the leader-set record's as `leader_set_*` (on its subjects' rows too), the subject's as `subject_*` |
+| `column_dictionary.csv` | column | `table`, `column`, `carried`, `source`, `meaning`, `unit`, `empty_cell`, `owner` |
+| `bundle_manifest.csv` | bundle part | the path read, entries read, and the version values the part carries (`record_version` for the two record directories) |
+
+Read one table with no join: every pointer a row cites is resolved into columns of that row.
+
+**The schema it declares is the one it read.** `bundle_manifest.csv` states the distinct
+`schema_version` values each row file carries -- `7` for both today -- read from the bytes,
+not from `row_contract.SCHEMA_VERSION`; each row also keeps its own `schema_version` column.
+A regenerated bundle declares its own version with no code change. The roster gap is shown,
+not reconciled: rows state `roster_version` `1`, the roster file they resolve against is
+`roster_file_version` `4`.
+
+**Absence stays absence.** An empty cell is either a recorded `null` or a field the source
+does not carry; the row's last column, `fields_not_carried`, lists the columns whose
+emptiness means "not carried", so the two stay apart without a `null` token turning a numeric
+column into text. Each dictionary entry states what an empty cell means in that column.
+
+**The dictionary and the tables agree both ways.** Every `carried=true` entry is a header of
+its table and every header has one entry (`tests/test_bundle_export.py`). `carried=false`
+entries name what the bundle read does not hold, with an owner: the row-contract fields
+added after `"7"` (`retries`, `resumed`, `thinking_policy`, the prompt-variant, graded and
+judge blocks, the energy-window fields, the suite level and the item licence, source and
+source revision, the subject egress, and `score_interval` from `"21"`, whose owner cell names
+`a-score-is-published-with-its-interval-a-difference-with-its-test`), the per-repetition
+arrays, and each record kind (`comparison_family`, `comparison`, `leader_set`) the record
+directories read do not hold. A bundle whose rows carry the interval has its block as
+`score_interval_*` columns (header, then `suite_*` and `by_language_<lang>_*` cells); a row
+written before `"21"` shows them empty and listed in its `fields_not_carried`, a partial or
+judge-probe row shows them empty as a recorded null: never a zero, never back-filled.
+A row field the dictionary does not describe, an unresolved pointer or a non-finite float
+refuses the whole export before anything is written.
+
+**The fifth table flattens the analysis records and computes nothing.** Every cell of
+`comparison_records.csv` is a value a record in `comparisons/` or `leader-sets/` holds, at
+the path the dictionary's `source` names; no p-value, adjustment or leader set is derived
+during the export. A refused comparison is a row with its `comparison_refusal` cell and,
+from `record_version` `2`, `comparison_adjusted_p_value_null_reason` `comparison_refused`;
+a leader-set subject not compared is a row with its `subject_not_compared_reason`. A
+superseded family record stays a row: the record superseding it lists its id in
+`family_supersedes`, and the current family is the one no row lists there. Lists
+(`refusal`, `paired_values`, `supersedes`, ...) are compact JSON cells; columns a row's kind
+does not carry are empty and listed in its `fields_not_carried`. The meaning, unit and null
+reasons of the record fields are defined by the statistics epic beside the code that writes
+the records (`comparison.FAMILY_RECORD_FIELDS`, `comparison.COMPARISON_RECORD_FIELDS`,
+`leader_set.LEADER_SET_RECORD_FIELDS`, `leader_set.SUBJECT_RECORD_FIELDS`) and read by the
+export, never redefined there: each record column's `owner` cell names that epic and module,
+and its `empty_cell` states the row-kind case followed by the field's own null reasons
+(`tests/test_bundle_export.py` fails on a dictionary entry that differs from the
+definition). A record citing a `run_id` the quality rows
+read do not hold, a leader set citing a family record not read, a `supersedes` id naming no
+record read, a malformed record, or a file in a record directory that is not a record of that
+directory's type refuses the export. A record directory that does not exist holds no record
+of its kind: the table is written as its header, the kinds are named `carried=false`, and
+the manifest lists the path with 0 entries. Over the committed bundle: 14 rows (4 family records, 7 comparisons, 1
+leader set, 2 subjects), 96 columns; the run is in
+`aidd_docs/tasks/2026_10/2026_10_01_comparison-and-leader-records-fifth-table/evidence/`.
+
+**The format is pinned.** UTF-8 without a byte-order mark; `,` delimiter; `"` quoting,
+minimal, a quote inside a quoted cell doubled; CRLF record terminator (RFC 4180), with line
+breaks inside quoted cells kept as written; floats as Python's shortest round-trip `repr`
+(`8.553058931896319e-05` reads back as the same double); booleans `true`/`false`; lists, and
+the judge block's nested records, as compact JSON. Two runs over the same bundle are byte
+identical.
+
+### Recomputing the intervals and the paired tests from the tables alone (2026-10-02)
+
+`scripts/recompute_from_export.py <export-dir>` is a third party holding only the download:
+standard library, nothing imported from this project, reading `quality_items.csv` and
+`comparison_records.csv`. It recomputes every batch's interval block (suite and language
+cells) from the per-item `correct` / `item_score` columns with the block's own seed,
+resample count and confidence level, drawing as the dictionary entry of
+`score_interval_draw_procedure_id` states; every `mcnemar_exact` comparison's contingency,
+paired n and exact p from the two sides' per-item columns joined on `item_id`; and each
+family's Holm-adjusted p from its raw p-values. It prints each value beside the published
+cell and exits `1` on any difference.
+
+Over the committed bundle it has nothing to recompute (`0 values recomputed`): the rows are
+at `"7"`, before `score_interval`, and all four family records refuse on `thinking_policy`.
+So the check was run against ourselves over a bundle built from the committed rows by the
+writers' own code (`tests/published_bundle_fixtures.py`: `thinking_policy` set,
+`score_interval.interval_block` per batch, one family of both local-vs-cloud pairs from
+`comparison`), exported by `wave-local-ai-v2-export`:
+
+| Batch or comparison | Published = recomputed |
+| ------------------- | ---------------------- |
+| `5e13166d...` `Qwen3.6-35B-A3B`, suite | [0.6, 0.95], MDE 0.175 |
+| `5e13166d...` `mistral-small-2603`, suite | [0.85, 1.0], MDE 0.07500000000000001 |
+| `d20afbda...` `Qwen3.6-35B-A3B`, suite | [0.6, 0.95], MDE 0.175 |
+| `d20afbda...` `mistral-small-2603`, suite | [0.75, 1.0], MDE 0.125 |
+| McNemar, run `5e13166d...`, local vs cloud | b=1, c=4, n=20, p=0.375, Holm-adjusted 0.75 |
+| McNemar, run `d20afbda...`, local vs cloud | b=2, c=4, n=20, p=0.6875, Holm-adjusted 0.75 |
+
+96 values in all (every language cell's `n`, bounds, MDE and null reason included), 0
+differ, exit `0`. These intervals are not published results: the committed rows carry
+none. The check is re-run as it stands once a schema-21 batch and a tested comparison are
+committed. Commands and full output:
+`aidd_docs/tasks/2026_10/2026_10_01_tabular-export-carries-interval-and-comparison/evidence/`.
+
+### Recomputation from the quality table alone (2026-10-01)
+
+Each published run's `suite_accuracy` and per-language accuracy, recomputed from the
+exported `quality_items.csv` with Python's `csv` module and nothing else (mean of the
+per-item `correct` column, grouped by `run_id`, `provider`, `model_id`, then by `language`):
+
+| `run_id` | Provider | Model | n | `correct` | Recomputed | Published | `en` / `fr` / `de` recomputed | Match |
+| -------- | -------- | ----- | - | --------- | ---------- | --------- | ----------------------------- | ----- |
+| `5e13166d...` | local | `Qwen3.6-35B-A3B` | 20 | 16 | 0.8 | 0.8 | 0.6 / 1.0 / 1.0 | yes |
+| `5e13166d...` | mistral | `mistral-small-2603` | 20 | 19 | 0.95 | 0.95 | 1.0 / 1.0 / 0.8 | yes |
+| `d20afbda...` | local | `Qwen3.6-35B-A3B` | 20 | 16 | 0.8 | 0.8 | 0.6 / 1.0 / 1.0 | yes |
+| `d20afbda...` | mistral | `mistral-small-2603` | 20 | 18 | 0.9 | 0.9 | 1.0 / 1.0 / 0.6 | yes |
+
+Every recomputed value equals the published one exactly, per-language `n` included (10 / 5 /
+5). The script and its raw output are in
+`aidd_docs/tasks/2026_10/2026_10_01_the-published-bundle-reads-as-four-flat-tables/evidence/`.
+
 ## Runtime energy window changed underfoot the rows already in this file (2026-09-22)
 
 As of this increment's commit (`row_contract.SCHEMA_VERSION` `"12"`, see its numbered
@@ -138,31 +270,434 @@ The pitch overview (`views/overview/`, `GET /api/overview/quality`,
 carry through to it unchanged; a third is specific to the overview's own
 leader-set mechanism.
 
-- **The leader set.** `read_model.LEADER_SET_MEMBER_FIELD`
-  (`leader_set_member`) resolves against every row of this bundle via the
-  ordinary `resolve_field` machinery -- no new absence reason, no field
-  stubbed into `row_contract.py`. Nothing in the repo writes it today: the
-  stats epic records its derivation as unowned (see
-  `a-score-is-published-with-its-interval-a-difference-with-its-test.md`'s
-  own Dependencies table). `overview/quality/QualityPanel.tsx` renders
-  `DeclaredAbsenceLabel` naming "no leader set published for this suite and
-  machine class" on every card of this bundle rather than a substituted
-  highest score. `cloud_comparators` is not part of this withholding -- the
-  reference bundle does carry `provider != "local"` rows (a real mistral
-  comparator alongside the local ones), so every card's cloud-comparator list
-  is populated, not empty.
-- **The runtime/energy headline, following from having no leader.**
+- **The leader set.** Read from the current leader-set record of the card's suites
+  (`leader-sets/`, see "The leader set" below), never from a row field: its members
+  are rendered from the store's own rows, and `leader.leader_sets` names each record
+  read with its machine class and whether it is `incomplete`. A suite with no record
+  resolves to the ordinary `pointer_unresolved` absence naming `leader_set`, and
+  `overview/quality/QualityPanel.tsx` renders `DeclaredAbsenceLabel` naming "no
+  leader set published for this suite and machine class" rather than a substituted
+  highest score. In this bundle the classification card names one member
+  (`5e13166d`, from an incomplete record). `cloud_comparators` is not part of this --
+  the reference bundle does carry `provider != "local"` rows (a real mistral
+  comparator alongside the local ones), so every card's cloud-comparator list is
+  populated, not empty. The frontend does not show `incomplete` yet.
+- **The runtime/energy headline, following from the leader.**
   `overview/runtime/RuntimeEnergyPanel.tsx` receives `leaderRosterEntryIds`
   from `OverviewView`, derived from `leader.members` when a leader set
-  exists. With no leader set (every card of this bundle), that list is empty
-  and the panel renders the same class of `DeclaredAbsenceLabel` ("no model
-  to take a headline from") rather than guessing a headline from an
-  unranked row. This is a structural consequence of the leader-set absence
-  above, not a second, independently missing construct.
+  exists. With no leader set, that list is empty and the panel renders the
+  same class of `DeclaredAbsenceLabel` ("no model to take a headline from")
+  rather than guessing a headline from an unranked row.
 - **The coverage record.** `overview/CoverageAbsence.tsx` is the same
   `no-use-case-is-silently-absent` declared absence as `QualityView`'s
   `CoverageRecord`, rendered once at the overview page level rather than
   once per card.
+
+## Suite levels, and what an item's licence and source do not prove (2026-10-02)
+
+Every suite declares the level it is built to, and every quality row from schema `"15"`
+names the level its suite was certified at (`suite_level`). A `development` suite is gated
+as before: at least 20 items and at least 25% of items in each of EN, FR and DE, else its
+score is published marked indicative. A `publication` suite is certified or refused: at
+least 100 items and at least the size target it declares (300 where its public source
+supplies them, the 100-item floor where it does not, with the reason recorded beside the
+target), the same 25% share, and a licence, a source and that source's revision on every
+item. A publication suite that falls short is refused at load, naming every shortfall; it
+never passes quietly as a development one, so no row of it can be written.
+
+Both shipped suites are `development`: `classification-support-routing@4` and
+`translation-business-short-form@3` carry `level` and, on every item, `licence`
+`CC-BY-4.0` -- the repository's hand-written items -- and no source, since nothing was
+drawn. Their rows carry `item_licence` `CC-BY-4.0` and `item_source` /
+`item_source_revision` as `null`. No item text changed and neither `prompt_set_hash`
+moved; the versions bumped because a published snapshot is never rewritten under its own
+version (`suite_snapshot` now refuses to overwrite one with different content), and
+`@3` / `@2` stay beside them. The cost: a row written under the new versions is
+`not_comparable` to any row written under `@3` / `@2`, although the subject is sent
+identical text. No committed row cites `@3` / `@2` today.
+
+**The licence and the source are author declarations, and nothing verifies them.** The
+gate checks that a publication item declares a licence, a source and a revision, and that
+each is a non-empty string; it does not check that the licence is the source's actual
+licence, that the item came from that source, or that the revision exists.
+`contamination_risk` stays forced to `provenance == "public"` and is likewise a
+declaration. A reader who needs the claim checked has to check it against the named source.
+
+## Where a row's subject prompt went (2026-10-02)
+
+From schema `"16"` every runtime and quality row carries `subject_egress`: `none` when the
+subject prompt was served on the machine, else the id of the cloud provider that received
+it (`mistral`, `google`). A runtime row always records `none`, since the runtime benchmark
+serves its prompt from the local llama-server only. The writer gate refuses a row without
+the field or with it `null`, refuses a runtime row recording anything but `none`, and
+refuses a quality row whose value contradicts its
+`provider`: a `local` row recording a provider, a cloud row recording `none` or another
+provider's id.
+
+The field describes the subject call alone. A judged row also sends its item and the
+subject's output to the judges, and that is recorded, unchanged, in its `judge_egress`
+block: a local subject judged by two cloud judges carries `subject_egress` `none` beside a
+`judge_egress` saying the item left the machine. Read both before calling a row
+"nothing left the machine".
+
+No committed row carries the field: every row in this directory predates `"16"`, is read
+under its own version and is never back-filled with `none`. The reference rows carry it
+from their next regeneration, which nothing has scheduled yet.
+
+## A batch's retry budget, and partial batches (2026-10-02)
+
+From schema `"17"` every quality row carries `retry_budget`, the retry total each cloud
+provider's calls in its batch drew from (derived from the batch's item count, `{}` for a
+batch with no cloud call), and `partial_failure`: `null` on a row whose batch was complete
+when it was written, else the provider, item and reason of the call that stopped it. A
+partial row carries no suite-level score. A batch completed by `--resume` holds its partial
+rows from the failed invocation beside the completing rows, which carry the whole batch's
+score; read the score off a row whose `partial_failure` is `null`. Cost and token totals on
+each segment cover that invocation's calls only.
+
+No committed row carries either field: every row in this directory predates `"17"`, is read
+under its own version and is never back-filled.
+
+## Each item's own tokens and first-token time (2026-10-02)
+
+From schema `"18"` every quality row carries its item's own generation figures:
+`item_tokens_in`, `item_tokens_out`, `item_ttft_ms` (the engine's `timings.prompt_ms` for
+that one request, `item_ttft_source: server_reported`) and `item_prompt_tokens_cached`
+(the engine's `timings.cache_n`). Each is a value or null with its `*_null_reason`, never
+a zero: `not_reported_by_engine`, `not_reported_by_provider` (a cloud row has its
+provider's token counts but no TTFT) or `no_generation_call`.
+
+Read them as what they are. `item_measurement_kind: single_generation` says each is one
+generation of one item, not the runtime protocol's Methodology 6 figure: no warm-up
+exclusion, no repetitions, and a different prompt per item; compare it only with another
+row's `item_ttft_ms`, never with a runtime row's `ttft_ms`. llama-server reuses a prompt
+prefix shared with the previous request, so `item_ttft_ms` covers only the uncached tokens;
+a variant that adds a fixed instruction has it cached after the first item, and
+`item_prompt_tokens_cached` shows it. `item_first_in_batch` marks the batch's first
+generation, served by a freshly launched server; exclude it with
+`--reference-where item_first_in_batch=false --candidate-where item_first_in_batch=false`.
+
+`wave-local-ai-v2-compare --quantity item_tokens_out` (or `item_tokens_in`, `item_ttft_ms`)
+runs the Wilcoxon signed-rank test over the same item ids. Energy stays per batch:
+`--quantity energy_kwh` publishes the two batch values and their difference as an
+observation, because per-item energy on items of a few dozen tokens is below what the
+tracker can resolve, so there is nothing to pair (owner decision Q24 (a)).
+
+No committed row carries these fields: every row in this directory predates `"18"`, is read
+under its own version and is never back-filled; a per-item comparison over them is refused
+naming the absent field.
+
+## Each batch's interval and what it could resolve (2026-10-02)
+
+From schema `"21"` every quality row carries `score_interval`, one block per batch and
+identical on every row of it: a 95% percentile bootstrap interval over 10 000 resamples on
+the suite score (`suite`, resampled unstratified) and on each language cell (`by_language`,
+resampled within its language), for the exact-match and graded scorers alike. Beside each
+interval sits its minimum detectable effect, the interval's half-width read off the same
+resample: the smallest difference that suite and scoring kind could have told from noise,
+so "not distinguishable" is never read as "the same". A cell is its three values or none of
+them and one reason: `zero_width` when every item scored the same (a suite at 1.0 or 0.0,
+whose `[1.0, 1.0]` would read as certainty), `no_items` for an empty language cell. A failed
+generation resamples as its zero. The block records the seed, the generator (`CPython
+random.Random`, major.minor version) and the draw procedure
+`stdlib-getrandbits-percentile/1`, defined in `score_interval.py` (items by `item_id`, one
+freshly seeded generator per cell, `getrandbits` draws with rejection, `math.fsum` means,
+type-7 percentile interpolation), so `score_interval.replay` reproduces it bit for bit from
+the rows alone. A partial batch and a judge-probe row carry `null`, as their scores are.
+
+No committed row carries the block: every row here predates `"21"` and is never
+back-filled. The figures below are an analysis over the committed
+`classification-support-routing` rows of `quality-reference.jsonl`, computed by the new code
+(seed `20261002`) and not written onto them; the computation, which also checks the three
+batch invariants and the replay on an in-memory copy, is
+`aidd_docs/tasks/2026_10/2026_10_01_quality-batch-interval-and-what-it-could-resolve/evidence/`.
+
+| Run | Model | Accuracy (n=20) | 95% interval | Minimum detectable effect |
+| --- | ----- | --------------- | ------------ | ------------------------- |
+| `5e13166d` | Qwen3.6-35B-A3B (local) | 0.80 | [0.600, 0.950] | 0.175 |
+| `5e13166d` | mistral-small-2603 | 0.95 | [0.850, 1.000] | 0.075 |
+| `d20afbda` | Qwen3.6-35B-A3B (local) | 0.80 | [0.600, 0.950] | 0.175 |
+| `d20afbda` | mistral-small-2603 | 0.90 | [0.750, 1.000] | 0.125 |
+
+Per language the cells hold 10, 5 and 5 items (EN, FR, DE). Of the twelve cells, eight
+scored 1.0 and publish `zero_width` rather than an interval; the four defined ones are wide:
+Qwen3.6 EN 0.60 [0.300, 0.900] in both runs, mistral DE 0.80 [0.400, 1.000] and 0.60
+[0.200, 1.000]. On 20 items the local model's interval spans 35 points, and the two
+models' intervals overlap in both runs. The interval qualifies each score on its own;
+whether two scores differ is the paired test's question, not the overlap's, and the next
+section explains why the committed pairs publish no paired test.
+## Every row names its engine, and the fiche hashes it (2026-10-02)
+
+From schema `"22"` every runtime row and every local quality row carries `engine_id` and
+`engine_build`: the inference engine that produced it, as the tracked engine registry
+(`aidd_docs/roster/engines.json`) names it, and the build the binary reported at launch
+(a live probe; `null` when it cannot be read). A cloud subject's quality row carries
+`engine_id` `not_applicable` and a null build: no local engine produced it. The registry
+holds one engine today, `llama.cpp`, the reference; its configuration defaults are each
+marked `declared` (read off `llama-server --help` for b10537) or `engine_reported` (read
+off `/props`).
+
+The fiche those rows cite is hashed under a second projection. Projection `"1"` is the
+one every committed fiche was written under (`llama_cpp_build` among its ten keys);
+projection `"2"` replaces it with `engine_id`, `engine_build` and `engine_config_hash`,
+the SHA-256 of the launch flag list with the model path replaced by `roster:<entry id>`
+and `--host` / `--port` removed. The raw `flags` stay on the fiche as evidence, outside
+both projections. Which projection a fiche is verified under is decided by the
+`schema_version` of the row citing it (`row_contract.fiche_projection_for`), never by a
+key the fiche happens to lack: the committed fiches keep verifying under `"1"` with no
+file edited, and a new fiche missing an engine key is `edited`, not an old fiche.
+
+The engine fields replace `llama_cpp_build` among the runtime verdict's blocking fields.
+A committed reference fiche carries no engine field, so a run today against
+`runtime-reference.jsonl` is `not_comparable` naming `engine_build` and `engine_id`,
+never `reproduced` on a `llama_cpp_build` no row tied to an engine. That holds until the
+bundle is republished under this epic's final schema; it is not back-filled.
+
+## Paired comparisons: both committed pairs are refused (2026-10-02)
+
+`comparisons/` holds the comparison records `wave-local-ai-v2-compare` writes over this
+bundle. They are derived artifacts, not a sixth input, and none is ever rewritten. The two
+records below are `record_version` `"1"`: each is a family of one comparison (its
+Holm-adjusted p stated equal to its raw p), names its reference and candidate by `run_id`
+plus the row field that selects each side within the run, and holds either a paired test
+chosen by scoring kind (McNemar's exact test for `correct`, Wilcoxon signed-rank for
+`item_score`) or a refusal naming every field that makes the sides incomparable. Both are
+now superseded by the family record of the next section and kept unchanged;
+`tests/test_comparison.py` checks each still hashes to its own `family_id`.
+
+The bundle holds two pairable comparisons, each `Qwen3.6-35B-A3B` (reference) against
+`mistral-small-2603` (candidate) over the same 20 items of
+`classification-support-routing@2`, both sides sharing one `run_id`:
+
+```
+uv run wave-local-ai-v2-compare --reference <run_id> --reference-where model_id=Qwen3.6-35B-A3B \
+    --candidate <run_id> --candidate-where model_id=mistral-small-2603
+```
+
+| Run | Record | Comparison | Verdict |
+| --- | --- | --- | --- |
+| `5e13166d` | `classification-support-routing@2.model.d4641d06a525.json` | refused: `thinking_policy` absent on both sides | `not comparable` |
+| `d20afbda` | `classification-support-routing@2.model.2ef9fd3581d2.json` | refused: `thinking_policy` absent on both sides | `not comparable` |
+
+**No p-value is published for either pair, and that refusal is the evidence.** These rows
+are `schema_version` `"7"` and predate `thinking_policy`, one of the four generation
+constraints Methodology 3 requires identical across compared models. Two unknown values
+never count as a match (Methodology 8, applied to comparability by the owner's answer on
+2026-10-01), so the command refuses rather than assume both batches ran under the same
+policy. Each record still carries the fields on which the two sides actually differ,
+computed from the rows: `endpoint`, `model_id`, `prompt_template_hash`,
+`prompt_template_id`, `provider` and `sampling`, all of them the `model` dimension's own.
+
+The arithmetic the epic states for these pairs is reproduced, but by a test, not by a
+published record: with `thinking_policy` supplied to the same rows, run `5e13166d` gives 1
+item only Qwen got right and 4 only mistral got right, McNemar exact p = 0.375, and run
+`d20afbda` gives 2 and 4, p = 0.6875 (published as 0.688 in the epic). Both read `not
+distinguishable` at alpha 0.05: a 15-point accuracy gap on 20 items is not
+distinguishable from noise. Once the bundle is regenerated with `thinking_policy` on
+every row, the same command over the new pairs publishes their tests.
+
+### One family record holds both pairs (2026-10-02)
+
+A multiplicity correction means nothing until the family is declared, so the unit published
+is the family, not the pair (PRD Methodology 24). One invocation of the command writes one
+immutable record holding every comparison it ran, the family definition (one suite crossed
+with one compared dimension, closed at analysis time), its size, how many members were
+tested and how many refused, and each member's Holm-adjusted p computed over exactly those
+members, with the raw p beside it and the verdict read against the adjusted p. Holm runs
+over every member that was not refused, so `multiplicity_correction.adjustment_size`
+equals `tested_count`: a tested member whose p is left null with a named reason enters as
+p = 1 (it can only raise the others' adjusted p) and keeps its own adjusted p null; a
+refused member carries no p and enters no count. A family that grows is a new record
+listing the ids it `supersedes`; the command finds the current record of the same
+definition in `comparisons/` itself. A family only grows: a declaration that leaves out
+any comparison the current record holds is refused (exit 1, nothing written, the missing
+comparisons named), so no pair can be re-published alone, outside the adjustment it was
+first counted in. A re-run over the same bundle and declaration returns the published
+record byte for byte, and says which record supersedes it if it is no longer current. A
+change of `--alpha` alone, over the same comparisons, also writes a superseding record:
+the family is the same comparisons, read at a different level.
+
+```
+uv run wave-local-ai-v2-compare --comparisons <declaration.json>
+```
+
+The declaration is a JSON array of `{"reference": {"run_id", "where"}, "candidate": {...}}`;
+the one used here is
+`aidd_docs/tasks/2026_10/2026_10_01_comparison-family-adjusted-and-superseded/evidence/classification-support-routing@2.model.comparisons.json`.
+
+| Record | Family | Size | Tested | Refused | Holm over | Supersedes |
+| --- | --- | --- | --- | --- | --- | --- |
+| `classification-support-routing@2.model.1e1658cbe073.json` | `classification-support-routing@2` x `model` | 2 | 0 | 2 | 0 | `d4641d06a525`, `2ef9fd3581d2` |
+
+Both members are still refused on `thinking_policy`, for the reason above, so the record
+adjusts nothing: it publishes the family, not a finding. `tests/test_comparison.py`
+recomputes it from `quality-reference.jsonl` with only the two records it supersedes on
+file and requires identical bytes.
+
+## The leader set: the local models not distinguishable from the best (2026-10-02)
+
+The leader set of a suite on a machine class is a published derived output (PRD Non-goals,
+owner answer Q42 (a)): the best local subject plus every local subject the paired tests
+cannot tell from it. It is its own record in `leader-sets/`, written by the analysis
+command, never a row field and never computed at read time, so no published row is
+rewritten when a set changes.
+
+```
+uv run wave-local-ai-v2-compare --leader-sets
+```
+
+The command groups the local subjects (a `run_id` and its `model_id`; cloud subjects are
+never members) by suite id and version and by machine class, read from each row's fiche:
+`machine_id`, `compute_mode`, `cpu`, `ram_gb`, `gpu_name`, `os`. A field the fiche does not
+carry is listed in `grouping_not_recorded`; today's fiches carry neither `machine_id` nor
+`compute_mode` (story `a-gpu-run-and-a-cpu-only-run-never-share-a-fiche` adds them), so a
+`gpu` and a `cpu_only` fiche of one machine fall into two groups as soon as fiches record
+the mode. The reference is the subject with the highest published suite score
+(`suite_accuracy` or `suite_score`); a tie names the subject whose `(run_id, model_id)`
+sorts first, and the record states the rule and every subject tied at the top. Every other
+local subject is compared against it inside the suite's `model` family, which the command
+grows by those comparisons (keeping every comparison it already held), so Holm runs over
+the whole closed family. A subject reads `member` on `not distinguishable`, `excluded` on
+`distinguishable`, and `not compared` on any `not comparable` (a refusal, naming the
+refused fields, or an observation, naming its reason); one `not compared` subject makes
+the record `incomplete`. A group of one local subject is a set of one stating that no
+comparison ran. A changed group is a new record superseding the old by
+`leader_set_id`; a re-run over the same bundle reports every record `unchanged`.
+
+| Record | Group | Reference | Members | Excluded | Not compared | Family |
+| --- | --- | --- | --- | --- | --- | --- |
+| `leader-sets/classification-support-routing@2.053c65354ff8.json` | `classification-support-routing@2`, the RTX 3060 laptop (`machine_id`, `compute_mode` not recorded) | `5e13166d` `Qwen3.6-35B-A3B`, 0.8 (tied with `d20afbda`) | 1 | 0 | 1 (`thinking_policy` absent) | `837e5355b954` |
+| `comparisons/classification-support-routing@2.model.837e5355b954.json` | the family grown by the leader comparison: 3 members, 0 tested, 3 refused | | | | | supersedes `1e1658cbe073` |
+
+The bundle's two local batches are the same model at the same score, and their comparison
+is refused on `thinking_policy` like both committed pairs, so the first real leader set
+names one member and says it is incomplete. The three earlier family records are
+unchanged. `tests/test_leader_set.py` recomputes the leader-set record from
+`quality-reference.jsonl` with the family it cites removed from file and requires
+identical bytes. Command output:
+`aidd_docs/tasks/2026_10/2026_10_01_local-models-not-distinguishable-from-the-best/evidence/leader-sets-output.txt`.
+The export flattens these records into its fifth table, `comparison_records.csv` (see "The
+bundle as five flat tables" above).
+
+## The use-case coverage record, and why it is not here yet
+
+`use-case-coverage.json` is the published coverage record: one entry for each
+of the PRD's nine task use cases and one for multilingual EN/FR/DE coverage,
+each in exactly one declared state -- `exercised` (naming the suite ids that
+exercise it), `covered-by-dimension` (naming the suite ids that carry it;
+multilingual is a language dimension of the classification, translation and
+rewriting suites) or `out-of-scope-this-release` (with its reason). The record
+is declared as data in `src/wave_local_ai_v2/use_case_coverage.json`; a state
+is never inferred from which suites happen to be registered.
+
+`uv run python -m wave_local_ai_v2.use_case_coverage` writes it here, and only
+when every entry resolves: an entry missing, an entry with no state, a named
+suite id the suite registry does not resolve, or an out-of-scope entry with no
+reason refuses the whole record, names every failing entry on stderr, exits
+`1` and writes nothing. No partial record is ever published.
+
+The file is therefore absent today, deliberately. Run against the committed
+record, the command refuses naming eight entries: the six use cases with no
+suite yet (document comparison, code generation, agentic planning, agentic
+tool calling, web research, RAG answer generation), text rewriting, whose
+`rewriting-business-email` suite is not registered yet, and multilingual,
+which names that same suite. That refusal is the current coverage reading
+(`aidd_docs/tasks/2026_10/2026_10_01_use-case-coverage-state-or-refusal/evidence/coverage-refusal.txt`);
+the record appears here once the last entry resolves, and until then the
+overview's coverage absence above stays true.
+
+## Roster composition: four unlabelled single-family classes (2026-10-02)
+
+Methodology 13's composition rule is a command, not prose:
+`uv run wave-local-ai-v2-composition-check [--roster <models.json>]`
+(`composition_check.py`). It reads the roster, classes every entry by its
+declared `size_class`, and reports per class the families it spans
+(`roster.family_of`, so the flagship resolves through the in-code fallback
+like any row does), whether dense and MoE are both present, the
+single-family-ladder label and the MoE declaration; then per entry its total
+parameters, its bytes on disk, its licence id, whether client-side commercial
+use is permitted and the date the terms were read.
+
+**What a size class is.** Four classes, banded on total parameters (owner
+answer Q10 (a)): below 1B is `~0.5B`, 1B to below 3B is `~2B`, 3B to below 6B
+is `~4B`, 6B and up is `~8B-and-up`. The edges are configuration
+(`roster.SIZE_CLASS_BANDS`) and revisable after the first full-roster run;
+moving one is a re-class, not a rewrite of the check. Bytes on disk are the
+footprint published beside the class and are never banded: whether an entry
+fits a given machine is the machine epic's profiles' to say, not the class's.
+Each entry declares its class, `architecture.total_params` (read off the
+GGUF's tensors) and `bytes_on_disk` (read off the file), so the classing is
+checked against the entry rather than asserted by its author. The roster's
+`size_classes` block carries one declaration per class: whether it is a
+single-family ladder, whether a MoE was sought, which entry represents it,
+and the reason when none does.
+
+**What it refuses: silence, not a single-family roster.** It exits `1`
+naming the class or the entry when a class spans one family without the
+ladder label, when a class has no MoE and no recorded reason, when an entry
+has no resolvable family, no size class, no total parameters, no bytes on
+disk or no licence block, or when an entry's declared class disagrees with
+the band its total parameters fall in. It also names a ladder label on a
+class spanning two families and a MoE declaration that disagrees with the
+class's entries. A class spanning two families passes; a labelled
+single-family ladder passes; a class with no entries publishes nothing and
+is not failed. Exit `2` means the roster file could not be loaded at all.
+
+**Today it fails, which is the honest state.** Run on the shipped roster
+(`roster_version` 4) before any new entry is authored, it reports four
+classes, each spanning exactly one family (`qwen`), none labelled, and the
+three dense classes with no MoE searched for and no reason recorded. The
+roster is deliberately not labelled here: the search that would justify a
+ladder label or a MoE absence is the per-class stories' work. A check that
+passed on this roster would not be checking the rule.
+`tests/test_composition_check.py` fails when the block below drifts from the
+command's output.
+
+<!-- composition-check:start -->
+```text
+Roster composition: aidd_docs/roster/models.json (roster_version 4)
+Size classes, banded on total parameters: ~0.5B < 1,000,000,000 <= ~2B < 3,000,000,000 <= ~4B < 6,000,000,000 <= ~8B-and-up
+  ~0.5B: 1 entry; families: qwen; dense: yes; MoE: no; label: none; MoE sought: no; MoE absence reason: none
+  ~2B: 1 entry; families: qwen; dense: yes; MoE: no; label: none; MoE sought: no; MoE absence reason: none
+  ~4B: 1 entry; families: qwen; dense: yes; MoE: no; label: none; MoE sought: no; MoE absence reason: none
+  ~8B-and-up: 1 entry; families: qwen; dense: no; MoE: yes (qwen3.6-35b-a3b-ud-iq4xs); label: none; MoE sought: yes; MoE absence reason: n/a
+Entries
+  qwen3.6-35b-a3b-ud-iq4xs: ~8B-and-up; family qwen; moe; 34,660,610,688 total params; 17,730,509,792 bytes on disk; licence Apache-2.0, client commercial use yes, read 2026-10-02
+  qwen3-0.6b-q8: ~0.5B; family qwen; dense; 596,049,920 total params; 639,446,688 bytes on disk; licence Apache-2.0, client commercial use yes, read 2026-10-02
+  qwen3-1.7b-q8: ~2B; family qwen; dense; 1,720,574,976 total params; 1,834,426,016 bytes on disk; licence Apache-2.0, client commercial use yes, read 2026-10-02
+  qwen3-4b-q4km: ~4B; family qwen; dense; 4,022,468,096 total params; 2,497,280,256 bytes on disk; licence Apache-2.0, client commercial use yes, read 2026-10-02
+Failures (7)
+  size class ~0.5B: spans one family (qwen) without the single-family-ladder label
+  size class ~0.5B: has no MoE represented and no reason recorded
+  size class ~2B: spans one family (qwen) without the single-family-ladder label
+  size class ~2B: has no MoE represented and no reason recorded
+  size class ~4B: spans one family (qwen) without the single-family-ladder label
+  size class ~4B: has no MoE represented and no reason recorded
+  size class ~8B-and-up: spans one family (qwen) without the single-family-ladder label
+FAIL: 7 failure(s)
+```
+<!-- composition-check:end -->
+
+**When to run it.** Before a roster table is published, run the check and
+publish its output beside the table; a class it names is either fixed in the
+roster or published with the failure stated. It is not part of the merge gate
+or CI while the shipped roster is expected to fail it.
+
+Every quality row written from schema `"19"` on carries `family` (its
+subject's: the local entry's, or a cloud model's own) and `size_class` (the
+local entry's; `null` on a cloud row, whose model is not banded). Rows below
+`"19"` are not back-filled.
+
+Every quality row written from schema `"20"` on names the agentic harness it
+ran under (`harness_id`, one of `direct`, `smolagents`, `langgraph`,
+`pydantic-ai`, `llamaindex`), that harness's installed version read when the
+row was written (`harness_version`; for `direct`, the `requests` client its
+calls go through), and its per-call prompt overhead
+(`harness_prompt_overhead`: `tokens`, the engine's prompt-token count minus
+the item's own rendered prompt with its tool definitions, or `null` with a
+`null_reason` -- `unmeasurable`, `item_prompt_not_counted` on a cloud row, or
+the engine count's own reason). Only `direct` is written today. Rows below
+`"20"` are not back-filled.
 
 ## This regeneration (Story 19 + Story 20, 2026-08-27)
 
@@ -430,7 +965,8 @@ not all share that provenance. Where each one lives:
 
 All four cite fiche `b9d1af56...`, which is committed, so those numbers resolve too.
 
-The model set is `roster_version` 2: the MoE flagship plus a dense Qwen3 size ladder. The
+The model set is the roster's four entries, unchanged since `roster_version` 2 (version 3
+adds licence and language metadata only, version 4 size classes and their figures): the MoE flagship plus a dense Qwen3 size ladder. The
 dense/MoE distinction is what the section is for, so it is in the table rather than in a
 footnote:
 
@@ -570,7 +1106,8 @@ that field), `VRAM` is `vram_used_mib` in MiB (2^20 B, the unit NVML reports). B
 peaks over the counted repetitions, not point samples.
 
 Every dense `verdict` is `not_comparable`, and that is the honest first-run state rather
-than a gap: the verdict blocks on `llama_cpp_build` / `quant` / `gpu_name` / `flags`, and
+than a gap: the verdict blocked on `llama_cpp_build` / `quant` / `gpu_name` / `flags` (since
+schema `"22"`: `engine_id` / `engine_build` in place of the first), and
 no reference row shares a new quant and a flag set with no `--n-cpu-moe` in it. The
 flagship's `reproduced` is its own earlier pair, unaffected by this increment.
 

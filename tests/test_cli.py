@@ -6,8 +6,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+from conftest import mark_prompt
 
-from wave_local_ai_v2 import FIXED_MAX_TOKENS, FIXED_PROMPT, _run, main
+import wave_local_ai_v2
+from wave_local_ai_v2 import FIXED_MAX_TOKENS, FIXED_PROMPT, _run, engines, main
 from wave_local_ai_v2.aggregation import AGGREGATION_LABELS
 from wave_local_ai_v2.fiche_registry import read_fiche
 from wave_local_ai_v2.results import read_rows
@@ -294,6 +296,7 @@ def test_run_appends_one_row_with_fiche_and_metrics(stubbed_run, tmp_path) -> No
         "ram_gb",
         "gpu_name",
         "llama_cpp_build",
+        "engine_config_hash",
         "model_file",
         "flags",
     ):
@@ -305,7 +308,14 @@ def test_run_appends_one_row_with_fiche_and_metrics(stubbed_run, tmp_path) -> No
     assert row["roster_version"] == FAKE_ROSTER_VERSION
     stored_fiche = read_fiche(row["fiche_hash"], tmp_path / "fiches")
     assert stored_fiche is not None
-    assert stored_fiche["llama_cpp_build"] == "b10537"
+    assert "llama_cpp_build" not in stored_fiche
+    assert stored_fiche["engine_id"] == row["engine_id"] == "llama.cpp"
+    assert stored_fiche["engine_build"] == row["engine_build"] == "b10537"
+    assert stored_fiche["engine_config_hash"] == engines.config_hash(
+        engines.tracked_reference_engine(),
+        stored_fiche["flags"],
+        DEFAULT_ROSTER_ENTRY_ID,
+    )
     assert stored_fiche["roster_entry_id"] == DEFAULT_ROSTER_ENTRY_ID
     assert (
         stored_fiche["quant"]
@@ -412,7 +422,8 @@ def test_run_publishes_an_explicit_none_when_the_build_cannot_be_read(
     row = read_rows(results_path)[0]
     stored_fiche = read_fiche(row["fiche_hash"], tmp_path / "fiches")
     assert stored_fiche is not None
-    assert stored_fiche["llama_cpp_build"] is None
+    assert stored_fiche["engine_build"] is None
+    assert row["engine_build"] is None
 
 
 def _timings_response(ttft_ms: float, prompt_tps: float, gen_tps: float) -> dict:
@@ -701,6 +712,50 @@ def test_run_sends_one_warmup_and_five_counted_requests_by_default(
         assert body["n_predict"] == FIXED_MAX_TOKENS
         assert body["cache_prompt"] is False
         assert body["seed"]
+
+
+def test_the_runtime_row_names_the_baseline_variant_and_the_fixed_prompt(
+    stubbed_run,
+) -> None:
+    results_path, _ = stubbed_run
+
+    _run()
+
+    (row,) = read_rows(results_path)
+    assert row["prompt_variant_id"] == "baseline"
+    assert row["prompt_variant_version"] == "1"
+    # `/completion` applies no template: before and after are one string.
+    assert row["prompt_before_template"] == FIXED_PROMPT
+    assert row["prompt"] == FIXED_PROMPT
+
+
+def test_the_runtime_row_records_that_its_prompt_never_left_the_machine(
+    stubbed_run,
+) -> None:
+    results_path, _ = stubbed_run
+
+    _run()
+
+    (row,) = read_rows(results_path)
+    # The runtime benchmark serves its prompt from the local llama-server only.
+    assert row["subject_egress"] == "none"
+
+
+def test_the_fixed_prompt_passes_through_the_declared_variant(
+    stubbed_run, marking_variant, monkeypatch
+) -> None:
+    results_path, started = stubbed_run
+    monkeypatch.setattr(wave_local_ai_v2, "PROMPT_VARIANT_ID", marking_variant)
+
+    _run()
+
+    # Warm-up and counted requests alike carry the variant's output.
+    for call in started["post"].call_args_list:
+        assert call.kwargs["json"]["prompt"] == mark_prompt(FIXED_PROMPT)
+    (row,) = read_rows(results_path)
+    assert row["prompt_variant_id"] == marking_variant
+    assert row["prompt_before_template"] == mark_prompt(FIXED_PROMPT)
+    assert row["prompt"] == mark_prompt(FIXED_PROMPT)
 
 
 def test_run_applies_the_cooldown_between_repetitions(stubbed_run) -> None:

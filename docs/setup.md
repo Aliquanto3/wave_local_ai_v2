@@ -302,6 +302,53 @@ Verify each checksum:
 sha256sum <SLM_MODELS_DIR>/Qwen3-0.6B/Qwen3-0.6B-Q8_0.gguf
 ```
 
+### 3.2 Before adding an entry: the candidate gate
+
+A new model enters `aidd_docs/roster/models.json` only from a pass record of
+the candidate gate, and a candidate that fails it leaves a refusal behind.
+Declare the candidate as a JSON file:
+
+| Key | What it is |
+| --- | ---------- |
+| `entry_id` | the roster id the entry will take |
+| `repo`, `revision` | the Hugging Face repo and a 40-hex **commit sha** (a branch is refused) |
+| `repo_file` | the GGUF's path in the repo |
+| `file` | its path under `SLM_MODELS_DIR` (the roster's `file`) |
+| `display_id`, `quant`, `family` | as in the roster; `family` from `roster.KNOWN_FAMILIES` |
+| `thinking_control` | the request arguments that disable reasoning, `"none"` for a model that does not reason, or `"allowed"` when no control can be verified (the entry then carries none and runs under `allowed` only) |
+| `active_params_b` | the card's figure |
+| `client_commercial_use` | your reading of the licence, a boolean |
+| `language_claim` | `languages` (subset of `en`/`fr`/`de`), `source_url`, optional verbatim `statement` |
+| `server_flags`, `validated_host` | the launch blocks, exactly as a roster entry holds them |
+
+Then, with `SLM_MODELS_DIR` and `LLAMA_SERVER_PATH` set as for a run and no
+`llama-server` already on port 8080:
+
+```sh
+uv run wave-local-ai-v2-candidate-gate --candidate <candidate.json>
+```
+
+It runs seven steps, cheapest first, and stops at the first failure: the
+revision and file exist on the hub; the licence id is read at the revision and
+its text scanned (a sentence forbidding publication of benchmark results is the
+one licence refusal); free disk under `SLM_MODELS_DIR` covers the file; the
+file is downloaded at the revision and its sha256, size, architecture and
+total parameter count are read off the bytes; one `llama-server` load under the
+build the binary reports; the chat template from `/props` and the declared
+thinking control verified against it (`none` by one generation that must
+return no reasoning); the language claim recorded. Set `HF_TOKEN` for a gated
+repository.
+
+Every run appends one line to `aidd_docs/roster/candidate-records.jsonl`
+(`--records` overrides): a pass carries the full entry block, a refusal names
+the step, the evidence and the date, and an architecture the pinned build does
+not load is recorded `deferred` naming the architecture and the build. The
+gate never switches build. Exit `0` is a pass, `1` a refusal or deferral, `2`
+means nothing was recorded (a malformed declaration, an unreachable hub, a
+busy port, an unreadable build). The gate never writes `models.json`: copy the
+pass record's `entry` into it as a reviewed change, and add the model's row to
+the tables above.
+
 ## 4. Configure `.env` and run
 
 ```sh
@@ -348,16 +395,16 @@ is a loop:
 foreach ($id in 'qwen3-0.6b-q8','qwen3-1.7b-q8','qwen3-4b-q4km') {
   $env:ROSTER_ENTRY_ID = $id
   uv run wave-local-ai-v2
-  uv run wave-local-ai-v2-quality --suite classification
-  uv run wave-local-ai-v2-quality --suite translation
+  uv run wave-local-ai-v2-quality --suite classification-support-routing
+  uv run wave-local-ai-v2-quality --suite translation-business-short-form
 }
 ```
 
 ```sh
 for id in qwen3-0.6b-q8 qwen3-1.7b-q8 qwen3-4b-q4km; do
   ROSTER_ENTRY_ID=$id uv run wave-local-ai-v2
-  ROSTER_ENTRY_ID=$id uv run wave-local-ai-v2-quality --suite classification
-  ROSTER_ENTRY_ID=$id uv run wave-local-ai-v2-quality --suite translation
+  ROSTER_ENTRY_ID=$id uv run wave-local-ai-v2-quality --suite classification-support-routing
+  ROSTER_ENTRY_ID=$id uv run wave-local-ai-v2-quality --suite translation-business-short-form
 done
 ```
 
@@ -420,30 +467,36 @@ at `RUNTIME_REFERENCE_PATH` (default
 A runtime re-run counts as `reproduced` when its `gen_tok_per_s` is within
 `RUNTIME_REPRODUCTION_TOLERANCE` (default `0.10`) of the matching reference
 row's; `not_reproduced` when it is outside; `not_comparable` when no
-reference row was configured or none matches on all four verdict-blocking
-fields (`llama_cpp_build`, `quant`, `gpu_name`, `flags`, all read from each
-row's stored fiche — CPU, RAM, driver and OS never block a comparison).
+reference row was configured or none matches on all five verdict-blocking
+fields (`engine_id`, `engine_build`, `quant`, `gpu_name`, `flags`, all read
+from each row's stored fiche — CPU, RAM, driver and OS never block a
+comparison). A reference fiche written before the engine fields carries
+neither, so it never matches a current run.
 Point `RUNTIME_REFERENCE_PATH` at an empty or absent file to opt out: that
 is `not_comparable`, not a failure.
 
 **4.3 — second run, set `MISTRAL_API_KEY` and `GOOGLE_API_KEY` first:**
 
 ```sh
-uv run wave-local-ai-v2-quality                      # --suite classification
-uv run wave-local-ai-v2-quality --suite translation
+uv run wave-local-ai-v2-quality         # --suite classification-support-routing
+uv run wave-local-ai-v2-quality --suite translation-business-short-form
 ```
 
 One row per (item, model) lands in `QUALITY_RESULTS_PATH` (default
 `aidd_docs/results/quality.jsonl`) for each of three providers: `local`,
 `mistral`, `google`.
 
-`--suite` picks what is scored. It defaults to `classification`, so an
-invocation written before the flag existed behaves exactly as it did.
+`--suite` picks what is scored, by registered suite id. It defaults to
+`classification-support-routing`, so an invocation written without the flag
+behaves exactly as it did. The short names `classification` and
+`translation` it once took are refused like any unregistered id, with the
+registered ids named; they survive as each row's `task_suite`. The suites'
+definitions are data in `src/wave_local_ai_v2/suite_data/`.
 
 | `--suite` | Items | Caps | How it is scored | The headline it prints |
 | --------- | ----- | ---- | ---------------- | ---------------------- |
-| `classification` (default) | 20 support messages, one of four routing labels each | 32 output tokens | exact label match | `accuracy=` |
-| `translation` | 21 short business sentences, `en→fr` / `fr→de` / `de→en`, seven each | 128 output tokens | chrF against a hand-written reference (`chrf.py`) | `suite_score=` |
+| `classification-support-routing` (default) | 20 support messages, one of four routing labels each | 32 output tokens | exact label match | `accuracy=` |
+| `translation-business-short-form` | 21 short business sentences, `en→fr` / `fr→de` / `de→en`, seven each | 128 output tokens | chrF against a hand-written reference (`chrf.py`) | `suite_score=` |
 
 The two suites write two different score shapes into the same store, and a
 row is never both. A classification row carries `correct`, `suite_accuracy`

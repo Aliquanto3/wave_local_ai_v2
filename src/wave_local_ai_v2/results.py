@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import uuid
 from collections import Counter
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -201,54 +202,89 @@ def rows_for_run(path: Path, run_id: str) -> list[dict[str, Any]]:
     return [row for row in read_rows(path) if row.get("run_id") == run_id]
 
 
-def resume_skip_reason(
-    path: Path, run_id: str, provider: str, item_count: int, *, task_suite: str
-) -> str | None:
-    """Why `--resume` must not re-run this batch, or None to run it.
+def batch_rows(
+    path: Path, run_id: str, provider: str, *, task_suite: str
+) -> list[dict[str, Any]]:
+    """Every row one batch already wrote: its `(run_id, provider, task_suite)`.
+
+    The triple, not the `(run_id, provider)` pair: one store holds rows from
+    more than one suite, so a `run_id` is not evidence about a suite it was
+    never run under. Without the third element, `--resume
+    <classification-run-id> --suite translation-business-short-form` would
+    find a complete classification batch and skip a translation batch that
+    never ran.
+    """
+    return [
+        row
+        for row in rows_for_run(path, run_id)
+        if row.get("provider") == provider and row.get("task_suite") == task_suite
+    ]
+
+
+def resume_missing_items(
+    path: Path,
+    run_id: str,
+    provider: str,
+    item_ids: Sequence[str],
+    *,
+    task_suite: str,
+) -> list[str]:
+    """The item ids of this batch that `--resume` still has to run, in order.
 
     Used only under `--resume`: a fresh run never has any prior rows for its
     own (freshly minted) run_id, so this is never called there.
 
-    Distinct item_ids, not a row count: the question is which of the batch's
-    `item_count` items this `(run_id, provider)` pair already owns. Three
-    cases, because a batch is skipped for two different reasons and re-run for
-    one:
+    An empty list means the batch is complete: it already cost what it cost,
+    and nothing is paid for twice. A batch that wrote nothing gets every id
+    back, and a partly written one exactly the ids it never wrote -- so a
+    resume appends one row per missing item and `(run_id, provider,
+    task_suite, item_id)` stays unique: no item already on disk is run, or
+    written, a second time.
 
-    - none of them: nothing was ever written, re-run the batch from item 1.
-    - all of them: the batch already cost what it cost, never pay again.
-    - some of them: re-running would append a second row for every item
-      already on disk, and `append_row` only ever appends -- so the pair
-      `(run_id, provider, item_id)` would stop being unique and a reader
-      (`verdict.select_quality_references` included) would meet the same item
-      twice. `plan.md`'s Decision holds that a partial batch is unreachable
-      (a mid-batch failure never reaches the row writer), but nothing
-      enforces it: rows are appended one by one, so an interrupt or a disk
-      failure part-way through leaves exactly this state. Refuse it rather
-      than duplicate; per-item resume is out of scope by that same Decision.
-
-    The triple a resume reasons about is `(run_id, provider, task_suite)`,
-    not the pair it used to be: one store now holds rows from more than one
-    suite, so a `run_id` is not evidence about a suite it was never run
-    under. Without the third element, `--resume <classification-run-id>
-    --suite translation` would find a complete classification batch and skip
-    a translation batch that never ran.
-
-    `path`, `item_count` and `task_suite` are the caller's: the two CLIs that
-    write quality rows keep their own store, their own batch size and their
-    own suite name, and the "never re-pay, never duplicate" rule is one rule
-    over all of them.
+    `path`, `item_ids` and `task_suite` are the caller's: the two CLIs that
+    write quality rows keep their own store, their own batch and their own
+    suite name, and the "never re-pay, never duplicate" rule is one rule over
+    all of them.
     """
-    written_items = {
+    written = {
         row.get("item_id")
-        for row in rows_for_run(path, run_id)
-        if row.get("provider") == provider and row.get("task_suite") == task_suite
+        for row in batch_rows(path, run_id, provider, task_suite=task_suite)
     }
-    if not written_items:
-        return None
-    if len(written_items) >= item_count:
-        return f"run {run_id} already complete"
-    return (
-        f"run {run_id} is partially written "
-        f"({len(written_items)}/{item_count} items); "
-        f"re-running would duplicate them"
-    )
+    return [item_id for item_id in item_ids if item_id not in written]
+
+
+class ResumeConfigurationError(ValueError):
+    """Raised when `--resume` would complete a batch under another configuration.
+
+    A resume folds the rows already on disk into the batch's suite-level
+    score, so they must have been produced the way this invocation produces
+    the rest: a retired model swapped for its successor, a suite version
+    bumped or a sampler changed between the two invocations would otherwise
+    publish one score over two configurations.
+    """
+
+
+def resume_configuration_conflict(
+    prior_rows: Sequence[dict[str, Any]],
+    expected: dict[str, Any],
+    *,
+    derived: dict[str, Callable[[dict[str, Any]], Any]] | None = None,
+) -> str | None:
+    """Name the first field on which a prior row differs from `expected`.
+
+    `None` when every prior row carries exactly `expected`'s values. A field
+    a prior row does not carry differs: an unknown value never counts as a
+    match. `derived` names a value computed from a row rather than read off
+    one key (the judged probe's judge model ids), compared the same way.
+    """
+    derived = derived or {}
+    for row in prior_rows:
+        for field, value in expected.items():
+            on_disk = derived[field](row) if field in derived else row.get(field)
+            if on_disk != value:
+                return (
+                    f"item {row.get('item_id')!r} was written with {field}="
+                    f"{on_disk!r}, this invocation runs {field}="
+                    f"{value!r}"
+                )
+    return None

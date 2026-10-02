@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from wave_local_ai_v2 import row_contract, suite_snapshot
+from wave_local_ai_v2 import row_contract, score_interval, suite_snapshot
 
 FLOOR = "7"
 RUN_ID = "run-under-test"
@@ -33,6 +33,9 @@ NAMED_VALUES: dict[str, Any] = {
     "fiche_hash": FICHE_HASH,
     "suite_id": SUITE_ID,
     "suite_version": SUITE_VERSION,
+    "prompt_variant_id": "baseline",
+    "prompt_variant_version": "1",
+    "suite_level": "development",
     "cpu_energy_kwh": 0.0003,
     "cpu_energy_method": "estimated_tdp",
     "gpu_energy_kwh": 0.0009,
@@ -56,6 +59,33 @@ NAMED_VALUES: dict[str, Any] = {
         "reference_run_id": None,
         "differing_fields": [],
     },
+    "retry_budget": {},
+    "partial_failure": None,
+    "item_tokens_in": 57,
+    "item_tokens_in_null_reason": None,
+    "item_tokens_out": 2,
+    "item_tokens_out_null_reason": None,
+    "item_ttft_ms": 13.7,
+    "item_ttft_ms_null_reason": None,
+    "item_ttft_source": "server_reported",
+    "item_prompt_tokens_cached": 0,
+    "item_prompt_tokens_cached_null_reason": None,
+    "item_measurement_kind": "single_generation",
+    "item_first_in_batch": True,
+    # The fixture's provider is a placeholder, not `local`, so the row is read
+    # as a cloud subject's: a family and no size class.
+    "family": "qwen",
+    "size_class": None,
+    # The reference harness, measured: the engine received the item's own
+    # prompt and nothing around it.
+    "harness_id": "direct",
+    "harness_version": "2.32.5",
+    "harness_prompt_overhead": {"tokens": 0, "null_reason": None},
+    # The batch's interval over its one item: constant, so zero_width; the
+    # two empty language cells name no_items.
+    "score_interval": score_interval.interval_block(
+        [{"item_id": "billing-01", "language": "en"}], [1.0]
+    ),
 }
 
 GRADED_VALUES: dict[str, Any] = {
@@ -165,4 +195,5 @@ def build_bundle(tmp_path: Path) -> dict[str, Path]:
         "fiches": fiches,
         "roster": roster_path,
         "suites": suites,
+        "leader_sets": tmp_path / "leader-sets",
     }

@@ -1,0 +1,17 @@
+run 5e13166d local    Qwen3.6-35B-A3B      n=20 accuracy=0.80 interval=[0.600, 0.950] mde=0.175
+    en n=10 accuracy=0.600 [0.300, 0.900] mde=0.300
+    fr n=5 accuracy=1.000 null_reason=zero_width
+    de n=5 accuracy=1.000 null_reason=zero_width
+run 5e13166d mistral  mistral-small-2603   n=20 accuracy=0.95 interval=[0.850, 1.000] mde=0.075
+    en n=10 accuracy=1.000 null_reason=zero_width
+    fr n=5 accuracy=1.000 null_reason=zero_width
+    de n=5 accuracy=0.800 [0.400, 1.000] mde=0.300
+run d20afbda local    Qwen3.6-35B-A3B      n=20 accuracy=0.80 interval=[0.600, 0.950] mde=0.175
+    en n=10 accuracy=0.600 [0.300, 0.900] mde=0.300
+    fr n=5 accuracy=1.000 null_reason=zero_width
+    de n=5 accuracy=1.000 null_reason=zero_width
+run d20afbda mistral  mistral-small-2603   n=20 accuracy=0.90 interval=[0.750, 1.000] mde=0.125
+    en n=10 accuracy=1.000 null_reason=zero_width
+    fr n=5 accuracy=1.000 null_reason=zero_width
+    de n=5 accuracy=0.600 [0.200, 1.000] mde=0.400
+seed=20261002 resamples=10000 method=percentile procedure=stdlib-getrandbits-percentile/1 generator={'library': 'CPython random.Random', 'version': '3.12'}

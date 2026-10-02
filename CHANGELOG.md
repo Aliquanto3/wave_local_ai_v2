@@ -9,6 +9,252 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Every row names the engine that produced it, and the fiche hashes it
+  (row schema "22")** -- a tracked engine registry
+  (`aidd_docs/roster/engines.json`, `engines.py`) holds one entry,
+  `llama.cpp`, declared the reference engine: its live build probe, its
+  endpoints, lifecycle `spawned`, host and default port, the request field
+  its thinking switch is carried in, how its launch flags are made path-free,
+  and its configuration defaults, each marked `declared` or
+  `engine_reported`. An entry missing any of these refuses to load, naming
+  the field. `server.py` reads host, port and the health path from the
+  entry instead of module constants (the MoE flagship's launch is
+  byte-identical); `local_client` refuses a roster control spelled outside
+  the engine's switch field, and an engine declaring no switch (`none`)
+  refuses a `disabled` batch whose entry declares an object control, as the
+  candidate gate refuses such a candidate. A declared switch that renders no
+  difference still refuses the batch before any generation. Every runtime row and every local quality row carries
+  `engine_id` and the probed `engine_build`; the writer gate refuses a row
+  naming an unregistered engine, and a cloud subject's row must state
+  `engine_id: "not_applicable"` with a null build. The fiche replaces
+  `llama_cpp_build` with `engine_id`, `engine_build` and
+  `engine_config_hash` (the flag list with the model path replaced by the
+  roster entry and host/port removed) inside a second hashed projection;
+  committed fiches keep verifying under the first, chosen by the citing
+  row's `schema_version`. The engine fields replace `llama_cpp_build` among
+  the runtime verdict's blocking fields, so a run against the committed
+  reference rows is `not_comparable` until the bundle is republished. Along
+  the comparison's `model` dimension, `engine_id` and `engine_build` move
+  with the axis only between a local and a cloud side; two local sides on
+  another engine or build are confounded. A `--resume` over rows written
+  under another engine or build is refused. Rows below "22" are not
+  back-filled.
+- **The tabular export carries the interval and the comparison record, and a
+  reader recomputes them from the tables alone** -- the meaning, unit and null
+  reasons of every comparison-family, comparison, leader-set and subject field
+  are now defined beside the code that writes them
+  (`comparison.FAMILY_RECORD_FIELDS`, `comparison.COMPARISON_RECORD_FIELDS`,
+  `leader_set.LEADER_SET_RECORD_FIELDS`, `leader_set.SUBJECT_RECORD_FIELDS`,
+  on the shared `field_doc.FieldDoc`) and read by `wave-local-ai-v2-export`,
+  never redefined there; a dictionary entry that differs from its definition
+  fails a test. The interval columns state the draw procedure in full, and a
+  row written before schema "21" shows them empty, listed in its
+  `fields_not_carried`, never zero or back-filled; the stale "interval block
+  not in the bundle" dictionary entry is gone. `scripts/recompute_from_export.py`
+  (standard library, imports nothing from the package) recomputes every
+  interval, every McNemar comparison and each family's Holm-adjusted p from
+  the exported CSVs and exits 1 on any difference.
+
+- **Every quality batch publishes its interval and what it could resolve
+  (row schema "21")** -- `score_interval.py` computes, once per batch and over
+  the same items as the score, a 95% percentile bootstrap interval (10 000
+  resamples) on the suite score, unstratified, and on each language cell,
+  resampled within its language, for the exact-match and graded scorers
+  alike. The `score_interval` block rides every row of the batch and carries
+  the confidence level, resample count, method, seed, generator identity and
+  version, and a versioned draw procedure
+  (`stdlib-getrandbits-percentile/1`: draw order, tie handling and type-7
+  percentile interpolation, defined in the module), so a recorded block
+  replays bit for bit. Each cell publishes its bounds and the minimum
+  detectable effect (the interval's half-width, read off the same resample),
+  or none of them and one named reason: `zero_width` for a cell whose items
+  all scored the same (a suite at 1.0 or 0.0), `no_items` for an empty
+  language cell. A failed generation resamples as its zero. Before a batch is
+  written, three invariants are checked: the estimate lies inside its
+  interval, each interval's n equals the published breakdown's, and every row
+  carries the identical block. Partial batches and judge-probe rows carry
+  `null`, as their scores are. Standard library only at runtime; scipy is a
+  dev-only test oracle. Rows below "21" are not back-filled.
+
+- **Every quality row names its agentic harness, the harness's version and
+  its prompt overhead (row schema "20")** -- `harness.py` holds Methodology
+  23's candidate set, closed at five (`direct`, `smolagents`, `langgraph`,
+  `pydantic-ai`, `llamaindex`), and the writer gate refuses any other
+  `harness_id`. `harness_version` is read from the harness's installed package
+  when the row is written (`direct`: the `requests` client). The per-call
+  `harness_prompt_overhead` follows owner answer Q33 (a): the engine's
+  prompt-token count minus the item's own rendered prompt, tool definitions
+  included, under the model's tokenizer (`/tokenize` over the `/apply-template`
+  string, one extra local call per item), or `null` with its reason --
+  `unmeasurable` for a harness that rewrites rather than wraps the item's
+  prompt, `item_prompt_not_counted` on a cloud row, never a zero in place of a
+  measurement. Both quality writers record `direct`; the framework adapters
+  are later stories and none is a dependency. Rows below "20" are not
+  back-filled.
+
+- **Each suite and machine class publishes the local models not
+  distinguishable from the best** -- `wave-local-ai-v2-compare --leader-sets`
+  groups the published rows' local subjects by suite and by the machine class
+  their fiche records (`machine_id`, `compute_mode`, `cpu`, `ram_gb`,
+  `gpu_name`, `os`; a field the fiche lacks is listed as not recorded), names
+  the subject with the highest published suite score (a tie goes to the
+  `(run_id, model_id)` that sorts first), grows the suite's `model` family by
+  the comparisons against it, and writes one immutable leader-set record per
+  group to `aidd_docs/results/leader-sets/`: each subject `member`
+  (`not distinguishable` on the Holm-adjusted p), `excluded`
+  (`distinguishable`) or `not compared` (a refusal or an observation, which
+  marks the record `incomplete`). A changed group supersedes its record by
+  `leader_set_id`; a re-run is byte-identical. The pitch overview's `leader`
+  now resolves from the current record (`LEADER_SETS_DIR`) instead of the
+  never-written `leader_set_member` row field, and a suite without a record
+  reads `pointer_unresolved`. The committed bundle publishes the first one:
+  `classification-support-routing@2` on the laptop, one member, incomplete
+  (the second batch is refused on `thinking_policy`).
+
+- **The roster composition check names every size class and refuses an
+  unlabelled single-family one (row schema "19", `roster_version` 4)** --
+  `wave-local-ai-v2-composition-check` reports per size class (`~0.5B`,
+  `~2B`, `~4B`, `~8B-and-up`, banded on total parameters at 1B/3B/6B) the
+  families it spans, dense and MoE presence, the single-family-ladder label
+  and the MoE declaration, then per entry its total parameters, bytes on
+  disk and licence terms. It exits `1` naming the class or entry when a
+  class spans one family unlabelled or has no MoE and no recorded reason,
+  or an entry lacks a resolvable family, a size class, its figures or a
+  licence block, or declares a class its total parameters disagree with.
+  Each roster entry now declares `size_class`, `architecture.total_params`
+  and `bytes_on_disk` (read off the GGUF), and the roster's `size_classes`
+  block declares each class. On the shipped roster it fails, naming four
+  unlabelled `qwen` classes; the output is quoted in
+  `aidd_docs/results/README.md`. Every quality row now carries its
+  subject's `family` and `size_class` (`null` on a cloud row); rows below
+  "19" are not back-filled.
+
+- **Each quality item records the tokens and the first-token time its
+  generation took (row schema "18")** -- every quality row carries the
+  item's own `item_tokens_in`, `item_tokens_out`, engine-reported
+  `item_ttft_ms` (llama-server `timings.prompt_ms`, labelled
+  `item_ttft_source: server_reported`) and `item_prompt_tokens_cached`
+  (`timings.cache_n`: the engine reuses a prompt prefix shared with the
+  previous item, so the TTFT covers only the rest), each a value or null
+  with its `*_null_reason` (`not_reported_by_engine`,
+  `not_reported_by_provider`, `no_generation_call`), never a zero.
+  `item_measurement_kind: single_generation` states it is one generation
+  per item, not the runtime protocol's Methodology 6 aggregate (no warm-up
+  exclusion, no repetitions), and `item_first_in_batch` marks the batch's
+  cold first generation. A cloud row carries its provider's per-call token
+  counts and a null TTFT. Energy stays per batch. `wave-local-ai-v2-compare
+  --quantity item_tokens_in|item_tokens_out|item_ttft_ms` runs the Wilcoxon
+  signed-rank test over the same item ids (scoring kind
+  `continuous_measurement`); `--quantity energy_kwh` publishes the per-batch
+  difference as an observation saying why it carries no paired test. Score
+  comparisons and their published records are unchanged. Rows already
+  written keep their schema version and are not rewritten (owner decision
+  Q24 (a)).
+
+- **A publication-size cloud batch survives its rate limits and resumes per
+  item (row schema "17")** -- the cloud retry budget is no longer one fixed
+  batch total: it is `max(CLOUD_RETRY_MIN_RETRIES, ceil(items *
+  CLOUD_RETRY_RETRIES_PER_ITEM))` over the items a batch calls for (defaults
+  `4` and `0.2`, so a 20-item batch keeps its 4 retries and a 100-item one
+  gets 20). `CLOUD_RETRY_MAX_ATTEMPTS` is removed. A cloud failure mid-batch
+  now writes the items already answered, each marked `partial_failure`
+  (provider, item, reason) with no suite-level score, instead of discarding
+  them; `--resume` issues calls only for the items a batch never wrote
+  (`results.resume_missing_items` replaces `resume_skip_reason`), appends
+  their rows, and computes the completed batch's score, agreement and
+  contested set over every item through the same aggregate an
+  uninterrupted batch uses (`scoring_rules.BATCH_AGGREGATES`; the registry
+  refuses a rule without one). A resume over rows written under another
+  configuration (model, suite version, prompt set, prompt variant, sampler,
+  roster entry, endpoint, thinking policy, or the probe's judge models) is
+  refused naming the field, writing nothing. A comparison side whose batch
+  stayed partial is published as an observation naming `partial_failure`.
+  Both the suite CLI and the judged probe follow the rule. Every quality row carries `retry_budget` and
+  `partial_failure`; the writer gate refuses a partial row publishing a
+  score, a malformed budget, and retries above the provider's budget. Rows
+  already written keep their schema version and are not rewritten.
+
+- **Every row records whether its prompt left the machine (row schema
+  "16")** -- every runtime and quality row carries `subject_egress`: `none`
+  when the subject prompt was served on the machine, or the id of the cloud
+  provider that received it. The runtime writer stamps `none`; the quality
+  CLI and the judge probe stamp `none` for a local subject and the provider
+  id for a cloud one, through one mapping, `row_contract.subject_egress_for`.
+  The writer gate refuses a row of either kind without the field or with it
+  `null`, naming it, refuses a runtime row recording anything but `none`,
+  and refuses a quality row whose value contradicts its `provider`. The judge block's `judge_egress` is unchanged and describes the
+  judge calls apart from the subject call. The field joins the comparison's
+  `model` dimension, the read model's not-rendered sets and the export's
+  column dictionary. Rows already written keep their schema version and are
+  not rewritten.
+
+- **Every roster entry states its family, its licence and its language
+  claim (`roster_version` 3)** — `roster.KNOWN_FAMILIES` grows to the
+  candidate vendors (`ibm`, `liquid`, `microsoft` beside `qwen`, `mistral`,
+  `google`: a family is the vendor lineage, so Gemma is `google` and
+  Ministral `mistral`), and a declared `family` outside it is refused at
+  load. An entry can carry a `licence` block (SPDX id, client-side
+  commercial use, read date, source URL) and a `language_claim` (which of
+  EN/FR/DE the model card names, its source, read date and verbatim
+  wording), each shape-checked at load. All four shipped entries carry
+  both, read off their cards at the pinned revision: `Apache-2.0`,
+  commercial use permitted; no card names EN, FR or DE, so every claim
+  lists none. The bundle's `roster.csv` carries both blocks as columns.
+  Published rows keep the roster version they were produced under.
+
+- **A suite is certified to its declared level (row schema "15")** — a
+  suite definition declares `level`, `development` or `publication`.
+  `development` keeps the 20-item, 25%-per-language gate and its
+  indicative marking unchanged. `publication` needs at least 100 items and
+  at least the size target the suite declares (`size_target` 100 or 300,
+  with `size_target_reason`), the same 25% share, and a `licence`, `source`
+  and `source_revision` on every item; a publication suite that falls short
+  is refused at load naming every shortfall, never certified at
+  `development` instead. `gate_suite` returns the level it certified, and
+  every quality row carries `suite_level`, `item_licence`, `item_source`
+  and `item_source_revision`; the writer gate refuses an unknown level and
+  a publication row with a null declaration. Both shipped suites declare
+  `development` and give every hand-written item `licence` `CC-BY-4.0`,
+  which bumps classification to version `4` and translation to `3` with no
+  item text or `prompt_set_hash` moved; their `@3`/`@2` snapshots stay
+  beside the new ones. The snapshot export now refuses to overwrite a
+  published file with different content. Licence and source are author
+  declarations nothing verifies (`aidd_docs/results/README.md`).
+
+- **A suite is data resolved by its id** — each task suite is one JSON
+  definition in `src/wave_local_ai_v2/suite_data/<suite_id>.json` holding
+  its id, version, `task_suite`, the four generation constraints, the name
+  of its scoring rule and its tagged items. `suite_registry.py` resolves an
+  id to its definition and runs `suite_gate.gate_suite` on it as it loads,
+  so a definition the gate refuses is never run; `scoring_rules.py` holds
+  the two named rules (`exact_label_match`, `chrf_against_reference`). The
+  quality CLI imports no suite module and holds no suite table any more:
+  registering a further suite is a new data file and, only where its
+  scoring differs, a new named rule. Unknown suite-level and item keys are
+  carried as data and exported in the snapshot, which is where the interval
+  epic's level, licence and source fields will land. Both shipped suites
+  moved with no item, prompt or cap changed: their versions and
+  `prompt_set_hash` are unchanged and their committed snapshots regenerate
+  byte for byte. No published row is rewritten.
+
+- **A prompt variant on every row (row schema "14")** — `prompt_variants.py`
+  is the tracked variant registry, holding one entry today, `baseline`
+  version `1`, the identity transformation. Each entry carries its id,
+  version, definition and the definition's content hash, and an edited
+  definition at an unchanged version fails the module's import, naming the
+  variant. The declared variant is applied to the authored prompt through
+  `prompt_variants.apply_variant` before any engine's templating, on the
+  runtime fixed prompt, both suites' local and cloud paths, and the judge
+  probe's subject calls (the judges still see the authored item). Every
+  quality and runtime row now carries `prompt_variant_id`,
+  `prompt_variant_version` and `prompt_before_template`; `prompt` stays the
+  string the engine finally received. The writer gate refuses a row missing
+  either variant field, naming a variant or version the registry lacks, or
+  declaring `baseline` while its `prompt_before_template` differs from the
+  item's authored text (or names an item whose text cannot be resolved).
+  Rows below "14" are read under their own version and never back-filled
+  with `baseline`.
+
 - **`GET /api/overview/quality` and `GET /api/overview/runtime`, and
   `views/overview/`** — the service root, replacing the runs list as
   `App.tsx`'s landing screen (the runs list stays one click away). One card
@@ -21,6 +267,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exist, composing nothing server-side across them; `CoverageAbsence.tsx`
   renders the `no-use-case-is-silently-absent` absence once, at the page
   level.
+
+### Changed
+
+- **`wave-local-ai-v2-quality --suite` takes a suite id** —
+  `classification-support-routing` (the default) or
+  `translation-business-short-form`. The short values `classification` and
+  `translation` are refused like any unregistered id, naming the registered
+  ones; they remain each row's `task_suite`. An invocation without
+  `--suite` is unchanged.
 
 ## [0.2.0] - 2026-09-22
 

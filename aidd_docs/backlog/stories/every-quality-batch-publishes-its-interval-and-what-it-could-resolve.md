@@ -1,6 +1,6 @@
 ---
 type: story
-status: ready
+status: done
 source: aidd_docs/backlog/epics/a-score-is-published-with-its-interval-a-difference-with-its-test.md
 parent: aidd_docs/backlog/epics/a-score-is-published-with-its-interval-a-difference-with-its-test.md
 order: 1
@@ -24,10 +24,10 @@ Current state: no interval exists anywhere in the codebase. `scoring.py` publish
 - The interval block carries six values beside the score it qualifies: confidence level 95%, resample count 10 000, method `percentile`, the seed, the random generator's identity and version, and a versioned draw-procedure id whose published definition covers draw order, tie handling and percentile interpolation. The suite score resamples unstratified; a per-language cell resamples stratified within its language. [Methodology 24]
 - A failed generation stays in the resampled item set as the zero Methodology 9 makes it; an interval over the successes alone is never published.
 - Every row of one batch carries the identical interval block, the way `language_breakdown` already rides every row of a batch. No already-published row is rewritten with an interval it was never written with.
-- Beside every interval, the batch publishes a minimum detectable effect for its suite and scoring kind, read off the same resample rather than computed a second way.
+- Beside every interval, the batch publishes a minimum detectable effect for its suite and scoring kind: the half-width of the 95% interval, read off the same resample rather than computed a second way.
 - Each undefined or misleading case publishes a value and exactly one non-null reason, never both, and each reason is produced by the state that names it and by no other: a suite scored 1.0 or 0.0 returns a zero-width reason rather than `[1.0, 1.0]`; a language cell at n=0 returns its reason rather than an interval around 0.0.
 - Replaying a recorded interval block (seed, generator identity and version, draw-procedure id, resample count, method, confidence level) over the same items returns the identical interval, bit for bit.
-- On a proportion, the bootstrap agrees with the Wilson 95% reference interval to within 0.01 on each bound at n=20, p=0.80 and at n=100, p=0.80. Wilson is the one reference, named in advance.
+- On a proportion, each bootstrap bound equals the exact binomial reference within one grid step (1/n): the 2.5% and 97.5% quantiles of Binomial(n, p̂)/n, at n=20, p=0.80 and at n=100, p=0.80. The exact binomial is the one reference, named in advance; the Wilson 95% interval stays a coarse sanity check only, within 0.05 on each bound at n=100.
 - Three invariants hold on every batch and fail loudly when broken: the point estimate lies inside its own interval; the n the interval was computed over equals the n already published in `language_breakdown` or `score_breakdown`; every row of the batch carries the identical block. A resumed batch whose interval and score were computed over different item sets fails them.
 - The statistics run on the standard library at runtime; `scipy` is added as a dev-only test oracle and never imported by `src/`.
 - The new contract fields are declared unrendered in the view partition (`QUALITY_FIELDS_NOT_RENDERED`), so the build passes without any view rendering them; whether the pitch renders them is that epic's call.
@@ -42,7 +42,7 @@ Current state: no interval exists anywhere in the codebase. `scoring.py` publish
 
 ## Tests it needs
 
-- A hand-computed interval on a small fixture; the Wilson agreement at both sizes; scipy's bootstrap as an independent oracle where its convention matches, and a test documenting the convention where it does not.
+- A hand-computed interval on a small fixture; the exact-binomial agreement at both sizes and the Wilson sanity check at n=100; scipy's bootstrap as an independent oracle where its convention matches, and a test documenting the convention where it does not.
 - Bit-for-bit replay of a recorded block; a changed seed changes the interval.
 - Each null reason produced by its own state and by no other.
 - The three batch invariants, including a constructed resumed batch that breaks the n invariant.

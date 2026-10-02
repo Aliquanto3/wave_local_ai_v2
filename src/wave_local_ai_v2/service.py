@@ -217,6 +217,7 @@ def create_app(settings: ServiceSettings) -> FastAPI:
                 loaded_roster(),
                 settings.suite_definitions_dir,
                 settings.fiche_registry_dir,
+                settings.leader_sets_dir,
             )
         )
 

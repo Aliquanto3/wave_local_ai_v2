@@ -96,8 +96,15 @@ flowchart LR
   `__init__.py` and `quality_cli.py` no longer hardcode these as source
   constants — they resolve everything through `roster.resolve_entry` plus
   two host-fitted settings (`SERVER_N_CPU_MOE`, `SERVER_THREADS` — see
-  `cli.md`) that are not roster data. `llama_cpp_build` is likewise a live
-  probe of the running binary (`build_probe.py`), never a constant string.
+  `cli.md`) that are not roster data. The engine is data too: the engine
+  registry (`aidd_docs/roster/engines.json`, parsed by `engines.py`) holds
+  one entry per engine (`llama.cpp`, the reference) with its live build
+  probe, endpoints, lifecycle, host and port, thinking-switch field, the
+  path-free normalisation its launch flags are hashed under, and its
+  configuration defaults, each marked `declared` or `engine_reported`.
+  `server.py` reads host, port and the health path from it; the build is a
+  live probe of the running binary (`build_probe.py` through the entry),
+  never a constant string.
 - A dense roster entry carries **no** `--n-cpu-moe` and **no** `--load-mode
   none` — the two flags that exist only to make an MoE offload work. That is
   enforced, not conventional: the entry's `architecture` block
@@ -115,7 +122,8 @@ flowchart LR
 - `detect-secrets` opens files with the locale default encoding and silently skips any it cannot decode ("we flat out ignore binary files"), so on Windows (cp1252) a doc containing `✏️`, `‌` or `←` is never scanned at all — always invoke it in UTF-8 mode (`python -X utf8 -m detect_secrets...`), on every OS.
 - Regenerate `.secrets.baseline` **only** with the same `--exclude-files` pattern the hook in `.pre-commit-config.yaml` uses. A plain `detect-secrets scan` baselines the fiches and suite-definition snapshots that pattern exists to skip, and the hook then trims them back out on its next run (`pre_commit_hook.main` → `SecretsCollection.trim`: an entry whose file is in the passed filelist but yields no scan result is dropped), rewriting the file and exiting 3. It fails on Linux only: `load_from_baseline` runs each key through `convert_local_os_path`, so a baseline written on Windows has its `\` keys normalised to `/` on the runner and they finally match pre-commit's forward-slash filelist — on Windows they never match and the stale entries survive. A green local gate therefore proves nothing about CI here; the baseline's `results` must hold only files the hook actually scans.
 - That `--exclude-files` pattern is coupled to the **filenames**, so renaming an excluded artifact silently un-excludes it. Suite snapshots moved to `<suite_id>@<suite_version>.json` and the pattern's `[a-z0-9-]+` stopped matching, so the hook flagged three public `prompt_set_hash` values as secrets. Widen the character class with the filename; never answer this by baselining the hash, which puts back exactly the entries the row above says the baseline must not hold.
-- Runtime metrics are NOT reproducible across machines. Every result row must cite its hardware fiche by `fiche_hash` (CPU, RAM, GPU, driver, llama.cpp build, quant, roster entry + its sha256, and the raw flags as evidence); the fiche itself is stored write-once under `aidd_docs/results/fiches/<hash>.json` (`fiche_registry.py`) rather than flattened onto the row, and `wave-local-ai-v2-validate` proves a cited fiche was neither edited nor lost. A number without a fiche is meaningless.
+- Runtime metrics are NOT reproducible across machines. Every result row must cite its hardware fiche by `fiche_hash` (CPU, RAM, GPU, driver, engine id + build + configuration hash, quant, roster entry + its sha256, and the raw flags as evidence); the fiche itself is stored write-once under `aidd_docs/results/fiches/<hash>.json` (`fiche_registry.py`) rather than flattened onto the row, and `wave-local-ai-v2-validate` proves a cited fiche was neither edited nor lost. A number without a fiche is meaningless.
+- The fiche hash has **versioned projections** (`hardware.FICHE_PROJECTIONS`): `"1"` (with `llama_cpp_build`) for every fiche cited by a row below schema `"22"`, `"2"` (with `engine_id`, `engine_build`, `engine_config_hash`) from it. The citing row's `schema_version` picks the projection (`row_contract.fiche_projection_for`), never a key the fiche lacks, so changing the projection never rewrites a committed fiche; a story adding a projection key adds a projection version and rebases onto the latest one.
 - llama.cpp has architecture-specific flags that are not optional: `--load-mode none` is required when `--n-cpu-moe` is set (otherwise mmap pages from disk), `--jinja` is required for `<think>` tag parsing, `-np 1` avoids the 4-slot default allocation.
 - MoE models (e.g. Qwen3) have a fixed number of experts; `--n-cpu-moe` has a hard ceiling and sweep gains are typically within measurement noise.
 - Energy and carbon figures are ESTIMATES, not measurements, except GPU energy. Every
@@ -135,3 +143,9 @@ flowchart LR
   Wh-per-token formula since no on-machine energy exists to attribute to a network
   call) — the two are not directly comparable, and every Scope-3 row states that in
   its own `scope_comparability` field. See `docs/setup.md` section 5.
+- Egress is recorded per call, not per row. `subject_egress` (schema "16", both
+  row kinds) says where the subject prompt went: `none`, or the cloud provider
+  id, held equal to `row_contract.subject_egress_for(provider)` on quality
+  rows. A judged row's `judge_egress` separately records that the item and the
+  subject output left the machine for judging. "Nothing left the machine"
+  holds for a row only when both say so; the two are never merged.

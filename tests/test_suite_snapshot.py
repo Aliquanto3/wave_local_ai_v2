@@ -1,74 +1,94 @@
 import json
 
-from wave_local_ai_v2 import classification_suite, translation_suite
-from wave_local_ai_v2.classification_suite import CLASSIFICATION_TASK_SUITE
+from wave_local_ai_v2 import suite_registry, suite_snapshot
 from wave_local_ai_v2.suite_snapshot import (
-    SNAPSHOT_BUILDERS,
     SUITE_DEFINITIONS_DIR,
-    classification_snapshot,
+    all_snapshots,
+    build_snapshot,
     snapshot_filename,
-    translation_snapshot,
+    snapshot_text,
 )
-from wave_local_ai_v2.translation_suite import TRANSLATION_TASK_SUITE
+
+CLASSIFICATION = suite_registry.resolve("classification-support-routing")
+TRANSLATION = suite_registry.resolve("translation-business-short-form")
 
 
-def test_snapshot_carries_the_live_suites_identity() -> None:
-    snapshot = classification_snapshot()
-
-    assert snapshot["suite_id"] == classification_suite.SUITE_ID
-    assert snapshot["suite_version"] == classification_suite.SUITE_VERSION
-    assert snapshot["prompt_set_hash"] == classification_suite.PROMPT_SET_HASH
-    assert snapshot["max_output_tokens"] == classification_suite.MAX_OUTPUT_TOKENS
-    assert snapshot["stop_sequences"] == classification_suite.STOP_SEQUENCES
-    assert snapshot["thinking_policy"] == classification_suite.THINKING_POLICY
-    assert snapshot["context_length"] == classification_suite.CONTEXT_LENGTH
+def classification_snapshot() -> dict:
+    return build_snapshot(CLASSIFICATION)
 
 
-def test_snapshot_items_round_trip_the_live_suite_exactly() -> None:
-    snapshot = classification_snapshot()
+def translation_snapshot() -> dict:
+    return build_snapshot(TRANSLATION)
 
-    assert len(snapshot["items"]) == len(CLASSIFICATION_TASK_SUITE)
-    for snapshot_item, live_item in zip(
-        snapshot["items"], CLASSIFICATION_TASK_SUITE, strict=True
-    ):
-        assert snapshot_item == {
-            "item_id": live_item["item_id"],
-            "prompt": live_item["prompt"],
-            "expected_label": live_item["expected_label"],
-            "language": live_item["language"],
-            "provenance": live_item["provenance"],
-            "contamination_risk": live_item["contamination_risk"],
+
+def test_snapshot_carries_the_registered_suites_identity() -> None:
+    for definition in (CLASSIFICATION, TRANSLATION):
+        snapshot = build_snapshot(definition)
+
+        assert snapshot["suite_id"] == definition.suite_id
+        assert snapshot["suite_version"] == definition.suite_version
+        assert snapshot["prompt_set_hash"] == definition.prompt_set_hash
+        assert snapshot["max_output_tokens"] == definition.max_output_tokens
+        assert snapshot["stop_sequences"] == definition.stop_sequences
+        assert snapshot["thinking_policy"] == definition.thinking_policy
+        assert snapshot["context_length"] == definition.context_length
+
+
+def test_snapshot_publishes_exactly_the_keys_it_always_published() -> None:
+    # The scoring-rule name and task_suite are definition fields, never
+    # snapshot fields: exporting them would rewrite every committed file.
+    # `level` joined with the version bump that declared it.
+    for snapshot in all_snapshots():
+        assert set(snapshot) == {
+            "suite_id",
+            "suite_version",
+            "level",
+            "prompt_set_hash",
+            "max_output_tokens",
+            "stop_sequences",
+            "thinking_policy",
+            "context_length",
+            "items",
         }
 
 
-def test_translation_snapshot_carries_the_live_suites_identity() -> None:
-    snapshot = translation_snapshot()
+def test_classification_snapshot_items_carry_exactly_the_published_fields() -> None:
+    snapshot = classification_snapshot()
 
-    assert snapshot["suite_id"] == translation_suite.SUITE_ID
-    assert snapshot["suite_version"] == translation_suite.SUITE_VERSION
-    assert snapshot["prompt_set_hash"] == translation_suite.PROMPT_SET_HASH
-    assert snapshot["max_output_tokens"] == translation_suite.MAX_OUTPUT_TOKENS
-    assert snapshot["stop_sequences"] == translation_suite.STOP_SEQUENCES
-    assert snapshot["thinking_policy"] == translation_suite.THINKING_POLICY
-    assert snapshot["context_length"] == translation_suite.CONTEXT_LENGTH
-
-
-def test_translation_snapshot_items_round_trip_the_live_suite_exactly() -> None:
-    snapshot = translation_snapshot()
-
-    assert len(snapshot["items"]) == len(TRANSLATION_TASK_SUITE)
+    assert len(snapshot["items"]) == len(CLASSIFICATION.items)
     for snapshot_item, live_item in zip(
-        snapshot["items"], TRANSLATION_TASK_SUITE, strict=True
+        snapshot["items"], CLASSIFICATION.items, strict=True
     ):
-        assert snapshot_item == {
-            "item_id": live_item["item_id"],
-            "prompt": live_item["prompt"],
-            "source_text": live_item["source_text"],
-            "reference": live_item["reference"],
-            "language": live_item["language"],
-            "target_language": live_item["target_language"],
-            "provenance": live_item["provenance"],
-            "contamination_risk": live_item["contamination_risk"],
+        assert snapshot_item == dict(live_item)
+        assert set(snapshot_item) == {
+            "item_id",
+            "prompt",
+            "expected_label",
+            "language",
+            "provenance",
+            "contamination_risk",
+            "licence",
+        }
+
+
+def test_translation_snapshot_items_carry_exactly_the_published_fields() -> None:
+    snapshot = translation_snapshot()
+
+    assert len(snapshot["items"]) == len(TRANSLATION.items)
+    for snapshot_item, live_item in zip(
+        snapshot["items"], TRANSLATION.items, strict=True
+    ):
+        assert snapshot_item == dict(live_item)
+        assert set(snapshot_item) == {
+            "item_id",
+            "prompt",
+            "source_text",
+            "reference",
+            "language",
+            "target_language",
+            "provenance",
+            "contamination_risk",
+            "licence",
         }
 
 
@@ -81,18 +101,17 @@ def test_translation_snapshot_publishes_no_expected_label() -> None:
         assert item["target_language"] != item["language"]
 
 
-def test_both_snapshots_round_trip_through_json() -> None:
-    for builder in SNAPSHOT_BUILDERS:
-        snapshot = builder()
-        assert json.loads(json.dumps(snapshot, sort_keys=True)) == snapshot
+def test_every_snapshot_round_trips_through_json() -> None:
+    for snapshot in all_snapshots():
+        assert json.loads(snapshot_text(snapshot)) == snapshot
 
 
-def test_the_two_snapshots_are_distinct_suites() -> None:
-    ids = {builder()["suite_id"] for builder in SNAPSHOT_BUILDERS}
+def test_every_registered_suite_is_exported() -> None:
+    ids = {snapshot["suite_id"] for snapshot in all_snapshots()}
 
     assert ids == {
-        classification_suite.SUITE_ID,
-        translation_suite.SUITE_ID,
+        "classification-support-routing",
+        "translation-business-short-form",
     }
 
 
@@ -103,25 +122,27 @@ def test_a_snapshot_is_addressed_by_suite_id_and_version() -> None:
 def test_every_shipped_suite_resolves_to_a_committed_definition_file() -> None:
     """The pointer a published row follows has to exist for the live suites,
     not only for the versions the reference bundle happens to cite."""
-    for builder in SNAPSHOT_BUILDERS:
-        snapshot = builder()
+    for snapshot in all_snapshots():
         path = SUITE_DEFINITIONS_DIR / snapshot_filename(
             snapshot["suite_id"], snapshot["suite_version"]
         )
         assert path.exists(), f"{path} is missing: re-export the snapshots"
 
 
-def test_every_committed_definition_equals_its_builders_output() -> None:
+def test_every_committed_definition_equals_its_export_byte_for_byte() -> None:
     """Existence is not integrity: a suite's items cannot change under an
-    unchanged version, so the committed file must be what the builder emits."""
-    for builder in SNAPSHOT_BUILDERS:
-        snapshot = builder()
+    unchanged version, so the committed file must be exactly what the export
+    writes. Compared as text, not as parsed JSON, so a key-order or
+    whitespace drift in the export fails too -- the migration of the two
+    shipped suites onto data must not move a byte. `read_text` folds the
+    platform newline, the only difference a checkout may introduce."""
+    for snapshot in all_snapshots():
         path = SUITE_DEFINITIONS_DIR / snapshot_filename(
             snapshot["suite_id"], snapshot["suite_version"]
         )
-        committed = json.loads(path.read_text(encoding="utf-8"))
-        assert committed == snapshot, (
-            f"{path} differs from its builder's output: bump the suite version "
+        committed = path.read_text(encoding="utf-8")
+        assert committed == snapshot_text(snapshot), (
+            f"{path} differs from its export: bump the suite version "
             "and re-export the snapshots, never edit either side alone"
         )
 
@@ -135,7 +156,9 @@ def test_a_version_bump_never_overwrites_its_predecessor() -> None:
     """
     for builder, previous in (
         (classification_snapshot, "2"),
+        (classification_snapshot, "3"),
         (translation_snapshot, "1"),
+        (translation_snapshot, "2"),
     ):
         snapshot = builder()
         assert snapshot["suite_version"] != previous
@@ -146,3 +169,53 @@ def test_a_version_bump_never_overwrites_its_predecessor() -> None:
         old = json.loads(old_path.read_text(encoding="utf-8"))
         assert old["suite_version"] == previous
         assert old["prompt_set_hash"] == snapshot["prompt_set_hash"]
+
+
+def test_every_hand_written_item_names_its_licence_at_the_development_level() -> None:
+    """The level and the per-item licence the version bump added, with the
+    prompt-set hash its predecessor published: no item text moved."""
+    for snapshot, predecessor in (
+        (classification_snapshot(), "3"),
+        (translation_snapshot(), "2"),
+    ):
+        assert snapshot["level"] == "development"
+        for item in snapshot["items"]:
+            assert item["provenance"] == "hand_written"
+            assert item["licence"] == "CC-BY-4.0"
+            assert "source" not in item
+        old_path = SUITE_DEFINITIONS_DIR / snapshot_filename(
+            snapshot["suite_id"], predecessor
+        )
+        old = json.loads(old_path.read_text(encoding="utf-8"))
+        assert "level" not in old
+        assert old["prompt_set_hash"] == snapshot["prompt_set_hash"]
+        assert [item["prompt"] for item in old["items"]] == [
+            item["prompt"] for item in snapshot["items"]
+        ]
+
+
+def test_exporting_over_a_published_file_with_other_content_is_refused(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    monkeypatch.setattr(suite_snapshot, "SUITE_DEFINITIONS_DIR", tmp_path)
+    published = tmp_path / snapshot_filename(
+        CLASSIFICATION.suite_id, CLASSIFICATION.suite_version
+    )
+    published.write_text('{"published": true}', encoding="utf-8")
+
+    assert suite_snapshot.main() == 1
+
+    assert published.read_text(encoding="utf-8") == '{"published": true}'
+    # Nothing else was written either: the refusal is checked before any write.
+    assert sorted(path.name for path in tmp_path.iterdir()) == [published.name]
+    assert published.name in capsys.readouterr().err
+
+
+def test_re_exporting_identical_content_is_a_no_op(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(suite_snapshot, "SUITE_DEFINITIONS_DIR", tmp_path)
+
+    assert suite_snapshot.main() == 0
+    before = {path.name: path.read_bytes() for path in tmp_path.iterdir()}
+
+    assert suite_snapshot.main() == 0
+    assert {path.name: path.read_bytes() for path in tmp_path.iterdir()} == before

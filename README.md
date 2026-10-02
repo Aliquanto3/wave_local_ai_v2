@@ -103,11 +103,20 @@ energy figure.) `wave-local-ai-v2-quality` is the only command that needs
 | `wave-local-ai-v2` | One runtime row, with its hardware fiche, appended to `runtime.jsonl` |
 | `wave-local-ai-v2-quality` | One row per (item, model) appended to `quality.jsonl`, for the suite `--suite` names |
 
-`--suite` selects what is scored, defaulting to `classification`:
-`classification` routes 20 support messages into one of four labels and
-publishes an exact-match `suite_accuracy`; `translation` translates 21 short
-business sentences in three directions (`en→fr`, `fr→de`, `de→en`) and
-publishes a chrF `suite_score` against a hand-written reference. The two
+`--suite` takes a registered suite id, defaulting to
+`classification-support-routing`: it routes 20 support messages into one of
+four labels and publishes an exact-match `suite_accuracy`;
+`translation-business-short-form` translates 21 short business sentences in
+three directions (`en→fr`, `fr→de`, `de→en`) and publishes a chrF
+`suite_score` against a hand-written reference. An unregistered id is refused
+naming the registered ones. Each suite is a data definition in
+[`src/wave_local_ai_v2/suite_data/`](src/wave_local_ai_v2/suite_data/), one
+`<suite_id>.json` per suite holding its version, generation caps, the name of
+its scoring rule (`scoring_rules.py`) and its items with their language,
+provenance and contamination-risk tags; `suite_registry.py` resolves an id
+to its definition and runs the suite gate on it as it loads. Adding a suite
+is adding a file there (and a named scoring rule only if its scoring
+differs), not editing the CLI. The two
 write different score shapes into the same store — a graded row nulls
 `correct`/`suite_accuracy`/`language_breakdown` and carries `item_score`,
 `score_breakdown`, the metric parameters and both texts the score was
@@ -225,6 +234,40 @@ built or tested by this project's CI.
   a one-time manual visibility switch, verified at the first tag), or that
   the NVIDIA path works at all. Those belong to the epic's fresh-machine
   walk, done by a human on real hardware — not to this repository's CI.
+
+## Licence
+
+The code and the data are licensed separately.
+
+- **Code: MIT.** Everything that runs (the Python package, scripts, tests,
+  workflows) is licensed under the MIT License; see [`LICENSE`](LICENSE).
+- **Data: CC-BY 4.0.** The published results and what they cite are licensed
+  under Creative Commons Attribution 4.0 International; see
+  [`LICENSE-DATA`](LICENSE-DATA), which names every covered path. That is the
+  reference bundle's rows (current and superseded), the hardware fiches, the
+  suite definitions and their hand-written items (as published and as stored
+  in `src/wave_local_ai_v2/suite_data/`), the comparison records, the model
+  roster, the use-case coverage record, and the judge probe's hand-written
+  items in `judge_probe.py` (the code around them stays MIT). Each covered
+  directory holds a `NOTICE.md` stating its terms.
+
+`LICENSE-DATA` does not grant CC-BY 4.0 over what the repository does not own:
+
+- model weights, which their publishers license;
+- the third-party licences the roster records, which it records but does not
+  grant;
+- the model-output fields the rows carry (`predicted_label` today), which are
+  redistributed on the author's declaration that this is permitted, unverified
+  against each model's and provider's terms until the open spike on that
+  question concludes.
+
+The untracked per-machine `runtime.jsonl` and `quality.jsonl` are not
+published and not covered. No item is drawn from a public benchmark today; one
+that is will carry its source's licence, recorded per item, not CC-BY 4.0.
+
+The attribution string a reuser reproduces will be stated in this section,
+together with a `CITATION.cff` file. Until then, attribute as `LICENSE-DATA`
+section 4 describes.
 
 ## Project status
 

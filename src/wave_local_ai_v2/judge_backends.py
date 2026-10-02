@@ -6,6 +6,14 @@ provider-agnostic, so adding a third judge provider, or swapping one out,
 reopens this file and no other -- the same one-module-per-provider discipline
 the two clients themselves already follow.
 
+Each backend records what it actually sent and received, not what a judge
+call is supposed to look like. Neither provider's response body names a
+serving provider (Mistral's carries `choices`/`usage`; Google's carries
+`modelVersion`/`responseId`), so both record the provider that owns the
+direct endpoint they call. Neither request carries a reasoning-effort control
+(`mistral_client.complete_prompt` sends none; `google_client` deliberately
+omits `thinkingConfig`), so both record `judge.REASONING_EFFORT_NOT_SENT`.
+
 Neither backend catches its provider's errors. A transport failure or an
 exhausted retry budget propagates to the caller, which owns the "skip that
 provider, one stderr line, the run continues" contract
@@ -15,6 +23,7 @@ provider, one stderr line, the run continues" contract
 from __future__ import annotations
 
 import time
+from typing import TypedDict
 
 from wave_local_ai_v2 import google_client, judge, mistral_client, retry, roster
 
@@ -77,6 +86,14 @@ def mistral_judge_backend(
             tokens_in=response["prompt_tokens"],
             tokens_out=response["generated_tokens"],
             retries=retries_taken,
+            answering_provider=PROVIDER_MISTRAL,
+            answering_provider_source=judge.ANSWERING_PROVIDER_FROM_DIRECT_ENDPOINT,
+            reasoning_effort=judge.REASONING_EFFORT_NOT_SENT,
+            # Mistral's usage block carries prompt/completion/total and no
+            # reasoning counter, so there is nothing to read: null, not zero.
+            reasoning_tokens=None,
+            reasoning_tokens_source=None,
+            reasoning_tokens_null_reason=judge.REASONING_TOKENS_NOT_REPORTED_BY_PROVIDER,
         )
 
     return call
@@ -137,6 +154,35 @@ def google_judge_backend(
             tokens_in=response["prompt_tokens"],
             tokens_out=response["generated_tokens"],
             retries=retries_taken,
+            answering_provider=PROVIDER_GOOGLE,
+            answering_provider_source=judge.ANSWERING_PROVIDER_FROM_DIRECT_ENDPOINT,
+            reasoning_effort=judge.REASONING_EFFORT_NOT_SENT,
+            reasoning_tokens=response["reasoning_tokens"],
+            **_google_reasoning_provenance(response),
         )
 
     return call
+
+
+class _ReasoningProvenance(TypedDict):
+    reasoning_tokens_source: str | None
+    reasoning_tokens_null_reason: str | None
+
+
+def _google_reasoning_provenance(
+    response: google_client.GoogleCompletion,
+) -> _ReasoningProvenance:
+    """Name where a Google call's reasoning count came from, or why it is null."""
+    if response["reasoning_tokens"] is None:
+        return _ReasoningProvenance(
+            reasoning_tokens_source=None,
+            reasoning_tokens_null_reason=judge.REASONING_TOKENS_ABSENT_FROM_RESPONSE,
+        )
+    return _ReasoningProvenance(
+        reasoning_tokens_source=(
+            judge.REASONING_TOKENS_DERIVED_FROM_TOTALS
+            if response["reasoning_tokens_derived"]
+            else judge.REASONING_TOKENS_REPORTED
+        ),
+        reasoning_tokens_null_reason=None,
+    )

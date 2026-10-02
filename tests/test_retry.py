@@ -9,6 +9,11 @@ from wave_local_ai_v2.retry import (
     RetryBudget,
     RetryBudgetExhausted,
     call_with_retry,
+    derived_retry_budget,
+)
+from wave_local_ai_v2.settings import (
+    DEFAULT_CLOUD_RETRY_MIN_RETRIES,
+    DEFAULT_CLOUD_RETRY_RETRIES_PER_ITEM,
 )
 
 
@@ -193,3 +198,68 @@ def test_retry_budget_take_decrements_and_reports_exhaustion() -> None:
     assert budget.take() is True
     assert budget.take() is False
     assert budget.take() is False
+
+
+def _default_budget(item_count: int) -> int:
+    return derived_retry_budget(
+        item_count,
+        per_item=DEFAULT_CLOUD_RETRY_RETRIES_PER_ITEM,
+        minimum=DEFAULT_CLOUD_RETRY_MIN_RETRIES,
+    )
+
+
+def test_the_derived_budget_grows_with_the_item_count() -> None:
+    # A development-size batch keeps the four retries it was validated with;
+    # a publication-size one is not held to that total.
+    assert _default_budget(20) == 4
+    assert _default_budget(100) == 20
+    assert _default_budget(300) == 60
+    assert _default_budget(100) > _default_budget(20)
+
+
+def test_the_derived_budget_never_falls_below_its_floor() -> None:
+    assert _default_budget(0) == DEFAULT_CLOUD_RETRY_MIN_RETRIES
+    assert _default_budget(1) == DEFAULT_CLOUD_RETRY_MIN_RETRIES
+    # A fractional product rounds up: a budget is whole retries.
+    assert derived_retry_budget(21, per_item=0.2, minimum=1) == 5
+
+
+def test_the_derived_budget_refuses_a_negative_item_count() -> None:
+    with pytest.raises(ValueError, match="negative"):
+        derived_retry_budget(-1, per_item=0.2, minimum=4)
+
+
+def test_a_retry_budget_reports_the_total_it_started_with() -> None:
+    budget = RetryBudget(_default_budget(100))
+    budget.take()
+
+    assert budget.total == 20
+
+
+@pytest.mark.parametrize("item_count", [20, 100, 300, 10_000])
+def test_a_refusal_is_never_retried_whatever_the_budget(item_count: int) -> None:
+    # A model absent from the catalog, a family collision and an unparseable
+    # judge reply are deterministic: retrying one turns a named error into a
+    # timeout, however much budget a large batch was given.
+    budget = RetryBudget(_default_budget(item_count))
+    sleep = _RecordingSleep()
+    calls = {"n": 0}
+
+    def refused() -> None:
+        calls["n"] += 1
+        raise LookupError("model id absent from the live catalog")
+
+    with pytest.raises(LookupError):
+        call_with_retry(
+            refused,
+            is_retryable=lambda exc: False,
+            retry_hint_s=lambda exc: None,
+            budget=budget,
+            base_delay_s=1.0,
+            sleep=sleep,
+            jitter=lambda: 0.0,
+        )
+
+    assert calls["n"] == 1
+    assert sleep.calls == []
+    assert budget.take() is True

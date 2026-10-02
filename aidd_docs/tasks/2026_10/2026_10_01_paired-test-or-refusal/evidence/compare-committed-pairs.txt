@@ -1,0 +1,12 @@
+$ uv run wave-local-ai-v2-compare --reference 5e13166da0654390a7d63f346ea5d4f1 --reference-where model_id=Qwen3.6-35B-A3B --candidate 5e13166da0654390a7d63f346ea5d4f1 --candidate-where model_id=mistral-small-2603
+aidd_docs\results\comparisons\classification-support-routing@2.model.d4641d06a525.json written: refusal, verdict not comparable; refused on thinking_policy (absent)
+exit=0
+$ uv run wave-local-ai-v2-compare --reference 5e13166da0654390a7d63f346ea5d4f1 --reference-where model_id=Qwen3.6-35B-A3B --candidate 5e13166da0654390a7d63f346ea5d4f1 --candidate-where model_id=mistral-small-2603   # re-run
+aidd_docs\results\comparisons\classification-support-routing@2.model.d4641d06a525.json unchanged: refusal, verdict not comparable; refused on thinking_policy (absent)
+exit=0
+$ uv run wave-local-ai-v2-compare --reference d20afbda710c40378e6ad5ca8d9b6558 --reference-where model_id=Qwen3.6-35B-A3B --candidate d20afbda710c40378e6ad5ca8d9b6558 --candidate-where model_id=mistral-small-2603
+aidd_docs\results\comparisons\classification-support-routing@2.model.2ef9fd3581d2.json written: refusal, verdict not comparable; refused on thinking_policy (absent)
+exit=0
+$ uv run wave-local-ai-v2-compare --reference d20afbda710c40378e6ad5ca8d9b6558 --reference-where model_id=Qwen3.6-35B-A3B --candidate d20afbda710c40378e6ad5ca8d9b6558 --candidate-where model_id=mistral-small-2603   # re-run
+aidd_docs\results\comparisons\classification-support-routing@2.model.2ef9fd3581d2.json unchanged: refusal, verdict not comparable; refused on thinking_policy (absent)
+exit=0

@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 from generate_dev_cert import generate_cert
 
-from wave_local_ai_v2 import results, row_contract, service
+from wave_local_ai_v2 import read_model, results, roster, row_contract, service
 from wave_local_ai_v2.settings import ServiceSettings, SettingsError
 
 API_KEY = "a-service-key"  # pragma: allowlist secret
@@ -87,6 +87,7 @@ def settings(
         fiche_registry_dir=bundle["fiches"],
         roster_path=bundle["roster"],
         suite_definitions_dir=bundle["suites"],
+        leader_sets_dir=bundle["leader_sets"],
         dashboard_bundle_dir=dashboard_bundle_dir,
         dashboard_origin=DASHBOARD_ORIGIN,
         tls_certfile=certfile,
@@ -156,6 +157,7 @@ def test_the_quality_route_names_a_field_the_floor_predates_over_http(
         fiche_registry_dir=bundle["fiches"],
         roster_path=bundle["roster"],
         suite_definitions_dir=bundle["suites"],
+        leader_sets_dir=bundle["leader_sets"],
         dashboard_bundle_dir=dashboard_bundle_dir,
         dashboard_origin=DASHBOARD_ORIGIN,
         tls_certfile=certfile,
@@ -256,6 +258,7 @@ def test_the_overview_routes_carry_no_identity_from_the_other_store(
         fiche_registry_dir=bundle["fiches"],
         roster_path=bundle["roster"],
         suite_definitions_dir=bundle["suites"],
+        leader_sets_dir=bundle["leader_sets"],
         dashboard_bundle_dir=dashboard_bundle_dir,
         dashboard_origin=DASHBOARD_ORIGIN,
         tls_certfile=certfile,
@@ -303,7 +306,7 @@ def test_an_unknown_run_is_a_404_naming_the_run_and_the_store(
 
 
 def test_no_response_body_carries_both_a_quality_and_a_runtime_field(
-    local: TestClient,
+    local: TestClient, bundle: dict[str, Path]
 ) -> None:
     # Made structurally rather than by eye: the two names come from the
     # contract's own difference between the kinds, so a schema change moves
@@ -312,9 +315,20 @@ def test_no_response_body_carries_both_a_quality_and_a_runtime_field(
         row_contract.REQUIRED_FIELDS["runtime"]
         - row_contract.REQUIRED_FIELDS["quality"]
     )
+    # Less the keys of the roster-entry identity block both stores' views
+    # resolve `roster_entry_id` into: the entry's `family` is the model's,
+    # not a quality-store field, even though a quality row (schema "19") now
+    # also carries its subject's family under the same name.
+    entry_keys = set(
+        read_model.resolve_roster_entry(
+            {"roster_entry_id": ROSTER_ENTRY_ID},
+            roster.load_roster(bundle["roster"]),
+        )
+    )
     quality_only = sorted(
         row_contract.REQUIRED_FIELDS["quality"]
         - row_contract.REQUIRED_FIELDS["runtime"]
+        - entry_keys
     )
     assert runtime_only and quality_only
 

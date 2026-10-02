@@ -1,9 +1,11 @@
 import dataclasses
 import json
+from importlib import metadata
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from conftest import mark_prompt
 
 from wave_local_ai_v2 import (
     agreement,
@@ -12,6 +14,7 @@ from wave_local_ai_v2 import (
     judge_backends,
     judge_probe,
     judge_protocol,
+    local_client,
     mistral_client,
     quality_cli,
     row_contract,
@@ -54,6 +57,7 @@ FAKE_ROSTER = {
             "quant": "UD-IQ4_XS",
             "sha256": "0" * 64,
             "family": "qwen",
+            "thinking_control": {"chat_template_kwargs": {"enable_thinking": False}},
             "architecture": {
                 "kind": "moe",
                 "expert_count": 40,
@@ -119,6 +123,10 @@ def _google_reply(content: str, generated_tokens: int = 1) -> dict[str, object]:
         "prompt_tokens": 130,
         "total_tokens": 130 + generated_tokens,
         "model_version": GOOGLE_MODEL_INFO["version"],
+        # The pinned model's real shape: no thoughtsTokenCount and a total of
+        # prompt + candidates, so the client derives 0 from the totals.
+        "reasoning_tokens": 0,
+        "reasoning_tokens_derived": True,
     }
 
 
@@ -129,14 +137,21 @@ def _fake_render(prompt: str) -> str:
     return "<|im_start|>user\n" + prompt + " <|im_end|>"
 
 
+# What the stubbed tokenizer counts every rendered item to.
+FAKE_ITEM_PROMPT_TOKENS = 20
+
+
 def _local_post_router(finish_reason: str = "stop"):
     """Route a stubbed local POST by endpoint: render, then answer."""
 
     def route(url, *args, **kwargs):
         if url.endswith("/apply-template"):
-            payload: dict = {
-                "prompt": _fake_render(kwargs["json"]["messages"][0]["content"])
-            }
+            rendered = _fake_render(kwargs["json"]["messages"][0]["content"])
+            # A template that honours the declared control renders the
+            # verification's probe differently without it.
+            if "chat_template_kwargs" not in kwargs["json"]:
+                rendered += "<think>"
+            payload: dict = {"prompt": rendered}
         else:
             payload = {
                 "choices": [
@@ -218,7 +233,7 @@ def stubbed_probe(tmp_path, monkeypatch):
             "wave_local_ai_v2.judge_probe.load_settings", return_value=fake_settings
         ),
         "probe_build": patch(
-            "wave_local_ai_v2.judge_probe.build_probe.probe_build",
+            "wave_local_ai_v2.build_probe.probe_build",
             return_value="b10537",
         ),
         "capture_fiche": patch(
@@ -239,6 +254,12 @@ def stubbed_probe(tmp_path, monkeypatch):
         "post": patch(
             "wave_local_ai_v2.local_client.requests.post",
             side_effect=_local_post_router(),
+        ),
+        # The item's own rendered prompt under the model's tokenizer, counted
+        # once per item; `local_client.count_tokens` is covered on its own.
+        "count_tokens": patch(
+            "wave_local_ai_v2.judge_probe.local_client.count_tokens",
+            return_value=FAKE_ITEM_PROMPT_TOKENS,
         ),
         "props": patch(
             "wave_local_ai_v2.local_client.requests.get",
@@ -439,6 +460,66 @@ def test_the_cloud_subject_row_is_flagged_single_judge_with_its_reason(
     assert row["judge_egress"]["judge_call_count"] == 1
 
 
+def test_each_probe_row_records_its_subject_egress_apart_from_the_judges(
+    stubbed_probe,
+) -> None:
+    probe_path, _, _, _ = stubbed_probe
+
+    judge_probe._run()
+
+    for row in read_rows(probe_path):
+        expected = "none" if row["provider"] == "local" else row["provider"]
+        assert row["subject_egress"] == expected
+        # Judging sent the item off the machine either way: recorded in the
+        # judge block's own egress record, never folded into the subject's.
+        assert row["judge_egress"]["item_left_machine"] is True
+
+
+def test_each_probe_row_carries_its_own_subject_generation_figures(
+    stubbed_probe,
+) -> None:
+    probe_path, _, _, _ = stubbed_probe
+
+    judge_probe._run()
+
+    rows = read_rows(probe_path)
+    local_rows = [row for row in rows if row["provider"] == "local"]
+    cloud_rows = [row for row in rows if row["provider"] != "local"]
+    for position, row in enumerate(local_rows):
+        assert (row["item_tokens_in"], row["item_tokens_out"]) == (23, 11)
+        # The stubbed engine reports no timings block: null with its reason.
+        assert row["item_ttft_ms"] is None
+        assert row["item_ttft_ms_null_reason"] == "not_reported_by_engine"
+        assert row["item_first_in_batch"] is (position == 0)
+    assert len(cloud_rows) == 1
+    assert cloud_rows[0]["item_ttft_ms_null_reason"] == "not_reported_by_provider"
+    assert cloud_rows[0]["item_first_in_batch"] is True
+
+
+def test_each_probe_row_names_direct_and_its_measured_overhead(
+    stubbed_probe,
+) -> None:
+    probe_path, _, _, _ = stubbed_probe
+
+    judge_probe._run()
+
+    rows = read_rows(probe_path)
+    assert {row["harness_id"] for row in rows} == {"direct"}
+    assert {row["harness_version"] for row in rows} == {metadata.version("requests")}
+    local_rows = [row for row in rows if row["provider"] == "local"]
+    cloud_rows = [row for row in rows if row["provider"] != "local"]
+    # The engine's 23 prompt tokens minus the item's own counted prompt.
+    for row in local_rows:
+        assert row["harness_prompt_overhead"] == {
+            "tokens": 23 - FAKE_ITEM_PROMPT_TOKENS,
+            "null_reason": None,
+        }
+    assert cloud_rows[0]["harness_prompt_overhead"] == {
+        "tokens": None,
+        "null_reason": "item_prompt_not_counted",
+    }
+
+
 def test_every_row_publishes_null_labels_and_a_real_subject_output(
     stubbed_probe,
 ) -> None:
@@ -463,6 +544,12 @@ def test_every_row_says_it_is_indicative_and_why(stubbed_probe) -> None:
     for row in read_rows(probe_path):
         assert row["indicative"] is True
         assert any("below the minimum of 20" in r for r in row["indicative_reasons"])
+        # The probe declares no level: the gate certifies it at development,
+        # its behaviour before levels existed.
+        assert row["suite_level"] == "development"
+        assert row["item_licence"] == "CC-BY-4.0"
+        assert row["item_source"] is None
+        assert row["item_source_revision"] is None
 
 
 def test_every_row_carries_a_not_comparable_verdict_naming_why(stubbed_probe) -> None:
@@ -493,9 +580,9 @@ def test_the_local_server_is_launched_once_for_the_whole_probe(stubbed_probe) ->
     judge_probe._run()
 
     assert started["running_server"].call_count == 1
-    # Two POSTs per item -- render, then answer -- and one /props GET for the
-    # whole batch.
-    assert started["post"].call_count == 2 * len(JUDGE_PROBE_ITEMS)
+    # Two POSTs per item -- render, then answer -- plus the thinking control's
+    # two probe renders, and one /props GET for the whole batch.
+    assert started["post"].call_count == 2 * len(JUDGE_PROBE_ITEMS) + 2
     assert started["props"].call_count == 1
 
 
@@ -514,6 +601,19 @@ def test_the_local_and_cloud_rows_record_their_own_call_paths(stubbed_probe) -> 
         assert row["endpoint"] == google_client.GENERATE_URL
         assert row["prompt_template_id"] == "google-generatecontent-user-part"
         assert row["prompt_template_hash"] is not None
+
+
+def test_local_probe_rows_name_the_engine_and_the_cloud_row_states_none(
+    stubbed_probe,
+) -> None:
+    probe_path, _, _, _ = stubbed_probe
+
+    judge_probe._run()
+
+    rows = read_rows(probe_path)
+    assert {
+        (row["provider"], row["engine_id"], row["engine_build"]) for row in rows
+    } == {("local", "llama.cpp", "b10537"), ("google", "not_applicable", None)}
 
 
 def test_the_local_probe_row_publishes_the_rendered_prompt_and_the_policy(
@@ -541,6 +641,69 @@ def test_the_local_probe_row_publishes_the_rendered_prompt_and_the_policy(
         assert row["prompt"] != item_prompt
     for row in rows:
         assert row["thinking_policy"] == "disabled"
+
+
+def test_every_probe_row_names_the_baseline_variant_and_its_authored_prompt(
+    stubbed_probe,
+) -> None:
+    probe_path, _, _, _ = stubbed_probe
+
+    judge_probe._run()
+
+    prompts_by_item = {item["item_id"]: item["prompt"] for item in JUDGE_PROBE_ITEMS}
+    rows = read_rows(probe_path)
+    assert {row["provider"] for row in rows} == {"local", "google"}
+    for row in rows:
+        assert row["prompt_variant_id"] == "baseline"
+        assert row["prompt_variant_version"] == "1"
+        assert row["prompt_before_template"] == prompts_by_item[row["item_id"]]
+
+
+def test_the_probe_subject_is_sent_the_variant_and_the_judges_the_authored_text(
+    stubbed_probe, marking_variant, monkeypatch
+) -> None:
+    probe_path, _, started, _ = stubbed_probe
+    monkeypatch.setattr(judge_probe, "PROMPT_VARIANT_ID", marking_variant)
+
+    judge_probe._run()
+
+    marked = [mark_prompt(item["prompt"]) for item in JUDGE_PROBE_ITEMS]
+    local_inputs = [
+        call.kwargs["json"]["messages"][0]["content"]
+        for call in started["post"].call_args_list
+    ]
+    # The batch opens on the thinking control's verification: one fixed
+    # message rendered with and without the control.
+    assert local_inputs[:2] == [local_client.THINKING_PROBE_MESSAGE] * 2
+    local_inputs = local_inputs[2:]
+    # Rendered, then answered: each marked prompt reaches both local calls.
+    assert local_inputs[0::2] == marked
+    assert local_inputs[1::2] == marked
+    subject_calls = [
+        call
+        for call in started["google_complete"].call_args_list
+        if call.kwargs["max_tokens"] != judge_probe.JUDGE_MAX_TOKENS
+    ]
+    cloud_item = judge_probe._item_by_id(judge_probe.CLOUD_SUBJECT_ITEM_ID)
+    assert [call.args[0] for call in subject_calls] == [
+        mark_prompt(cloud_item["prompt"])
+    ]
+    # The scorer is untouched: no judge was handed the variant's output.
+    judge_calls = [
+        *started["mistral_complete"].call_args_list,
+        *(
+            call
+            for call in started["google_complete"].call_args_list
+            if call.kwargs["max_tokens"] == judge_probe.JUDGE_MAX_TOKENS
+        ),
+    ]
+    assert judge_calls
+    assert all("[marked]" not in call.args[0] for call in judge_calls)
+    assert any(cloud_item["prompt"] in call.args[0] for call in judge_calls)
+
+    for row in read_rows(probe_path):
+        assert row["prompt_variant_id"] == marking_variant
+        assert row["prompt_before_template"].startswith("[marked] ")
 
 
 def test_every_generation_asks_for_open_ended_prose_not_a_label(
@@ -754,7 +917,8 @@ def test_resume_against_a_complete_run_makes_no_call_and_appends_nothing(
     run_id = "probe-resume-complete"
 
     judge_probe._run(resume_run_id=run_id)
-    assert len(read_rows(probe_path)) == 11
+    written = read_rows(probe_path)
+    assert len(written) == 11
     started["mistral_complete"].reset_mock()
     started["google_complete"].reset_mock()
     started["running_server"].reset_mock()
@@ -768,6 +932,42 @@ def test_resume_against_a_complete_run_makes_no_call_and_appends_nothing(
     assert f"local skipped: run {run_id} already complete" in stderr
     assert f"google skipped: run {run_id} already complete" in stderr
     assert len(read_rows(probe_path)) == 11
+
+
+def test_a_resume_reads_the_judge_call_provenance_back_unchanged(
+    stubbed_probe,
+) -> None:
+    probe_path, _, started, _ = stubbed_probe
+    run_id = "probe-resume-provenance"
+    judge_probe._run(resume_run_id=run_id)
+    written = read_rows(probe_path)
+    started["mistral_complete"].reset_mock()
+    started["google_complete"].reset_mock()
+
+    judge_probe._run(resume_run_id=run_id)
+
+    # No judge call is re-issued, and every record keeps its five fields.
+    assert started["mistral_complete"].call_count == 0
+    assert started["google_complete"].call_count == 0
+    read_back = read_rows(probe_path)
+    assert read_back == written
+    by_provider = {
+        record["provider"]: record
+        for row in read_back
+        if row["provider"] == "local"
+        for record in row["judges"]
+    }
+    assert by_provider["mistral"]["answering_provider"] == "mistral"
+    assert by_provider["google"]["answering_provider"] == "google"
+    for record in by_provider.values():
+        assert record["answering_provider_source"] == "direct_endpoint"
+        assert record["reasoning_effort"] == "not_sent"
+    assert by_provider["mistral"]["reasoning_tokens"] is None
+    assert by_provider["mistral"]["reasoning_tokens_null_reason"] == (
+        "provider_reports_no_reasoning_count"
+    )
+    assert by_provider["google"]["reasoning_tokens"] == 0
+    assert by_provider["google"]["reasoning_tokens_source"] == "derived_from_totals"
 
 
 def test_resume_with_a_never_used_run_id_behaves_like_a_fresh_run(
@@ -822,25 +1022,119 @@ def test_the_probe_never_hands_the_google_judge_a_google_subject() -> None:
         judge.select_judges("google", [google_judge])
 
 
-def test_a_pre_seeded_partial_batch_is_refused_rather_than_duplicated(
+def _fail_mistral_judge_on_call(started: dict, failing_call: int) -> dict:
+    """Make the `failing_call`-th Mistral judge call (1-based) fail, unretried.
+
+    A 400, not a 429: a non-retryable provider error stops the batch on its
+    first attempt, so the item it failed on is exactly the one this names.
+    Returns the counter, so a test can later restore the normal replies.
+    """
+    normal = started["mistral_complete"].side_effect
+    state = {"calls": 0, "armed": True}
+
+    def failing(prompt, api_key, **kwargs):
+        state["calls"] += 1
+        if state["armed"] and state["calls"] == failing_call:
+            raise mistral_client.MistralRequestError("bad request")
+        return normal(prompt, api_key, **kwargs)
+
+    started["mistral_complete"].side_effect = failing
+    return state
+
+
+def _judge_calls(started: dict) -> tuple[int, int]:
+    """(mistral judge calls, google judge calls) issued so far."""
+    google_judge = sum(
+        1
+        for call in started["google_complete"].call_args_list
+        if call.kwargs["max_tokens"] == judge_probe.JUDGE_MAX_TOKENS
+    )
+    return started["mistral_complete"].call_count, google_judge
+
+
+def test_a_judge_failure_mid_batch_persists_the_judged_items_as_partial(
     stubbed_probe, capsys
 ) -> None:
     probe_path, _, started, _ = stubbed_probe
-    run_id = "probe-resume-partial"
-    judge_probe._run(resume_run_id=run_id)
+    run_id = "probe-partial"
+    # The fifth local item's Mistral judge call fails: items 1-4 are judged.
+    _fail_mistral_judge_on_call(started, 5)
+
+    with pytest.raises(judge_probe.JudgeCallError):
+        judge_probe._run(resume_run_id=run_id)
+
     rows = read_rows(probe_path)
-    kept = [row for row in rows if row["provider"] == "local"][:4]
-    probe_path.write_text(
-        "".join(f"{json.dumps(row)}\n" for row in kept), encoding="utf-8"
-    )
-    started["mistral_complete"].reset_mock()
+    failing_item = JUDGE_PROBE_ITEMS[4]["item_id"]
+    assert [row["item_id"] for row in rows] == [
+        item["item_id"] for item in JUDGE_PROBE_ITEMS[:4]
+    ]
+    for row in rows:
+        assert row["partial_failure"]["provider"] == "mistral"
+        assert row["partial_failure"]["item_id"] == failing_item
+        # A partial batch publishes no headline over the items that finished.
+        assert row["judged_headline_score"] is None
+    stderr = capsys.readouterr().err
+    assert f"local partial: run {run_id} stopped at item {failing_item!r}" in stderr
 
+
+def test_a_judged_batch_resumed_mid_way_issues_no_judge_call_already_recorded(
+    stubbed_probe,
+) -> None:
+    probe_path, _, started, _ = stubbed_probe
+    # The uninterrupted reference, under its own run_id in the same store.
+    judge_probe._run(resume_run_id="probe-uninterrupted")
+    uninterrupted = [
+        row
+        for row in read_rows(probe_path)
+        if row["provider"] == "local" and row["run_id"] == "probe-uninterrupted"
+    ]
+
+    run_id = "probe-interrupted"
+    started["mistral_complete"].reset_mock()
+    state = _fail_mistral_judge_on_call(started, 5)
+    with pytest.raises(judge_probe.JudgeCallError):
+        judge_probe._run(resume_run_id=run_id)
+    before = [row for row in read_rows(probe_path) if row["run_id"] == run_id]
+    assert len(before) == 4
+
+    state["armed"] = False
+    started["mistral_complete"].reset_mock()
+    started["google_complete"].reset_mock()
     judge_probe._run(resume_run_id=run_id)
 
-    stderr = capsys.readouterr().err
-    assert f"local skipped: run {run_id} is partially written (4/10 items)" in stderr
-    # The google half had no rows left on disk, so it re-ran and appended one.
-    assert len(read_rows(probe_path)) == len(kept) + 1
+    # Six local items left, each judged once by each judge, plus the cloud
+    # item's single Mistral judgement: nothing already on a row is re-paid.
+    assert _judge_calls(started) == (6 + 1, 6)
+    rows = [row for row in read_rows(probe_path) if row["run_id"] == run_id]
+    local = [row for row in rows if row["provider"] == "local"]
+    item_ids = [row["item_id"] for row in local]
+    assert sorted(item_ids) == sorted(item["item_id"] for item in JUDGE_PROBE_ITEMS)
+    assert len(item_ids) == len(set(item_ids))
+    # The rows already written are untouched by the resume.
+    assert rows[:4] == before
+    # The completing rows publish what the uninterrupted batch published.
+    completing = local[4:]
+    for row in completing:
+        assert row["partial_failure"] is None
+        assert row["agreement"] == uninterrupted[0]["agreement"]
+        assert row["judged_headline_score"] == uninterrupted[0]["judged_headline_score"]
+        assert row["failure_counts"] == uninterrupted[0]["failure_counts"]
+    assert {row["item_id"] for row in local if row["contested"]} == {
+        row["item_id"] for row in uninterrupted if row["contested"]
+    }
+
+
+def test_every_probe_row_names_the_budget_derived_from_the_items_it_judges(
+    stubbed_probe,
+) -> None:
+    probe_path, _, _, _ = stubbed_probe
+
+    judge_probe._run()
+
+    # Eleven items draw on both providers: max(4, ceil(11 * 0.2)) = 4.
+    for row in read_rows(probe_path):
+        assert row["retry_budget"] == {"mistral": 4, "google": 4}
+        assert row["partial_failure"] is None
 
 
 def test_a_row_written_by_the_probe_round_trips_through_append_row(
@@ -897,3 +1191,99 @@ def test_a_local_generation_cut_off_at_the_cap_is_recorded_as_truncated(
     assert len(local_rows) == len(JUDGE_PROBE_ITEMS)
     for row in local_rows:
         assert row["failure_reason"] == scoring.FAILURE_REASON_TRUNCATED_MAX_TOKENS
+
+
+def test_a_thinking_control_the_template_ignores_refuses_the_probe(
+    stubbed_probe,
+) -> None:
+    probe_path, _, started, _ = stubbed_probe
+
+    def ignoring_template(url, *args, **kwargs):
+        payload = {"prompt": _fake_render(kwargs["json"]["messages"][0]["content"])}
+        return MagicMock(
+            status_code=200, json=lambda: payload, raise_for_status=lambda: None
+        )
+
+    started["post"].side_effect = ignoring_template
+
+    with pytest.raises(local_client.ThinkingControlRefused):
+        judge_probe._run()
+
+    # The two probe renders and nothing after them: no item was generated or
+    # judged, and no row was written.
+    assert started["post"].call_count == 2
+    assert started["mistral_complete"].call_count == 0
+    assert read_rows(probe_path) == []
+
+
+def _keep_four_local_rows(probe_path: Path, edit) -> list[dict]:
+    """Leave four local rows of the run on disk, each passed through `edit`."""
+    kept = [edit(row) for row in read_rows(probe_path) if row["provider"] == "local"][
+        :4
+    ]
+    probe_path.write_text(
+        "".join(f"{json.dumps(row)}\n" for row in kept), encoding="utf-8"
+    )
+    return kept
+
+
+def _judged_by_another_model(row: dict) -> dict:
+    judges = [dict(record) for record in row["judges"]]
+    judges[0]["model_id"] = "mistral-small-2501"
+    return {**row, "judges": judges}
+
+
+@pytest.mark.parametrize(
+    ("edit", "named"),
+    [
+        (_judged_by_another_model, "judge_model_ids="),
+        (lambda row: {**row, "model_id": "Another Model"}, "model_id="),
+        (lambda row: {**row, "suite_version": "0"}, "suite_version="),
+        # A local batch resumed under another engine build would publish one
+        # agreement over two builds.
+        (lambda row: {**row, "engine_build": "b1"}, "engine_build="),
+        (lambda row: {**row, "engine_id": "ollama"}, "engine_id="),
+    ],
+)
+def test_a_probe_resume_over_rows_of_another_configuration_is_refused(
+    stubbed_probe, capsys, edit, named
+) -> None:
+    probe_path, _, started, _ = stubbed_probe
+    run_id = "probe-other-config"
+    judge_probe._run(resume_run_id=run_id)
+    kept = _keep_four_local_rows(probe_path, edit)
+    started["mistral_complete"].reset_mock()
+    started["google_complete"].reset_mock()
+    started["running_server"].reset_mock()
+
+    with (
+        patch("sys.argv", ["wave-local-ai-v2-judge-probe", "--resume", run_id]),
+        pytest.raises(SystemExit) as exit_info,
+    ):
+        judge_probe.main()
+
+    assert exit_info.value.code == 1
+    stderr = capsys.readouterr().err
+    assert f"refusing --resume {run_id}: the local batch's" in stderr
+    assert named in stderr
+    assert started["running_server"].call_count == 0
+    assert started["mistral_complete"].call_count == 0
+    assert started["google_complete"].call_count == 0
+    assert read_rows(probe_path) == kept
+
+
+def test_a_probe_resume_under_the_same_configuration_completes_the_batch(
+    stubbed_probe,
+) -> None:
+    probe_path, _, _, _ = stubbed_probe
+    run_id = "probe-same-config"
+    judge_probe._run(resume_run_id=run_id)
+    _keep_four_local_rows(probe_path, lambda row: row)
+
+    judge_probe._run(resume_run_id=run_id)
+
+    rows = read_rows(probe_path)
+    local = [row for row in rows if row["provider"] == "local"]
+    assert len(local) == len(JUDGE_PROBE_ITEMS)
+    assert local[-1]["partial_failure"] is None
+    assert local[-1]["agreement"]["n_items"] == len(JUDGE_PROBE_ITEMS)

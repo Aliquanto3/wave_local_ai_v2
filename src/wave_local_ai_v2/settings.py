@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -29,6 +30,11 @@ DEFAULT_FICHE_REGISTRY_DIR = "aidd_docs/results/fiches"
 # `fiche_registry.py` states about its own directory: an artifact path is
 # configuration, never hardcoded in the module that writes it.
 DEFAULT_SUITE_DEFINITIONS_DIR = "aidd_docs/results/suite-definitions"
+DEFAULT_COMPARISONS_DIR = "aidd_docs/results/comparisons"
+DEFAULT_LEADER_SETS_DIR = "aidd_docs/results/leader-sets"
+# Where `use_case_coverage` publishes the coverage record, and only once every
+# PRD use case in it carries a resolvable state.
+DEFAULT_USE_CASE_COVERAGE_PATH = "aidd_docs/results/use-case-coverage.json"
 DEFAULT_RUNTIME_REFERENCE_PATH = "aidd_docs/results/runtime-reference.jsonl"
 DEFAULT_QUALITY_REFERENCE_PATH = "aidd_docs/results/quality-reference.jsonl"
 # The judge probe's own store. Unlike its two neighbours above -- curated
@@ -86,7 +92,16 @@ KNOWN_QUALITY_PROVIDERS = frozenset({"local", "mistral", "google"})
 # is the whole point of this story existing.
 DEFAULT_MISTRAL_REQUEST_PACING_S = 1.1
 DEFAULT_GOOGLE_REQUEST_PACING_S = 4.1
-DEFAULT_CLOUD_RETRY_MAX_ATTEMPTS = 4
+# The retry budget a cloud batch runs under grows with its item count (a
+# publication-size cloud batch survives its rate limits and resumes per
+# item): max(minimum, ceil(items * per_item)). A fixed batch total gave a
+# 100-item Google batch -- 200 paced requests -- the same 4 retries as a
+# 20-item one. The two defaults keep that 20-item batch at exactly the 4 the
+# development-size story validated live, and hand a 100-item batch 20 and a
+# 300-item one 60: the budget per item is held constant instead of shrinking
+# as the suite grows. Every row records the budget it ran under.
+DEFAULT_CLOUD_RETRY_MIN_RETRIES = 4
+DEFAULT_CLOUD_RETRY_RETRIES_PER_ITEM = 0.2
 # When two judges' scores on one item count as a disagreement worth marking
 # (this increment's decision): more than 1 point apart on a 1-5 ordinal
 # rubric, or any category mismatch on a categorical one. A per-suite override
@@ -192,7 +207,8 @@ class Settings:
     # never re-pays): see the DEFAULT_* constants above for sources.
     mistral_request_pacing_s: float = DEFAULT_MISTRAL_REQUEST_PACING_S
     google_request_pacing_s: float = DEFAULT_GOOGLE_REQUEST_PACING_S
-    cloud_retry_max_attempts: int = DEFAULT_CLOUD_RETRY_MAX_ATTEMPTS
+    cloud_retry_min_retries: int = DEFAULT_CLOUD_RETRY_MIN_RETRIES
+    cloud_retry_retries_per_item: float = DEFAULT_CLOUD_RETRY_RETRIES_PER_ITEM
     # Judge agreement (a judged score carries two judges or an honest flag):
     # the ordinal delta above which one item's two judge scores are contested.
     contested_ordinal_max_delta: int = DEFAULT_CONTESTED_ORDINAL_MAX_DELTA
@@ -220,6 +236,7 @@ class ServiceSettings:
     fiche_registry_dir: Path
     roster_path: Path
     suite_definitions_dir: Path
+    leader_sets_dir: Path
     dashboard_bundle_dir: Path
     dashboard_origin: str
     tls_certfile: Path
@@ -284,6 +301,9 @@ def load_service_settings() -> ServiceSettings:
         roster_path=Path(os.environ.get("ROSTER_PATH", DEFAULT_ROSTER_PATH)),
         suite_definitions_dir=Path(
             os.environ.get("SUITE_DEFINITIONS_DIR", DEFAULT_SUITE_DEFINITIONS_DIR)
+        ),
+        leader_sets_dir=Path(
+            os.environ.get("LEADER_SETS_DIR", DEFAULT_LEADER_SETS_DIR)
         ),
         dashboard_bundle_dir=Path(
             os.environ.get("DASHBOARD_BUNDLE_DIR", DEFAULT_DASHBOARD_BUNDLE_DIR)
@@ -444,13 +464,27 @@ def load_settings() -> Settings:
         minimum=0.0,
         minimum_reason="a pacing interval cannot be negative",
     )
-    cloud_retry_max_attempts = _require_numeric(
-        "CLOUD_RETRY_MAX_ATTEMPTS",
-        DEFAULT_CLOUD_RETRY_MAX_ATTEMPTS,
+    cloud_retry_min_retries = _require_numeric(
+        "CLOUD_RETRY_MIN_RETRIES",
+        DEFAULT_CLOUD_RETRY_MIN_RETRIES,
         int,
+        # Zero would let a small batch refuse every retry: not "no retry
+        # configuration" but a batch that gives up on its first 429.
         minimum=1,
-        minimum_reason="at least one attempt must be allowed",
+        minimum_reason="every batch must be allowed at least one retry",
     )
+    cloud_retry_retries_per_item = _require_numeric(
+        "CLOUD_RETRY_RETRIES_PER_ITEM",
+        DEFAULT_CLOUD_RETRY_RETRIES_PER_ITEM,
+        float,
+        minimum=0.0,
+        minimum_reason="a per-item retry rate cannot be negative",
+    )
+    if not math.isfinite(cloud_retry_retries_per_item):
+        raise SettingsError(
+            f"CLOUD_RETRY_RETRIES_PER_ITEM={cloud_retry_retries_per_item!r} is "
+            "not finite: a retry budget is a whole number of retries"
+        )
     contested_ordinal_max_delta = _require_numeric(
         "CONTESTED_ORDINAL_MAX_DELTA",
         DEFAULT_CONTESTED_ORDINAL_MAX_DELTA,
@@ -488,7 +522,8 @@ def load_settings() -> Settings:
         kwh_price_recorded_at=kwh_price_recorded_at,
         mistral_request_pacing_s=mistral_request_pacing_s,
         google_request_pacing_s=google_request_pacing_s,
-        cloud_retry_max_attempts=cloud_retry_max_attempts,
+        cloud_retry_min_retries=cloud_retry_min_retries,
+        cloud_retry_retries_per_item=cloud_retry_retries_per_item,
         contested_ordinal_max_delta=contested_ordinal_max_delta,
     )
 

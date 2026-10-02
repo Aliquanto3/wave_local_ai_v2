@@ -9,13 +9,21 @@ not missing -- several fields degrade to an explicit `None` on capture failure
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from typing import Any, Literal
 
 from wave_local_ai_v2 import (
     aggregation,
+    cost,
+    engines,
+    hardware,
+    harness,
     judge,
     judge_protocol,
     prompt_provenance,
+    prompt_variants,
+    roster,
+    score_interval,
     suite_gate,
     timings,
 )
@@ -77,7 +85,139 @@ from wave_local_ai_v2 import (
 # measured, so a reader does not have to guess which span a row's numbers
 # cover. Quality rows are untouched: the quality-side energy window (server
 # launch plus model load) is a separate, still-open finding (W4).
-SCHEMA_VERSION = "12"
+# "13": every judge call record on a judged row carries six more fields --
+# the provider that actually answered and where that was read from, the
+# reasoning effort as the request carried it, and the reasoning-token count
+# apart from the output tokens with where it came from (reported or derived
+# from the response's totals), or null with its reason -- and each
+# `judge_cost.per_provider` entry carries the reasoning tokens and the basis
+# the provider bills them on (Story: every judge call names who answered,
+# its reasoning effort, and its reasoning tokens). A record whose answering
+# provider differs from its bound one is refused. Additive inside
+# the judge block only: a deterministic quality row and every runtime row
+# validate unchanged.
+# "14": `prompt_variant_id`, `prompt_variant_version` and
+# `prompt_before_template` (the prompt as the variant left it, before the
+# engine's templating) became required on both row kinds (Story: every row
+# names its prompt variant, and a baseline row carries the authored prompt).
+# The variant must be registered at that version (`prompt_variants`), and a
+# row declaring `baseline` must carry the item's authored text unchanged. A
+# row below "14" is read under its own version and never back-filled with
+# `baseline`: nothing on it says which prompt shape produced it.
+# "15": `suite_level` (the level the row's suite was certified at,
+# `development` or `publication`), `item_licence`, `item_source` and
+# `item_source_revision` (the item's own declarations, copied from the suite
+# definition) became required on quality rows only (Story: a suite is
+# certified to its declared level, and every item names its licence and
+# source). A hand-written item carries a licence and no source: its row holds
+# the two source fields as `null`. A publication row holds all three. The
+# declarations are the author's: nothing checks that a licence or a source is
+# the true one. A row below "15" is read under its own version and never
+# back-filled with `development`.
+# "16": `subject_egress` became required on both row kinds (Story: every row
+# records whether its prompt left the machine; owner decision Q72): `none`
+# when the subject prompt was served on the machine, else the id of the cloud
+# provider that received it. Never null -- a writer always knows where it
+# sent a prompt -- held to `none` on a runtime row, and on a quality row
+# never in contradiction with `provider`. It describes the subject call alone: the judge block's
+# `judge_egress` stays as it is and is not merged into it. A row below "16"
+# is read under its own version and never back-filled with `none`.
+# "17": `retry_budget` and `partial_failure` became required on quality rows
+# only (Story: a publication-size cloud batch survives its rate limits and
+# resumes per item). `retry_budget` maps each cloud provider the row's batch
+# called (subject and judges) to the retry total those calls drew from,
+# derived from the batch's item count rather than one fixed total, and is
+# `{}` for a batch that made no cloud call. `partial_failure` is `null` on a
+# row whose batch was complete when the row was written, else the provider,
+# item and reason of the call that stopped it: a cloud failure mid-batch now
+# persists the items already answered instead of discarding them, and
+# `--resume` completes the batch per item. A partial row publishes no
+# suite-level score. The runtime row is untouched: it makes no cloud call
+# and has no resume. A row below "17" is read under its own version and never
+# back-filled.
+# "18": eleven per-item measurement fields became required on quality rows
+# only (Story: each quality item records the tokens and the first-token time
+# its generation took; owner decision Q24 (a)). Until "17" a quality row
+# carried tokens and energy as batch figures and no TTFT, so no per-item
+# paired test was possible on either. The row now carries the item's own
+# input and output tokens, its engine-reported first-token time under its
+# `item_ttft_source` label (the runtime row's `ttft_source` discipline), and
+# the prompt tokens the engine reused from its cache, each a value or null
+# with its `*_null_reason` (never a zero); `item_measurement_kind` labels it
+# a single per-item generation, not Methodology 6's aggregate (no warm-up
+# exclusion, no repetitions); `item_first_in_batch` marks the batch's cold
+# first generation. Energy stays per batch. The runtime row is untouched. A
+# row below "18" is read under its own version and never back-filled.
+# "19": `family` and `size_class` became required on quality rows only (Story:
+# the composition check names every size class and refuses an unlabelled
+# single-family one). `family` is the row's *subject's* family as
+# `roster.family_of` resolves it -- never the family of the local entry a
+# cloud row cites as the one it ran beside -- and `size_class` is the local
+# entry's declared class, `null` on a cloud row, whose model has none. Both
+# are required only on a row whose own `schema_version` is "19" or later
+# (`SUBJECT_COMPOSITION_SCHEMA_VERSION`): a row below "19" still validates
+# without them and is never back-filled. The runtime row is untouched.
+# "20": `harness_id`, `harness_version` and `harness_prompt_overhead` became
+# required on quality rows only (Task: register the closed harness candidate
+# set and its three row fields; Methodology 23, owner answer Q33 (a)). The id
+# is one of `harness.HARNESS_IDS`, closed at five; the version is read from
+# the harness's installed package when the row is written; the overhead is
+# `{"tokens", "null_reason"}`: per call, the engine's prompt-token count minus
+# the item's own rendered prompt's (tool definitions included) under the row's
+# tokenizer, or null with one of `harness.OVERHEAD_NULL_REASONS` --
+# `unmeasurable` for a harness that rewrites rather than wraps the item's
+# prompt -- and never a zero in place of a measurement. Owed only from "20"
+# (`HARNESS_SCHEMA_VERSION`): a row below "20" still validates without them
+# and is never back-filled. The runtime row is untouched.
+# "21": `score_interval` became required on quality rows only (Story: every
+# quality batch publishes its interval and what it could resolve;
+# Methodology 24). One block per batch, identical on every row of it: the
+# confidence level, resample count, method, seed, generator and draw
+# procedure id (`score_interval.DRAW_PROCEDURE_ID`), then a `suite` cell and
+# one `by_language` cell per language, each `{n, lower, upper,
+# minimum_detectable_effect, null_reason}` -- three values, or none and one of
+# `score_interval.NULL_REASONS`. Null exactly when the row publishes no suite
+# score (a partial batch, a judge-probe row). Owed only from "21"
+# (`SCORE_INTERVAL_SCHEMA_VERSION`): a row below "21" still validates without
+# it and is never back-filled. The runtime row is untouched.
+# "22": `engine_id` and `engine_build` (the inference engine that produced
+# the row and its live-probed build) became required on both row kinds
+# (Story: every row names the engine that produced it, and the fiche hashes
+# it). A runtime row and a local quality row name an engine the tracked
+# registry (`engines.py`) holds; a row no local engine produced (a cloud
+# subject's quality row, the judge probe's cloud-subject row included)
+# states `engine_id: "not_applicable"` with a null build. A judge-probe row
+# whose subject is local carries `llama.cpp` like any local row. From this version a cited
+# fiche is hashed under projection "2" (`ENGINE_FICHE_SCHEMA_VERSION`), which
+# carries `engine_id`, `engine_build` and `engine_config_hash` in place of
+# `llama_cpp_build`. Owed only from "22": a row below "22" still validates
+# without them, is verified under projection "1", and is never back-filled
+# with `llama.cpp`.
+SCHEMA_VERSION = "22"
+
+# The two subject-composition fields "19" added, and the version from which a
+# quality row owes them.
+SUBJECT_COMPOSITION_FIELDS: frozenset[str] = frozenset({"family", "size_class"})
+SUBJECT_COMPOSITION_SCHEMA_VERSION = "19"
+
+# The three harness fields "20" added, and the version from which a quality
+# row owes them.
+HARNESS_FIELDS: frozenset[str] = frozenset(
+    {"harness_id", "harness_version", "harness_prompt_overhead"}
+)
+HARNESS_SCHEMA_VERSION = "20"
+
+# The interval block "21" added, and the version from which a quality row
+# owes it.
+SCORE_INTERVAL_FIELDS: frozenset[str] = frozenset({"score_interval"})
+SCORE_INTERVAL_SCHEMA_VERSION = "21"
+
+# The value `subject_egress` takes when the subject prompt never left the
+# machine, and the `provider` a quality row names for a subject served by the
+# local llama-server. Every other provider is a cloud one, and its id is the
+# egress value.
+SUBJECT_EGRESS_NONE = "none"
+SUBJECT_PROVIDER_LOCAL = "local"
 
 # The two values `thinking_policy` may take. This is the **suite's** declared
 # policy, not a report of what each provider did with it: it is published on
@@ -96,12 +236,41 @@ THINKING_POLICY_DISABLED = "disabled"
 THINKING_POLICY_ALLOWED = "allowed"
 THINKING_POLICIES = frozenset({THINKING_POLICY_DISABLED, THINKING_POLICY_ALLOWED})
 
+# What a row no local engine produced says in `engine_id` (a cloud subject's
+# quality row): a stated non-applicability, never a null a reader could take
+# for a missing value, and never `llama.cpp`. Its `engine_build` is null.
+ENGINE_NOT_APPLICABLE = "not_applicable"
+
 # The schema version at which `fiche_hash` (and `verdict`) became required.
 # Fixed at "3" regardless of future `SCHEMA_VERSION` bumps: a stored row whose
 # own `schema_version` is below this predates the fiche-hash contract
 # entirely, so its missing `fiche_hash` is not an integrity failure the
 # validator should treat as fatal (`fiche_validator.py`'s `legacy` class).
 FICHE_HASH_SCHEMA_VERSION = "3"
+
+# The schema version from which a cited fiche is hashed under projection "2"
+# (`hardware.FICHE_PROJECTIONS`: the engine fields in place of
+# `llama_cpp_build`), and from which a row owes `ENGINE_FIELDS`. Fixed at
+# "22" like the constant above: which projection a stored fiche is verified
+# under is decided by the citing row's own version, never by a field the fiche
+# happens to lack.
+ENGINE_FIELDS: frozenset[str] = frozenset({"engine_id", "engine_build"})
+ENGINE_FICHE_SCHEMA_VERSION = "22"
+
+
+def fiche_projection_for(schema_version: object) -> str:
+    """The `hardware.FICHE_PROJECTIONS` version a row at `schema_version` cites.
+
+    Below `ENGINE_FICHE_SCHEMA_VERSION`: "1". At or above it, and for a
+    version that cannot be read as a number: the current projection -- an
+    unreadable version cannot be proven old, so it is held to today's rule.
+    """
+    try:
+        is_legacy = int(schema_version) < int(ENGINE_FICHE_SCHEMA_VERSION)  # type: ignore[call-overload]
+    except (TypeError, ValueError):
+        is_legacy = False
+    return "1" if is_legacy else hardware.CURRENT_FICHE_PROJECTION
+
 
 RowKind = Literal["runtime", "quality"]
 
@@ -123,6 +292,20 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "prompt_template_id",
             "prompt_template_hash",
             "prompt_capture",
+            # prompt_variants: which transformation the authored prompt went
+            # through before the engine's templating, and its output
+            # (schema "14")
+            "prompt_variant_id",
+            "prompt_variant_version",
+            "prompt_before_template",
+            # Where the subject prompt went: always `none` for a runtime row,
+            # which serves its prompt from the local llama-server only
+            # (schema "16")
+            "subject_egress",
+            # engines: the registered engine that produced the row and its
+            # live-probed build (schema "22")
+            "engine_id",
+            "engine_build",
             # fiche_registry: the hardware + run-specific fiche, cited by hash
             "fiche_hash",
             # verdict.runtime_verdict
@@ -219,8 +402,22 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "prompt_template_id",
             "prompt_template_hash",
             "prompt_capture",
+            # prompt_variants: which transformation the authored prompt went
+            # through before the engine's templating, and its output
+            # (schema "14")
+            "prompt_variant_id",
+            "prompt_variant_version",
+            "prompt_before_template",
             "model_id",
             "provider",
+            # Where the subject prompt went: `none` for a local subject, the
+            # provider id for a cloud one; checked against `provider`
+            # (schema "16")
+            "subject_egress",
+            # engines: the local engine that produced the row, or
+            # `ENGINE_NOT_APPLICABLE` when none did (schema "22")
+            "engine_id",
+            "engine_build",
             "fiche_hash",
             # energy.EnergyResult / emissions.local_emissions / scope3_cloud_emissions
             # -- same twelve fields as the runtime row (plan.md's Decisions:
@@ -279,6 +476,12 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "contamination_risk",
             "indicative",
             "indicative_reasons",
+            # suite_gate: the level the suite was certified at, and the item's
+            # licence and source declarations (schema "15")
+            "suite_level",
+            "item_licence",
+            "item_source",
+            "item_source_revision",
             # scoring.score_item / score_suite
             "failure_reason",
             "failure_counts",
@@ -286,9 +489,73 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             # rate-limited run persists, resumes and never re-pays)
             "retries",
             "resumed",
+            # The retry total each cloud provider's calls drew from, and the
+            # failure that left the batch partial, if any (schema "17").
+            "retry_budget",
+            "partial_failure",
+            # quality_rows.item_measurement_fields: the item's own generation
+            # figures and their labels (schema "18").
+            *(
+                "item_tokens_in",
+                "item_tokens_in_null_reason",
+                "item_tokens_out",
+                "item_tokens_out_null_reason",
+                "item_ttft_ms",
+                "item_ttft_ms_null_reason",
+                "item_ttft_source",
+                "item_prompt_tokens_cached",
+                "item_prompt_tokens_cached_null_reason",
+                "item_measurement_kind",
+                "item_first_in_batch",
+            ),
+            # quality_rows.subject_composition_fields: the subject's family and
+            # size class (schema "19"; not owed below it).
+            *SUBJECT_COMPOSITION_FIELDS,
+            # harness.row_fields: the harness that ran the row, its installed
+            # version and its per-call prompt overhead (schema "20"; not owed
+            # below it).
+            *HARNESS_FIELDS,
+            # score_interval.interval_block: the batch's bootstrap interval
+            # and minimum detectable effect (schema "21"; not owed below it).
+            *SCORE_INTERVAL_FIELDS,
         }
     ),
 }
+
+# The four per-item values a quality row carries beside their null reasons
+# (schema "18"): a value, or null with one of `timings.ITEM_NULL_REASONS`.
+ITEM_MEASUREMENT_VALUE_FIELDS: tuple[str, ...] = (
+    "item_tokens_in",
+    "item_tokens_out",
+    "item_ttft_ms",
+    "item_prompt_tokens_cached",
+)
+ITEM_MEASUREMENT_FIELDS: frozenset[str] = frozenset(
+    {
+        *ITEM_MEASUREMENT_VALUE_FIELDS,
+        *(f"{field}_null_reason" for field in ITEM_MEASUREMENT_VALUE_FIELDS),
+        "item_ttft_source",
+        "item_measurement_kind",
+        "item_first_in_batch",
+    }
+)
+
+# The keys a non-null `partial_failure` carries: who failed, on which item,
+# and what it said.
+PARTIAL_FAILURE_FIELDS: frozenset[str] = frozenset({"provider", "item_id", "reason"})
+
+# The suite-level score fields a partial row holds `null`: a mean over the
+# items that happened to finish before a failure is a biased sample, not a
+# partial score. `failure_counts` is not among them -- it is a tally of the
+# items written, a count rather than a rate.
+PARTIAL_NULL_SCORE_FIELDS: tuple[str, ...] = (
+    "suite_accuracy",
+    "language_breakdown",
+    "suite_score",
+    "score_breakdown",
+    "judged_headline_score",
+    "score_interval",
+)
 
 
 # The complete judge block. Not a member of REQUIRED_FIELDS["quality"]: a
@@ -354,6 +621,25 @@ JUDGE_COST_FIELDS: frozenset[str] = frozenset(
     }
 )
 
+# The keys each `judge_cost.per_provider` entry carries
+# (`cost.judge_cost_fields`): the provider's own tokens, reasoning apart from
+# output with the basis it is billed on, and the rates it was charged at.
+JUDGE_COST_PROVIDER_FIELDS: frozenset[str] = frozenset(
+    {
+        "provider",
+        "model_id",
+        "tokens_in",
+        "tokens_out",
+        "reasoning_tokens",
+        "reasoning_tokens_null_reason",
+        "reasoning_tokens_billing",
+        "cost_total",
+        "list_price_input_per_million",
+        "list_price_output_per_million",
+        "list_price_retrieved_at",
+    }
+)
+
 
 # The complete graded block, the same conditional shape as `JUDGED_FIELDS`: a
 # quality row carrying none of these is an exact-match row and validates
@@ -403,6 +689,14 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
     counts as missing.
     """
     missing = REQUIRED_FIELDS[kind] - row.keys()
+    if kind == "quality" and _predates(row, SUBJECT_COMPOSITION_SCHEMA_VERSION):
+        missing -= SUBJECT_COMPOSITION_FIELDS
+    if kind == "quality" and _predates(row, HARNESS_SCHEMA_VERSION):
+        missing -= HARNESS_FIELDS
+    if kind == "quality" and _predates(row, SCORE_INTERVAL_SCHEMA_VERSION):
+        missing -= SCORE_INTERVAL_FIELDS
+    if _predates(row, ENGINE_FICHE_SCHEMA_VERSION):
+        missing -= ENGINE_FIELDS
     if missing:
         raise RowContractError(
             f"row of kind {kind!r} is missing required field(s): "
@@ -417,6 +711,11 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
             f"prompt_template_id {prompt_template_id!r}: an endpoint that "
             f"applies a template cannot declare 'none'"
         )
+
+    _validate_prompt_variant(kind, row)
+    _validate_subject_egress(kind, row)
+    if not _predates(row, ENGINE_FICHE_SCHEMA_VERSION):
+        _validate_engine(kind, row)
 
     cost_total = row["cost_total"]
     # The two bases are the values the cost was actually computed from: a kWh
@@ -448,8 +747,555 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
         _validate_runtime_repetition_structure(row)
 
     if kind == "quality":
+        _validate_suite_level(row)
+        _validate_retry_budget(row)
+        _validate_partial_failure(row)
+        _validate_item_measurement(row)
+        _validate_subject_composition(row)
+        _validate_harness(row)
         _validate_judged_fields(row)
         _validate_graded_fields(row)
+        # After the graded block: a malformed graded score is named as such
+        # before the interval beside it is checked against it.
+        _validate_score_interval(row)
+
+
+def _predates(row: dict[str, Any], since: str) -> bool:
+    """True when the row's own `schema_version` is below `since`.
+
+    A version that is not an integer string is not read as old: the row is
+    held to the current contract rather than excused by a malformed field.
+    """
+    version = row.get("schema_version")
+    if not isinstance(version, str) or not version.isdigit():
+        return False
+    return int(version) < int(since)
+
+
+def _validate_harness(row: dict[str, Any]) -> None:
+    """Refuse a harness outside the closed five, a version that was not read,
+    and an overhead that is neither a count nor a null with its reason.
+
+    A negative count is refused: a harness only adds around the item's own
+    prompt, so the writer records `unmeasurable` where the subtraction comes
+    out below zero.
+    """
+    if not HARNESS_FIELDS <= row.keys():
+        return
+    harness_id = row["harness_id"]
+    if not isinstance(harness_id, str) or harness_id not in harness.HARNESS_IDS:
+        raise RowContractError(
+            f"row of kind 'quality' has harness_id {harness_id!r}, not one of "
+            f"{', '.join(sorted(harness.HARNESS_IDS))}"
+        )
+    version = row["harness_version"]
+    if not isinstance(version, str) or not version:
+        raise RowContractError(
+            f"row of kind 'quality' has harness_version {version!r}: the "
+            "harness's installed version, read when the row is written"
+        )
+    overhead = row["harness_prompt_overhead"]
+    if not isinstance(overhead, dict) or overhead.keys() != harness.OVERHEAD_KEYS:
+        raise RowContractError(
+            f"row of kind 'quality' has harness_prompt_overhead {overhead!r}: "
+            "an object carrying exactly tokens and null_reason"
+        )
+    tokens = overhead["tokens"]
+    reason = overhead["null_reason"]
+    if tokens is None:
+        if reason not in harness.OVERHEAD_NULL_REASONS:
+            raise RowContractError(
+                f"row of kind 'quality' has a null harness_prompt_overhead with "
+                f"null_reason {reason!r}, not one of "
+                f"{', '.join(sorted(harness.OVERHEAD_NULL_REASONS))}"
+            )
+        return
+    if isinstance(tokens, bool) or not isinstance(tokens, int) or tokens < 0:
+        raise RowContractError(
+            f"row of kind 'quality' has harness_prompt_overhead tokens "
+            f"{tokens!r}: a non-negative token count, or null with its reason"
+        )
+    if reason is not None:
+        raise RowContractError(
+            f"row of kind 'quality' has harness_prompt_overhead tokens {tokens!r} "
+            f"beside null_reason {reason!r}: a measured overhead has no reason"
+        )
+
+
+def _validate_score_interval(row: dict[str, Any]) -> None:
+    """Refuse an interval block that cannot qualify the score beside it.
+
+    Null exactly when the row publishes no suite score (`suite_accuracy` and
+    `suite_score` both null: a partial batch, a judge-probe row); otherwise
+    the six header values, a `suite` cell and one cell per language, each
+    carrying its three values and no reason, or no values and one named
+    reason -- never both. Whether the interval and the score were computed
+    over the same items is a batch property, checked by
+    `score_interval.check_batch_invariants` before a batch is written.
+    """
+    if not SCORE_INTERVAL_FIELDS <= row.keys():
+        return
+    block = row["score_interval"]
+    publishes_score = (
+        row.get("suite_accuracy") is not None or row.get("suite_score") is not None
+    )
+    if block is None:
+        if publishes_score:
+            raise RowContractError(
+                "row of kind 'quality' publishes a suite score but a null "
+                "score_interval: every published score carries its interval"
+            )
+        return
+    if not publishes_score:
+        raise RowContractError(
+            "row of kind 'quality' carries a score_interval beside no suite "
+            "score: an interval qualifies a published score"
+        )
+    if not isinstance(block, dict) or block.keys() != score_interval.BLOCK_KEYS:
+        raise RowContractError(
+            f"row of kind 'quality' has score_interval {block!r}: an object "
+            f"carrying exactly {', '.join(sorted(score_interval.BLOCK_KEYS))}"
+        )
+    header = {
+        "confidence_level": score_interval.CONFIDENCE_LEVEL,
+        "resamples": score_interval.RESAMPLES,
+        "method": score_interval.METHOD_PERCENTILE,
+        "draw_procedure_id": score_interval.DRAW_PROCEDURE_ID,
+    }
+    for key, expected in header.items():
+        if block[key] != expected:
+            raise RowContractError(
+                f"row of kind 'quality' has score_interval {key}={block[key]!r}, "
+                f"expected {expected!r}"
+            )
+    seed = block["seed"]
+    if isinstance(seed, bool) or not isinstance(seed, int):
+        raise RowContractError(
+            f"row of kind 'quality' has score_interval seed {seed!r}: an integer"
+        )
+    generator = block["generator"]
+    if not (
+        isinstance(generator, dict)
+        and generator.keys() == score_interval.GENERATOR_KEYS
+        and all(isinstance(value, str) and value for value in generator.values())
+    ):
+        raise RowContractError(
+            f"row of kind 'quality' has score_interval generator {generator!r}: "
+            "the generator's library and version"
+        )
+    by_language = block["by_language"]
+    if not isinstance(by_language, dict) or set(by_language) != set(
+        suite_gate.LANGUAGES
+    ):
+        raise RowContractError(
+            f"row of kind 'quality' has score_interval by_language {by_language!r}: "
+            f"one cell per language, {sorted(suite_gate.LANGUAGES)!r}"
+        )
+    _validate_interval_cell("suite", block["suite"])
+    for language, cell in by_language.items():
+        _validate_interval_cell(language, cell)
+
+
+def _validate_interval_cell(where: str, cell: Any) -> None:
+    """Refuse a cell that is not three values and no reason, or none and one."""
+    if not isinstance(cell, dict) or cell.keys() != score_interval.CELL_KEYS:
+        raise RowContractError(
+            f"row of kind 'quality' has score_interval {where} cell {cell!r}: an "
+            f"object carrying exactly {', '.join(sorted(score_interval.CELL_KEYS))}"
+        )
+    n = cell["n"]
+    if isinstance(n, bool) or not isinstance(n, int) or n < 0:
+        raise RowContractError(
+            f"row of kind 'quality' has score_interval {where} n={n!r}: a "
+            "non-negative item count"
+        )
+    values = [cell[key] for key in score_interval.CELL_VALUE_KEYS]
+    reason = cell["null_reason"]
+    if reason is not None:
+        if reason not in score_interval.NULL_REASONS or any(
+            value is not None for value in values
+        ):
+            raise RowContractError(
+                f"row of kind 'quality' has score_interval {where} cell {cell!r}: "
+                "a null interval carries no value and one of "
+                f"{', '.join(sorted(score_interval.NULL_REASONS))}"
+            )
+        # Each reason only from the state that names it: an empty cell is
+        # `no_items`, and a cell holding items is never.
+        if (reason == score_interval.NULL_NO_ITEMS) != (n == 0):
+            raise RowContractError(
+                f"row of kind 'quality' has score_interval {where} cell with "
+                f"null_reason {reason!r} at n={n}: no_items names an empty cell "
+                "and only an empty cell"
+            )
+        return
+    if n == 0:
+        raise RowContractError(
+            f"row of kind 'quality' has score_interval {where} cell with an "
+            "interval over n=0: an empty cell publishes no_items"
+        )
+    if any(
+        isinstance(value, bool) or not isinstance(value, int | float)
+        for value in values
+    ):
+        raise RowContractError(
+            f"row of kind 'quality' has score_interval {where} cell {cell!r}: an "
+            "interval carries its lower, upper and minimum detectable effect, "
+            "or none of them and a null_reason"
+        )
+
+
+def _validate_subject_composition(row: dict[str, Any]) -> None:
+    """Refuse an unknown family, an unknown size class, and a size class on a
+    cloud row.
+
+    A writer always knows its subject's family (`roster.family_of` refuses
+    rather than defaults), so `family` is never null. `size_class` is a local
+    entry's declaration: a cloud subject has none, and a local entry that
+    declares none publishes `null`, which the composition check names.
+    """
+    if not SUBJECT_COMPOSITION_FIELDS <= row.keys():
+        return
+    family = row["family"]
+    if not isinstance(family, str) or family not in roster.KNOWN_FAMILIES:
+        raise RowContractError(
+            f"row of kind 'quality' has family {family!r}, not one of "
+            f"{', '.join(sorted(roster.KNOWN_FAMILIES))}"
+        )
+    size_class = row["size_class"]
+    if size_class is None:
+        return
+    if size_class not in roster.SIZE_CLASSES:
+        raise RowContractError(
+            f"row of kind 'quality' has size_class {size_class!r}, not one of "
+            f"{', '.join(roster.SIZE_CLASSES)} or null"
+        )
+    if row["provider"] != SUBJECT_PROVIDER_LOCAL:
+        raise RowContractError(
+            f"row of kind 'quality' has size_class {size_class!r} but provider "
+            f"{row['provider']!r}: a cloud subject has no size class, so its "
+            "row records null"
+        )
+
+
+def subject_egress_for(provider: str) -> str:
+    """The `subject_egress` value a subject served by `provider` records.
+
+    The one mapping both the writers and the gate use, so a writer cannot
+    stamp a value the gate would read differently: the local llama-server
+    sends nothing off the machine, any other provider received the prompt.
+    """
+    if provider == SUBJECT_PROVIDER_LOCAL:
+        return SUBJECT_EGRESS_NONE
+    return provider
+
+
+def _validate_subject_egress(kind: RowKind, row: dict[str, Any]) -> None:
+    """Refuse a null or malformed `subject_egress`, a runtime one other than
+    `none`, and a quality one that contradicts `provider`.
+
+    A null is refused here, unlike the contract's general "present as None is
+    complete" rule: a capture can fail, but a writer always knows where it
+    sent a prompt. A runtime row carries no `provider`, but the runtime
+    benchmark serves its prompt from the local llama-server only, so it is
+    held to `none`.
+    """
+    egress = row["subject_egress"]
+    if egress is None:
+        raise RowContractError(
+            f"row of kind {kind!r} has subject_egress null: a row states where "
+            f"its subject prompt went, {SUBJECT_EGRESS_NONE!r} or the provider "
+            "that received it"
+        )
+    if not (isinstance(egress, str) and egress.strip()):
+        raise RowContractError(
+            f"row of kind {kind!r} has a malformed subject_egress: {egress!r}"
+        )
+    if kind == "runtime":
+        if egress != SUBJECT_EGRESS_NONE:
+            raise RowContractError(
+                f"row of kind 'runtime' has subject_egress {egress!r}: the "
+                "runtime benchmark serves its prompt from the local "
+                f"llama-server only, so it records {SUBJECT_EGRESS_NONE!r}"
+            )
+        return
+    provider = row["provider"]
+    expected = subject_egress_for(provider)
+    if egress != expected:
+        raise RowContractError(
+            f"row of kind 'quality' has subject_egress {egress!r} but provider "
+            f"{provider!r}: a subject served by {provider!r} records "
+            f"subject_egress {expected!r}"
+        )
+
+
+def _validate_retry_budget(row: dict[str, Any]) -> None:
+    """Refuse a malformed `retry_budget`, a cloud row that does not name its
+    own provider's budget, and per-item `retries` beyond that budget.
+
+    The subject call of a cloud row drew its retries from its provider's
+    budget, so that budget is on the row and the item's retries fit in it.
+    """
+    budget = row["retry_budget"]
+    if not isinstance(budget, dict):
+        raise RowContractError(
+            f"row of kind 'quality' has a non-object retry_budget: {budget!r}"
+        )
+    for provider, total in budget.items():
+        if not (isinstance(provider, str) and provider.strip()):
+            raise RowContractError(
+                f"row of kind 'quality' has a retry_budget keyed by {provider!r}: "
+                "each key names a cloud provider"
+            )
+        if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+            raise RowContractError(
+                f"row of kind 'quality' has retry_budget[{provider!r}]={total!r}: "
+                "a retry budget is a non-negative whole number"
+            )
+    provider = row["provider"]
+    if provider == SUBJECT_PROVIDER_LOCAL:
+        return
+    if provider not in budget:
+        raise RowContractError(
+            f"row of kind 'quality' has provider {provider!r} but no "
+            f"retry_budget entry for it: a cloud subject's calls ran under a "
+            "budget, and the row names it"
+        )
+    retries = row["retries"]
+    if isinstance(retries, int) and retries > budget[provider]:
+        raise RowContractError(
+            f"row of kind 'quality' carries retries={retries!r} above its "
+            f"provider's retry_budget of {budget[provider]!r}"
+        )
+
+
+def _validate_partial_failure(row: dict[str, Any]) -> None:
+    """Refuse a malformed `partial_failure`, and a partial row that publishes
+    a suite-level score."""
+    failure = row["partial_failure"]
+    if failure is None:
+        return
+    if not isinstance(failure, dict):
+        raise RowContractError(
+            f"row of kind 'quality' has a non-object partial_failure: {failure!r}"
+        )
+    missing = PARTIAL_FAILURE_FIELDS - failure.keys()
+    if missing:
+        raise RowContractError(
+            f"row of kind 'quality' has a partial_failure missing field(s): "
+            f"{', '.join(sorted(missing))}"
+        )
+    for field in ("provider", "item_id"):
+        value = failure[field]
+        if not (isinstance(value, str) and value.strip()):
+            raise RowContractError(
+                f"row of kind 'quality' has a partial_failure whose {field} is "
+                f"{value!r}: a partial batch names the failing provider and item"
+            )
+    for field in PARTIAL_NULL_SCORE_FIELDS:
+        if row.get(field) is not None:
+            raise RowContractError(
+                f"row of kind 'quality' is partial but carries {field}="
+                f"{row[field]!r}: a partial batch publishes no suite-level score"
+            )
+
+
+def _validate_item_measurement(row: dict[str, Any]) -> None:
+    """Refuse a per-item value that is neither a number nor null with a reason.
+
+    Exactly one of a value and its null reason is set: a null without a
+    reason is an unexplained gap, a value beside a reason contradicts itself.
+    A TTFT names its source (and only a TTFT does), on the runtime row's
+    `ttft_source` discipline; the measurement kind is the one label this
+    schema defines; the first-generation mark is a boolean.
+    """
+    for field in ITEM_MEASUREMENT_VALUE_FIELDS:
+        value = row[field]
+        reason = row[f"{field}_null_reason"]
+        if value is None:
+            if reason not in timings.ITEM_NULL_REASONS:
+                raise RowContractError(
+                    f"row of kind 'quality' has {field} null with "
+                    f"{field}_null_reason {reason!r}: a null value names one of "
+                    f"{', '.join(sorted(timings.ITEM_NULL_REASONS))}"
+                )
+            continue
+        if reason is not None:
+            raise RowContractError(
+                f"row of kind 'quality' carries {field}={value!r} beside "
+                f"{field}_null_reason {reason!r}: a reported value has no null reason"
+            )
+        numeric = isinstance(value, int) or (
+            field == "item_ttft_ms" and isinstance(value, float)
+        )
+        if isinstance(value, bool) or not numeric or value < 0:
+            raise RowContractError(
+                f"row of kind 'quality' has a malformed {field}: {value!r}"
+            )
+    source = row["item_ttft_source"]
+    if row["item_ttft_ms"] is None:
+        if source is not None:
+            raise RowContractError(
+                f"row of kind 'quality' has item_ttft_source {source!r} but no "
+                "item_ttft_ms: only a reported first-token time names its source"
+            )
+    elif source not in {
+        timings.TTFT_SOURCE_SERVER_REPORTED,
+        timings.TTFT_SOURCE_CLIENT_MEASURED,
+    }:
+        raise RowContractError(
+            f"row of kind 'quality' has an unrecognised item_ttft_source: {source!r}"
+        )
+    kind = row["item_measurement_kind"]
+    if kind != timings.ITEM_MEASUREMENT_SINGLE_GENERATION:
+        raise RowContractError(
+            f"row of kind 'quality' has item_measurement_kind {kind!r}: expected "
+            f"{timings.ITEM_MEASUREMENT_SINGLE_GENERATION!r}"
+        )
+    if not isinstance(row["item_first_in_batch"], bool):
+        raise RowContractError(
+            "row of kind 'quality' has a non-boolean item_first_in_batch: "
+            f"{row['item_first_in_batch']!r}"
+        )
+
+
+_ITEM_SOURCE_FIELDS = ("item_licence", "item_source", "item_source_revision")
+
+
+def _validate_engine(kind: RowKind, row: dict[str, Any]) -> None:
+    """Refuse an unregistered engine, and an engine on a row none produced.
+
+    A runtime row and a local quality row must name an engine the tracked
+    registry holds; its build may be null (an unreadable probe is an explicit
+    null, never an assumed value). Any other quality row must state
+    `ENGINE_NOT_APPLICABLE` with a null build.
+    """
+    engine_id = row["engine_id"]
+    engine_build = row["engine_build"]
+    if engine_build is not None and not (
+        isinstance(engine_build, str) and engine_build.strip()
+    ):
+        raise RowContractError(
+            f"row of kind {kind!r} has a malformed engine_build: {engine_build!r}"
+        )
+
+    if kind == "runtime" or row["provider"] == SUBJECT_PROVIDER_LOCAL:
+        try:
+            registered = engines.registered_engine_ids()
+        except engines.EngineRegistryError as exc:
+            raise RowContractError(
+                f"row of kind {kind!r}: the engine registry cannot be read: {exc}"
+            ) from exc
+        if engine_id not in registered:
+            raise RowContractError(
+                f"row of kind {kind!r} names engine_id {engine_id!r}, which is "
+                f"not a registered engine (registered: {', '.join(sorted(registered))})"
+            )
+        return
+
+    if engine_id != ENGINE_NOT_APPLICABLE or engine_build is not None:
+        raise RowContractError(
+            f"row of kind {kind!r} from provider {row['provider']!r} was produced "
+            f"by no local engine: it must carry engine_id "
+            f"{ENGINE_NOT_APPLICABLE!r} and a null engine_build, got "
+            f"{engine_id!r} / {engine_build!r}"
+        )
+
+
+def _validate_suite_level(row: dict[str, Any]) -> None:
+    """Refuse an unknown level, a malformed item declaration, and a
+    publication row missing any of the three item declarations its suite
+    could only have been certified with."""
+    level = row["suite_level"]
+    if level not in suite_gate.SUITE_LEVELS:
+        raise RowContractError(
+            f"row of kind 'quality' has suite_level {level!r}, not one of "
+            f"{', '.join(sorted(suite_gate.SUITE_LEVELS))}"
+        )
+    for field in _ITEM_SOURCE_FIELDS:
+        value = row[field]
+        if value is None:
+            if level == suite_gate.LEVEL_PUBLICATION:
+                raise RowContractError(
+                    f"row of kind 'quality' has suite_level 'publication' but "
+                    f"{field} is null: a publication item declares its licence, "
+                    "its source and that source's revision"
+                )
+        elif not (isinstance(value, str) and value.strip()):
+            raise RowContractError(
+                f"row of kind 'quality' has a malformed {field}: {value!r}"
+            )
+
+
+def _validate_prompt_variant(kind: RowKind, row: dict[str, Any]) -> None:
+    """Refuse a variant the registry does not hold, and an unchecked `baseline`.
+
+    `baseline` is a claim this gate checks rather than a label it trusts: the
+    row's `prompt_before_template` must equal the authored text of the item
+    it names, resolved from the code that owns that text -- never from a
+    field on the row, which a hand-built row could forge alongside the
+    transformed prompt.
+    """
+    variant_id = row["prompt_variant_id"]
+    version = row["prompt_variant_version"]
+    if not any(key[0] == variant_id for key in prompt_variants.REGISTRY):
+        raise RowContractError(
+            f"row of kind {kind!r} has prompt_variant_id {variant_id!r}: not a "
+            "registered prompt variant"
+        )
+    if (variant_id, version) not in prompt_variants.REGISTRY:
+        raise RowContractError(
+            f"row of kind {kind!r} has prompt_variant_version {version!r}: "
+            f"prompt variant {variant_id!r} has no such registered version"
+        )
+
+    if variant_id != prompt_variants.BASELINE_ID:
+        return
+    authored, unresolved_reason = _authored_prompt(kind, row)
+    if authored is None:
+        raise RowContractError(
+            f"row of kind {kind!r} declares prompt variant 'baseline' but its "
+            f"prompt_before_template cannot be checked: {unresolved_reason}"
+        )
+    if row["prompt_before_template"] != authored:
+        raise RowContractError(
+            f"row of kind {kind!r} declares prompt variant 'baseline' but its "
+            "prompt_before_template differs from the item's authored text: a "
+            "baseline row carries the authored prompt unchanged"
+        )
+
+
+def _authored_prompt(kind: RowKind, row: dict[str, Any]) -> tuple[str | None, str]:
+    """The authored text the row's prompt started from, or None and why not.
+
+    Imported here rather than at module level: every module below imports
+    this one, so a top-level import would be a cycle.
+    """
+    if kind == "runtime":
+        from wave_local_ai_v2 import FIXED_PROMPT
+
+        return FIXED_PROMPT, ""
+
+    from wave_local_ai_v2 import judge_probe, suite_registry
+
+    suite_id = row["suite_id"]
+    items: Sequence[Mapping[str, Any]]
+    if suite_id == judge_probe.SUITE_ID:
+        suite_version, items = judge_probe.SUITE_VERSION, judge_probe.JUDGE_PROBE_ITEMS
+    elif suite_id in suite_registry.registered_ids():
+        definition = suite_registry.resolve(suite_id)
+        suite_version, items = definition.suite_version, definition.items
+    else:
+        return None, f"suite_id {suite_id!r} is not a suite this code defines"
+    if row["suite_version"] != suite_version:
+        return None, (
+            f"suite {suite_id!r} is at version {suite_version!r} in this code, "
+            f"not {row['suite_version']!r}"
+        )
+    for item in items:
+        if item["item_id"] == row["item_id"]:
+            return str(item["prompt"]), ""
+    return None, f"suite {suite_id!r} has no item {row['item_id']!r}"
 
 
 def _validate_judged_fields(row: dict[str, Any]) -> None:
@@ -493,6 +1339,7 @@ def _validate_judged_structure(row: dict[str, Any]) -> None:
                 f"row of kind 'quality' has judges[{index}] missing "
                 f"field(s): {', '.join(sorted(missing_keys))}"
             )
+        _validate_judge_call_record(index, record)
 
     language = row["judge_prompt_language"]
     if language not in judge_protocol.JUDGE_LANGUAGES:
@@ -529,6 +1376,7 @@ def _validate_judged_structure(row: dict[str, Any]) -> None:
 
     _require_block_fields(row, "judge_egress", JUDGE_EGRESS_FIELDS)
     _require_block_fields(row, "judge_cost", JUDGE_COST_FIELDS)
+    _validate_judge_cost_providers(row["judge_cost"]["per_provider"])
 
     egress = row["judge_egress"]
     if not egress["providers"]:
@@ -543,6 +1391,105 @@ def _validate_judged_structure(row: dict[str, Any]) -> None:
             "call record(s): an egress record that disagrees with the calls "
             "on the row is worse than no record"
         )
+
+
+def _validate_judge_call_record(index: int, record: dict[str, Any]) -> None:
+    """Raise on a judge call record whose provenance cannot back its score.
+
+    No fallback routing: a judge bound to one provider and answered by
+    another is a silently substituted judgement, so it is refused naming
+    both rather than published under either name.
+    """
+    bound = record["provider"]
+    answering = record["answering_provider"]
+    if answering != bound:
+        raise RowContractError(
+            f"row of kind 'quality' has judges[{index}] answered by provider "
+            f"{answering!r} but bound to provider {bound!r}: a judge call is "
+            "never re-routed to another provider"
+        )
+
+    source = record["answering_provider_source"]
+    if source not in judge.ANSWERING_PROVIDER_SOURCES:
+        raise RowContractError(
+            f"row of kind 'quality' has judges[{index}] "
+            f"answering_provider_source {source!r}: must be one of "
+            f"{', '.join(judge.ANSWERING_PROVIDER_SOURCES)}"
+        )
+
+    effort = record["reasoning_effort"]
+    if not isinstance(effort, str) or not effort:
+        raise RowContractError(
+            f"row of kind 'quality' has judges[{index}] reasoning_effort "
+            f"{effort!r}: the effort sent, or "
+            f"{judge.REASONING_EFFORT_NOT_SENT!r} when none was"
+        )
+
+    tokens = record["reasoning_tokens"]
+    if tokens is not None and (
+        isinstance(tokens, bool) or not isinstance(tokens, int) or tokens < 0
+    ):
+        raise RowContractError(
+            f"row of kind 'quality' has judges[{index}] reasoning_tokens="
+            f"{tokens!r}: a reasoning count is a non-negative integer or null"
+        )
+
+    # A count carries where it came from and no null reason; a null count
+    # carries a reason and no source.
+    source = record["reasoning_tokens_source"]
+    if tokens is not None and source not in judge.REASONING_TOKENS_SOURCES:
+        raise RowContractError(
+            f"row of kind 'quality' has judges[{index}] reasoning_tokens="
+            f"{tokens!r} with reasoning_tokens_source {source!r}: a count names "
+            f"one of {', '.join(judge.REASONING_TOKENS_SOURCES)}"
+        )
+    if tokens is None and source is not None:
+        raise RowContractError(
+            f"row of kind 'quality' has judges[{index}] reasoning_tokens=None "
+            f"alongside reasoning_tokens_source {source!r}: a null count has "
+            "no source"
+        )
+    reason = record["reasoning_tokens_null_reason"]
+    if tokens is None and reason not in judge.REASONING_TOKENS_NULL_REASONS:
+        raise RowContractError(
+            f"row of kind 'quality' has judges[{index}] reasoning_tokens=None "
+            f"with reasoning_tokens_null_reason {reason!r}: a null count names "
+            f"one of {', '.join(judge.REASONING_TOKENS_NULL_REASONS)}"
+        )
+    if tokens is not None and reason is not None:
+        raise RowContractError(
+            f"row of kind 'quality' has judges[{index}] reasoning_tokens="
+            f"{tokens!r} alongside reasoning_tokens_null_reason {reason!r}: a "
+            "reported count carries no null reason"
+        )
+
+
+def _validate_judge_cost_providers(per_provider: Any) -> None:
+    """Raise unless every `per_provider` entry is complete and states its basis."""
+    if not isinstance(per_provider, list):
+        raise RowContractError(
+            f"row of kind 'quality' has a non-list judge_cost per_provider: "
+            f"{per_provider!r}"
+        )
+    for index, entry in enumerate(per_provider):
+        if not isinstance(entry, dict):
+            raise RowContractError(
+                f"row of kind 'quality' has a non-object judge_cost "
+                f"per_provider[{index}]: {entry!r}"
+            )
+        missing = JUDGE_COST_PROVIDER_FIELDS - entry.keys()
+        if missing:
+            raise RowContractError(
+                f"row of kind 'quality' has judge_cost per_provider[{index}] "
+                f"missing field(s): {', '.join(sorted(missing))}"
+            )
+        billing = entry["reasoning_tokens_billing"]
+        if billing not in cost.REASONING_TOKEN_BILLING_BASES:
+            raise RowContractError(
+                f"row of kind 'quality' has judge_cost per_provider[{index}] "
+                f"reasoning_tokens_billing {billing!r}: must be one of "
+                f"{', '.join(cost.REASONING_TOKEN_BILLING_BASES)}"
+            )
 
 
 def _validate_graded_fields(row: dict[str, Any]) -> None:
@@ -570,8 +1517,12 @@ def _validate_graded_fields(row: dict[str, Any]) -> None:
 
 def _validate_graded_structure(row: dict[str, Any]) -> None:
     """Raise on a graded block that cannot back the score it publishes."""
+    partial = row.get("partial_failure") is not None
     for field in ("item_score", "suite_score"):
         value = row[field]
+        # Held null by `_validate_partial_failure` on a partial row.
+        if partial and field == "suite_score" and value is None:
+            continue
         if isinstance(value, bool) or not isinstance(value, int | float):
             raise RowContractError(
                 f"row of kind 'quality' has a non-numeric {field}: {value!r}"
@@ -610,7 +1561,8 @@ def _validate_graded_structure(row: dict[str, Any]) -> None:
                 "exact-match score cannot both be published on one row"
             )
 
-    _validate_graded_breakdown(row["score_breakdown"])
+    if not (partial and row["score_breakdown"] is None):
+        _validate_graded_breakdown(row["score_breakdown"])
 
 
 def _validate_graded_breakdown(breakdown: Any) -> None:

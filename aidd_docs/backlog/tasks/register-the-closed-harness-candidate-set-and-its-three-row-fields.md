@@ -1,6 +1,6 @@
 ---
 type: task
-status: ready
+status: done
 source: aidd_docs/backlog/epics/no-use-case-is-silently-absent.md
 parent: aidd_docs/backlog/epics/no-use-case-is-silently-absent.md
 order: 1

@@ -1,22 +1,24 @@
 import dataclasses
 import json
 from datetime import datetime, timedelta
+from importlib import metadata
 from pathlib import Path
 from unittest.mock import DEFAULT, MagicMock, patch
 
 import pytest
 import requests
+from conftest import mark_prompt
 
 from wave_local_ai_v2 import (
     chrf,
-    classification_suite,
     google_client,
     local_client,
     mistral_client,
     quality_cli,
-    translation_suite,
+    score_interval,
+    scoring_rules,
+    suite_registry,
 )
-from wave_local_ai_v2.classification_suite import CLASSIFICATION_TASK_SUITE
 from wave_local_ai_v2.cost import GOOGLE_PRICE_TABLE, MISTRAL_PRICE_TABLE
 from wave_local_ai_v2.fiche_registry import read_fiche
 from wave_local_ai_v2.google_client import (
@@ -25,11 +27,15 @@ from wave_local_ai_v2.google_client import (
 )
 from wave_local_ai_v2.mistral_client import MistralRequestError, ModelUnavailableError
 from wave_local_ai_v2.prompt_provenance import template_hash
-from wave_local_ai_v2.results import read_rows
+from wave_local_ai_v2.results import ResumeConfigurationError, read_rows
 from wave_local_ai_v2.row_contract import GRADED_FIELDS, SCHEMA_VERSION
 from wave_local_ai_v2.settings import DEFAULT_ROSTER_ENTRY_ID, Settings
 from wave_local_ai_v2.suite_gate import SuiteGateError
-from wave_local_ai_v2.translation_suite import TRANSLATION_TASK_SUITE
+
+CLASSIFICATION = suite_registry.resolve("classification-support-routing")
+TRANSLATION = suite_registry.resolve("translation-business-short-form")
+CLASSIFICATION_TASK_SUITE = CLASSIFICATION.items
+TRANSLATION_TASK_SUITE = TRANSLATION.items
 
 RUNTIME_ONLY_FIELDS = {
     "cpu",
@@ -57,6 +63,10 @@ GOOGLE_MODEL_INFO = {
     "input_token_limit": 1_048_576,
 }
 
+# The control the four shipped Qwen entries declare, written out rather than
+# read from the tracked roster for the same reason FAKE_ROSTER is.
+QWEN_THINKING_CONTROL = {"chat_template_kwargs": {"enable_thinking": False}}
+
 # A minimal but structurally valid roster, independent of the tracked
 # aidd_docs/roster/models.json: these tests must not couple to its content.
 FAKE_ROSTER = {
@@ -69,6 +79,9 @@ FAKE_ROSTER = {
             "file": "fake.gguf",
             "quant": "UD-IQ4_XS",
             "sha256": "0" * 64,
+            "family": "qwen",
+            "size_class": "~8B-and-up",
+            "thinking_control": QWEN_THINKING_CONTROL,
             "architecture": {
                 "kind": "moe",
                 "expert_count": 40,
@@ -118,6 +131,32 @@ def fake_render(prompt: str) -> str:
     return f"<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"
 
 
+def fake_apply_template(body: dict) -> dict:
+    """The `/apply-template` body of a template that honours the declared
+    control: without it the render differs, so the batch's verification
+    passes. The string a row stores (rendered with the control) stays
+    `fake_render(prompt)`."""
+    rendered = fake_render(body["messages"][0]["content"])
+    if "chat_template_kwargs" not in body:
+        rendered += "<think>\n"
+    return {"prompt": rendered}
+
+
+# What the stubbed tokenizer counts every rendered item to.
+FAKE_ITEM_PROMPT_TOKENS = 7
+
+
+def item_posts(post: MagicMock) -> list:
+    """The local POSTs the items made, without the verification's two renders
+    of the fixed probe message."""
+    return [
+        call
+        for call in post.call_args_list
+        if call.kwargs["json"]["messages"][0]["content"]
+        != local_client.THINKING_PROBE_MESSAGE
+    ]
+
+
 def local_post_router(
     *,
     content: str = "billing",
@@ -135,8 +174,7 @@ def local_post_router(
 
     def route(url, *args, **kwargs):
         if url.endswith("/apply-template"):
-            rendered = fake_render(kwargs["json"]["messages"][0]["content"])
-            payload: dict = {"prompt": rendered}
+            payload: dict = fake_apply_template(kwargs["json"])
         else:
             payload = (
                 chat_body
@@ -191,7 +229,7 @@ def stubbed_run(tmp_path, monkeypatch):
             "wave_local_ai_v2.quality_cli.load_settings", return_value=fake_settings
         ),
         "probe_build": patch(
-            "wave_local_ai_v2.quality_cli.build_probe.probe_build",
+            "wave_local_ai_v2.build_probe.probe_build",
             return_value="b10537",
         ),
         "capture_fiche": patch(
@@ -209,6 +247,13 @@ def stubbed_run(tmp_path, monkeypatch):
         "post": patch(
             "wave_local_ai_v2.local_client.requests.post",
             side_effect=local_post_router(),
+        ),
+        # The item's own rendered prompt under the model's tokenizer: a fixed
+        # count, so a row's overhead is the engine's prompt tokens minus it.
+        # `local_client.count_tokens` itself is covered in test_local_client.
+        "count_tokens": patch(
+            "wave_local_ai_v2.quality_cli.local_client.count_tokens",
+            return_value=FAKE_ITEM_PROMPT_TOKENS,
         ),
         "props": patch(
             "wave_local_ai_v2.local_client.requests.get",
@@ -485,7 +530,39 @@ def test_local_and_mistral_rows_cite_the_identical_fiche_hash(
     assert len(hashes) == 1
     stored_fiche = read_fiche(hashes.pop(), tmp_path / "fiches")
     assert stored_fiche is not None
-    assert stored_fiche["llama_cpp_build"] == "b10537"
+    assert stored_fiche["engine_id"] == "llama.cpp"
+    assert stored_fiche["engine_build"] == "b10537"
+
+
+def test_local_rows_name_the_engine_and_cloud_rows_state_it_does_not_apply(
+    stubbed_run,
+) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    engines_by_provider = {
+        (row["provider"], row["engine_id"], row["engine_build"]) for row in rows
+    }
+    assert engines_by_provider == {
+        ("local", "llama.cpp", "b10537"),
+        ("mistral", "not_applicable", None),
+    }
+
+
+def test_the_verified_thinking_switch_is_recorded(stubbed_run, capsys) -> None:
+    quality_cli._run()
+
+    record = [
+        line
+        for line in capsys.readouterr().err.splitlines()
+        if line.startswith("thinking switch verified:")
+    ]
+    assert len(record) == 1
+    assert (
+        "engine=llama.cpp field=chat_template_kwargs renders_differ=True" in record[0]
+    )
 
 
 def test_local_rows_take_their_model_id_from_the_roster_entry(stubbed_run) -> None:
@@ -525,12 +602,12 @@ def test_every_row_carries_the_suite_caps_tags_and_gate_verdict(stubbed_run) -> 
     for (provider, item_id), row in rows_by_key.items():
         item = items_by_id[item_id]
         assert provider in {"local", "mistral"}
-        assert row["max_output_tokens"] == classification_suite.MAX_OUTPUT_TOKENS
-        assert row["stop_sequences"] == classification_suite.STOP_SEQUENCES
-        assert row["context_length"] == classification_suite.CONTEXT_LENGTH
-        assert row["suite_id"] == classification_suite.SUITE_ID
-        assert row["suite_version"] == classification_suite.SUITE_VERSION
-        assert row["prompt_set_hash"] == classification_suite.PROMPT_SET_HASH
+        assert row["max_output_tokens"] == CLASSIFICATION.max_output_tokens
+        assert row["stop_sequences"] == CLASSIFICATION.stop_sequences
+        assert row["context_length"] == CLASSIFICATION.context_length
+        assert row["suite_id"] == CLASSIFICATION.suite_id
+        assert row["suite_version"] == CLASSIFICATION.suite_version
+        assert row["prompt_set_hash"] == CLASSIFICATION.prompt_set_hash
         assert row["language"] == item["language"]
         assert row["provenance"] == item["provenance"]
         assert row["contamination_risk"] == item["contamination_risk"]
@@ -558,12 +635,17 @@ def test_every_row_carries_the_suite_caps_tags_and_gate_verdict(stubbed_run) -> 
             assert local_row[field] == cloud_row[field]
 
 
-def test_gate_refusal_aborts_before_any_row_is_written(stubbed_run) -> None:
+def test_gate_refusal_aborts_before_any_row_is_written(
+    stubbed_run, monkeypatch
+) -> None:
     quality_results_path, _ = stubbed_run
 
+    # A fresh load, so the gate runs on the shipped definition again rather
+    # than the cached one.
+    monkeypatch.setattr(suite_registry, "_LOADED", {})
     with (
         patch(
-            "wave_local_ai_v2.quality_cli.suite_gate.gate_suite",
+            "wave_local_ai_v2.suite_registry.suite_gate.gate_suite",
             side_effect=SuiteGateError("boom"),
         ),
         pytest.raises(SystemExit) as exit_info,
@@ -580,9 +662,10 @@ def test_local_server_started_exactly_once_for_the_whole_suite(stubbed_run) -> N
     quality_cli._run()
 
     assert started["running_server"].call_count == 1
-    # Two POSTs per item now -- render, then answer -- inside one launch. The
-    # model's template is one GET for the whole batch, never one per item.
-    assert started["post"].call_count == 2 * len(CLASSIFICATION_TASK_SUITE)
+    # Two POSTs per item -- render, then answer -- plus the thinking control's
+    # two probe renders, inside one launch. The model's template is one GET
+    # for the whole batch, never one per item.
+    assert started["post"].call_count == 2 * len(CLASSIFICATION_TASK_SUITE) + 2
     assert started["props"].call_count == 1
 
 
@@ -639,6 +722,66 @@ def test_cloud_call_made_once_per_item_with_the_shared_prompt(stubbed_run) -> No
     assert called_prompts == expected_prompts
 
 
+def test_every_row_names_the_baseline_variant_and_its_authored_prompt(
+    stubbed_run,
+) -> None:
+    quality_results_path, _ = stubbed_run
+    _enable_google(stubbed_run[1])
+
+    quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    prompts_by_item = {
+        item["item_id"]: item["prompt"] for item in CLASSIFICATION_TASK_SUITE
+    }
+    assert {row["provider"] for row in rows} == {"local", "mistral", "google"}
+    for row in rows:
+        assert row["prompt_variant_id"] == "baseline"
+        assert row["prompt_variant_version"] == "1"
+        assert row["prompt_before_template"] == prompts_by_item[row["item_id"]]
+
+
+def test_the_variant_runs_before_templating_on_the_local_and_cloud_paths(
+    stubbed_run, marking_variant, monkeypatch
+) -> None:
+    quality_results_path, started = stubbed_run
+    _enable_google(started)
+    monkeypatch.setattr(quality_cli, "PROMPT_VARIANT_ID", marking_variant)
+
+    quality_cli._run()
+
+    marked = [mark_prompt(item["prompt"]) for item in CLASSIFICATION_TASK_SUITE]
+    local_bodies = [call.kwargs["json"] for call in item_posts(started["post"])]
+    rendered_inputs = [body["messages"][0]["content"] for body in local_bodies[0::2]]
+    chat_inputs = [body["messages"][0]["content"] for body in local_bodies[1::2]]
+    # The local engine templated the variant's output, and answered it.
+    assert rendered_inputs == marked
+    assert chat_inputs == marked
+    # Both cloud providers were sent the variant's output too.
+    assert [c.args[0] for c in started["complete_prompt"].call_args_list] == marked
+    assert [
+        c.args[0] for c in started["google_complete_prompt"].call_args_list
+    ] == marked
+    assert [
+        c.args[0] for c in started["google_check_context_fits"].call_args_list
+    ] == marked
+
+    rows = read_rows(quality_results_path)
+    marked_by_item = {
+        item["item_id"]: mark_prompt(item["prompt"])
+        for item in CLASSIFICATION_TASK_SUITE
+    }
+    for row in rows:
+        assert row["prompt_variant_id"] == marking_variant
+        assert row["prompt_before_template"] == marked_by_item[row["item_id"]]
+        expected = (
+            fake_render(row["prompt_before_template"])
+            if row["provider"] == "local"
+            else row["prompt_before_template"]
+        )
+        assert row["prompt"] == expected
+
+
 def test_run_skips_mistral_when_the_key_is_missing_but_still_runs_local(
     stubbed_run, capsys
 ) -> None:
@@ -675,7 +818,11 @@ def test_run_skips_mistral_on_a_request_error_without_raising(
 
     rows = read_rows(quality_results_path)
     assert {row["provider"] for row in rows} == {"local"}
-    assert "mistral skipped: boom" in capsys.readouterr().err
+    # Failing on the first item answers nothing, so nothing is written and
+    # the line names the item the provider failed on.
+    assert "mistral skipped: failed on item 'billing-01': boom" in (
+        capsys.readouterr().err
+    )
 
 
 def test_run_raises_local_completion_error_when_response_is_not_an_object(
@@ -748,7 +895,7 @@ def test_cloud_calls_pin_temperature_seed_and_the_suites_cap(stubbed_run) -> Non
         assert isinstance(call.kwargs["random_seed"], int)
         # The cloud half must be sent the cap its rows publish, and the same one
         # the local half's `n_predict` applies.
-        assert call.kwargs["max_tokens"] == classification_suite.MAX_OUTPUT_TOKENS
+        assert call.kwargs["max_tokens"] == CLASSIFICATION.max_output_tokens
 
 
 def test_every_row_records_the_sampling_that_produced_it(stubbed_run) -> None:
@@ -799,7 +946,7 @@ def test_run_still_runs_local_and_writes_its_rows_when_the_mistral_model_id_is_g
     # The local lifecycle runs unconditionally now: a cloud pre-flight
     # failure is a skip, not an abort, so it no longer gates the local batch.
     assert started["running_server"].call_count == 1
-    assert started["post"].call_count == 2 * len(CLASSIFICATION_TASK_SUITE)
+    assert len(item_posts(started["post"])) == 2 * len(CLASSIFICATION_TASK_SUITE)
     rows = read_rows(quality_results_path)
     assert {row["provider"] for row in rows} == {"local"}
 
@@ -938,7 +1085,7 @@ def test_local_cap_truncated_response_scores_truncated_max_tokens(stubbed_run) -
     started["post"].side_effect = local_post_router(
         content="bi",
         finish_reason="length",
-        generated_tokens=classification_suite.MAX_OUTPUT_TOKENS,
+        generated_tokens=CLASSIFICATION.max_output_tokens,
     )
 
     quality_cli._run()
@@ -965,9 +1112,9 @@ def test_cloud_context_truncated_response_scores_truncated_context(
         "content": "bi",
         "endpoint": mistral_client.CHAT_COMPLETIONS_URL,
         "finish_reason": "model_length",
-        "generated_tokens": classification_suite.MAX_OUTPUT_TOKENS - 1,
+        "generated_tokens": CLASSIFICATION.max_output_tokens - 1,
         "prompt_tokens": 12,
-        "total_tokens": 12 + classification_suite.MAX_OUTPUT_TOKENS - 1,
+        "total_tokens": 12 + CLASSIFICATION.max_output_tokens - 1,
     }
 
     quality_cli._run()
@@ -990,9 +1137,9 @@ def test_cloud_cap_truncated_response_scores_truncated_max_tokens(
         "content": "bi",
         "endpoint": mistral_client.CHAT_COMPLETIONS_URL,
         "finish_reason": "length",
-        "generated_tokens": classification_suite.MAX_OUTPUT_TOKENS,
+        "generated_tokens": CLASSIFICATION.max_output_tokens,
         "prompt_tokens": 12,
-        "total_tokens": 12 + classification_suite.MAX_OUTPUT_TOKENS,
+        "total_tokens": 12 + CLASSIFICATION.max_output_tokens,
     }
 
     quality_cli._run()
@@ -1100,6 +1247,85 @@ def test_full_run_writes_one_row_per_item_per_provider_in_order(stubbed_run) -> 
     assert write_order[:n] == ["local"] * n
     assert write_order[n : 2 * n] == ["mistral"] * n
     assert write_order[2 * n :] == ["google"] * n
+
+
+def test_every_row_records_where_its_subject_prompt_went(stubbed_run) -> None:
+    quality_results_path, started = stubbed_run
+    _enable_google(started)
+
+    quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    egress_by_provider = {row["provider"]: set() for row in rows}
+    for row in rows:
+        egress_by_provider[row["provider"]].add(row["subject_egress"])
+    # The local subject's prompt never left the machine; each cloud subject's
+    # went to its own provider, and to no other.
+    assert egress_by_provider == {
+        "local": {"none"},
+        "mistral": {"mistral"},
+        "google": {"google"},
+    }
+
+
+def test_every_row_names_its_subjects_family_and_size_class(stubbed_run) -> None:
+    quality_results_path, started = stubbed_run
+    _enable_google(started)
+
+    quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    composition = {(row["provider"], row["family"], row["size_class"]) for row in rows}
+    # The local subject is the entry; a cloud row cites that entry only as the
+    # one it ran beside, so it carries its own model's family and no class.
+    assert composition == {
+        ("local", "qwen", "~8B-and-up"),
+        ("mistral", "mistral", None),
+        ("google", "google", None),
+    }
+    assert {row["schema_version"] for row in rows} == {"22"}
+
+
+def test_every_row_names_direct_its_version_and_its_measured_overhead(
+    stubbed_run,
+) -> None:
+    quality_results_path, started = stubbed_run
+    _enable_google(started)
+
+    quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    assert {row["harness_id"] for row in rows} == {"direct"}
+    assert {row["harness_version"] for row in rows} == {metadata.version("requests")}
+    overhead = {
+        row["provider"]: row["harness_prompt_overhead"]["tokens"]
+        if row["harness_prompt_overhead"]["tokens"] is not None
+        else row["harness_prompt_overhead"]["null_reason"]
+        for row in rows
+    }
+    # Local: the engine's 11 prompt tokens minus the item's own 7, read off the
+    # two counts. A cloud provider's tokenizer is not read, so its rows say so
+    # rather than publish a zero.
+    assert overhead == {
+        "local": 11 - FAKE_ITEM_PROMPT_TOKENS,
+        "mistral": "item_prompt_not_counted",
+        "google": "item_prompt_not_counted",
+    }
+
+
+def test_each_rendered_item_is_counted_under_the_models_tokenizer(
+    stubbed_run,
+) -> None:
+    quality_results_path, started = stubbed_run
+
+    quality_cli._run()
+
+    counted = [call.args[1] for call in started["count_tokens"].call_args_list]
+    local_rows = [
+        row for row in read_rows(quality_results_path) if row["provider"] == "local"
+    ]
+    # The string counted is the string the row publishes as rendered.
+    assert counted == [row["prompt"] for row in local_rows]
 
 
 def test_google_batch_paces_every_request_under_the_free_tier_rpm_cap(
@@ -1270,7 +1496,10 @@ def test_a_cloud_transport_failure_skips_that_provider_rather_than_aborting(
     quality_cli.main()
 
     stderr = capsys.readouterr().err
-    assert "google skipped: connection reset by peer" in stderr
+    assert (
+        "google skipped: failed on item 'billing-01': connection reset by peer"
+        in stderr
+    )
     rows = read_rows(quality_results_path)
     assert {row["provider"] for row in rows} == {"local", "mistral"}
 
@@ -1311,6 +1540,137 @@ def test_google_context_refusal_scores_truncated_context_without_a_generate_call
         started["google_complete_prompt"].call_count
         == len(CLASSIFICATION_TASK_SUITE) - 1
     )
+
+
+def _timed_local_router():
+    """A local router whose every answer carries its own engine figures: item
+    n reports n + 10 prompt tokens, n + 1 output tokens, a prompt_ms of
+    n + 0.5 and n cached tokens, so a row carrying another item's figures,
+    or a batch total, is visible."""
+    answered = [0]
+
+    def route(url, *args, **kwargs):
+        if url.endswith("/apply-template"):
+            payload: dict = fake_apply_template(kwargs["json"])
+        else:
+            n = answered[0]
+            answered[0] += 1
+            payload = {
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {"role": "assistant", "content": "billing"},
+                    }
+                ],
+                "usage": {"completion_tokens": n + 1, "prompt_tokens": n + 10},
+                "timings": {"prompt_ms": n + 0.5, "cache_n": n, "prompt_n": 10},
+            }
+        return MagicMock(
+            status_code=200, json=lambda: payload, raise_for_status=lambda: None
+        )
+
+    return route
+
+
+def test_each_local_row_carries_its_own_engine_figures(stubbed_run) -> None:
+    quality_results_path, started = stubbed_run
+    started["post"].side_effect = _timed_local_router()
+
+    quality_cli._run()
+
+    local_rows = [
+        r for r in read_rows(quality_results_path) if r["provider"] == "local"
+    ]
+    assert [row["item_id"] for row in local_rows] == [
+        item["item_id"] for item in CLASSIFICATION_TASK_SUITE
+    ]
+    for n, row in enumerate(local_rows):
+        assert row["item_tokens_in"] == n + 10
+        assert row["item_tokens_out"] == n + 1
+        assert row["item_ttft_ms"] == n + 0.5
+        assert row["item_ttft_source"] == "server_reported"
+        assert row["item_prompt_tokens_cached"] == n
+        for field in (
+            "item_tokens_in",
+            "item_tokens_out",
+            "item_ttft_ms",
+            "item_prompt_tokens_cached",
+        ):
+            assert row[f"{field}_null_reason"] is None
+        assert row["item_measurement_kind"] == "single_generation"
+        assert row["item_first_in_batch"] is (n == 0)
+    # The batch total is still the batch's, beside the per-item figures.
+    assert local_rows[0]["tokens_out_total"] == sum(
+        row["item_tokens_out"] for row in local_rows
+    )
+
+
+def test_a_local_answer_without_timings_publishes_a_null_ttft_with_its_reason(
+    stubbed_run,
+) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    local_rows = [
+        r for r in read_rows(quality_results_path) if r["provider"] == "local"
+    ]
+    for row in local_rows:
+        assert (row["item_tokens_in"], row["item_tokens_out"]) == (11, 3)
+        assert row["item_ttft_ms"] is None
+        assert row["item_ttft_ms_null_reason"] == "not_reported_by_engine"
+        assert row["item_ttft_source"] is None
+        assert row["item_prompt_tokens_cached"] is None
+
+
+def test_a_cloud_row_carries_its_providers_token_counts_and_no_ttft(
+    stubbed_run,
+) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    mistral_rows = [
+        r for r in read_rows(quality_results_path) if r["provider"] == "mistral"
+    ]
+    assert mistral_rows
+    for position, row in enumerate(mistral_rows):
+        assert (row["item_tokens_in"], row["item_tokens_out"]) == (12, 3)
+        assert row["item_ttft_ms"] is None
+        assert row["item_ttft_ms_null_reason"] == "not_reported_by_provider"
+        assert row["item_prompt_tokens_cached_null_reason"] == (
+            "not_reported_by_provider"
+        )
+        assert row["item_first_in_batch"] is (position == 0)
+
+
+def test_a_google_item_refused_before_any_call_has_no_generation_to_report(
+    stubbed_run,
+) -> None:
+    quality_results_path, started = stubbed_run
+    _enable_google(started)
+    refused_id = CLASSIFICATION_TASK_SUITE[0]["item_id"]
+    refused_prompt = CLASSIFICATION_TASK_SUITE[0]["prompt"]
+
+    def fits(prompt, api_key, input_token_limit, model=google_client.MODEL):
+        if prompt == refused_prompt:
+            raise ContextWindowExceededError("too long")
+
+    started["google_check_context_fits"].side_effect = fits
+
+    quality_cli._run()
+
+    google_rows = {
+        row["item_id"]: row
+        for row in read_rows(quality_results_path)
+        if row["provider"] == "google"
+    }
+    refused = google_rows[refused_id]
+    for field in ("item_tokens_in", "item_tokens_out", "item_ttft_ms"):
+        assert refused[field] is None
+        assert refused[f"{field}_null_reason"] == "no_generation_call"
+    answered = next(row for iid, row in google_rows.items() if iid != refused_id)
+    assert (answered["item_tokens_in"], answered["item_tokens_out"]) == (12, 3)
 
 
 def test_local_rows_never_retry(stubbed_run) -> None:
@@ -1436,14 +1796,51 @@ def test_resume_reruns_an_incomplete_provider_from_scratch(stubbed_run) -> None:
     assert all(row["resumed"] is True for row in google_rows)
 
 
-def test_resume_refuses_a_partially_written_provider_instead_of_duplicating_it(
+def _mistral_answer(content: str) -> dict:
+    return {
+        "content": content,
+        "endpoint": mistral_client.CHAT_COMPLETIONS_URL,
+        "finish_reason": "stop",
+        "generated_tokens": 3,
+        "prompt_tokens": 12,
+        "total_tokens": 15,
+    }
+
+
+def _per_item_mistral_stub(
+    *, fail_on_calls: set[int] | None = None, fail_with: Exception | None = None
+) -> tuple:
+    """A Mistral stub whose answer depends on the item alone, counting calls.
+
+    Every third item gets a wrong label, so the batch's accuracy is a real
+    fraction a resumed batch has to reproduce. `fail_on_calls` (1-based call
+    numbers) raise `fail_with` instead of answering. Returns the stub and the
+    per-prompt count of calls that answered.
+    """
+    answered: dict[str, int] = {}
+    state = {"calls": 0}
+
+    def complete(prompt, api_key, **kwargs):
+        state["calls"] += 1
+        if fail_on_calls and state["calls"] in fail_on_calls:
+            raise fail_with or mistral_client.RetryableRequestError(
+                "rate limited", status_code=429, retry_after_s=0
+            )
+        answered[prompt] = answered.get(prompt, 0) + 1
+        number = int(prompt.rsplit("#", 1)[1].rstrip("."))
+        return _mistral_answer("technical" if number % 3 == 0 else "billing")
+
+    return complete, answered, state
+
+
+def test_resume_runs_only_the_items_a_partially_written_provider_never_wrote(
     stubbed_run, capsys
 ) -> None:
     quality_results_path, started = stubbed_run
     run_id = "resume-run-partial"
     quality_cli._run(resume_run_id=run_id)
     # Truncate mistral's half to five items, the state an interrupt or a disk
-    # failure part-way through _score_and_write's append loop leaves behind.
+    # failure part-way through the append loop leaves behind.
     rows = read_rows(quality_results_path)
     kept = [row for row in rows if row["provider"] == "local"] + [
         row for row in rows if row["provider"] == "mistral"
@@ -1455,11 +1852,271 @@ def test_resume_refuses_a_partially_written_provider_instead_of_duplicating_it(
 
     quality_cli._run(resume_run_id=run_id)
 
-    assert started["complete_prompt"].call_count == 0
-    stderr = capsys.readouterr().err
-    assert f"mistral skipped: run {run_id} is partially written (5/" in stderr
-    # Not one new row: five mistral items would otherwise be on disk twice.
-    assert len(read_rows(quality_results_path)) == len(kept)
+    remaining = len(CLASSIFICATION_TASK_SUITE) - 5
+    assert started["complete_prompt"].call_count == remaining
+    rows = read_rows(quality_results_path)
+    mistral = [row for row in rows if row["provider"] == "mistral"]
+    assert [row["item_id"] for row in mistral] == [
+        item["item_id"] for item in CLASSIFICATION_TASK_SUITE
+    ]
+    # The rows already on disk are unchanged; local stayed complete.
+    assert rows[: len(kept)] == kept
+    assert f"local skipped: run {run_id} already complete" in capsys.readouterr().err
+
+
+def test_a_twenty_item_cloud_batch_runs_under_four_retries_and_says_so(
+    stubbed_run,
+) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    for row in read_rows(quality_results_path):
+        expected = {} if row["provider"] == "local" else {"mistral": 4}
+        assert row["retry_budget"] == expected
+        assert row["partial_failure"] is None
+
+
+def test_a_mid_batch_failure_persists_the_answered_items_as_a_partial_batch(
+    stubbed_run, capsys
+) -> None:
+    quality_results_path, started = stubbed_run
+    stub, _, _ = _per_item_mistral_stub(
+        fail_on_calls={6},
+        fail_with=mistral_client.MistralRequestError("Mistral request failed: 500"),
+    )
+    started["complete_prompt"].side_effect = lambda prompt, *a, **k: stub(
+        prompt + " #1", *a, **k
+    )
+    run_id = "partial-mistral"
+
+    quality_cli._run(resume_run_id=run_id)
+
+    mistral = [
+        row for row in read_rows(quality_results_path) if row["provider"] == "mistral"
+    ]
+    failing_item = CLASSIFICATION_TASK_SUITE[5]["item_id"]
+    assert [row["item_id"] for row in mistral] == [
+        item["item_id"] for item in CLASSIFICATION_TASK_SUITE[:5]
+    ]
+    for row in mistral:
+        assert row["partial_failure"] == {
+            "provider": "mistral",
+            "item_id": failing_item,
+            "reason": "Mistral request failed: 500",
+        }
+        assert row["suite_accuracy"] is None
+        assert row["language_breakdown"] is None
+    captured = capsys.readouterr()
+    assert f"mistral partial: run {run_id} failed on item {failing_item!r}" in (
+        captured.err
+    )
+    # No headline for the partial batch; the local one still prints its own.
+    assert "provider=mistral" not in captured.out
+    assert "provider=local" in captured.out
+
+
+@pytest.mark.parametrize(
+    "refusal",
+    [
+        ModelUnavailableError("model mistral-small-2603 is no longer listed"),
+        MistralRequestError("Mistral request failed with status 400"),
+    ],
+)
+def test_a_refusal_mid_batch_is_never_retried_whatever_the_budget(
+    stubbed_run, refusal
+) -> None:
+    quality_results_path, started = stubbed_run
+    started["load_settings"].return_value = dataclasses.replace(
+        started["load_settings"].return_value,
+        cloud_retry_min_retries=1000,
+        cloud_retry_retries_per_item=50.0,
+    )
+    stub, _, state = _per_item_mistral_stub(fail_on_calls={3}, fail_with=refusal)
+    started["complete_prompt"].side_effect = lambda prompt, *a, **k: stub(
+        prompt + " #1", *a, **k
+    )
+
+    quality_cli._run()
+
+    # Three calls, one per item reached: the refusal on the third was not
+    # retried, and the batch stopped there.
+    assert state["calls"] == 3
+    mistral = [
+        row for row in read_rows(quality_results_path) if row["provider"] == "mistral"
+    ]
+    assert len(mistral) == 2
+    assert all(row["retry_budget"] == {"mistral": 1000} for row in mistral)
+
+
+# A publication-size suite: 100 hand-written fixture items, registered from a
+# definition outside the CLI exactly as any further suite would be.
+_PUBLICATION_SIZE_ID = "fixture-routing-hundred"
+_PUBLICATION_SIZE_DEFINITION = {
+    "suite_id": _PUBLICATION_SIZE_ID,
+    "suite_version": "1",
+    "task_suite": "classification",
+    "scoring_rule": "exact_label_match",
+    "max_output_tokens": 16,
+    "stop_sequences": [],
+    "context_length": 4096,
+    "thinking_policy": "disabled",
+    "level": "development",
+    "items": [
+        {
+            "item_id": f"hundred-{number:03d}",
+            "prompt": f"Route this message: invoice question #{number}.",
+            "expected_label": "billing",
+            "language": ("en", "fr", "de")[number % 3],
+            "provenance": "hand_written",
+            "contamination_risk": False,
+        }
+        for number in range(100)
+    ],
+}
+
+
+@pytest.fixture
+def hundred_item_suite(tmp_path):
+    path = tmp_path / f"{_PUBLICATION_SIZE_ID}.json"
+    path.write_text(json.dumps(_PUBLICATION_SIZE_DEFINITION), encoding="utf-8")
+    definition = suite_registry.register(path)
+    yield definition
+    suite_registry.unregister(_PUBLICATION_SIZE_ID)
+
+
+def _mistral_rows(path: Path, run_id: str) -> list[dict]:
+    return [
+        row
+        for row in read_rows(path)
+        if row["provider"] == "mistral" and row["run_id"] == run_id
+    ]
+
+
+def test_a_hundred_item_cloud_batch_survives_429s_a_fixed_four_would_not(
+    stubbed_run, hundred_item_suite
+) -> None:
+    quality_results_path, started = stubbed_run
+    # A 429 on every tenth call: ten retries over the batch.
+    rate_limited = set(range(10, 120, 11))
+    stub, answered, _ = _per_item_mistral_stub(fail_on_calls=rate_limited)
+    started["complete_prompt"].side_effect = stub
+
+    quality_cli._run(resume_run_id="hundred-derived", suite=_PUBLICATION_SIZE_ID)
+
+    rows = _mistral_rows(quality_results_path, "hundred-derived")
+    assert len(rows) == 100
+    assert all(row["retry_budget"] == {"mistral": 20} for row in rows)
+    assert all(row["partial_failure"] is None for row in rows)
+    assert sum(row["retries"] for row in rows) == 10
+    assert all(count == 1 for count in answered.values())
+
+    # The same 429s under the fixed total the batch used to get.
+    stub, _, _ = _per_item_mistral_stub(fail_on_calls=rate_limited)
+    started["complete_prompt"].side_effect = stub
+    started["load_settings"].return_value = dataclasses.replace(
+        started["load_settings"].return_value, cloud_retry_retries_per_item=0.0
+    )
+
+    quality_cli._run(resume_run_id="hundred-fixed", suite=_PUBLICATION_SIZE_ID)
+
+    fixed = _mistral_rows(quality_results_path, "hundred-fixed")
+    assert len(fixed) < 100
+    assert all(row["retry_budget"] == {"mistral": 4} for row in fixed)
+    assert all(row["partial_failure"] is not None for row in fixed)
+
+
+def test_a_hundred_item_batch_interrupted_then_resumed_pays_for_no_item_twice(
+    stubbed_run, hundred_item_suite, capsys
+) -> None:
+    quality_results_path, started = stubbed_run
+    # The uninterrupted reference over the same per-item responses.
+    stub, _, _ = _per_item_mistral_stub()
+    started["complete_prompt"].side_effect = stub
+    quality_cli._run(resume_run_id="hundred-whole", suite=_PUBLICATION_SIZE_ID)
+    whole = _mistral_rows(quality_results_path, "hundred-whole")
+
+    # Interrupted: a 400 on the 38th call stops the batch after 37 items.
+    stub, answered, state = _per_item_mistral_stub(
+        fail_on_calls={38}, fail_with=MistralRequestError("Mistral request failed")
+    )
+    started["complete_prompt"].side_effect = stub
+    run_id = "hundred-interrupted"
+    quality_cli._run(resume_run_id=run_id, suite=_PUBLICATION_SIZE_ID)
+    before = _mistral_rows(quality_results_path, run_id)
+    assert len(before) == 37
+    calls_first = state["calls"]
+
+    # Resumed: the provider answers again.
+    stub_resume, answered_resume, state_resume = _per_item_mistral_stub()
+    started["complete_prompt"].side_effect = stub_resume
+    quality_cli._run(resume_run_id=run_id, suite=_PUBLICATION_SIZE_ID)
+
+    rows = _mistral_rows(quality_results_path, run_id)
+    item_ids = [row["item_id"] for row in rows]
+    assert len(item_ids) == 100
+    assert len(set(item_ids)) == 100
+    # Calls only for the 63 items the batch never wrote, one each.
+    assert state_resume["calls"] == 63
+    assert set(answered).isdisjoint(answered_resume)
+    assert all(count == 1 for count in answered_resume.values())
+    # The rows already written are unchanged by the resume.
+    assert rows[:37] == before
+    # The resume ran under the budget derived from its own 63 items.
+    assert all(row["retry_budget"] == {"mistral": 13} for row in rows[37:])
+    # The completed batch publishes what the uninterrupted one did.
+    completing = rows[37:]
+    for row in completing:
+        assert row["partial_failure"] is None
+        assert row["suite_accuracy"] == whole[0]["suite_accuracy"]
+        assert row["language_breakdown"] == whole[0]["language_breakdown"]
+        assert row["failure_counts"] == whole[0]["failure_counts"]
+        # The interval too: computed over all 100 items, not the 63 resumed.
+        assert row["score_interval"] == whole[0]["score_interval"]
+        assert row["score_interval"]["suite"]["n"] == 100
+    # The rows written partial publish no interval, and keep publishing none.
+    assert all(row["score_interval"] is None for row in rows[:37])
+    assert {row["item_id"]: row["correct"] for row in rows} == {
+        row["item_id"]: row["correct"] for row in whole
+    }
+    print(
+        f"evidence: first invocation {calls_first} call(s), 37 rows; "
+        f"resume {state_resume['calls']} call(s), 63 rows; "
+        f"items answered twice: {len(set(answered) & set(answered_resume))}; "
+        f"suite_accuracy {completing[0]['suite_accuracy']:.4f} "
+        f"(uninterrupted {whole[0]['suite_accuracy']:.4f})"
+    )
+
+
+def test_a_resume_that_fails_again_stays_partial_and_names_the_new_item(
+    stubbed_run, hundred_item_suite, capsys
+) -> None:
+    quality_results_path, started = stubbed_run
+    run_id = "hundred-twice"
+    stub, _, _ = _per_item_mistral_stub(
+        fail_on_calls={20}, fail_with=MistralRequestError("first failure")
+    )
+    started["complete_prompt"].side_effect = stub
+    quality_cli._run(resume_run_id=run_id, suite=_PUBLICATION_SIZE_ID)
+    capsys.readouterr()
+
+    stub, _, _ = _per_item_mistral_stub(
+        fail_on_calls={10}, fail_with=MistralRequestError("second failure")
+    )
+    started["complete_prompt"].side_effect = stub
+    quality_cli._run(resume_run_id=run_id, suite=_PUBLICATION_SIZE_ID)
+
+    rows = _mistral_rows(quality_results_path, run_id)
+    assert len(rows) == 19 + 9
+    # Every row of the batch says it is partial; the resumed ones name the
+    # item the resume stopped on.
+    assert rows[0]["partial_failure"]["item_id"] == "hundred-019"
+    assert rows[-1]["partial_failure"]["item_id"] == "hundred-028"
+    assert rows[-1]["partial_failure"]["reason"] == "second failure"
+    assert all(row["suite_accuracy"] is None for row in rows)
+    captured = capsys.readouterr()
+    assert "provider=mistral" not in captured.out
+    assert "mistral partial:" in captured.err
 
 
 def test_resume_with_a_never_used_run_id_behaves_like_a_fresh_run(
@@ -1489,28 +2146,197 @@ def test_parse_args_reads_the_resume_flag() -> None:
 # --- the --suite seam --------------------------------------------------------
 
 
-def test_parse_args_defaults_the_suite_to_classification() -> None:
+def test_parse_args_defaults_the_suite_to_the_classification_suite_id() -> None:
     # Every invocation written before this flag existed keeps behaving
     # identically.
-    assert quality_cli._parse_args([]).suite == "classification"
+    assert quality_cli._parse_args([]).suite == "classification-support-routing"
 
 
 def test_parse_args_reads_the_suite_flag() -> None:
-    assert quality_cli._parse_args(["--suite", "translation"]).suite == "translation"
+    args = quality_cli._parse_args(["--suite", "translation-business-short-form"])
+
+    assert args.suite == "translation-business-short-form"
 
 
-def test_parse_args_refuses_an_unknown_suite_and_names_the_valid_ones(capsys) -> None:
-    with pytest.raises(SystemExit) as exc:
-        quality_cli._parse_args(["--suite", "rewriting"])
+@pytest.mark.parametrize("suite", ["rewriting", "translation"])
+def test_an_unregistered_suite_id_is_refused_naming_the_registered_ones(
+    stubbed_run, monkeypatch, capsys, suite
+) -> None:
+    # "translation" was a `--suite` value before suites were resolved by id;
+    # it is refused like any other id the registry does not hold.
+    quality_results_path, started = stubbed_run
+    monkeypatch.setattr("sys.argv", ["wave-local-ai-v2-quality", "--suite", suite])
 
-    assert exc.value.code != 0
+    with pytest.raises(SystemExit) as exit_info:
+        quality_cli.main()
+
+    assert exit_info.value.code == 1
     stderr = capsys.readouterr().err
-    assert "classification" in stderr
-    assert "translation" in stderr
+    assert f"suite {suite!r} is not registered" in stderr
+    assert "classification-support-routing" in stderr
+    assert "translation-business-short-form" in stderr
+    assert read_rows(quality_results_path) == []
+    assert started["running_server"].call_count == 0
 
 
-def test_the_dispatch_table_holds_exactly_the_two_shipped_suites() -> None:
-    assert set(quality_cli._SUITES) == {"classification", "translation"}
+def test_the_cli_holds_no_suite_table_and_imports_no_suite_module() -> None:
+    source = Path(quality_cli.__file__).read_text(encoding="utf-8")
+
+    assert not hasattr(quality_cli, "_SUITES")
+    assert "classification_suite" not in source
+    assert "translation_suite" not in source
+
+
+# A suite registered only here, scored by a rule registered only here: what a
+# further suite costs is a definition and, where its scoring differs, a named
+# rule -- never an edit to `quality_cli.py`.
+_FIXTURE_SUITE_ID = "fixture-routing-mini"
+_FIXTURE_RULE = "fixture_exact_label_match"
+_FIXTURE_DEFINITION = {
+    "suite_id": _FIXTURE_SUITE_ID,
+    "suite_version": "7",
+    "task_suite": "classification",
+    "scoring_rule": _FIXTURE_RULE,
+    "max_output_tokens": 16,
+    "stop_sequences": ["###"],
+    "context_length": 4096,
+    "thinking_policy": "disabled",
+    "level": "development",
+    "items": [
+        {
+            "item_id": f"fixture-{language}",
+            "prompt": f"Route this {language} message: invoice question.",
+            "expected_label": "billing",
+            "language": language,
+            "provenance": "hand_written",
+            "contamination_risk": False,
+        }
+        for language in ("en", "fr", "de")
+    ],
+}
+
+
+@pytest.fixture
+def fixture_suite(tmp_path, monkeypatch):
+    calls: list[int] = []
+
+    def fixture_rule(items, completions, *, max_output_tokens):
+        calls.append(max_output_tokens)
+        return scoring_rules.exact_label_match(
+            items, completions, max_output_tokens=max_output_tokens
+        )
+
+    monkeypatch.setitem(scoring_rules.SCORING_RULES, _FIXTURE_RULE, fixture_rule)
+    monkeypatch.setitem(
+        scoring_rules.BATCH_AGGREGATES,
+        _FIXTURE_RULE,
+        scoring_rules.aggregate_exact_label_match,
+    )
+    path = tmp_path / f"{_FIXTURE_SUITE_ID}.json"
+    path.write_text(json.dumps(_FIXTURE_DEFINITION), encoding="utf-8")
+    definition = suite_registry.register(path)
+    yield definition, calls
+    suite_registry.unregister(_FIXTURE_SUITE_ID)
+
+
+def test_a_suite_registered_outside_the_cli_runs_end_to_end(
+    stubbed_run, fixture_suite
+) -> None:
+    quality_results_path, _ = stubbed_run
+    definition, rule_calls = fixture_suite
+
+    quality_cli._run(suite=_FIXTURE_SUITE_ID)
+
+    rows = read_rows(quality_results_path)
+    # Every row passed the writer gate on the way to disk, including the
+    # baseline check that resolves the item's authored prompt by suite id.
+    assert len(rows) == 2 * len(definition.items)
+    assert {row["provider"] for row in rows} == {"local", "mistral"}
+    for row in rows:
+        assert row["suite_id"] == _FIXTURE_SUITE_ID
+        assert row["suite_version"] == "7"
+        assert row["task_suite"] == "classification"
+        assert row["prompt_set_hash"] == definition.prompt_set_hash
+        assert row["max_output_tokens"] == 16
+        assert row["stop_sequences"] == ["###"]
+        assert row["context_length"] == 4096
+        assert row["thinking_policy"] == "disabled"
+        assert row["indicative"] is True
+        assert row["suite_accuracy"] == 1.0
+        # A development fixture whose items declare no licence or source.
+        assert row["suite_level"] == "development"
+        assert row["item_licence"] is None
+        assert row["item_source"] is None
+        assert row["item_source_revision"] is None
+    assert {row["item_id"] for row in rows} == {
+        "fixture-en",
+        "fixture-fr",
+        "fixture-de",
+    }
+    # The fixture's own rule scored both batches, under the fixture's own cap.
+    assert rule_calls == [16, 16]
+
+
+def test_a_publication_suite_runs_and_every_row_names_its_level_and_source(
+    stubbed_run, tmp_path
+) -> None:
+    quality_results_path, _ = stubbed_run
+    data = {
+        **_FIXTURE_DEFINITION,
+        "suite_id": "fixture-publication",
+        "scoring_rule": "exact_label_match",
+        "level": "publication",
+        "size_target": 100,
+        "size_target_reason": "the source holds fewer than 300 items",
+        "items": [
+            {
+                "item_id": f"pub-{language}-{index}",
+                "prompt": f"Route this {language} message {index}: invoice.",
+                "expected_label": "billing",
+                "language": language,
+                "provenance": "public",
+                "contamination_risk": True,
+                "licence": "MIT",
+                "source": "example-benchmark",
+                "source_revision": f"rev-{index}",
+            }
+            for language in ("en", "fr", "de")
+            for index in range(34)
+        ],
+    }
+    path = tmp_path / "fixture-publication.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    suite_registry.register(path)
+    try:
+        quality_cli._run(suite="fixture-publication")
+    finally:
+        suite_registry.unregister("fixture-publication")
+
+    rows = read_rows(quality_results_path)
+    assert len(rows) == 2 * 102
+    for row in rows:
+        assert row["suite_level"] == "publication"
+        assert row["indicative"] is False
+        assert row["item_licence"] == "MIT"
+        assert row["item_source"] == "example-benchmark"
+        assert row["item_source_revision"] == f"rev-{row['item_id'].split('-')[-1]}"
+        assert row["contamination_risk"] is True
+
+
+def test_a_shipped_suite_run_names_development_and_each_items_licence(
+    stubbed_run,
+) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run(suite="classification-support-routing")
+
+    rows = read_rows(quality_results_path)
+    assert rows
+    for row in rows:
+        assert row["suite_level"] == "development"
+        assert row["item_licence"] == "CC-BY-4.0"
+        assert row["item_source"] is None
+        assert row["item_source_revision"] is None
 
 
 def test_translation_run_writes_one_graded_row_per_item_per_provider(
@@ -1518,17 +2344,17 @@ def test_translation_run_writes_one_graded_row_per_item_per_provider(
 ) -> None:
     quality_results_path, _ = stubbed_run
 
-    quality_cli._run(suite="translation")
+    quality_cli._run(suite="translation-business-short-form")
 
     rows = read_rows(quality_results_path)
     assert len(rows) == 2 * len(TRANSLATION_TASK_SUITE)
     for row in rows:
         assert row["task_suite"] == "translation"
-        assert row["suite_id"] == translation_suite.SUITE_ID
-        assert row["suite_version"] == translation_suite.SUITE_VERSION
-        assert row["prompt_set_hash"] == translation_suite.PROMPT_SET_HASH
-        assert row["max_output_tokens"] == translation_suite.MAX_OUTPUT_TOKENS
-        assert row["context_length"] == translation_suite.CONTEXT_LENGTH
+        assert row["suite_id"] == TRANSLATION.suite_id
+        assert row["suite_version"] == TRANSLATION.suite_version
+        assert row["prompt_set_hash"] == TRANSLATION.prompt_set_hash
+        assert row["max_output_tokens"] == TRANSLATION.max_output_tokens
+        assert row["context_length"] == TRANSLATION.context_length
         # The whole graded block, on every row.
         assert GRADED_FIELDS <= row.keys()
         assert row["metric_id"] == chrf.METRIC_ID
@@ -1547,7 +2373,7 @@ def test_a_translation_row_carries_both_texts_the_score_was_computed_from(
 ) -> None:
     quality_results_path, _ = stubbed_run
 
-    quality_cli._run(suite="translation")
+    quality_cli._run(suite="translation-business-short-form")
 
     rows = [
         row for row in read_rows(quality_results_path) if row["provider"] == "local"
@@ -1569,7 +2395,7 @@ def test_a_translation_row_carries_the_per_language_score_breakdown(
 ) -> None:
     quality_results_path, _ = stubbed_run
 
-    quality_cli._run(suite="translation")
+    quality_cli._run(suite="translation-business-short-form")
 
     breakdown = read_rows(quality_results_path)[0]["score_breakdown"]
     assert set(breakdown) == {"en", "fr", "de"}
@@ -1590,9 +2416,7 @@ def test_an_empty_translation_completion_scores_zero_and_stays_in_the_mean(
         if url.endswith("/apply-template"):
             return MagicMock(
                 status_code=200,
-                json=lambda: {
-                    "prompt": fake_render(kwargs["json"]["messages"][0]["content"])
-                },
+                json=lambda: fake_apply_template(kwargs["json"]),
                 raise_for_status=lambda: None,
             )
         payload = {
@@ -1607,7 +2431,7 @@ def test_an_empty_translation_completion_scores_zero_and_stays_in_the_mean(
 
     started["post"].side_effect = one_empty_then_answers
 
-    quality_cli._run(suite="translation")
+    quality_cli._run(suite="translation-business-short-form")
 
     local_rows = [
         row for row in read_rows(quality_results_path) if row["provider"] == "local"
@@ -1637,7 +2461,7 @@ def test_the_classification_run_writes_no_graded_field(stubbed_run) -> None:
 def test_the_translation_run_prints_a_suite_score_not_an_accuracy(
     stubbed_run, capsys
 ) -> None:
-    quality_cli._run(suite="translation")
+    quality_cli._run(suite="translation-business-short-form")
 
     stdout = capsys.readouterr().out
     assert "suite_score=" in stdout
@@ -1651,7 +2475,7 @@ def test_the_translation_run_sends_the_suites_own_cap_to_every_provider(
 ) -> None:
     _, started = stubbed_run
 
-    quality_cli._run(suite="translation")
+    quality_cli._run(suite="translation-business-short-form")
 
     chat_calls = [
         call
@@ -1660,9 +2484,9 @@ def test_the_translation_run_sends_the_suites_own_cap_to_every_provider(
     ]
     assert chat_calls
     for call in chat_calls:
-        assert call.kwargs["json"]["max_tokens"] == translation_suite.MAX_OUTPUT_TOKENS
+        assert call.kwargs["json"]["max_tokens"] == TRANSLATION.max_output_tokens
     cloud_kwargs = started["complete_prompt"].call_args.kwargs
-    assert cloud_kwargs["max_tokens"] == translation_suite.MAX_OUTPUT_TOKENS
+    assert cloud_kwargs["max_tokens"] == TRANSLATION.max_output_tokens
 
 
 def test_a_resume_under_one_suite_never_skips_on_another_suites_rows(
@@ -1674,7 +2498,7 @@ def test_a_resume_under_one_suite_never_skips_on_another_suites_rows(
     rows_before = len(read_rows(quality_results_path))
 
     monkeypatch.setattr("sys.argv", ["wave-local-ai-v2-quality"])
-    quality_cli._run(resume_run_id=run_id, suite="translation")
+    quality_cli._run(resume_run_id=run_id, suite="translation-business-short-form")
 
     rows = read_rows(quality_results_path)
     translation_rows = [row for row in rows if row["task_suite"] == "translation"]
@@ -1724,7 +2548,7 @@ def test_every_row_declares_the_suites_thinking_policy(stubbed_run) -> None:
     rows = read_rows(quality_results_path)
     assert {row["provider"] for row in rows} == {"local", "mistral"}
     for row in rows:
-        assert row["thinking_policy"] == classification_suite.THINKING_POLICY
+        assert row["thinking_policy"] == CLASSIFICATION.thinking_policy
         assert row["thinking_policy"] == "disabled"
 
 
@@ -1741,7 +2565,7 @@ def test_the_local_chat_call_asks_the_model_not_to_think(stubbed_run) -> None:
 
     local_calls = [
         call
-        for call in started["post"].call_args_list
+        for call in item_posts(started["post"])
         if call.args[0].startswith("http://127.0.0.1:8080")
     ]
     assert local_calls
@@ -1758,7 +2582,7 @@ def test_the_rendered_prompt_and_the_answer_run_under_one_policy(stubbed_run) ->
     quality_cli._run()
 
     by_endpoint: dict[str, list] = {"render": [], "chat": []}
-    for call in started["post"].call_args_list:
+    for call in item_posts(started["post"]):
         key = "render" if call.args[0].endswith("/apply-template") else "chat"
         by_endpoint[key].append(call.kwargs["json"].get("chat_template_kwargs"))
     assert by_endpoint["render"] and by_endpoint["chat"]
@@ -1785,3 +2609,283 @@ def test_the_cloud_call_path_is_untouched_by_the_local_migration(stubbed_run) ->
     # switch for it.
     for call in started["complete_prompt"].call_args_list:
         assert "chat_template_kwargs" not in call.kwargs
+
+
+def _declare_thinking_control(started: dict, control: object) -> None:
+    """Rewrite the stubbed roster's entry with `control` (`None` removes it)."""
+    data = json.loads(json.dumps(FAKE_ROSTER))
+    entry = data["entries"][DEFAULT_ROSTER_ENTRY_ID]
+    if control is None:
+        del entry["thinking_control"]
+    else:
+        entry["thinking_control"] = control
+    started["load_settings"].return_value.roster_path.write_text(json.dumps(data))
+
+
+def _ignoring_template_router(url, *args, **kwargs):
+    """A template that does not declare the control: one render either way."""
+    if url.endswith("/apply-template"):
+        payload: dict = {
+            "prompt": fake_render(kwargs["json"]["messages"][0]["content"])
+        }
+    else:
+        payload = {
+            "choices": [{"finish_reason": "stop", "message": {"content": "billing"}}],
+            "usage": {"completion_tokens": 3, "prompt_tokens": 11},
+        }
+    return MagicMock(
+        status_code=200, json=lambda: payload, raise_for_status=lambda: None
+    )
+
+
+def test_a_control_the_template_ignores_refuses_the_batch_and_writes_no_row(
+    stubbed_run, capsys
+) -> None:
+    quality_results_path, started = stubbed_run
+    started["post"].side_effect = _ignoring_template_router
+
+    with pytest.raises(SystemExit) as exited:
+        quality_cli.main()
+
+    assert exited.value.code == 1
+    err = capsys.readouterr().err
+    assert repr(DEFAULT_ROSTER_ENTRY_ID) in err
+    assert '{"chat_template_kwargs": {"enable_thinking": false}}' in err
+    assert template_hash(FAKE_CHAT_TEMPLATE) in err
+    # Refused before the first item: two probe renders, no generation, and
+    # no cloud batch either.
+    urls = [call.args[0] for call in started["post"].call_args_list]
+    assert len(urls) == 2
+    assert all(url.endswith("/apply-template") for url in urls)
+    assert started["complete_prompt"].call_count == 0
+    assert read_rows(quality_results_path) == []
+
+
+def test_an_entry_declaring_none_sends_no_control_and_is_not_probed(
+    stubbed_run,
+) -> None:
+    quality_results_path, started = stubbed_run
+    _declare_thinking_control(started, "none")
+
+    quality_cli._run()
+
+    bodies = [call.kwargs["json"] for call in started["post"].call_args_list]
+    assert len(bodies) == 2 * len(CLASSIFICATION_TASK_SUITE)
+    for body in bodies:
+        assert "chat_template_kwargs" not in body
+        assert body["messages"][0]["content"] != local_client.THINKING_PROBE_MESSAGE
+    local_rows = [
+        row for row in read_rows(quality_results_path) if row["provider"] == "local"
+    ]
+    assert len(local_rows) == len(CLASSIFICATION_TASK_SUITE)
+
+
+def test_an_entry_declaring_no_control_refuses_before_the_server_launches(
+    stubbed_run,
+) -> None:
+    quality_results_path, started = stubbed_run
+    _declare_thinking_control(started, None)
+
+    with pytest.raises(
+        local_client.LocalRequestError,
+        match=f"{DEFAULT_ROSTER_ENTRY_ID!r} declares no thinking_control",
+    ):
+        quality_cli._run()
+
+    assert started["running_server"].call_count == 0
+    assert started["post"].call_count == 0
+    assert read_rows(quality_results_path) == []
+
+
+def test_the_shipped_qwen_control_renders_the_same_prompt_as_before(
+    stubbed_run,
+) -> None:
+    """The four shipped entries' declaration is the spelling every published
+    row already ran under, so their rendered prompts and template hash do not
+    move."""
+    quality_results_path, started = stubbed_run
+    shipped = json.loads(Path("aidd_docs/roster/models.json").read_text("utf-8"))
+    _declare_thinking_control(
+        started, shipped["entries"]["qwen3-0.6b-q8"]["thinking_control"]
+    )
+
+    quality_cli._run()
+
+    for call in item_posts(started["post"]):
+        assert call.kwargs["json"]["chat_template_kwargs"] == {"enable_thinking": False}
+    for row in read_rows(quality_results_path):
+        if row["provider"] == "local":
+            assert row["prompt"] == fake_render(row["prompt_before_template"])
+            assert row["prompt_template_hash"] == template_hash(FAKE_CHAT_TEMPLATE)
+
+
+def _truncate_mistral_half(path: Path, keep: int, **edits: object) -> list[dict]:
+    """Keep the local rows and the first `keep` mistral rows, editing those."""
+    rows = read_rows(path)
+    kept = [row for row in rows if row["provider"] == "local"] + [
+        {**row, **edits} for row in rows if row["provider"] == "mistral"
+    ][:keep]
+    path.write_text("".join(f"{json.dumps(row)}\n" for row in kept), encoding="utf-8")
+    return kept
+
+
+def test_a_resume_of_a_local_batch_under_another_engine_build_is_refused(
+    stubbed_run, capsys
+) -> None:
+    # One local score over two builds of the engine is refused, writing nothing.
+    quality_results_path, started = stubbed_run
+    run_id = "resume-other-build"
+    quality_cli._run(resume_run_id=run_id)
+    rows = read_rows(quality_results_path)
+    kept = [
+        {**row, "engine_build": "b1"} for row in rows if row["provider"] == "local"
+    ][:5]
+    quality_results_path.write_text(
+        "".join(f"{json.dumps(row)}\n" for row in kept), encoding="utf-8"
+    )
+    started["running_server"].reset_mock()
+    with (
+        patch("sys.argv", ["wave-local-ai-v2-quality", "--resume", run_id]),
+        pytest.raises(SystemExit) as exit_info,
+    ):
+        quality_cli.main()
+
+    assert exit_info.value.code == 1
+    stderr = capsys.readouterr().err
+    assert f"refusing --resume {run_id}: the local batch's" in stderr
+    assert "engine_build='b1'" in stderr
+    assert started["running_server"].call_count == 0
+    assert read_rows(quality_results_path) == kept
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("model_id", "mistral-small-2501"),
+        ("suite_version", "0"),
+        ("prompt_set_hash", "0" * 64),
+        ("prompt_variant_id", "terse"),
+        ("prompt_variant_version", "0"),
+        ("sampling", {"temperature": 0.7, "random_seed": 1}),
+        ("roster_entry_id", "another-entry"),
+        ("endpoint", "https://example.invalid/v1/chat/completions"),
+        ("thinking_policy", "enabled"),
+        # A cloud batch is held to the engine not applying.
+        ("engine_id", "llama.cpp"),
+    ],
+)
+def test_a_resume_over_rows_of_another_configuration_is_refused_writing_nothing(
+    stubbed_run, capsys, field, value
+) -> None:
+    quality_results_path, started = stubbed_run
+    run_id = "resume-other-config"
+    quality_cli._run(resume_run_id=run_id)
+    kept = _truncate_mistral_half(quality_results_path, 5, **{field: value})
+    started["complete_prompt"].reset_mock()
+    started["running_server"].reset_mock()
+    started["check_model"].reset_mock()
+    with (
+        patch("sys.argv", ["wave-local-ai-v2-quality", "--resume", run_id]),
+        pytest.raises(SystemExit) as exit_info,
+    ):
+        quality_cli.main()
+
+    assert exit_info.value.code == 1
+    stderr = capsys.readouterr().err
+    assert f"refusing --resume {run_id}: the mistral batch's" in stderr
+    assert f"{field}=" in stderr
+    # Nothing ran and nothing was written: no server, no call, no row.
+    assert started["running_server"].call_count == 0
+    assert started["complete_prompt"].call_count == 0
+    assert read_rows(quality_results_path) == kept
+
+
+def test_a_resume_after_the_cloud_model_changed_is_refused(
+    stubbed_run, monkeypatch
+) -> None:
+    # The PRD's own failure case: a model retired mid-batch, its successor
+    # pinned, the batch resumed. One score over two models is refused.
+    quality_results_path, _ = stubbed_run
+    run_id = "resume-retired-model"
+    quality_cli._run(resume_run_id=run_id)
+    _truncate_mistral_half(quality_results_path, 5)
+    monkeypatch.setattr(mistral_client, "MODEL", "mistral-small-2610")
+
+    with pytest.raises(ResumeConfigurationError) as excinfo:
+        quality_cli._run(resume_run_id=run_id)
+
+    assert "model_id='mistral-small-2603'" in str(excinfo.value)
+    assert "model_id='mistral-small-2610'" in str(excinfo.value)
+
+
+def test_a_resume_under_the_same_configuration_completes_the_batch(
+    stubbed_run,
+) -> None:
+    quality_results_path, _ = stubbed_run
+    run_id = "resume-same-config"
+    quality_cli._run(resume_run_id=run_id)
+    _truncate_mistral_half(quality_results_path, 5)
+
+    quality_cli._run(resume_run_id=run_id)
+
+    mistral = [
+        row for row in read_rows(quality_results_path) if row["provider"] == "mistral"
+    ]
+    assert len(mistral) == len(CLASSIFICATION_TASK_SUITE)
+    assert mistral[-1]["partial_failure"] is None
+    assert mistral[-1]["suite_accuracy"] is not None
+
+
+def _batches(rows: list[dict]) -> dict[str, list[dict]]:
+    by_provider: dict[str, list[dict]] = {}
+    for row in rows:
+        by_provider.setdefault(row["provider"], []).append(row)
+    return by_provider
+
+
+@pytest.mark.parametrize(
+    "suite", ["classification-support-routing", "translation-business-short-form"]
+)
+def test_every_row_of_a_batch_carries_one_interval_that_replays_from_the_rows(
+    stubbed_run, suite: str
+) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run(suite=suite)
+
+    definition = suite_registry.resolve(suite)
+    item_by_id = {item["item_id"]: item for item in definition.items}
+    for provider, rows in _batches(read_rows(quality_results_path)).items():
+        blocks = [row["score_interval"] for row in rows]
+        assert all(block == blocks[0] for block in blocks), provider
+        block = blocks[0]
+        assert block["suite"]["n"] == len(definition.items)
+        # Replayed from what the rows publish alone: the items they name and
+        # each item's own score.
+        items = [item_by_id[row["item_id"]] for row in rows]
+        values = [score_interval.item_value(row) for row in rows]
+        assert score_interval.replay(block, items, values) == block
+        # A development-level score keeps its indicative marking beside it.
+        assert all(row["suite_level"] == "development" for row in rows)
+        assert all(row["indicative"] == definition.gate["indicative"] for row in rows)
+        score_interval.check_batch_invariants(rows)
+
+
+def test_a_batch_whose_interval_covers_other_items_is_refused_before_writing(
+    stubbed_run, monkeypatch
+) -> None:
+    quality_results_path, _ = stubbed_run
+    real = scoring_rules.BATCH_AGGREGATES["exact_label_match"]
+
+    def over_the_first_items_only(items, per_item):
+        fields = real(items, per_item)
+        fields["score_interval"] = real(items[:5], per_item[:5])["score_interval"]
+        return fields
+
+    monkeypatch.setitem(
+        scoring_rules.BATCH_AGGREGATES, "exact_label_match", over_the_first_items_only
+    )
+
+    with pytest.raises(score_interval.IntervalInvariantError, match="n=5"):
+        quality_cli._run()
+    assert not quality_results_path.exists() or read_rows(quality_results_path) == []

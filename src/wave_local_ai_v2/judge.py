@@ -59,6 +59,48 @@ SINGLE_JUDGE_REASONS = (
 # egress block so a reader can add up what left the machine.
 _GENERATIONS_PER_ITEM = 1
 
+# Where a record's `answering_provider` was read from. A provider whose
+# response names who served it (a router, typically) is recorded from that
+# field; a direct API whose response names no one is recorded as the provider
+# that owns the endpoint the call was sent to. The row says which, so the
+# claim is never stronger than its evidence.
+ANSWERING_PROVIDER_FROM_RESPONSE = "response"
+ANSWERING_PROVIDER_FROM_DIRECT_ENDPOINT = "direct_endpoint"
+
+ANSWERING_PROVIDER_SOURCES = (
+    ANSWERING_PROVIDER_FROM_RESPONSE,
+    ANSWERING_PROVIDER_FROM_DIRECT_ENDPOINT,
+)
+
+# `reasoning_effort` is the effort control exactly as the request carried it.
+# A backend that sends no such control records this instead, so a record can
+# never be read as `disabled` or `minimal` for a control nobody sent.
+REASONING_EFFORT_NOT_SENT = "not_sent"
+
+# Why a record's `reasoning_tokens` is null. Never a zero: an unreported count
+# is unknown, and a zero would claim the judge did not reason.
+# - the provider's usage block has no reasoning counter at all;
+# - the provider has one, but this response did not carry it.
+REASONING_TOKENS_NOT_REPORTED_BY_PROVIDER = "provider_reports_no_reasoning_count"
+REASONING_TOKENS_ABSENT_FROM_RESPONSE = "reasoning_count_absent_from_response"
+
+REASONING_TOKENS_NULL_REASONS = (
+    REASONING_TOKENS_NOT_REPORTED_BY_PROVIDER,
+    REASONING_TOKENS_ABSENT_FROM_RESPONSE,
+)
+
+# Where a non-null `reasoning_tokens` came from: a count the response states,
+# or one derived from the response's own totals (total minus prompt minus
+# output). A derived `0` is the response's arithmetic, not an assumed zero,
+# and the row says which it is.
+REASONING_TOKENS_REPORTED = "reported"
+REASONING_TOKENS_DERIVED_FROM_TOTALS = "derived_from_totals"
+
+REASONING_TOKENS_SOURCES = (
+    REASONING_TOKENS_REPORTED,
+    REASONING_TOKENS_DERIVED_FROM_TOTALS,
+)
+
 
 class JudgeResponse(TypedDict):
     """What a backend returns: the reply plus who produced it, at what cost.
@@ -66,6 +108,14 @@ class JudgeResponse(TypedDict):
     Names no provider-specific type. `family` is what the independence rule is
     enforced on (`roster.family_of`), carried here so a judged row can state
     it without re-resolving the model id.
+
+    `provider` is the provider the backend was bound to; `answering_provider`
+    is the one that answered, read as `answering_provider_source` says. The
+    two are compared when the row is written, never here. `reasoning_effort`
+    is what the request carried (`REASONING_EFFORT_NOT_SENT` when nothing),
+    and `reasoning_tokens` is kept apart from `tokens_out`: with its
+    `reasoning_tokens_source` when known, null with
+    `reasoning_tokens_null_reason` when not.
     """
 
     content: str
@@ -75,6 +125,12 @@ class JudgeResponse(TypedDict):
     tokens_in: int | None
     tokens_out: int | None
     retries: int
+    answering_provider: str
+    answering_provider_source: str
+    reasoning_effort: str
+    reasoning_tokens: int | None
+    reasoning_tokens_source: str | None
+    reasoning_tokens_null_reason: str | None
 
 
 class JudgeBackend(Protocol):
@@ -101,6 +157,12 @@ class JudgeCallRecord(TypedDict):
     tokens_in: int | None
     tokens_out: int | None
     retries: int
+    answering_provider: str
+    answering_provider_source: str
+    reasoning_effort: str
+    reasoning_tokens: int | None
+    reasoning_tokens_source: str | None
+    reasoning_tokens_null_reason: str | None
 
 
 # The key set `row_contract` validates a row's `judges` entries against,
@@ -176,6 +238,12 @@ def run_judge_call(
         tokens_in=response["tokens_in"],
         tokens_out=response["tokens_out"],
         retries=response["retries"],
+        answering_provider=response["answering_provider"],
+        answering_provider_source=response["answering_provider_source"],
+        reasoning_effort=response["reasoning_effort"],
+        reasoning_tokens=response["reasoning_tokens"],
+        reasoning_tokens_source=response["reasoning_tokens_source"],
+        reasoning_tokens_null_reason=response["reasoning_tokens_null_reason"],
     )
 
 
