@@ -1,4 +1,12 @@
-"""Fixed translation task suite: short-form business correspondence.
+"""Translation task suite: short-form business correspondence -- what its
+scoring needs.
+
+The suite itself is data: `suite_data/translation-business-short-form.json`
+holds its identity, its caps and its 21 items, resolved by id through
+`suite_registry`, and is scored by the `chrf_against_reference` rule
+(`scoring_rules.py`). This module keeps only the item shape that scoring
+reads and the reasoning behind the declarations the data file cannot carry
+as comments.
 
 Domain: the sentences a consultant's inbox actually carries -- a delivery
 note, a line from a client email, a meeting time, an invoice status. Short,
@@ -26,68 +34,41 @@ which puts each source language at 33% of the suite and clears
 `suite_gate.MIN_LANGUAGE_SHARE`. Every source text is authored natively in
 its own language: no item is a translation of another item's source, so the
 suite never asks a model to translate text a translator already smoothed.
+
+Every prompt is one English instruction shell, "Translate the following
+{source} text into {target}. Reply with only the translation, nothing
+else.", followed by the source text, so every model on every provider sees
+an identical instruction. An item's `language` tag describes the material
+handed to the model, never the language the instruction is phrased in.
+
+Why the data declares what it declares:
+
+- `suite_version` "2": no item changed and `prompt_set_hash` does not move --
+  the same bump, for the same reason, as the classification suite's "3": the
+  local subject is rendered through the model's own chat template under the
+  declared thinking policy instead of being posted raw to `/completion`. A
+  chrF score under "2" is not comparable to one under "1".
+- `max_output_tokens` 128, not the classification suite's 32: a sentence
+  translation truncates there.
+- `thinking_policy` `disabled`, on evidence: probed on `b10537-bf0040e15`,
+  `Qwen3-0.6B` with thinking allowed spends all 128 tokens reasoning and
+  answers nothing, while the same call with thinking disabled returns a
+  complete French sentence in 30. A cap sized so that it is never the reason
+  a model fails only holds under `disabled`.
+- `stop_sequences` empty and `context_length` 32768: as the classification
+  suite, for the same reasons.
+
+Of the four failure-taxonomy keys `scoring` publishes, `unparseable` is
+structurally unreachable on this suite: there is no closed set to parse a
+completion into and no extraction step runs before scoring, so a completion
+that is neither empty nor truncated is always scorable. Its count stays 0.
+The key set published on a row remains the contract's four, so a reader
+comparing two stores compares the same keys.
 """
 
 from __future__ import annotations
 
 from typing import Literal, TypedDict
-
-from wave_local_ai_v2 import row_contract
-from wave_local_ai_v2.classification_suite import prompt_set_hash
-
-# This suite's stable identity, versioned independently from the row schema
-# (Methodology 19): the id names the suite, the version tracks its item set.
-# "2": no item changed and `PROMPT_SET_HASH` does not move -- the same bump,
-# for the same reason, as `classification_suite`'s "3": the local subject is
-# now rendered through the model's own chat template under `THINKING_POLICY`
-# below instead of being posted raw to `/completion`. A chrF score under "2"
-# is not comparable to one under "1".
-SUITE_ID = "translation-business-short-form"
-SUITE_VERSION = "2"
-
-# The generation cap `quality_cli.py` sends for every completion. Larger than
-# the classification suite's 32 because a sentence translation truncates
-# there; declared on the suite for the same reason that one is -- the cap is
-# a property of what the suite asks a model to produce.
-MAX_OUTPUT_TOKENS = 128
-# What the model may spend that cap on (Methodology 3), declared on evidence
-# rather than by symmetry with the classification suite: probed on
-# `b10537-bf0040e15`, `Qwen3-0.6B` asked through its own chat template with
-# thinking allowed spends all 128 tokens reasoning and returns an empty answer
-# even at four times the other suite's cap, while the same call with thinking
-# disabled returns a complete French sentence in 30. A cap this suite sized so
-# that "the 128-token cap is never the reason a model fails" only holds under
-# `disabled`.
-THINKING_POLICY = row_contract.THINKING_POLICY_DISABLED
-# No stop sequence is sent to any provider today.
-STOP_SEQUENCES: list[str] = []
-# The context every compared model is assumed to run at -- the same literal
-# and the same reason `classification_suite.CONTEXT_LENGTH` carries: the
-# shipped roster entry's `server_flags` value, restated rather than imported
-# because a future second roster entry could run at a different context.
-CONTEXT_LENGTH = 32768
-
-# Of the four failure-taxonomy keys `scoring` publishes, `unparseable` is
-# structurally unreachable on this suite: there is no closed set to parse a
-# completion into and no extraction step runs before scoring (plan.md's
-# Decisions), so a completion that is neither empty nor truncated is always
-# scorable. Its count stays 0. The key set published on a row remains the
-# contract's four, not this suite's reachable three, so a reader comparing
-# two stores compares the same keys -- the precedent `judge_probe.py`'s
-# `_FAILURE_COUNT_KEYS` sets for its own two unreachable keys.
-
-_LANGUAGE_NAMES: dict[str, str] = {"en": "English", "fr": "French", "de": "German"}
-
-# One shell for every item, parameterised by the two language names, so every
-# model on every provider sees an identical instruction. The shell is written
-# in English even when the source text is French or German -- the same choice
-# `classification_suite._INSTRUCTION` makes. An item's `language` tag
-# describes the material handed to the model, never the language the
-# instruction is phrased in.
-_INSTRUCTION = (
-    "Translate the following {source} text into {target}. Reply with only "
-    "the translation, nothing else.\n\nText: "
-)
 
 
 class TranslationItem(TypedDict):
@@ -107,196 +88,3 @@ class TranslationItem(TypedDict):
     target_language: Literal["en", "fr", "de"]
     provenance: Literal["hand_written", "licensed", "public"]
     contamination_risk: bool
-
-
-def _item(
-    item_id: str,
-    source_text: str,
-    reference: str,
-    *,
-    language: Literal["en", "fr", "de"],
-    target_language: Literal["en", "fr", "de"],
-    provenance: Literal["hand_written", "licensed", "public"] = "hand_written",
-) -> TranslationItem:
-    instruction = _INSTRUCTION.format(
-        source=_LANGUAGE_NAMES[language], target=_LANGUAGE_NAMES[target_language]
-    )
-    return TranslationItem(
-        item_id=item_id,
-        prompt=instruction + source_text,
-        source_text=source_text,
-        reference=reference,
-        language=language,
-        target_language=target_language,
-        provenance=provenance,
-        contamination_risk=provenance == "public",
-    )
-
-
-TRANSLATION_TASK_SUITE: list[TranslationItem] = [
-    # en -> fr
-    _item(
-        "en-fr-01",
-        "Could you confirm the delivery date for the order we placed last week?",
-        "Pourriez-vous confirmer la date de livraison de la commande que nous "
-        "avons passée la semaine dernière ?",
-        language="en",
-        target_language="fr",
-    ),
-    _item(
-        "en-fr-02",
-        "The invoice was sent to your accounting department this morning.",
-        "La facture a été envoyée à votre service comptabilité ce matin.",
-        language="en",
-        target_language="fr",
-    ),
-    _item(
-        "en-fr-03",
-        "I would like to move our meeting to Thursday afternoon if that suits you.",
-        "Je souhaiterais déplacer notre réunion à jeudi après-midi si cela "
-        "vous convient.",
-        language="en",
-        target_language="fr",
-    ),
-    _item(
-        "en-fr-04",
-        "Please find attached the updated quotation for the maintenance contract.",
-        "Veuillez trouver ci-joint le devis actualisé pour le contrat de maintenance.",
-        language="en",
-        target_language="fr",
-    ),
-    _item(
-        "en-fr-05",
-        "Our office will be closed next Monday for a public holiday.",
-        "Nos bureaux seront fermés lundi prochain en raison d'un jour férié.",
-        language="en",
-        target_language="fr",
-    ),
-    _item(
-        "en-fr-06",
-        "The shipment left our warehouse yesterday and should arrive within "
-        "three days.",
-        "L'expédition a quitté notre entrepôt hier et devrait arriver sous "
-        "trois jours.",
-        language="en",
-        target_language="fr",
-    ),
-    _item(
-        "en-fr-07",
-        "Thank you for your prompt reply; I have forwarded it to the project manager.",
-        "Merci pour votre réponse rapide ; je l'ai transmise au chef de projet.",
-        language="en",
-        target_language="fr",
-    ),
-    # fr -> de
-    _item(
-        "fr-de-01",
-        "Le contrat arrive à échéance à la fin du mois et doit être renouvelé.",
-        "Der Vertrag läuft Ende des Monats aus und muss verlängert werden.",
-        language="fr",
-        target_language="de",
-    ),
-    _item(
-        "fr-de-02",
-        "Nous avons bien reçu votre paiement et nous vous en remercions.",
-        "Wir haben Ihre Zahlung erhalten und danken Ihnen dafür.",
-        language="fr",
-        target_language="de",
-    ),
-    _item(
-        "fr-de-03",
-        "Le devis que vous nous avez transmis dépasse notre budget annuel.",
-        "Der Kostenvoranschlag, den Sie uns übermittelt haben, übersteigt "
-        "unser Jahresbudget.",
-        language="fr",
-        target_language="de",
-    ),
-    _item(
-        "fr-de-04",
-        "Merci de nous indiquer un créneau disponible la semaine prochaine.",
-        "Bitte teilen Sie uns einen freien Termin in der nächsten Woche mit.",
-        language="fr",
-        target_language="de",
-    ),
-    _item(
-        "fr-de-05",
-        "La réunion de lancement se tiendra dans nos locaux à dix heures.",
-        "Das Auftaktgespräch findet um zehn Uhr in unseren Räumen statt.",
-        language="fr",
-        target_language="de",
-    ),
-    _item(
-        "fr-de-06",
-        "Notre équipe technique examinera votre demande dès demain matin.",
-        "Unser technisches Team wird Ihre Anfrage gleich morgen früh prüfen.",
-        language="fr",
-        target_language="de",
-    ),
-    _item(
-        "fr-de-07",
-        "Veuillez nous retourner le document signé avant vendredi.",
-        "Bitte senden Sie uns das unterschriebene Dokument vor Freitag zurück.",
-        language="fr",
-        target_language="de",
-    ),
-    # de -> en
-    _item(
-        "de-en-01",
-        "Die Rechnung für das dritte Quartal wurde gestern versendet.",
-        "The invoice for the third quarter was sent yesterday.",
-        language="de",
-        target_language="en",
-    ),
-    _item(
-        "de-en-02",
-        "Wir bitten Sie, die beigefügten Unterlagen bis Montag zu prüfen.",
-        "We ask you to review the attached documents by Monday.",
-        language="de",
-        target_language="en",
-    ),
-    _item(
-        "de-en-03",
-        "Der Liefertermin verschiebt sich um zwei Wochen nach hinten.",
-        "The delivery date is being pushed back by two weeks.",
-        language="de",
-        target_language="en",
-    ),
-    _item(
-        "de-en-04",
-        "Unser Angebot gilt bis zum Ende des laufenden Monats.",
-        "Our offer is valid until the end of the current month.",
-        language="de",
-        target_language="en",
-    ),
-    _item(
-        "de-en-05",
-        "Bitte richten Sie Ihre Fragen künftig an unsere Serviceabteilung.",
-        "Please direct your questions to our service department from now on.",
-        language="de",
-        target_language="en",
-    ),
-    _item(
-        "de-en-06",
-        "Die Schulung für die neuen Mitarbeiter beginnt am Dienstagmorgen.",
-        "The training for the new employees starts on Tuesday morning.",
-        language="de",
-        target_language="en",
-    ),
-    _item(
-        "de-en-07",
-        "Wir haben Ihre Adressänderung im System hinterlegt.",
-        "We have recorded your change of address in the system.",
-        language="de",
-        target_language="en",
-    ),
-]
-
-# The three directions this suite declares, in the cycle order above. A
-# fourth pair appearing here is a suite edit, not a tag typo to be tolerated.
-DIRECTIONS: tuple[tuple[str, str], ...] = (("en", "fr"), ("fr", "de"), ("de", "en"))
-
-# Hashed through `classification_suite.prompt_set_hash`, not a second hashing
-# rule of this suite's own, so two published `prompt_set_hash` values are
-# comparable. Editing any prompt moves this hash and must move
-# `SUITE_VERSION` with it (Methodology 2).
-PROMPT_SET_HASH = prompt_set_hash(TRANSLATION_TASK_SUITE)

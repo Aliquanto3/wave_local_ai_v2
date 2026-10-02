@@ -42,7 +42,6 @@ from typing import Any, Literal, NotRequired, TypedDict
 from wave_local_ai_v2 import (
     agreement,
     build_probe,
-    classification_suite,
     cost,
     fiche_registry,
     google_client,
@@ -62,6 +61,7 @@ from wave_local_ai_v2 import (
     scoring,
     server,
     suite_gate,
+    suite_registry,
     verdict,
 )
 from wave_local_ai_v2.energy import measure_energy
@@ -259,13 +259,13 @@ JUDGE_PROBE_ITEMS: list[ProbeItem] = [
 ]
 
 # The probe's own identity, versioned independently of the row schema, exactly
-# as `classification_suite` declares its own.
+# as each registered suite's definition declares its own.
 SUITE_ID = "judge-probe-open-ended"
 SUITE_VERSION = "1"
-# The same hashing rule the classification suite cites, not a second one: two
-# published `prompt_set_hash` values are comparable because one function
+# The same hashing rule every registered suite is hashed by, not a second one:
+# two published `prompt_set_hash` values are comparable because one function
 # produced both.
-PROMPT_SET_HASH = classification_suite.prompt_set_hash(JUDGE_PROBE_ITEMS)
+PROMPT_SET_HASH = suite_registry.prompt_set_hash(JUDGE_PROBE_ITEMS)
 # Open-ended prose, not a one-word label: 32 tokens (the classification
 # suite's cap) would truncate every single answer.
 MAX_OUTPUT_TOKENS = 256
@@ -279,7 +279,7 @@ STOP_SEQUENCES: list[str] = []
 THINKING_POLICY = row_contract.THINKING_POLICY_DISABLED
 # The context every compared model is assumed to run at -- the shipped roster
 # entry's own `server_flags.context_size`, written out as a literal for the
-# same reason `classification_suite.CONTEXT_LENGTH` is: `server.py` exposes no
+# same reason the shipped suites' `context_length` is: `server.py` exposes no
 # one context-size constant to import, since a second roster entry could run
 # at a different context.
 CONTEXT_LENGTH = 32768

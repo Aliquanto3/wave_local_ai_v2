@@ -1,0 +1,172 @@
+{
+  "suite_id": "classification-support-routing",
+  "suite_version": "3",
+  "task_suite": "classification",
+  "scoring_rule": "exact_label_match",
+  "max_output_tokens": 32,
+  "stop_sequences": [],
+  "context_length": 32768,
+  "thinking_policy": "disabled",
+  "items": [
+    {
+      "item_id": "billing-01",
+      "prompt": "Classify the following support message into exactly one of these categories: account, billing, other, technical. Reply with only the single category word, nothing else.\n\nMessage: I was charged twice for my subscription this month, can you refund one?",
+      "expected_label": "billing",
+      "language": "en",
+      "provenance": "hand_written",
+      "contamination_risk": false
+    },
+    {
+      "item_id": "billing-02",
+      "prompt": "Classify the following support message into exactly one of these categories: account, billing, other, technical. Reply with only the single category word, nothing else.\n\nMessage: My invoice shows a currency I don't recognize -- can you confirm what I owe in EUR?",
+      "expected_label": "billing",
+      "language": "en",
+      "provenance": "hand_written",
+      "contamination_risk": false
+    },
+    {
+      "item_id": "technical-01",
+      "prompt": "Classify the following support message into exactly one of these categories: account, billing, other, technical. Reply with only the single category word, nothing else.\n\nMessage: The app crashes every time I try to export a report to PDF.",
+      "expected_label": "technical",
+      "language": "en",
+      "provenance": "hand_written",
+      "contamination_risk": false
+    },
+    {
+      "item_id": "technical-02",
+      "prompt": "Classify the following support message into exactly one of these categories: account, billing, other, technical. Reply with only the single category word, nothing else.\n\nMessage: I'm getting a 500 error when uploading a file larger than 10MB.",
+      "expected_label": "technical",
+      "language": "en",
+      "provenance": "hand_written",
+      "contamination_risk": false
+    },
+    {
+      "item_id": "account-01",
+      "prompt": "Classify the following support message into exactly one of these categories: account, billing, other, technical. Reply with only the single category word, nothing else.\n\nMessage: I can't log in anymore since I changed my email address last week.",
+      "expected_label": "account",
+      "language": "en",
+      "provenance": "hand_written",
+      "contamination_risk": false
+    },
+    {
+      "item_id": "account-02",
+      "prompt": "Classify the following support message into exactly one of these categories: account, billing, other, technical. Reply with only the single category word, nothing else.\n\nMessage: Please delete my account and all associated data permanently.",
+      "expected_label": "account",
+      "language": "en",
+      "provenance": "hand_written",
+      "contamination_risk": false
+    },
+    {
+      "item_id": "other-01",
+      "prompt": "Classify the following support message into exactly one of these categories: account, billing, other, technical. Reply with only the single category word, nothing else.\n\nMessage: Do you have any plans to support a language other than English?",
+      "expected_label": "other",
+      "language": "en",
+      "provenance": "hand_written",
+      "contamination_risk": false
+    },
+    {
+      "item_id": "other-02",
+      "prompt": "Classify the following support message into exactly one of these categories: account, billing, other, technical. Reply with only the single category word, nothing else.\n\nMessage: Just wanted to say the new dashboard redesign looks great, thanks!",
+      "expected_label": "other",
+      "language": "en",
+      "provenance": "hand_written",
+      "contamination_risk": false
+    },
+    {
+      "item_id": "billing-03",
+      "prompt": "Classify the following support message into exactly one of these categories: account, billing, other, technical. Reply with only the single category word, nothing else.\n\nMessage: The discount code from your newsletter didn't apply at checkout.",
+      "expected_label": "billing",
+      "language": "en",
+      "provenance": "hand_written",
+      "contamination_risk": false
+    },
+    {
+      "item_id": "technical-03",
+      "prompt": "Classify the following support message into exactly one of these categories: account, billing, other, technical. Reply with only the single category word, nothing else.\n\nMessage: Search results stopped updating after the last update went out.",
+      "expected_label": "technical",
+      "language": "en",
+      "provenance": "hand_written",
+      "contamination_risk": false
+    },
+    {
+      "item_id": "billing-fr-01",
+      "prompt": "Classify the following support message into exactly one of these categories: account, billing, other, technical. Reply with only the single category word, nothing else.\n\nMessage: Le prélèvement automatique de ce mois ne correspond pas au montant indiqué sur mon devis, pouvez-vous vérifier ?",
+      "expected_label": "billing",
+      "language": "fr",
+      "provenance": "hand_written",
+      "contamination_risk": false
+    },
+    {
+      "item_id": "technical-fr-01",
+      "prompt": "Classify the following support message into exactly one of these categories: account, billing, other, technical. Reply with only the single category word, nothing else.\n\nMessage: Depuis la dernière mise à jour, l'application se fige dès que j'ouvre le tableau de bord.",
+      "expected_label": "technical",
+      "language": "fr",
+      "provenance": "hand_written",
+      "contamination_risk": false
+    },
+    {
+      "item_id": "account-fr-01",
+      "prompt": "Classify the following support message into exactly one of these categories: account, billing, other, technical. Reply with only the single category word, nothing else.\n\nMessage: Je n'ai jamais reçu l'e-mail de confirmation pour activer mon compte, pouvez-vous le renvoyer ?",
+      "expected_label": "account",
+      "language": "fr",
+      "provenance": "hand_written",
+      "contamination_risk": false
+    },
+    {
+      "item_id": "other-fr-01",
+      "prompt": "Classify the following support message into exactly one of these categories: account, billing, other, technical. Reply with only the single category word, nothing else.\n\nMessage: Est-ce que vous prévoyez une version mobile de l'application dans les prochains mois ?",
+      "expected_label": "other",
+      "language": "fr",
+      "provenance": "hand_written",
+      "contamination_risk": false
+    },
+    {
+      "item_id": "technical-fr-02",
+      "prompt": "Classify the following support message into exactly one of these categories: account, billing, other, technical. Reply with only the single category word, nothing else.\n\nMessage: Le fichier que j'exporte en CSV contient des caractères accentués mal encodés.",
+      "expected_label": "technical",
+      "language": "fr",
+      "provenance": "hand_written",
+      "contamination_risk": false
+    },
+    {
+      "item_id": "billing-de-01",
+      "prompt": "Classify the following support message into exactly one of these categories: account, billing, other, technical. Reply with only the single category word, nothing else.\n\nMessage: Auf meiner letzten Rechnung fehlt der vereinbarte Rabatt aus unserem Vertrag.",
+      "expected_label": "billing",
+      "language": "de",
+      "provenance": "hand_written",
+      "contamination_risk": false
+    },
+    {
+      "item_id": "technical-de-01",
+      "prompt": "Classify the following support message into exactly one of these categories: account, billing, other, technical. Reply with only the single category word, nothing else.\n\nMessage: Der Upload bricht immer bei etwa 80 Prozent ab, egal welche Datei ich verwende.",
+      "expected_label": "technical",
+      "language": "de",
+      "provenance": "hand_written",
+      "contamination_risk": false
+    },
+    {
+      "item_id": "account-de-01",
+      "prompt": "Classify the following support message into exactly one of these categories: account, billing, other, technical. Reply with only the single category word, nothing else.\n\nMessage: Ich möchte meine Zwei-Faktor-Authentifizierung deaktivieren, finde aber die Option nicht.",
+      "expected_label": "account",
+      "language": "de",
+      "provenance": "hand_written",
+      "contamination_risk": false
+    },
+    {
+      "item_id": "other-de-01",
+      "prompt": "Classify the following support message into exactly one of these categories: account, billing, other, technical. Reply with only the single category word, nothing else.\n\nMessage: Gibt es einen Zeitplan für die nächste Feature-Ankündigung?",
+      "expected_label": "other",
+      "language": "de",
+      "provenance": "hand_written",
+      "contamination_risk": false
+    },
+    {
+      "item_id": "account-de-02",
+      "prompt": "Classify the following support message into exactly one of these categories: account, billing, other, technical. Reply with only the single category word, nothing else.\n\nMessage: Mein Account wurde offenbar mit einer falschen E-Mail-Adresse verknüpft, können Sie das korrigieren?",
+      "expected_label": "account",
+      "language": "de",
+      "provenance": "hand_written",
+      "contamination_risk": false
+    }
+  ]
+}

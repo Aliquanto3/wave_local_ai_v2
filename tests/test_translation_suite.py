@@ -1,13 +1,15 @@
-from wave_local_ai_v2 import translation_suite
-from wave_local_ai_v2.classification_suite import (
-    CLASSIFICATION_TASK_SUITE,
-    prompt_set_hash,
-)
+from wave_local_ai_v2 import suite_registry
 from wave_local_ai_v2.suite_gate import MIN_SUITE_ITEMS, gate_suite
-from wave_local_ai_v2.translation_suite import (
-    DIRECTIONS,
-    TRANSLATION_TASK_SUITE,
-)
+from wave_local_ai_v2.suite_registry import prompt_set_hash
+
+SUITE = suite_registry.resolve("translation-business-short-form")
+TRANSLATION_TASK_SUITE = SUITE.items
+CLASSIFICATION_TASK_SUITE = suite_registry.resolve(
+    "classification-support-routing"
+).items
+# The three directions this suite declares, as a cycle. A fourth pair
+# appearing in the data is a suite edit, not a tag typo to be tolerated.
+DIRECTIONS = (("en", "fr"), ("fr", "de"), ("de", "en"))
 
 
 def test_suite_holds_twenty_one_items() -> None:
@@ -84,30 +86,30 @@ def test_every_prompt_embeds_its_source_text_and_names_both_languages() -> None:
 
 
 def test_prompt_set_hash_is_computed_over_the_live_items() -> None:
-    assert translation_suite.PROMPT_SET_HASH == prompt_set_hash(TRANSLATION_TASK_SUITE)
+    assert SUITE.prompt_set_hash == prompt_set_hash(TRANSLATION_TASK_SUITE)
 
 
 def test_prompt_set_hash_differs_from_the_classification_suites() -> None:
-    assert translation_suite.PROMPT_SET_HASH != prompt_set_hash(
-        CLASSIFICATION_TASK_SUITE
-    )
+    assert SUITE.prompt_set_hash != prompt_set_hash(CLASSIFICATION_TASK_SUITE)
 
 
 def test_editing_a_prompt_moves_the_hash() -> None:
     edited = [dict(item) for item in TRANSLATION_TASK_SUITE]
     edited[0]["prompt"] = edited[0]["prompt"] + " Please."
 
-    assert prompt_set_hash(edited) != translation_suite.PROMPT_SET_HASH
+    assert prompt_set_hash(edited) != SUITE.prompt_set_hash
 
 
 def test_suite_declares_its_identity_and_its_generation_caps() -> None:
-    assert translation_suite.SUITE_ID == "translation-business-short-form"
-    assert translation_suite.SUITE_VERSION == "2"
+    assert SUITE.suite_id == "translation-business-short-form"
+    assert SUITE.suite_version == "2"
+    assert SUITE.task_suite == "translation"
+    assert SUITE.scoring_rule == "chrf_against_reference"
     # 128, not the classification suite's 32: a sentence truncates there.
-    assert translation_suite.MAX_OUTPUT_TOKENS == 128
-    assert translation_suite.STOP_SEQUENCES == []
+    assert SUITE.max_output_tokens == 128
+    assert SUITE.stop_sequences == []
     # The cap above only holds under this policy: probed live, a
     # thinking-by-default model spends all 128 tokens reasoning and answers
     # nothing, which would make the cap the reason it failed.
-    assert translation_suite.THINKING_POLICY == "disabled"
-    assert translation_suite.CONTEXT_LENGTH == 32768
+    assert SUITE.thinking_policy == "disabled"
+    assert SUITE.context_length == 32768

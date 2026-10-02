@@ -116,7 +116,7 @@ def complete_prompt(
 
     `max_tokens` is required for the same reason and one more: the suite
     declares one generation cap for every model it compares
-    (`classification_suite.MAX_OUTPUT_TOKENS`), and each row publishes that cap
+    (its definition's `max_output_tokens`), and each row publishes that cap
     as what the row ran under. Defaulting it here, or omitting it from the body,
     would let the cloud model generate uncapped while its rows still claimed the
     local model's `n_predict` limit.

@@ -103,11 +103,20 @@ energy figure.) `wave-local-ai-v2-quality` is the only command that needs
 | `wave-local-ai-v2` | One runtime row, with its hardware fiche, appended to `runtime.jsonl` |
 | `wave-local-ai-v2-quality` | One row per (item, model) appended to `quality.jsonl`, for the suite `--suite` names |
 
-`--suite` selects what is scored, defaulting to `classification`:
-`classification` routes 20 support messages into one of four labels and
-publishes an exact-match `suite_accuracy`; `translation` translates 21 short
-business sentences in three directions (`en→fr`, `fr→de`, `de→en`) and
-publishes a chrF `suite_score` against a hand-written reference. The two
+`--suite` takes a registered suite id, defaulting to
+`classification-support-routing`: it routes 20 support messages into one of
+four labels and publishes an exact-match `suite_accuracy`;
+`translation-business-short-form` translates 21 short business sentences in
+three directions (`en→fr`, `fr→de`, `de→en`) and publishes a chrF
+`suite_score` against a hand-written reference. An unregistered id is refused
+naming the registered ones. Each suite is a data definition in
+[`src/wave_local_ai_v2/suite_data/`](src/wave_local_ai_v2/suite_data/), one
+`<suite_id>.json` per suite holding its version, generation caps, the name of
+its scoring rule (`scoring_rules.py`) and its items with their language,
+provenance and contamination-risk tags; `suite_registry.py` resolves an id
+to its definition and runs the suite gate on it as it loads. Adding a suite
+is adding a file there (and a named scoring rule only if its scoring
+differs), not editing the CLI. The two
 write different score shapes into the same store — a graded row nulls
 `correct`/`suite_accuracy`/`language_breakdown` and carries `item_score`,
 `score_breakdown`, the metric parameters and both texts the score was

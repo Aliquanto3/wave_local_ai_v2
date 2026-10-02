@@ -230,8 +230,8 @@ def resume_skip_reason(
     not the pair it used to be: one store now holds rows from more than one
     suite, so a `run_id` is not evidence about a suite it was never run
     under. Without the third element, `--resume <classification-run-id>
-    --suite translation` would find a complete classification batch and skip
-    a translation batch that never ran.
+    --suite translation-business-short-form` would find a complete
+    classification batch and skip a translation batch that never ran.
 
     `path`, `item_count` and `task_suite` are the caller's: the two CLIs that
     write quality rows keep their own store, their own batch size and their

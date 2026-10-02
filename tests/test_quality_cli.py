@@ -10,14 +10,13 @@ from conftest import mark_prompt
 
 from wave_local_ai_v2 import (
     chrf,
-    classification_suite,
     google_client,
     local_client,
     mistral_client,
     quality_cli,
-    translation_suite,
+    scoring_rules,
+    suite_registry,
 )
-from wave_local_ai_v2.classification_suite import CLASSIFICATION_TASK_SUITE
 from wave_local_ai_v2.cost import GOOGLE_PRICE_TABLE, MISTRAL_PRICE_TABLE
 from wave_local_ai_v2.fiche_registry import read_fiche
 from wave_local_ai_v2.google_client import (
@@ -30,7 +29,11 @@ from wave_local_ai_v2.results import read_rows
 from wave_local_ai_v2.row_contract import GRADED_FIELDS, SCHEMA_VERSION
 from wave_local_ai_v2.settings import DEFAULT_ROSTER_ENTRY_ID, Settings
 from wave_local_ai_v2.suite_gate import SuiteGateError
-from wave_local_ai_v2.translation_suite import TRANSLATION_TASK_SUITE
+
+CLASSIFICATION = suite_registry.resolve("classification-support-routing")
+TRANSLATION = suite_registry.resolve("translation-business-short-form")
+CLASSIFICATION_TASK_SUITE = CLASSIFICATION.items
+TRANSLATION_TASK_SUITE = TRANSLATION.items
 
 RUNTIME_ONLY_FIELDS = {
     "cpu",
@@ -552,12 +555,12 @@ def test_every_row_carries_the_suite_caps_tags_and_gate_verdict(stubbed_run) -> 
     for (provider, item_id), row in rows_by_key.items():
         item = items_by_id[item_id]
         assert provider in {"local", "mistral"}
-        assert row["max_output_tokens"] == classification_suite.MAX_OUTPUT_TOKENS
-        assert row["stop_sequences"] == classification_suite.STOP_SEQUENCES
-        assert row["context_length"] == classification_suite.CONTEXT_LENGTH
-        assert row["suite_id"] == classification_suite.SUITE_ID
-        assert row["suite_version"] == classification_suite.SUITE_VERSION
-        assert row["prompt_set_hash"] == classification_suite.PROMPT_SET_HASH
+        assert row["max_output_tokens"] == CLASSIFICATION.max_output_tokens
+        assert row["stop_sequences"] == CLASSIFICATION.stop_sequences
+        assert row["context_length"] == CLASSIFICATION.context_length
+        assert row["suite_id"] == CLASSIFICATION.suite_id
+        assert row["suite_version"] == CLASSIFICATION.suite_version
+        assert row["prompt_set_hash"] == CLASSIFICATION.prompt_set_hash
         assert row["language"] == item["language"]
         assert row["provenance"] == item["provenance"]
         assert row["contamination_risk"] == item["contamination_risk"]
@@ -585,12 +588,17 @@ def test_every_row_carries_the_suite_caps_tags_and_gate_verdict(stubbed_run) -> 
             assert local_row[field] == cloud_row[field]
 
 
-def test_gate_refusal_aborts_before_any_row_is_written(stubbed_run) -> None:
+def test_gate_refusal_aborts_before_any_row_is_written(
+    stubbed_run, monkeypatch
+) -> None:
     quality_results_path, _ = stubbed_run
 
+    # A fresh load, so the gate runs on the shipped definition again rather
+    # than the cached one.
+    monkeypatch.setattr(suite_registry, "_LOADED", {})
     with (
         patch(
-            "wave_local_ai_v2.quality_cli.suite_gate.gate_suite",
+            "wave_local_ai_v2.suite_registry.suite_gate.gate_suite",
             side_effect=SuiteGateError("boom"),
         ),
         pytest.raises(SystemExit) as exit_info,
@@ -836,7 +844,7 @@ def test_cloud_calls_pin_temperature_seed_and_the_suites_cap(stubbed_run) -> Non
         assert isinstance(call.kwargs["random_seed"], int)
         # The cloud half must be sent the cap its rows publish, and the same one
         # the local half's `n_predict` applies.
-        assert call.kwargs["max_tokens"] == classification_suite.MAX_OUTPUT_TOKENS
+        assert call.kwargs["max_tokens"] == CLASSIFICATION.max_output_tokens
 
 
 def test_every_row_records_the_sampling_that_produced_it(stubbed_run) -> None:
@@ -1026,7 +1034,7 @@ def test_local_cap_truncated_response_scores_truncated_max_tokens(stubbed_run) -
     started["post"].side_effect = local_post_router(
         content="bi",
         finish_reason="length",
-        generated_tokens=classification_suite.MAX_OUTPUT_TOKENS,
+        generated_tokens=CLASSIFICATION.max_output_tokens,
     )
 
     quality_cli._run()
@@ -1053,9 +1061,9 @@ def test_cloud_context_truncated_response_scores_truncated_context(
         "content": "bi",
         "endpoint": mistral_client.CHAT_COMPLETIONS_URL,
         "finish_reason": "model_length",
-        "generated_tokens": classification_suite.MAX_OUTPUT_TOKENS - 1,
+        "generated_tokens": CLASSIFICATION.max_output_tokens - 1,
         "prompt_tokens": 12,
-        "total_tokens": 12 + classification_suite.MAX_OUTPUT_TOKENS - 1,
+        "total_tokens": 12 + CLASSIFICATION.max_output_tokens - 1,
     }
 
     quality_cli._run()
@@ -1078,9 +1086,9 @@ def test_cloud_cap_truncated_response_scores_truncated_max_tokens(
         "content": "bi",
         "endpoint": mistral_client.CHAT_COMPLETIONS_URL,
         "finish_reason": "length",
-        "generated_tokens": classification_suite.MAX_OUTPUT_TOKENS,
+        "generated_tokens": CLASSIFICATION.max_output_tokens,
         "prompt_tokens": 12,
-        "total_tokens": 12 + classification_suite.MAX_OUTPUT_TOKENS,
+        "total_tokens": 12 + CLASSIFICATION.max_output_tokens,
     }
 
     quality_cli._run()
@@ -1577,28 +1585,124 @@ def test_parse_args_reads_the_resume_flag() -> None:
 # --- the --suite seam --------------------------------------------------------
 
 
-def test_parse_args_defaults_the_suite_to_classification() -> None:
+def test_parse_args_defaults_the_suite_to_the_classification_suite_id() -> None:
     # Every invocation written before this flag existed keeps behaving
     # identically.
-    assert quality_cli._parse_args([]).suite == "classification"
+    assert quality_cli._parse_args([]).suite == "classification-support-routing"
 
 
 def test_parse_args_reads_the_suite_flag() -> None:
-    assert quality_cli._parse_args(["--suite", "translation"]).suite == "translation"
+    args = quality_cli._parse_args(["--suite", "translation-business-short-form"])
+
+    assert args.suite == "translation-business-short-form"
 
 
-def test_parse_args_refuses_an_unknown_suite_and_names_the_valid_ones(capsys) -> None:
-    with pytest.raises(SystemExit) as exc:
-        quality_cli._parse_args(["--suite", "rewriting"])
+@pytest.mark.parametrize("suite", ["rewriting", "translation"])
+def test_an_unregistered_suite_id_is_refused_naming_the_registered_ones(
+    stubbed_run, monkeypatch, capsys, suite
+) -> None:
+    # "translation" was a `--suite` value before suites were resolved by id;
+    # it is refused like any other id the registry does not hold.
+    quality_results_path, started = stubbed_run
+    monkeypatch.setattr("sys.argv", ["wave-local-ai-v2-quality", "--suite", suite])
 
-    assert exc.value.code != 0
+    with pytest.raises(SystemExit) as exit_info:
+        quality_cli.main()
+
+    assert exit_info.value.code == 1
     stderr = capsys.readouterr().err
-    assert "classification" in stderr
-    assert "translation" in stderr
+    assert f"suite {suite!r} is not registered" in stderr
+    assert "classification-support-routing" in stderr
+    assert "translation-business-short-form" in stderr
+    assert read_rows(quality_results_path) == []
+    assert started["running_server"].call_count == 0
 
 
-def test_the_dispatch_table_holds_exactly_the_two_shipped_suites() -> None:
-    assert set(quality_cli._SUITES) == {"classification", "translation"}
+def test_the_cli_holds_no_suite_table_and_imports_no_suite_module() -> None:
+    source = Path(quality_cli.__file__).read_text(encoding="utf-8")
+
+    assert not hasattr(quality_cli, "_SUITES")
+    assert "classification_suite" not in source
+    assert "translation_suite" not in source
+
+
+# A suite registered only here, scored by a rule registered only here: what a
+# further suite costs is a definition and, where its scoring differs, a named
+# rule -- never an edit to `quality_cli.py`.
+_FIXTURE_SUITE_ID = "fixture-routing-mini"
+_FIXTURE_RULE = "fixture_exact_label_match"
+_FIXTURE_DEFINITION = {
+    "suite_id": _FIXTURE_SUITE_ID,
+    "suite_version": "7",
+    "task_suite": "classification",
+    "scoring_rule": _FIXTURE_RULE,
+    "max_output_tokens": 16,
+    "stop_sequences": ["###"],
+    "context_length": 4096,
+    "thinking_policy": "disabled",
+    "items": [
+        {
+            "item_id": f"fixture-{language}",
+            "prompt": f"Route this {language} message: invoice question.",
+            "expected_label": "billing",
+            "language": language,
+            "provenance": "hand_written",
+            "contamination_risk": False,
+        }
+        for language in ("en", "fr", "de")
+    ],
+}
+
+
+@pytest.fixture
+def fixture_suite(tmp_path, monkeypatch):
+    calls: list[int] = []
+
+    def fixture_rule(items, completions, *, max_output_tokens):
+        calls.append(max_output_tokens)
+        return scoring_rules.exact_label_match(
+            items, completions, max_output_tokens=max_output_tokens
+        )
+
+    monkeypatch.setitem(scoring_rules.SCORING_RULES, _FIXTURE_RULE, fixture_rule)
+    path = tmp_path / f"{_FIXTURE_SUITE_ID}.json"
+    path.write_text(json.dumps(_FIXTURE_DEFINITION), encoding="utf-8")
+    definition = suite_registry.register(path)
+    yield definition, calls
+    suite_registry.unregister(_FIXTURE_SUITE_ID)
+
+
+def test_a_suite_registered_outside_the_cli_runs_end_to_end(
+    stubbed_run, fixture_suite
+) -> None:
+    quality_results_path, _ = stubbed_run
+    definition, rule_calls = fixture_suite
+
+    quality_cli._run(suite=_FIXTURE_SUITE_ID)
+
+    rows = read_rows(quality_results_path)
+    # Every row passed the writer gate on the way to disk, including the
+    # baseline check that resolves the item's authored prompt by suite id.
+    assert len(rows) == 2 * len(definition.items)
+    assert {row["provider"] for row in rows} == {"local", "mistral"}
+    for row in rows:
+        assert row["suite_id"] == _FIXTURE_SUITE_ID
+        assert row["suite_version"] == "7"
+        assert row["task_suite"] == "classification"
+        assert row["prompt_set_hash"] == definition.prompt_set_hash
+        assert row["max_output_tokens"] == 16
+        assert row["stop_sequences"] == ["###"]
+        assert row["context_length"] == 4096
+        assert row["thinking_policy"] == "disabled"
+        assert row["indicative"] is True
+        assert row["suite_accuracy"] == 1.0
+    assert {row["item_id"] for row in rows} == {
+        "fixture-en",
+        "fixture-fr",
+        "fixture-de",
+    }
+    # The fixture's own rule scored both batches, under the fixture's own cap.
+    assert rule_calls == [16, 16]
 
 
 def test_translation_run_writes_one_graded_row_per_item_per_provider(
@@ -1606,17 +1710,17 @@ def test_translation_run_writes_one_graded_row_per_item_per_provider(
 ) -> None:
     quality_results_path, _ = stubbed_run
 
-    quality_cli._run(suite="translation")
+    quality_cli._run(suite="translation-business-short-form")
 
     rows = read_rows(quality_results_path)
     assert len(rows) == 2 * len(TRANSLATION_TASK_SUITE)
     for row in rows:
         assert row["task_suite"] == "translation"
-        assert row["suite_id"] == translation_suite.SUITE_ID
-        assert row["suite_version"] == translation_suite.SUITE_VERSION
-        assert row["prompt_set_hash"] == translation_suite.PROMPT_SET_HASH
-        assert row["max_output_tokens"] == translation_suite.MAX_OUTPUT_TOKENS
-        assert row["context_length"] == translation_suite.CONTEXT_LENGTH
+        assert row["suite_id"] == TRANSLATION.suite_id
+        assert row["suite_version"] == TRANSLATION.suite_version
+        assert row["prompt_set_hash"] == TRANSLATION.prompt_set_hash
+        assert row["max_output_tokens"] == TRANSLATION.max_output_tokens
+        assert row["context_length"] == TRANSLATION.context_length
         # The whole graded block, on every row.
         assert GRADED_FIELDS <= row.keys()
         assert row["metric_id"] == chrf.METRIC_ID
@@ -1635,7 +1739,7 @@ def test_a_translation_row_carries_both_texts_the_score_was_computed_from(
 ) -> None:
     quality_results_path, _ = stubbed_run
 
-    quality_cli._run(suite="translation")
+    quality_cli._run(suite="translation-business-short-form")
 
     rows = [
         row for row in read_rows(quality_results_path) if row["provider"] == "local"
@@ -1657,7 +1761,7 @@ def test_a_translation_row_carries_the_per_language_score_breakdown(
 ) -> None:
     quality_results_path, _ = stubbed_run
 
-    quality_cli._run(suite="translation")
+    quality_cli._run(suite="translation-business-short-form")
 
     breakdown = read_rows(quality_results_path)[0]["score_breakdown"]
     assert set(breakdown) == {"en", "fr", "de"}
@@ -1693,7 +1797,7 @@ def test_an_empty_translation_completion_scores_zero_and_stays_in_the_mean(
 
     started["post"].side_effect = one_empty_then_answers
 
-    quality_cli._run(suite="translation")
+    quality_cli._run(suite="translation-business-short-form")
 
     local_rows = [
         row for row in read_rows(quality_results_path) if row["provider"] == "local"
@@ -1723,7 +1827,7 @@ def test_the_classification_run_writes_no_graded_field(stubbed_run) -> None:
 def test_the_translation_run_prints_a_suite_score_not_an_accuracy(
     stubbed_run, capsys
 ) -> None:
-    quality_cli._run(suite="translation")
+    quality_cli._run(suite="translation-business-short-form")
 
     stdout = capsys.readouterr().out
     assert "suite_score=" in stdout
@@ -1737,7 +1841,7 @@ def test_the_translation_run_sends_the_suites_own_cap_to_every_provider(
 ) -> None:
     _, started = stubbed_run
 
-    quality_cli._run(suite="translation")
+    quality_cli._run(suite="translation-business-short-form")
 
     chat_calls = [
         call
@@ -1746,9 +1850,9 @@ def test_the_translation_run_sends_the_suites_own_cap_to_every_provider(
     ]
     assert chat_calls
     for call in chat_calls:
-        assert call.kwargs["json"]["max_tokens"] == translation_suite.MAX_OUTPUT_TOKENS
+        assert call.kwargs["json"]["max_tokens"] == TRANSLATION.max_output_tokens
     cloud_kwargs = started["complete_prompt"].call_args.kwargs
-    assert cloud_kwargs["max_tokens"] == translation_suite.MAX_OUTPUT_TOKENS
+    assert cloud_kwargs["max_tokens"] == TRANSLATION.max_output_tokens
 
 
 def test_a_resume_under_one_suite_never_skips_on_another_suites_rows(
@@ -1760,7 +1864,7 @@ def test_a_resume_under_one_suite_never_skips_on_another_suites_rows(
     rows_before = len(read_rows(quality_results_path))
 
     monkeypatch.setattr("sys.argv", ["wave-local-ai-v2-quality"])
-    quality_cli._run(resume_run_id=run_id, suite="translation")
+    quality_cli._run(resume_run_id=run_id, suite="translation-business-short-form")
 
     rows = read_rows(quality_results_path)
     translation_rows = [row for row in rows if row["task_suite"] == "translation"]
@@ -1810,7 +1914,7 @@ def test_every_row_declares_the_suites_thinking_policy(stubbed_run) -> None:
     rows = read_rows(quality_results_path)
     assert {row["provider"] for row in rows} == {"local", "mistral"}
     for row in rows:
-        assert row["thinking_policy"] == classification_suite.THINKING_POLICY
+        assert row["thinking_policy"] == CLASSIFICATION.thinking_policy
         assert row["thinking_policy"] == "disabled"
 
 

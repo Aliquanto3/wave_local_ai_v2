@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A suite is data resolved by its id** — each task suite is one JSON
+  definition in `src/wave_local_ai_v2/suite_data/<suite_id>.json` holding
+  its id, version, `task_suite`, the four generation constraints, the name
+  of its scoring rule and its tagged items. `suite_registry.py` resolves an
+  id to its definition and runs `suite_gate.gate_suite` on it as it loads,
+  so a definition the gate refuses is never run; `scoring_rules.py` holds
+  the two named rules (`exact_label_match`, `chrf_against_reference`). The
+  quality CLI imports no suite module and holds no suite table any more:
+  registering a further suite is a new data file and, only where its
+  scoring differs, a new named rule. Unknown suite-level and item keys are
+  carried as data and exported in the snapshot, which is where the interval
+  epic's level, licence and source fields will land. Both shipped suites
+  moved with no item, prompt or cap changed: their versions and
+  `prompt_set_hash` are unchanged and their committed snapshots regenerate
+  byte for byte. No published row is rewritten.
+
 - **A prompt variant on every row (row schema "14")** — `prompt_variants.py`
   is the tracked variant registry, holding one entry today, `baseline`
   version `1`, the identity transformation. Each entry carries its id,
@@ -39,6 +55,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exist, composing nothing server-side across them; `CoverageAbsence.tsx`
   renders the `no-use-case-is-silently-absent` absence once, at the page
   level.
+
+### Changed
+
+- **`wave-local-ai-v2-quality --suite` takes a suite id** —
+  `classification-support-routing` (the default) or
+  `translation-business-short-form`. The short values `classification` and
+  `translation` are refused like any unregistered id, naming the registered
+  ones; they remain each row's `task_suite`. An invocation without
+  `--suite` is unchanged.
 
 ## [0.2.0] - 2026-09-22
 

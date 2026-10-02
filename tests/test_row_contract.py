@@ -3,9 +3,8 @@ import pytest
 from wave_local_ai_v2 import (
     FIXED_PROMPT,
     aggregation,
-    classification_suite,
     prompt_variants,
-    translation_suite,
+    suite_registry,
 )
 from wave_local_ai_v2.row_contract import (
     GRADED_FIELDS,
@@ -16,12 +15,13 @@ from wave_local_ai_v2.row_contract import (
     validate_row,
 )
 
+_CLASSIFICATION = suite_registry.resolve("classification-support-routing")
+_TRANSLATION = suite_registry.resolve("translation-business-short-form")
+
 # The authored text of the item the quality fixture names: a baseline
 # row carries it unchanged, and the gate checks that it does.
 _AUTHORED_PROMPT = next(
-    item["prompt"]
-    for item in classification_suite.CLASSIFICATION_TASK_SUITE
-    if item["item_id"] == "billing-01"
+    item["prompt"] for item in _CLASSIFICATION.items if item["item_id"] == "billing-01"
 )
 
 
@@ -188,7 +188,7 @@ COMPLETE_QUALITY_ROW = {
     "thinking_policy": "disabled",
     "context_length": 32768,
     "suite_id": "classification-support-routing",
-    "suite_version": classification_suite.SUITE_VERSION,
+    "suite_version": _CLASSIFICATION.suite_version,
     "prompt_set_hash": "deadbeef",
     "language": "en",
     "provenance": "hand_written",
@@ -328,10 +328,10 @@ COMPLETE_GRADED_QUALITY_ROW = {
     **COMPLETE_QUALITY_ROW,
     **GRADED_BLOCK,
     "task_suite": "translation",
-    "suite_id": translation_suite.SUITE_ID,
-    "suite_version": translation_suite.SUITE_VERSION,
+    "suite_id": _TRANSLATION.suite_id,
+    "suite_version": _TRANSLATION.suite_version,
     "item_id": "en-fr-01",
-    "prompt_before_template": translation_suite.TRANSLATION_TASK_SUITE[0]["prompt"],
+    "prompt_before_template": _TRANSLATION.items[0]["prompt"],
     "expected_label": None,
     "predicted_label": None,
     "correct": None,

@@ -1,6 +1,6 @@
 import pytest
 
-from wave_local_ai_v2.classification_suite import CLASSIFICATION_TASK_SUITE
+from wave_local_ai_v2 import suite_registry
 from wave_local_ai_v2.suite_gate import SuiteGateError, gate_suite
 
 
@@ -109,7 +109,7 @@ def test_fully_compliant_suite_is_not_indicative() -> None:
 
 
 def test_real_classification_suite_is_not_indicative_at_the_suite_level() -> None:
-    result = gate_suite(CLASSIFICATION_TASK_SUITE)
+    result = gate_suite(suite_registry.resolve("classification-support-routing").items)
 
     assert result["indicative"] is False
     assert result["per_language_indicative"] == {

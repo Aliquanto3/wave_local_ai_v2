@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from wave_local_ai_v2 import classification_suite
+from wave_local_ai_v2 import suite_registry
 from wave_local_ai_v2.results import (
     UNREADABLE_BELOW_FLOOR,
     UNREADABLE_NO_SCHEMA_VERSION,
@@ -24,7 +24,7 @@ from wave_local_ai_v2.row_contract import RowContractError
 # row carries it unchanged, and the gate checks that it does.
 _AUTHORED_PROMPT = next(
     item["prompt"]
-    for item in classification_suite.CLASSIFICATION_TASK_SUITE
+    for item in suite_registry.resolve("classification-support-routing").items
     if item["item_id"] == "billing-01"
 )
 
@@ -94,7 +94,9 @@ COMPLETE_QUALITY_ROW = {
     "thinking_policy": "disabled",
     "context_length": 32768,
     "suite_id": "classification-support-routing",
-    "suite_version": classification_suite.SUITE_VERSION,
+    "suite_version": suite_registry.resolve(
+        "classification-support-routing"
+    ).suite_version,
     "prompt_set_hash": "deadbeef",
     "language": "en",
     "provenance": "hand_written",
@@ -214,7 +216,9 @@ def _write_items(
 ) -> None:
     # Real items, not placeholder ids: the writer gate checks a baseline row's
     # pre-template prompt against the authored text of the item it names.
-    for item in classification_suite.CLASSIFICATION_TASK_SUITE[:item_count]:
+    for item in suite_registry.resolve("classification-support-routing").items[
+        :item_count
+    ]:
         append_row(
             path,
             "quality",
@@ -293,8 +297,8 @@ def test_resume_never_skips_a_batch_on_the_strength_of_another_suites_rows(
 ) -> None:
     # One store now holds two suites. A run_id complete under classification
     # says nothing about the same run_id under translation: without the
-    # task_suite filter, `--resume <id> --suite translation` would skip a
-    # batch that was never run and publish nothing for it.
+    # task_suite filter, `--resume <id> --suite translation-business-short-form`
+    # would skip a batch that was never run and publish nothing for it.
     path = tmp_path / "quality.jsonl"
     _write_items(path, "run-1", "local", 3, task_suite="classification")
 

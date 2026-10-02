@@ -17,17 +17,27 @@ The command-line interface for running benchmarks.
   suite against the local SLM and up to two cloud models
   (`QUALITY_PROVIDERS`, default `local,mistral,google`), appending one row
   per (item, model) to `aidd_docs/results/quality.jsonl`.
-  - `--suite` picks the suite, `choices=classification|translation`, default
-    `classification` — so every invocation written before the flag existed
-    behaves identically. `_SUITES` is a two-entry `SuiteSpec` dispatch table
-    in `quality_cli.py` (items, identity, caps, batch scorer), deliberately
-    not a registry: that belongs to the use-case epic.
-    - `classification`: 20 support messages routed into one of four labels
+  - `--suite` takes a registered suite id, default
+    `classification-support-routing` — so an invocation without the flag
+    behaves as before. `suite_registry.resolve` answers it from the data
+    definitions in `src/wave_local_ai_v2/suite_data/<suite_id>.json` (id,
+    version, `task_suite`, the four generation constraints, the scoring-rule
+    name, the items with their tags), gated by `suite_gate.gate_suite` at
+    load. An unregistered id (including the old `classification` /
+    `translation` values) or an unknown scoring rule is refused as one stderr
+    line naming what is wrong. `quality_cli.py` holds no suite table and
+    imports no suite: a further suite is a new data file plus, only where its
+    scoring differs, a new entry in `scoring_rules.SCORING_RULES`. Unknown
+    top-level and item keys are carried as data (`SuiteDefinition.extra`, the
+    item mapping) and exported in the snapshot.
+    - `classification-support-routing` (`task_suite` `classification`, rule
+      `exact_label_match`): 20 support messages routed into one of four labels
       (`en`/`fr`/`de`, each >=25% share), 32 output tokens, scored by exact
       label match. Publishes `correct`, `suite_accuracy` and
       `language_breakdown` (`scoring.score_suite_by_language`: per-language
       accuracy/n/indicative). Prints `accuracy=`.
-    - `translation`: 21 hand-written short business sentences in three
+    - `translation-business-short-form` (`task_suite` `translation`, rule
+      `chrf_against_reference`): 21 hand-written short business sentences in three
       directions (`en→fr`, `fr→de`, `de→en`, seven each, so each *source*
       language is 33%), 128 output tokens, scored by an in-repo chrF
       (`chrf.py`, sacreBLEU's defaults, published on `0..1`) against a
@@ -65,15 +75,16 @@ The command-line interface for running benchmarks.
     provider it re-ran from scratch, and even when the given `run_id` was
     never used before (behaves like a fresh run, honestly marked resumed
     anyway).
-- `uv run python -m wave_local_ai_v2.suite_snapshot` — exports **both**
-  suites' identity (id, version, prompt-set hash), caps, thinking policy and
+- `uv run python -m wave_local_ai_v2.suite_snapshot` — exports **every
+  registered** suite's identity (id, version, prompt-set hash), caps, thinking policy and
   every item to
   `aidd_docs/results/suite-definitions/<suite_id>@<suite_version>.json`, one
   file per (suite, version): a version bump adds a file beside its
   predecessor rather than overwriting it, so a published row keeps resolving
   to the definition it was produced against. A
-  snapshot of each suite as the code holds it at export time, not a live
-  registry a row resolves through at read time; re-run after any suite edit.
+  snapshot of each registered definition at export time (its data plus the
+  computed `prompt_set_hash`, without the scoring-rule name or `task_suite`),
+  not what a run resolves through; re-run after any suite edit.
   No `pyproject.toml` entry point — invoked as a module, not a CLI command.
 - `wave-local-ai-v2-validate` — invalidation validator: checks every row of
   one or more results files (default: the two live stores,

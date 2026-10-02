@@ -348,16 +348,16 @@ is a loop:
 foreach ($id in 'qwen3-0.6b-q8','qwen3-1.7b-q8','qwen3-4b-q4km') {
   $env:ROSTER_ENTRY_ID = $id
   uv run wave-local-ai-v2
-  uv run wave-local-ai-v2-quality --suite classification
-  uv run wave-local-ai-v2-quality --suite translation
+  uv run wave-local-ai-v2-quality --suite classification-support-routing
+  uv run wave-local-ai-v2-quality --suite translation-business-short-form
 }
 ```
 
 ```sh
 for id in qwen3-0.6b-q8 qwen3-1.7b-q8 qwen3-4b-q4km; do
   ROSTER_ENTRY_ID=$id uv run wave-local-ai-v2
-  ROSTER_ENTRY_ID=$id uv run wave-local-ai-v2-quality --suite classification
-  ROSTER_ENTRY_ID=$id uv run wave-local-ai-v2-quality --suite translation
+  ROSTER_ENTRY_ID=$id uv run wave-local-ai-v2-quality --suite classification-support-routing
+  ROSTER_ENTRY_ID=$id uv run wave-local-ai-v2-quality --suite translation-business-short-form
 done
 ```
 
@@ -429,21 +429,25 @@ is `not_comparable`, not a failure.
 **4.3 — second run, set `MISTRAL_API_KEY` and `GOOGLE_API_KEY` first:**
 
 ```sh
-uv run wave-local-ai-v2-quality                      # --suite classification
-uv run wave-local-ai-v2-quality --suite translation
+uv run wave-local-ai-v2-quality         # --suite classification-support-routing
+uv run wave-local-ai-v2-quality --suite translation-business-short-form
 ```
 
 One row per (item, model) lands in `QUALITY_RESULTS_PATH` (default
 `aidd_docs/results/quality.jsonl`) for each of three providers: `local`,
 `mistral`, `google`.
 
-`--suite` picks what is scored. It defaults to `classification`, so an
-invocation written before the flag existed behaves exactly as it did.
+`--suite` picks what is scored, by registered suite id. It defaults to
+`classification-support-routing`, so an invocation written without the flag
+behaves exactly as it did. The short names `classification` and
+`translation` it once took are refused like any unregistered id, with the
+registered ids named; they survive as each row's `task_suite`. The suites'
+definitions are data in `src/wave_local_ai_v2/suite_data/`.
 
 | `--suite` | Items | Caps | How it is scored | The headline it prints |
 | --------- | ----- | ---- | ---------------- | ---------------------- |
-| `classification` (default) | 20 support messages, one of four routing labels each | 32 output tokens | exact label match | `accuracy=` |
-| `translation` | 21 short business sentences, `en→fr` / `fr→de` / `de→en`, seven each | 128 output tokens | chrF against a hand-written reference (`chrf.py`) | `suite_score=` |
+| `classification-support-routing` (default) | 20 support messages, one of four routing labels each | 32 output tokens | exact label match | `accuracy=` |
+| `translation-business-short-form` | 21 short business sentences, `en→fr` / `fr→de` / `de→en`, seven each | 128 output tokens | chrF against a hand-written reference (`chrf.py`) | `suite_score=` |
 
 The two suites write two different score shapes into the same store, and a
 row is never both. A classification row carries `correct`, `suite_accuracy`

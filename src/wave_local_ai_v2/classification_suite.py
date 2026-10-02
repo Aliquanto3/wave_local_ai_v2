@@ -1,4 +1,11 @@
-"""Fixed classification task suite: support-message routing.
+"""Classification task suite: support-message routing -- what its scoring needs.
+
+The suite itself is data: `suite_data/classification-support-routing.json`
+holds its identity, its caps and its twenty items, resolved by id through
+`suite_registry`, and is scored by the `exact_label_match` rule
+(`scoring_rules.py`). This module keeps only what that scoring needs -- the
+closed label set and the item shape -- and the reasoning behind the
+declarations the data file cannot carry as comments.
 
 Domain: a consultant's client support inbox, where each incoming message must be
 routed to exactly one queue. Chosen over sentiment because the four routing
@@ -10,63 +17,34 @@ need to soften.
 Every prompt embeds the closed label set verbatim and instructs the model to
 answer with exactly one label word, so both the local SLM and the cloud model
 see the identical instruction and the identical closed set to choose from.
+
+Why the data declares what it declares:
+
+- `suite_version`, versioned independently from the row schema
+  (Methodology 19). "2": +5 FR + 5 DE hand-written items (Story 20) --
+  adding items is the same class of change as editing a prompt
+  (Methodology 2). "3": no item changed and `prompt_set_hash` does not move;
+  the local path now renders each item through the model's own chat template
+  under the declared thinking policy instead of posting it raw to
+  `/completion`. A score under "3" measures something a score under "2" did
+  not; the pair (`suite_version`, `prompt_template_id`) separates the two.
+- `max_output_tokens` 32: the cap is a property of what the suite asks a
+  model to produce (one label word), not of the harness driving the request.
+- `thinking_policy` `disabled`: probed on `b10537-bf0040e15`, `Qwen3-0.6B`
+  and `Qwen3.6-35B-A3B` asked through their own chat templates with thinking
+  allowed spend all 32 tokens in `reasoning_content` and answer nothing; with
+  thinking disabled both answer in two tokens.
+- `stop_sequences` empty: none is sent to any provider.
+- `context_length` 32768: the shipped roster entries' `server_flags` value,
+  restated as data rather than imported, since a roster entry could run at a
+  different context.
 """
 
 from __future__ import annotations
 
-import hashlib
-from collections.abc import Mapping, Sequence
-from typing import Any, Literal, TypedDict
-
-from wave_local_ai_v2 import row_contract
+from typing import Literal, TypedDict
 
 LABELS: frozenset[str] = frozenset({"billing", "technical", "account", "other"})
-
-_LABEL_LIST = ", ".join(sorted(LABELS))
-_INSTRUCTION = (
-    f"Classify the following support message into exactly one of these "
-    f"categories: {_LABEL_LIST}. Reply with only the single category word, "
-    f"nothing else.\n\nMessage: "
-)
-
-# This suite's stable identity, versioned independently from the row schema
-# (Methodology 19): the id names the suite, the version tracks its item set.
-# "2": +5 FR + 5 DE hand-written items (Story 20: the-classification-suite-
-# reaches-twenty-items-across-three-languages) -- adding items is the same
-# class of change as editing a prompt (Methodology 2).
-# "3": no item changed and `PROMPT_SET_HASH` does not move. What changed is
-# what the subject is sent: the local path now renders each item through the
-# model's own chat template under `THINKING_POLICY` below, where it used to
-# post the item text raw to `/completion` and get a continuation of it back
-# (the local-subject-prompts-are-never-chat-templated defect). A score under
-# "3" therefore measures something a score under "2" did not, which is what a
-# version is for -- the pair (`suite_version`, `prompt_template_id`)
-# separates the two generations, since the prompt-set hash alone cannot.
-SUITE_ID = "classification-support-routing"
-SUITE_VERSION = "3"
-
-# The generation cap `quality_cli.py` sends for every local completion. Declared
-# here, on the suite, rather than in the CLI: the cap is a property of what the
-# suite asks a model to produce, not of the harness driving the request.
-MAX_OUTPUT_TOKENS = 32
-# What the model may spend that cap on -- the same class of declaration as the
-# cap itself (Methodology 3), and the one that makes the 32 above meaningful.
-# Probed on `b10537-bf0040e15`: asked through its own chat template with
-# thinking allowed, `Qwen3-0.6B` spends all 32 tokens in `reasoning_content`
-# and returns an empty answer, and so does `Qwen3.6-35B-A3B`. With thinking
-# disabled both answer in two tokens. A suite that wants deliberation declares
-# `allowed` and sizes its cap for it; this one asks for a single label word.
-THINKING_POLICY = row_contract.THINKING_POLICY_DISABLED
-# No stop sequence is sent to either provider today.
-STOP_SEQUENCES: list[str] = []
-# The context every compared model is assumed to run at. Phase 2 of the
-# versioned-roster increment moved `context_size` from a `server.py` module
-# constant into the roster entry's own `server_flags` (`roster.py`), so this
-# suite-level assumption is now a literal matching the shipped roster entry's
-# value (`aidd_docs/roster/models.json`) rather than an import: `server.py`
-# no longer exposes one context-size constant to import, since a future
-# second roster entry could run at a different context.
-CONTEXT_LENGTH = 32768
 
 
 class ClassificationItem(TypedDict):
@@ -78,167 +56,3 @@ class ClassificationItem(TypedDict):
     language: Literal["en", "fr", "de"]
     provenance: Literal["hand_written", "licensed", "public"]
     contamination_risk: bool
-
-
-def _item(
-    item_id: str,
-    message: str,
-    expected_label: str,
-    *,
-    language: Literal["en", "fr", "de"] = "en",
-    provenance: Literal["hand_written", "licensed", "public"] = "hand_written",
-) -> ClassificationItem:
-    return ClassificationItem(
-        item_id=item_id,
-        prompt=_INSTRUCTION + message,
-        expected_label=expected_label,
-        language=language,
-        provenance=provenance,
-        contamination_risk=provenance == "public",
-    )
-
-
-CLASSIFICATION_TASK_SUITE: list[ClassificationItem] = [
-    _item(
-        "billing-01",
-        "I was charged twice for my subscription this month, can you refund one?",
-        "billing",
-    ),
-    _item(
-        "billing-02",
-        "My invoice shows a currency I don't recognize -- can you confirm what I owe in EUR?",
-        "billing",
-    ),
-    _item(
-        "technical-01",
-        "The app crashes every time I try to export a report to PDF.",
-        "technical",
-    ),
-    _item(
-        "technical-02",
-        "I'm getting a 500 error when uploading a file larger than 10MB.",
-        "technical",
-    ),
-    _item(
-        "account-01",
-        "I can't log in anymore since I changed my email address last week.",
-        "account",
-    ),
-    _item(
-        "account-02",
-        "Please delete my account and all associated data permanently.",
-        "account",
-    ),
-    _item(
-        "other-01",
-        "Do you have any plans to support a language other than English?",
-        "other",
-    ),
-    _item(
-        "other-02",
-        "Just wanted to say the new dashboard redesign looks great, thanks!",
-        "other",
-    ),
-    _item(
-        "billing-03",
-        "The discount code from your newsletter didn't apply at checkout.",
-        "billing",
-    ),
-    _item(
-        "technical-03",
-        "Search results stopped updating after the last update went out.",
-        "technical",
-    ),
-    _item(
-        "billing-fr-01",
-        "Le prélèvement automatique de ce mois ne correspond pas au montant "
-        "indiqué sur mon devis, pouvez-vous vérifier ?",
-        "billing",
-        language="fr",
-    ),
-    _item(
-        "technical-fr-01",
-        "Depuis la dernière mise à jour, l'application se fige dès que "
-        "j'ouvre le tableau de bord.",
-        "technical",
-        language="fr",
-    ),
-    _item(
-        "account-fr-01",
-        "Je n'ai jamais reçu l'e-mail de confirmation pour activer mon "
-        "compte, pouvez-vous le renvoyer ?",
-        "account",
-        language="fr",
-    ),
-    _item(
-        "other-fr-01",
-        "Est-ce que vous prévoyez une version mobile de l'application dans "
-        "les prochains mois ?",
-        "other",
-        language="fr",
-    ),
-    _item(
-        "technical-fr-02",
-        "Le fichier que j'exporte en CSV contient des caractères accentués "
-        "mal encodés.",
-        "technical",
-        language="fr",
-    ),
-    _item(
-        "billing-de-01",
-        "Auf meiner letzten Rechnung fehlt der vereinbarte Rabatt aus unserem Vertrag.",
-        "billing",
-        language="de",
-    ),
-    _item(
-        "technical-de-01",
-        "Der Upload bricht immer bei etwa 80 Prozent ab, egal welche Datei "
-        "ich verwende.",
-        "technical",
-        language="de",
-    ),
-    _item(
-        "account-de-01",
-        "Ich möchte meine Zwei-Faktor-Authentifizierung deaktivieren, finde "
-        "aber die Option nicht.",
-        "account",
-        language="de",
-    ),
-    _item(
-        "other-de-01",
-        "Gibt es einen Zeitplan für die nächste Feature-Ankündigung?",
-        "other",
-        language="de",
-    ),
-    _item(
-        "account-de-02",
-        "Mein Account wurde offenbar mit einer falschen E-Mail-Adresse "
-        "verknüpft, können Sie das korrigieren?",
-        "account",
-        language="de",
-    ),
-]
-
-
-def prompt_set_hash(items: Sequence[Mapping[str, Any]]) -> str:
-    """SHA-256 hex digest over the items' prompts only, deterministically ordered.
-
-    Deliberately not over the whole item dict: adding a non-prompt field later
-    (a tag, a provenance note) must never move the hash. Only an edited prompt
-    should.
-
-    Duck-typed against any mapping exposing `item_id` and `prompt`, not
-    `isinstance`-checked against `ClassificationItem` -- the same choice
-    `suite_gate.gate_suite` documents. `judge_probe.JUDGE_PROBE_ITEMS` hashes
-    through this one function, so a reader comparing a `prompt_set_hash`
-    across two published files is comparing like with like rather than two
-    suites' separate hashing rules.
-    """
-    sorted_items = sorted(items, key=lambda item: item["item_id"])
-    serialized = "\n".join(
-        f"{item['item_id']}:{item['prompt']}" for item in sorted_items
-    )
-    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
-
-
-PROMPT_SET_HASH = prompt_set_hash(CLASSIFICATION_TASK_SUITE)

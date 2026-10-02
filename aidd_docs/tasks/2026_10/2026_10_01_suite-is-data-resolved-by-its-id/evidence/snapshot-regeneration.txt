@@ -1,0 +1,6 @@
+$ uv run python -m wave_local_ai_v2.suite_snapshot
+aidd_docs\results\suite-definitions\classification-support-routing@3.json
+aidd_docs\results\suite-definitions\translation-business-short-form@2.json
+$ git status --short aidd_docs/results/suite-definitions/   (empty = byte-identical to the committed files)
+$ git diff --exit-code aidd_docs/results/ ; echo exit=$?
+exit=0

@@ -9,6 +9,7 @@ not missing -- several fields degrade to an explicit `None` on capture failure
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from typing import Any, Literal
 
 from wave_local_ai_v2 import (
@@ -555,20 +556,17 @@ def _authored_prompt(kind: RowKind, row: dict[str, Any]) -> tuple[str | None, st
 
         return FIXED_PROMPT, ""
 
-    from wave_local_ai_v2 import classification_suite, judge_probe, translation_suite
+    from wave_local_ai_v2 import judge_probe, suite_registry
 
-    suites = {
-        module.SUITE_ID: (module.SUITE_VERSION, items)
-        for module, items in (
-            (classification_suite, classification_suite.CLASSIFICATION_TASK_SUITE),
-            (translation_suite, translation_suite.TRANSLATION_TASK_SUITE),
-            (judge_probe, judge_probe.JUDGE_PROBE_ITEMS),
-        )
-    }
     suite_id = row["suite_id"]
-    if suite_id not in suites:
+    items: Sequence[Mapping[str, Any]]
+    if suite_id == judge_probe.SUITE_ID:
+        suite_version, items = judge_probe.SUITE_VERSION, judge_probe.JUDGE_PROBE_ITEMS
+    elif suite_id in suite_registry.registered_ids():
+        definition = suite_registry.resolve(suite_id)
+        suite_version, items = definition.suite_version, definition.items
+    else:
         return None, f"suite_id {suite_id!r} is not a suite this code defines"
-    suite_version, items = suites[suite_id]
     if row["suite_version"] != suite_version:
         return None, (
             f"suite {suite_id!r} is at version {suite_version!r} in this code, "
