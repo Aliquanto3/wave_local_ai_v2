@@ -81,6 +81,10 @@ Five checks, each able to fail:
 
 Once `done`, record here what the first real two-judge agreement figure was, whether the 1-point contested threshold survived contact with genuine disagreement, what the calibration judge's agreement with the pair was and whether it differed between EN and the FR/DE items, and what a full judged campaign actually cost against the ten-dollar estimate.
 
+## Progress (2026-10-01)
+
+The owner answered Q6 and Q3 of `aidd_docs/tasks/2026_10/2026_10_01_autonomous-slicing/owner-questions.md` with option (a). Under Q6, order 6 (`the-judged-probe-runs-both-paths-in-three-languages`, the judged probe) is rewritten in place under the new pair and is now `proposed` with `depends_on` on order 10 (`glm-and-deepseek-are-the-only-judges-and-mistral-and-google-never-judge-again`) and order 11 (`a-calibration-judge-scores-one-judged-item-in-ten-and-never-moves-a-score`); the Context bullet reading "Order 6 is `ready`" predates that rewrite. Under Q3, order 12 (`a-publication-size-cloud-batch-survives-its-rate-limits-and-resumes-per-item`) is added: the retry budget and per-item resume a publication-size cloud batch needs, which the publication-level suites wait on for any cloud batch.
+
 ## Dependencies and Unknowns
 
 | Item | Kind | Handling |

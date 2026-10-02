@@ -3,7 +3,7 @@ type: story
 status: done
 source: aidd_docs/backlog/epics/any-open-ended-output-carries-two-judges-or-an-honest-flag.md
 parent: aidd_docs/backlog/epics/any-open-ended-output-carries-two-judges-or-an-honest-flag.md
-depends_on: aidd_docs/backlog/stories/google-ai-studio-api-surface-is-confirmed-live.md
+depends_on: aidd_docs/backlog/spikes/google-ai-studio-api-surface-is-confirmed-live.md
 order: 2
 ---
 

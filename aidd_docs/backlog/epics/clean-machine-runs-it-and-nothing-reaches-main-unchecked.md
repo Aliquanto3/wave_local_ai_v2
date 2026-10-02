@@ -6,6 +6,7 @@ goal: aidd_docs/product/wave-local-ai-v2.md
 related_to:
   - aidd_docs/backlog/epics/every-published-row-explains-and-reproduces-itself.md
   - aidd_docs/backlog/epics/quality-scored-comparison-first-three-use-cases.md
+  - aidd_docs/backlog/epics/the-pitch-runs-from-a-browser-and-only-with-the-key.md
 ---
 
 # Epic: A clean machine runs it, and nothing reaches main unchecked
@@ -60,6 +61,10 @@ Five checks, each able to fail:
 - A release tag exists, its changelog entry names what changed, and a benchmark run at that tag emits a version and commit sha that match it.
 
 Once `done`, record here what the fresh-machine walk actually needed that the README did not say, and whether any dependency waiver was still open at the release.
+
+## Progress (2026-10-01)
+
+All six stories are `done`, but the epic stays `ready` (owner decision, 2026-10-01, revising Q75's close). Two Success Evidence items have no record yet: the fresh-machine walk by an engineer on a non-development machine, from a clone and from the image, and the anonymous pull of the published image (`CONTRIBUTING.md` still reads "Not yet performed, pending the first tag" although `v0.1.0` and `v0.2.0` exist). The epic closes, with its done note, once that operator walk is recorded.
 
 ## Dependencies and Unknowns
 

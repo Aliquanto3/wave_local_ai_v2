@@ -1,6 +1,6 @@
 # Decision: Google AI Studio's API surface, confirmed live
 
-- **Spike**: `aidd_docs/backlog/stories/google-ai-studio-api-surface-is-confirmed-live.md`
+- **Spike**: `aidd_docs/backlog/spikes/google-ai-studio-api-surface-is-confirmed-live.md`
 - **Epic**: `aidd_docs/backlog/epics/any-open-ended-output-carries-two-judges-or-an-honest-flag.md`
 - **Investigated**: 2026-08-27
 - **Method**: live HTTP calls with `requests` only, no SDK, using `GOOGLE_API_KEY` from `.env`; plus the live discovery document and the official documentation pages fetched the same day. Every fact below cites either a captured request/response or a URL. The API key is redacted as `<REDACTED>` throughout.
