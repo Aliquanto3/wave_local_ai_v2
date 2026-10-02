@@ -15,7 +15,13 @@ from pathlib import Path
 
 import pytest
 
-from wave_local_ai_v2 import bundle_export, comparison, leader_set, row_contract
+from wave_local_ai_v2 import (
+    bundle_export,
+    comparison,
+    leader_set,
+    row_contract,
+    score_interval,
+)
 from wave_local_ai_v2.bundle_export import (
     DICTIONARY_FILE,
     MANIFEST_FILE,
@@ -1022,3 +1028,37 @@ def test_a_malformed_record_is_refused_by_name(
 
     with pytest.raises(ExportError, match=f"record {target.name}: .*{expected}"):
         bundle_export.build_export(paths)
+
+
+def test_a_row_carrying_its_interval_exports_every_cell_described(
+    tmp_path: Path,
+) -> None:
+    first, second = _committed_rows(COMMITTED.quality_rows)[:2]
+    items = [{"item_id": f"i{index}", "language": "en"} for index in range(20)]
+    block = score_interval.interval_block(items, [1.0] * 16 + [0.0] * 4)
+    first["score_interval"] = block
+    second["score_interval"] = None
+
+    bundle_export.export_bundle(
+        _bundle(tmp_path, quality=[first, second]), tmp_path / "out"
+    )
+    rows = _read_csv(tmp_path / "out" / "quality_items.csv")
+    dictionary = {
+        entry["column"]
+        for entry in _read_csv(tmp_path / "out" / DICTIONARY_FILE)
+        if entry["table"] == "quality_items"
+    }
+
+    for column in (
+        "score_interval_seed",
+        "score_interval_generator_library",
+        "score_interval_draw_procedure_id",
+        "score_interval_suite_lower",
+        "score_interval_suite_minimum_detectable_effect",
+        "score_interval_by_language_en_upper",
+        "score_interval_by_language_de_null_reason",
+    ):
+        assert column in dictionary, column
+    assert float(rows[0]["score_interval_suite_lower"]) == block["suite"]["lower"]
+    assert rows[0]["score_interval_by_language_de_null_reason"] == "no_items"
+    assert rows[1]["score_interval_suite_lower"] == ""

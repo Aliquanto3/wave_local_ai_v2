@@ -345,6 +345,46 @@ No committed row carries these fields: every row in this directory predates `"18
 under its own version and is never back-filled; a per-item comparison over them is refused
 naming the absent field.
 
+## Each batch's interval and what it could resolve (2026-10-02)
+
+From schema `"21"` every quality row carries `score_interval`, one block per batch and
+identical on every row of it: a 95% percentile bootstrap interval over 10 000 resamples on
+the suite score (`suite`, resampled unstratified) and on each language cell (`by_language`,
+resampled within its language), for the exact-match and graded scorers alike. Beside each
+interval sits its minimum detectable effect, the interval's half-width read off the same
+resample: the smallest difference that suite and scoring kind could have told from noise,
+so "not distinguishable" is never read as "the same". A cell is its three values or none of
+them and one reason: `zero_width` when every item scored the same (a suite at 1.0 or 0.0,
+whose `[1.0, 1.0]` would read as certainty), `no_items` for an empty language cell. A failed
+generation resamples as its zero. The block records the seed, the generator (`CPython
+random.Random`, major.minor version) and the draw procedure
+`stdlib-getrandbits-percentile/1`, defined in `score_interval.py` (items by `item_id`, one
+freshly seeded generator per cell, `getrandbits` draws with rejection, `math.fsum` means,
+type-7 percentile interpolation), so `score_interval.replay` reproduces it bit for bit from
+the rows alone. A partial batch and a judge-probe row carry `null`, as their scores are.
+
+No committed row carries the block: every row here predates `"21"` and is never
+back-filled. The figures below are an analysis over the committed
+`classification-support-routing` rows of `quality-reference.jsonl`, computed by the new code
+(seed `20261002`) and not written onto them; the computation, which also checks the three
+batch invariants and the replay on an in-memory copy, is
+`aidd_docs/tasks/2026_10/2026_10_01_quality-batch-interval-and-what-it-could-resolve/evidence/`.
+
+| Run | Model | Accuracy (n=20) | 95% interval | Minimum detectable effect |
+| --- | ----- | --------------- | ------------ | ------------------------- |
+| `5e13166d` | Qwen3.6-35B-A3B (local) | 0.80 | [0.600, 0.950] | 0.175 |
+| `5e13166d` | mistral-small-2603 | 0.95 | [0.850, 1.000] | 0.075 |
+| `d20afbda` | Qwen3.6-35B-A3B (local) | 0.80 | [0.600, 0.950] | 0.175 |
+| `d20afbda` | mistral-small-2603 | 0.90 | [0.750, 1.000] | 0.125 |
+
+Per language the cells hold 10, 5 and 5 items (EN, FR, DE). Of the twelve cells, eight
+scored 1.0 and publish `zero_width` rather than an interval; the four defined ones are wide:
+Qwen3.6 EN 0.60 [0.300, 0.900] in both runs, mistral DE 0.80 [0.400, 1.000] and 0.60
+[0.200, 1.000]. On 20 items the local model's interval spans 35 points, and the two
+models' intervals overlap in both runs. The interval qualifies each score on its own;
+whether two scores differ is the paired test's question, not the overlap's, and the next
+section explains why the committed pairs publish no paired test.
+
 ## Paired comparisons: both committed pairs are refused (2026-10-02)
 
 `comparisons/` holds the comparison records `wave-local-ai-v2-compare` writes over this

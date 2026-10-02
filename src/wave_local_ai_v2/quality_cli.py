@@ -64,6 +64,7 @@ from wave_local_ai_v2 import (
     retry,
     roster,
     row_contract,
+    score_interval,
     server,
     suite_registry,
     timings,
@@ -1281,6 +1282,10 @@ def _score_and_write(
         if row.get("model_id") == model_id
     ]
     batch_verdict = verdict.quality_verdict(prior_rows + rows, reference_rows)
+    # Before anything is appended: the interval qualifies the score over the
+    # same items, on every row of the batch that publishes one. Rows a
+    # partial run wrote before this resume carry no block and stay as written.
+    score_interval.check_batch_invariants(prior_rows + rows)
     for row in rows:
         row["verdict"] = batch_verdict
         append_row(settings.quality_results_path, "quality", row)

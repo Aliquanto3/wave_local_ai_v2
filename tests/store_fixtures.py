@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from wave_local_ai_v2 import row_contract, suite_snapshot
+from wave_local_ai_v2 import row_contract, score_interval, suite_snapshot
 
 FLOOR = "7"
 RUN_ID = "run-under-test"
@@ -81,6 +81,11 @@ NAMED_VALUES: dict[str, Any] = {
     "harness_id": "direct",
     "harness_version": "2.32.5",
     "harness_prompt_overhead": {"tokens": 0, "null_reason": None},
+    # The batch's interval over its one item: constant, so zero_width; the
+    # two empty language cells name no_items.
+    "score_interval": score_interval.interval_block(
+        [{"item_id": "billing-01", "language": "en"}], [1.0]
+    ),
 }
 
 GRADED_VALUES: dict[str, Any] = {

@@ -394,6 +394,18 @@ _ITEM_NULL_DOC = (
 )
 _ITEM_REPORTED_DOC = "The value was reported, or the row does not carry the field."
 
+# The interval block's cells (schema "21"): the suite's and one per language.
+_INTERVAL_CELLS: tuple[tuple[tuple[str, ...], str], ...] = (
+    (("score_interval", "suite"), "suite score's"),
+    (("score_interval", "by_language", "*"), "language cell's"),
+)
+_INTERVAL_SCALE = "the suite's score scale (suite_accuracy or suite_score, 0..1)"
+_INTERVAL_EMPTY = "The row carries no interval block (see score_interval)."
+_INTERVAL_VALUE_EMPTY = (
+    "The interval is undefined and null_reason says why, or the row carries "
+    "no interval block."
+)
+
 _QUALITY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     ("model_id",): FieldDoc("Model that answered the item.", _ID),
     ("provider",): FieldDoc("Who ran the model: local, mistral or google.", _ID),
@@ -437,6 +449,88 @@ _QUALITY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
         _JSON_OBJECT,
         f"Not an exact-match row, {_PARTIAL_SCORE_DOC}",
     ),
+    # The batch's bootstrap interval (schema "21", Methodology 24).
+    ("score_interval",): FieldDoc(
+        "Bootstrap confidence interval block of the batch's suite score "
+        "(suite_accuracy or suite_score) and of each language cell; the same "
+        "on every row of one batch.",
+        _JSON_OBJECT,
+        f"No suite score to qualify (a judge-probe row), {_PARTIAL_SCORE_DOC} "
+        "A row below schema 21 does not carry the field.",
+    ),
+    ("score_interval", "confidence_level"): FieldDoc(
+        "Confidence level of the interval (0.95).", _RATIO, _INTERVAL_EMPTY
+    ),
+    ("score_interval", "resamples"): FieldDoc(
+        "Bootstrap resamples drawn per interval (10000).", _COUNT, _INTERVAL_EMPTY
+    ),
+    ("score_interval", "method"): FieldDoc(
+        "Interval method: percentile.", _ID, _INTERVAL_EMPTY
+    ),
+    ("score_interval", "seed"): FieldDoc(
+        "Seed each interval's generator was freshly seeded with.",
+        "integer",
+        _INTERVAL_EMPTY,
+    ),
+    ("score_interval", "generator", "library"): FieldDoc(
+        "Random generator that drew the resamples.", _TEXT, _INTERVAL_EMPTY
+    ),
+    ("score_interval", "generator", "version"): FieldDoc(
+        "Interpreter major.minor version the generator ran under.",
+        _TEXT,
+        _INTERVAL_EMPTY,
+    ),
+    ("score_interval", "draw_procedure_id"): FieldDoc(
+        "Versioned draw procedure (draw order, tie handling, percentile "
+        "interpolation), defined in score_interval.py.",
+        _ID,
+        _INTERVAL_EMPTY,
+    ),
+    ("score_interval", "suite", "n"): FieldDoc(
+        "Items the suite interval was resampled over, unstratified.",
+        _COUNT,
+        _INTERVAL_EMPTY,
+    ),
+    ("score_interval", "by_language", "*", "n"): FieldDoc(
+        "Items in this language the language interval was resampled over.",
+        _COUNT,
+        _INTERVAL_EMPTY,
+    ),
+    **{
+        (*prefix, "lower"): FieldDoc(
+            f"Lower bound of the {scope} 95% interval.",
+            _INTERVAL_SCALE,
+            _INTERVAL_VALUE_EMPTY,
+        )
+        for prefix, scope in _INTERVAL_CELLS
+    },
+    **{
+        (*prefix, "upper"): FieldDoc(
+            f"Upper bound of the {scope} 95% interval.",
+            _INTERVAL_SCALE,
+            _INTERVAL_VALUE_EMPTY,
+        )
+        for prefix, scope in _INTERVAL_CELLS
+    },
+    **{
+        (*prefix, "minimum_detectable_effect"): FieldDoc(
+            f"Minimum detectable effect: the smallest difference the {scope} "
+            "interval could resolve, half its width, read off the same resample.",
+            _INTERVAL_SCALE,
+            _INTERVAL_VALUE_EMPTY,
+        )
+        for prefix, scope in _INTERVAL_CELLS
+    },
+    **{
+        (*prefix, "null_reason"): FieldDoc(
+            f"Why the {scope} interval is undefined: zero_width (every item "
+            "scored the same, as a suite scored 1.0 or 0.0) or no_items (the "
+            "cell holds no item).",
+            _ID,
+            "The interval is defined, or the row carries no interval block.",
+        )
+        for prefix, scope in _INTERVAL_CELLS
+    },
     ("max_output_tokens",): FieldDoc("Output token cap per item.", "tokens"),
     ("stop_sequences",): FieldDoc("Stop sequences sent with each item.", _JSON_ARRAY),
     ("thinking_policy",): FieldDoc(

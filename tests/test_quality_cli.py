@@ -15,6 +15,7 @@ from wave_local_ai_v2 import (
     local_client,
     mistral_client,
     quality_cli,
+    score_interval,
     scoring_rules,
     suite_registry,
 )
@@ -1250,7 +1251,7 @@ def test_every_row_names_its_subjects_family_and_size_class(stubbed_run) -> None
         ("mistral", "mistral", None),
         ("google", "google", None),
     }
-    assert {row["schema_version"] for row in rows} == {"20"}
+    assert {row["schema_version"] for row in rows} == {"21"}
 
 
 def test_every_row_names_direct_its_version_and_its_measured_overhead(
@@ -2038,6 +2039,11 @@ def test_a_hundred_item_batch_interrupted_then_resumed_pays_for_no_item_twice(
         assert row["suite_accuracy"] == whole[0]["suite_accuracy"]
         assert row["language_breakdown"] == whole[0]["language_breakdown"]
         assert row["failure_counts"] == whole[0]["failure_counts"]
+        # The interval too: computed over all 100 items, not the 63 resumed.
+        assert row["score_interval"] == whole[0]["score_interval"]
+        assert row["score_interval"]["suite"]["n"] == 100
+    # The rows written partial publish no interval, and keep publishing none.
+    assert all(row["score_interval"] is None for row in rows[:37])
     assert {row["item_id"]: row["correct"] for row in rows} == {
         row["item_id"]: row["correct"] for row in whole
     }
@@ -2765,3 +2771,58 @@ def test_a_resume_under_the_same_configuration_completes_the_batch(
     assert len(mistral) == len(CLASSIFICATION_TASK_SUITE)
     assert mistral[-1]["partial_failure"] is None
     assert mistral[-1]["suite_accuracy"] is not None
+
+
+def _batches(rows: list[dict]) -> dict[str, list[dict]]:
+    by_provider: dict[str, list[dict]] = {}
+    for row in rows:
+        by_provider.setdefault(row["provider"], []).append(row)
+    return by_provider
+
+
+@pytest.mark.parametrize(
+    "suite", ["classification-support-routing", "translation-business-short-form"]
+)
+def test_every_row_of_a_batch_carries_one_interval_that_replays_from_the_rows(
+    stubbed_run, suite: str
+) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run(suite=suite)
+
+    definition = suite_registry.resolve(suite)
+    item_by_id = {item["item_id"]: item for item in definition.items}
+    for provider, rows in _batches(read_rows(quality_results_path)).items():
+        blocks = [row["score_interval"] for row in rows]
+        assert all(block == blocks[0] for block in blocks), provider
+        block = blocks[0]
+        assert block["suite"]["n"] == len(definition.items)
+        # Replayed from what the rows publish alone: the items they name and
+        # each item's own score.
+        items = [item_by_id[row["item_id"]] for row in rows]
+        values = [score_interval.item_value(row) for row in rows]
+        assert score_interval.replay(block, items, values) == block
+        # A development-level score keeps its indicative marking beside it.
+        assert all(row["suite_level"] == "development" for row in rows)
+        assert all(row["indicative"] == definition.gate["indicative"] for row in rows)
+        score_interval.check_batch_invariants(rows)
+
+
+def test_a_batch_whose_interval_covers_other_items_is_refused_before_writing(
+    stubbed_run, monkeypatch
+) -> None:
+    quality_results_path, _ = stubbed_run
+    real = scoring_rules.BATCH_AGGREGATES["exact_label_match"]
+
+    def over_the_first_items_only(items, per_item):
+        fields = real(items, per_item)
+        fields["score_interval"] = real(items[:5], per_item[:5])["score_interval"]
+        return fields
+
+    monkeypatch.setitem(
+        scoring_rules.BATCH_AGGREGATES, "exact_label_match", over_the_first_items_only
+    )
+
+    with pytest.raises(score_interval.IntervalInvariantError, match="n=5"):
+        quality_cli._run()
+    assert not quality_results_path.exists() or read_rows(quality_results_path) == []

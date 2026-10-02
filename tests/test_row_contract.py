@@ -10,6 +10,7 @@ from wave_local_ai_v2 import (
     prompt_variants,
     quality_rows,
     roster,
+    score_interval,
     suite_registry,
     timings,
 )
@@ -21,8 +22,11 @@ from wave_local_ai_v2.row_contract import (
     ITEM_MEASUREMENT_FIELDS,
     JUDGE_EGRESS_FIELDS,
     JUDGED_FIELDS,
+    PARTIAL_NULL_SCORE_FIELDS,
     REQUIRED_FIELDS,
     SCHEMA_VERSION,
+    SCORE_INTERVAL_FIELDS,
+    SCORE_INTERVAL_SCHEMA_VERSION,
     SUBJECT_COMPOSITION_FIELDS,
     SUBJECT_COMPOSITION_SCHEMA_VERSION,
     RowContractError,
@@ -245,6 +249,11 @@ COMPLETE_QUALITY_ROW = {
     "harness_id": "direct",
     "harness_version": harness.harness_version("direct"),
     "harness_prompt_overhead": {"tokens": 0, "null_reason": None},
+    # The batch's interval over its one item: constant, so zero_width; the
+    # two empty language cells name no_items.
+    "score_interval": score_interval.interval_block(
+        [{"item_id": "billing-01", "language": "en"}], [1.0]
+    ),
 }
 
 
@@ -1081,14 +1090,14 @@ def test_the_schema_version_moved_once_for_the_thinking_policy() -> None:
     # `thinking_policy` is required on every quality row, because a score
     # produced with the subject allowed to reason and one produced without it
     # are not the same measurement and a row has to say which it is.
-    assert SCHEMA_VERSION == "20"
+    assert SCHEMA_VERSION == "21"
 
 
 def test_the_schema_version_moved_for_the_runtime_energy_window() -> None:
     # "12" fixes audit finding C3: the runtime row's energy figures used to
     # span the whole counted-repetition window, cooldowns included. Required
     # only on runtime rows -- quality rows carry no energy window at all.
-    assert SCHEMA_VERSION == "20"
+    assert SCHEMA_VERSION == "21"
     assert {"active_window_s", "idle_window_s", "energy_window_method"} <= (
         REQUIRED_FIELDS["runtime"]
     )
@@ -1101,7 +1110,7 @@ def test_the_schema_version_moved_for_the_judge_call_record_extension() -> None:
     # "13" adds five fields inside each judge call record. Additive inside the
     # conditional judge block: neither row kind's required set moves, so a
     # deterministic quality row validates unchanged.
-    assert SCHEMA_VERSION == "20"
+    assert SCHEMA_VERSION == "21"
     assert set(NEW_JUDGE_RECORD_FIELDS).isdisjoint(REQUIRED_FIELDS["quality"])
     assert set(NEW_JUDGE_RECORD_FIELDS).isdisjoint(JUDGED_FIELDS)
     validate_row("quality", COMPLETE_QUALITY_ROW)
@@ -1111,7 +1120,7 @@ def test_the_schema_version_moved_for_the_prompt_variant() -> None:
     # "14" makes both row kinds name the variant they ran under and carry the
     # prompt as the variant left it. Not conditional: every row ran under some
     # variant, and a row below "14" is never back-filled with `baseline`.
-    assert SCHEMA_VERSION == "20"
+    assert SCHEMA_VERSION == "21"
     for kind in ("runtime", "quality"):
         assert set(PROMPT_VARIANT_FIELDS) <= REQUIRED_FIELDS[kind]
 
@@ -1121,7 +1130,7 @@ def test_the_schema_version_moved_for_the_suite_level() -> None:
     # and its item's licence, source and source revision. Not conditional:
     # every suite is certified at some level. Quality rows only -- a runtime
     # row runs no suite.
-    assert SCHEMA_VERSION == "20"
+    assert SCHEMA_VERSION == "21"
     assert set(SUITE_LEVEL_FIELDS) <= REQUIRED_FIELDS["quality"]
     assert set(SUITE_LEVEL_FIELDS).isdisjoint(REQUIRED_FIELDS["runtime"])
 
@@ -1298,7 +1307,7 @@ def test_a_registered_non_baseline_variant_is_not_held_to_the_authored_text(
 def test_the_schema_version_moved_for_the_subject_egress() -> None:
     # "16" makes every row of either kind state where its subject prompt went.
     # Not conditional: every row was produced by sending a prompt somewhere.
-    assert SCHEMA_VERSION == "20"
+    assert SCHEMA_VERSION == "21"
     for kind in ("runtime", "quality"):
         assert "subject_egress" in REQUIRED_FIELDS[kind]
     # The subject field is not a member of the judge block, and the judge
@@ -1436,7 +1445,7 @@ def test_the_schema_version_moved_for_the_retry_budget_and_partial_batches() -> 
     # "17" makes every quality row name the retry budget its batch ran under
     # and whether that batch was left partial. The runtime row makes no cloud
     # call and has no resume, so it is untouched.
-    assert SCHEMA_VERSION == "20"
+    assert SCHEMA_VERSION == "21"
     for field in ("retry_budget", "partial_failure"):
         assert field in REQUIRED_FIELDS["quality"]
         assert field not in REQUIRED_FIELDS["runtime"]
@@ -1497,6 +1506,7 @@ def test_a_partial_row_naming_its_failure_and_carrying_no_score_validates() -> N
             "partial_failure": dict(_PARTIAL),
             "suite_accuracy": None,
             "language_breakdown": None,
+            "score_interval": None,
         },
     )
 
@@ -1543,6 +1553,7 @@ def test_a_partial_graded_row_validates_with_its_suite_score_null() -> None:
             "partial_failure": dict(_PARTIAL),
             "suite_score": None,
             "score_breakdown": None,
+            "score_interval": None,
         },
     )
 
@@ -1575,7 +1586,7 @@ def test_the_schema_version_moved_for_the_per_item_measurement() -> None:
     # "18" puts each item's own tokens, engine-reported TTFT and cached prompt
     # tokens on every quality row (Q24 (a)); the runtime row keeps its
     # Methodology 6 aggregate and is untouched.
-    assert SCHEMA_VERSION == "20"
+    assert SCHEMA_VERSION == "21"
     assert ITEM_MEASUREMENT_FIELDS <= REQUIRED_FIELDS["quality"]
     assert ITEM_MEASUREMENT_FIELDS.isdisjoint(REQUIRED_FIELDS["runtime"])
 
@@ -1804,7 +1815,7 @@ def test_the_writers_block_names_a_cloud_subject_by_its_own_family() -> None:
 def test_the_schema_version_moved_for_the_harness_fields() -> None:
     # "20" puts the harness id, its installed version and its per-call prompt
     # overhead on every quality row; the runtime row is untouched.
-    assert SCHEMA_VERSION == "20"
+    assert SCHEMA_VERSION == "21"
     assert HARNESS_SCHEMA_VERSION == "20"
     assert HARNESS_FIELDS == {
         "harness_id",
@@ -1956,3 +1967,140 @@ def test_a_harness_the_rule_cannot_measure_writes_unmeasurable_not_zero(
         "null_reason": "unmeasurable",
     }
     validate_row("quality", row)
+
+
+# --- score_interval (schema "21") -----------------------------------------
+
+
+def test_the_interval_block_is_owed_from_schema_21_on_quality_rows_only() -> None:
+    assert SCORE_INTERVAL_SCHEMA_VERSION == "21"
+    assert SCORE_INTERVAL_FIELDS == {"score_interval"}
+    assert SCORE_INTERVAL_FIELDS <= REQUIRED_FIELDS["quality"]
+    assert SCORE_INTERVAL_FIELDS.isdisjoint(REQUIRED_FIELDS["runtime"])
+    assert "score_interval" in PARTIAL_NULL_SCORE_FIELDS
+
+
+def test_a_schema_21_row_without_its_interval_is_refused_by_name() -> None:
+    row = {k: v for k, v in COMPLETE_QUALITY_ROW.items() if k != "score_interval"}
+    with pytest.raises(RowContractError, match="score_interval"):
+        validate_row("quality", row)
+
+
+def test_a_row_below_schema_21_validates_without_an_interval() -> None:
+    row = {k: v for k, v in COMPLETE_QUALITY_ROW.items() if k != "score_interval"}
+    validate_row("quality", {**row, "schema_version": "20"})
+
+
+def _with_suite_cell(**cell: object) -> dict:
+    block = COMPLETE_QUALITY_ROW["score_interval"]
+    return {
+        **COMPLETE_QUALITY_ROW,
+        "score_interval": {**block, "suite": {**block["suite"], **cell}},
+    }
+
+
+def test_a_defined_interval_cell_validates() -> None:
+    validate_row(
+        "quality",
+        _with_suite_cell(
+            lower=0.9, upper=1.0, minimum_detectable_effect=0.05, null_reason=None
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "cell",
+    [
+        # A value beside a reason.
+        {"lower": 0.9, "upper": 1.0, "minimum_detectable_effect": 0.05},
+        # A reason outside the closed set.
+        {"null_reason": "too_small"},
+        # Neither values nor a reason.
+        {"null_reason": None},
+        # A boolean is not a bound.
+        {
+            "lower": True,
+            "upper": 1.0,
+            "minimum_detectable_effect": 0.0,
+            "null_reason": None,
+        },
+    ],
+)
+def test_an_interval_cell_is_values_or_one_reason_never_both(cell: dict) -> None:
+    with pytest.raises(RowContractError, match="score_interval suite cell"):
+        validate_row("quality", _with_suite_cell(**cell))
+
+
+@pytest.mark.parametrize("n", [-1, True, "1"])
+def test_an_interval_cell_counts_its_items(n: object) -> None:
+    with pytest.raises(RowContractError, match="score_interval suite n="):
+        validate_row("quality", _with_suite_cell(n=n))
+
+
+@pytest.mark.parametrize(
+    ("key", "value", "match"),
+    [
+        ("resamples", 100, "resamples=100"),
+        ("confidence_level", 0.9, "confidence_level=0.9"),
+        ("method", "bca", "method='bca'"),
+        ("draw_procedure_id", "other/1", "draw_procedure_id='other/1'"),
+        ("seed", "7", "seed '7'"),
+        ("generator", {"library": "numpy"}, "generator"),
+        ("by_language", {"en": {}}, "by_language"),
+        ("suite", None, "suite cell None"),
+    ],
+)
+def test_a_malformed_interval_header_is_refused_naming_it(
+    key: str, value: object, match: str
+) -> None:
+    block = {**COMPLETE_QUALITY_ROW["score_interval"], key: value}
+    with pytest.raises(RowContractError, match=match):
+        validate_row("quality", {**COMPLETE_QUALITY_ROW, "score_interval": block})
+
+
+def test_an_interval_block_missing_a_key_is_refused() -> None:
+    block = dict(COMPLETE_QUALITY_ROW["score_interval"])
+    del block["seed"]
+    with pytest.raises(RowContractError, match="carrying exactly"):
+        validate_row("quality", {**COMPLETE_QUALITY_ROW, "score_interval": block})
+
+
+def test_a_published_score_without_its_interval_is_refused() -> None:
+    with pytest.raises(RowContractError, match="null score_interval"):
+        validate_row("quality", {**COMPLETE_QUALITY_ROW, "score_interval": None})
+
+
+def test_an_interval_beside_no_published_score_is_refused() -> None:
+    row = {**COMPLETE_QUALITY_ROW, "suite_accuracy": None, "language_breakdown": None}
+    with pytest.raises(RowContractError, match="beside no suite score"):
+        validate_row("quality", row)
+
+
+def test_a_partial_row_carrying_an_interval_is_refused() -> None:
+    row = {
+        **COMPLETE_QUALITY_ROW,
+        "partial_failure": dict(_PARTIAL),
+        "suite_accuracy": None,
+        "language_breakdown": None,
+    }
+    with pytest.raises(RowContractError, match="is partial but carries score_interval"):
+        validate_row("quality", row)
+
+
+@pytest.mark.parametrize(
+    "cell",
+    [
+        {"n": 1, "null_reason": "no_items"},
+        {"n": 0, "null_reason": "zero_width"},
+        {
+            "n": 0,
+            "lower": 0.5,
+            "upper": 0.9,
+            "minimum_detectable_effect": 0.2,
+            "null_reason": None,
+        },
+    ],
+)
+def test_an_interval_reason_is_only_the_one_its_item_count_names(cell: dict) -> None:
+    with pytest.raises(RowContractError, match=r"n=\d"):
+        validate_row("quality", _with_suite_cell(**cell))

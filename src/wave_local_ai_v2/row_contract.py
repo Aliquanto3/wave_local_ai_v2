@@ -21,6 +21,7 @@ from wave_local_ai_v2 import (
     prompt_provenance,
     prompt_variants,
     roster,
+    score_interval,
     suite_gate,
     timings,
 )
@@ -166,7 +167,18 @@ from wave_local_ai_v2 import (
 # prompt -- and never a zero in place of a measurement. Owed only from "20"
 # (`HARNESS_SCHEMA_VERSION`): a row below "20" still validates without them
 # and is never back-filled. The runtime row is untouched.
-SCHEMA_VERSION = "20"
+# "21": `score_interval` became required on quality rows only (Story: every
+# quality batch publishes its interval and what it could resolve;
+# Methodology 24). One block per batch, identical on every row of it: the
+# confidence level, resample count, method, seed, generator and draw
+# procedure id (`score_interval.DRAW_PROCEDURE_ID`), then a `suite` cell and
+# one `by_language` cell per language, each `{n, lower, upper,
+# minimum_detectable_effect, null_reason}` -- three values, or none and one of
+# `score_interval.NULL_REASONS`. Null exactly when the row publishes no suite
+# score (a partial batch, a judge-probe row). Owed only from "21"
+# (`SCORE_INTERVAL_SCHEMA_VERSION`): a row below "21" still validates without
+# it and is never back-filled. The runtime row is untouched.
+SCHEMA_VERSION = "21"
 
 # The two subject-composition fields "19" added, and the version from which a
 # quality row owes them.
@@ -179,6 +191,11 @@ HARNESS_FIELDS: frozenset[str] = frozenset(
     {"harness_id", "harness_version", "harness_prompt_overhead"}
 )
 HARNESS_SCHEMA_VERSION = "20"
+
+# The interval block "21" added, and the version from which a quality row
+# owes it.
+SCORE_INTERVAL_FIELDS: frozenset[str] = frozenset({"score_interval"})
+SCORE_INTERVAL_SCHEMA_VERSION = "21"
 
 # The value `subject_egress` takes when the subject prompt never left the
 # machine, and the `provider` a quality row names for a subject served by the
@@ -446,6 +463,9 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             # version and its per-call prompt overhead (schema "20"; not owed
             # below it).
             *HARNESS_FIELDS,
+            # score_interval.interval_block: the batch's bootstrap interval
+            # and minimum detectable effect (schema "21"; not owed below it).
+            *SCORE_INTERVAL_FIELDS,
         }
     ),
 }
@@ -482,6 +502,7 @@ PARTIAL_NULL_SCORE_FIELDS: tuple[str, ...] = (
     "suite_score",
     "score_breakdown",
     "judged_headline_score",
+    "score_interval",
 )
 
 
@@ -620,6 +641,8 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
         missing -= SUBJECT_COMPOSITION_FIELDS
     if kind == "quality" and _predates(row, HARNESS_SCHEMA_VERSION):
         missing -= HARNESS_FIELDS
+    if kind == "quality" and _predates(row, SCORE_INTERVAL_SCHEMA_VERSION):
+        missing -= SCORE_INTERVAL_FIELDS
     if missing:
         raise RowContractError(
             f"row of kind {kind!r} is missing required field(s): "
@@ -676,6 +699,9 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
         _validate_harness(row)
         _validate_judged_fields(row)
         _validate_graded_fields(row)
+        # After the graded block: a malformed graded score is named as such
+        # before the interval beside it is checked against it.
+        _validate_score_interval(row)
 
 
 def _predates(row: dict[str, Any], since: str) -> bool:
@@ -737,6 +763,129 @@ def _validate_harness(row: dict[str, Any]) -> None:
         raise RowContractError(
             f"row of kind 'quality' has harness_prompt_overhead tokens {tokens!r} "
             f"beside null_reason {reason!r}: a measured overhead has no reason"
+        )
+
+
+def _validate_score_interval(row: dict[str, Any]) -> None:
+    """Refuse an interval block that cannot qualify the score beside it.
+
+    Null exactly when the row publishes no suite score (`suite_accuracy` and
+    `suite_score` both null: a partial batch, a judge-probe row); otherwise
+    the six header values, a `suite` cell and one cell per language, each
+    carrying its three values and no reason, or no values and one named
+    reason -- never both. Whether the interval and the score were computed
+    over the same items is a batch property, checked by
+    `score_interval.check_batch_invariants` before a batch is written.
+    """
+    if not SCORE_INTERVAL_FIELDS <= row.keys():
+        return
+    block = row["score_interval"]
+    publishes_score = (
+        row.get("suite_accuracy") is not None or row.get("suite_score") is not None
+    )
+    if block is None:
+        if publishes_score:
+            raise RowContractError(
+                "row of kind 'quality' publishes a suite score but a null "
+                "score_interval: every published score carries its interval"
+            )
+        return
+    if not publishes_score:
+        raise RowContractError(
+            "row of kind 'quality' carries a score_interval beside no suite "
+            "score: an interval qualifies a published score"
+        )
+    if not isinstance(block, dict) or block.keys() != score_interval.BLOCK_KEYS:
+        raise RowContractError(
+            f"row of kind 'quality' has score_interval {block!r}: an object "
+            f"carrying exactly {', '.join(sorted(score_interval.BLOCK_KEYS))}"
+        )
+    header = {
+        "confidence_level": score_interval.CONFIDENCE_LEVEL,
+        "resamples": score_interval.RESAMPLES,
+        "method": score_interval.METHOD_PERCENTILE,
+        "draw_procedure_id": score_interval.DRAW_PROCEDURE_ID,
+    }
+    for key, expected in header.items():
+        if block[key] != expected:
+            raise RowContractError(
+                f"row of kind 'quality' has score_interval {key}={block[key]!r}, "
+                f"expected {expected!r}"
+            )
+    seed = block["seed"]
+    if isinstance(seed, bool) or not isinstance(seed, int):
+        raise RowContractError(
+            f"row of kind 'quality' has score_interval seed {seed!r}: an integer"
+        )
+    generator = block["generator"]
+    if not (
+        isinstance(generator, dict)
+        and generator.keys() == score_interval.GENERATOR_KEYS
+        and all(isinstance(value, str) and value for value in generator.values())
+    ):
+        raise RowContractError(
+            f"row of kind 'quality' has score_interval generator {generator!r}: "
+            "the generator's library and version"
+        )
+    by_language = block["by_language"]
+    if not isinstance(by_language, dict) or set(by_language) != set(
+        suite_gate.LANGUAGES
+    ):
+        raise RowContractError(
+            f"row of kind 'quality' has score_interval by_language {by_language!r}: "
+            f"one cell per language, {sorted(suite_gate.LANGUAGES)!r}"
+        )
+    _validate_interval_cell("suite", block["suite"])
+    for language, cell in by_language.items():
+        _validate_interval_cell(language, cell)
+
+
+def _validate_interval_cell(where: str, cell: Any) -> None:
+    """Refuse a cell that is not three values and no reason, or none and one."""
+    if not isinstance(cell, dict) or cell.keys() != score_interval.CELL_KEYS:
+        raise RowContractError(
+            f"row of kind 'quality' has score_interval {where} cell {cell!r}: an "
+            f"object carrying exactly {', '.join(sorted(score_interval.CELL_KEYS))}"
+        )
+    n = cell["n"]
+    if isinstance(n, bool) or not isinstance(n, int) or n < 0:
+        raise RowContractError(
+            f"row of kind 'quality' has score_interval {where} n={n!r}: a "
+            "non-negative item count"
+        )
+    values = [cell[key] for key in score_interval.CELL_VALUE_KEYS]
+    reason = cell["null_reason"]
+    if reason is not None:
+        if reason not in score_interval.NULL_REASONS or any(
+            value is not None for value in values
+        ):
+            raise RowContractError(
+                f"row of kind 'quality' has score_interval {where} cell {cell!r}: "
+                "a null interval carries no value and one of "
+                f"{', '.join(sorted(score_interval.NULL_REASONS))}"
+            )
+        # Each reason only from the state that names it: an empty cell is
+        # `no_items`, and a cell holding items is never.
+        if (reason == score_interval.NULL_NO_ITEMS) != (n == 0):
+            raise RowContractError(
+                f"row of kind 'quality' has score_interval {where} cell with "
+                f"null_reason {reason!r} at n={n}: no_items names an empty cell "
+                "and only an empty cell"
+            )
+        return
+    if n == 0:
+        raise RowContractError(
+            f"row of kind 'quality' has score_interval {where} cell with an "
+            "interval over n=0: an empty cell publishes no_items"
+        )
+    if any(
+        isinstance(value, bool) or not isinstance(value, int | float)
+        for value in values
+    ):
+        raise RowContractError(
+            f"row of kind 'quality' has score_interval {where} cell {cell!r}: an "
+            "interval carries its lower, upper and minimum detectable effect, "
+            "or none of them and a null_reason"
         )
 
 

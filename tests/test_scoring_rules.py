@@ -1,4 +1,4 @@
-from wave_local_ai_v2 import chrf, scoring_rules, suite_registry
+from wave_local_ai_v2 import chrf, score_interval, scoring_rules, suite_registry
 
 CLASSIFICATION = suite_registry.resolve("classification-support-routing")
 TRANSLATION = suite_registry.resolve("translation-business-short-form")
@@ -69,3 +69,63 @@ def test_chrf_against_reference_publishes_the_graded_shape_only() -> None:
     assert batch["suite_score"] == 1.0
     assert batch["suite_accuracy"] is None
     assert batch["language_breakdown"] is None
+
+
+def test_an_exact_match_batch_carries_its_interval_over_every_item() -> None:
+    items = CLASSIFICATION.items
+    # Every fourth item answered wrongly, every fifth an empty (failed)
+    # generation: both stay in the resampled set as zeros.
+    completions = [
+        _completion(
+            ""
+            if index % 5 == 0
+            else "nonsense"
+            if index % 4 == 0
+            else item["expected_label"]
+        )
+        for index, item in enumerate(items)
+    ]
+    per_item, batch = scoring_rules.exact_label_match(
+        items, completions, max_output_tokens=CLASSIFICATION.max_output_tokens
+    )
+
+    block = batch["score_interval"]
+    values = [1.0 if row["correct"] else 0.0 for row in per_item]
+    assert block == score_interval.interval_block(items, values)
+    assert block["suite"]["n"] == len(items)
+    for language, cell in batch["language_breakdown"].items():
+        assert block["by_language"][language]["n"] == cell["n"]
+    assert batch["failure_counts"]["empty"] > 0
+    score_interval.check_batch_invariants([{"item_id": items[0]["item_id"], **batch}])
+
+
+def test_a_graded_batch_carries_its_interval_over_every_item() -> None:
+    items = TRANSLATION.items
+    completions = [
+        _completion(
+            "" if index == 0 else item["reference"][: len(item["reference"]) // 2]
+        )
+        for index, item in enumerate(items)
+    ]
+    per_item, batch = scoring_rules.chrf_against_reference(
+        items, completions, max_output_tokens=TRANSLATION.max_output_tokens
+    )
+
+    assert per_item[0]["item_score"] == 0.0
+    assert batch["score_interval"] == score_interval.interval_block(
+        items, [row["item_score"] for row in per_item]
+    )
+    score_interval.check_batch_invariants([{"item_id": items[0]["item_id"], **batch}])
+
+
+def test_an_all_correct_batch_names_its_zero_width_interval() -> None:
+    items = CLASSIFICATION.items
+    _, batch = scoring_rules.exact_label_match(
+        items,
+        [_completion(item["expected_label"]) for item in items],
+        max_output_tokens=CLASSIFICATION.max_output_tokens,
+    )
+
+    assert batch["suite_accuracy"] == 1.0
+    assert batch["score_interval"]["suite"]["null_reason"] == "zero_width"
+    assert batch["score_interval"]["suite"]["lower"] is None

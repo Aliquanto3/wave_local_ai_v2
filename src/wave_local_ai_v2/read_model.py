@@ -389,6 +389,11 @@ QUALITY_FIELDS_NOT_RENDERED: frozenset[str] = frozenset(
         # can be read off the rows; rendering it is out of the harness task's
         # scope and belongs to whichever view first compares harnesses.
         *row_contract.HARNESS_FIELDS,
+        # The batch's bootstrap interval and minimum detectable effect, suite
+        # and per language (schema "21"). On the row so every score carries
+        # what it could resolve; whether the pitch renders them is that
+        # epic's call, not this one's.
+        *row_contract.SCORE_INTERVAL_FIELDS,
     }
 )
 

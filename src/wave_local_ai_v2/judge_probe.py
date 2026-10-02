@@ -907,6 +907,9 @@ def _build_row(
         "correct": None,
         "suite_accuracy": None,
         "language_breakdown": None,
+        # No exact-match or graded suite score to qualify: the judged
+        # headline's interval is not this row's to publish.
+        "score_interval": None,
         "sampling": dict(sampling),
         "max_output_tokens": MAX_OUTPUT_TOKENS,
         "stop_sequences": list(STOP_SEQUENCES),

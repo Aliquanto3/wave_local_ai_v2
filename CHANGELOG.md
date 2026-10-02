@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Every quality batch publishes its interval and what it could resolve
+  (row schema "21")** -- `score_interval.py` computes, once per batch and over
+  the same items as the score, a 95% percentile bootstrap interval (10 000
+  resamples) on the suite score, unstratified, and on each language cell,
+  resampled within its language, for the exact-match and graded scorers
+  alike. The `score_interval` block rides every row of the batch and carries
+  the confidence level, resample count, method, seed, generator identity and
+  version, and a versioned draw procedure
+  (`stdlib-getrandbits-percentile/1`: draw order, tie handling and type-7
+  percentile interpolation, defined in the module), so a recorded block
+  replays bit for bit. Each cell publishes its bounds and the minimum
+  detectable effect (the interval's half-width, read off the same resample),
+  or none of them and one named reason: `zero_width` for a cell whose items
+  all scored the same (a suite at 1.0 or 0.0), `no_items` for an empty
+  language cell. A failed generation resamples as its zero. Before a batch is
+  written, three invariants are checked: the estimate lies inside its
+  interval, each interval's n equals the published breakdown's, and every row
+  carries the identical block. Partial batches and judge-probe rows carry
+  `null`, as their scores are. Standard library only at runtime; scipy is a
+  dev-only test oracle. Rows below "21" are not back-filled.
+
 - **Every quality row names its agentic harness, the harness's version and
   its prompt overhead (row schema "20")** -- `harness.py` holds Methodology
   23's candidate set, closed at five (`direct`, `smolagents`, `langgraph`,

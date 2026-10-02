@@ -25,7 +25,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from wave_local_ai_v2 import chrf
+from wave_local_ai_v2 import chrf, score_interval
 from wave_local_ai_v2.scoring import (
     GradedItem,
     ScoredItem,
@@ -70,6 +70,11 @@ def aggregate_exact_label_match(
         "suite_accuracy": suite_score["accuracy"],
         "language_breakdown": score_suite_by_language(items, scored_items),
         "failure_counts": dict(suite_score["failure_counts"]),
+        # Over the same items the score is, a failed generation in the set as
+        # its zero (`correct=False`).
+        "score_interval": score_interval.interval_block(
+            items, [1.0 if scored["correct"] else 0.0 for scored in scored_items]
+        ),
     }
 
 
@@ -92,6 +97,11 @@ def aggregate_chrf_against_reference(
         "suite_score": suite_score["suite_score"],
         "score_breakdown": score_graded_suite_by_language(items, graded_items),
         "failure_counts": dict(suite_score["failure_counts"]),
+        # Over the same items the score is, a failed generation in the set as
+        # its 0.0.
+        "score_interval": score_interval.interval_block(
+            items, [graded["item_score"] for graded in graded_items]
+        ),
     }
 
 
