@@ -362,6 +362,12 @@ QUALITY_FIELDS_NOT_RENDERED: frozenset[str] = frozenset(
         # is a property every row carries; whether the pitch renders it is the
         # pitch epic's call, not this one's.
         "subject_egress",
+        # The retry total the batch's cloud calls drew from, and the failure
+        # that left it partial if any (schema "17"). Bookkeeping about how a
+        # batch was run; a partial row's null score already renders as an
+        # absence.
+        "retry_budget",
+        "partial_failure",
     }
 )
 
@@ -1142,7 +1148,11 @@ def _quality_subject_entry(
     group; the item-only fields it also carries (`QUALITY_SUBJECT_ITEM_ONLY_FIELDS`)
     are dropped, since a card names a subject, not one of its items.
     """
-    sample = rows[0]
+    # A batch completed by `--resume` holds partial rows (no suite-level
+    # score) from the invocation that failed and complete rows from the one
+    # that finished it; the complete row carries the run's score. A row
+    # predating `partial_failure` is complete by construction.
+    sample = next((row for row in rows if row.get("partial_failure") is None), rows[0])
     entry = _quality_entry(
         sample,
         fiche_registry_dir=fiche_registry_dir,

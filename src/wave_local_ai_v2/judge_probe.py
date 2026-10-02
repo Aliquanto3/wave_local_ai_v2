@@ -339,6 +339,11 @@ class JudgeCallError(RuntimeError):
     from. `__cause__` keeps the original error inspectable.
     """
 
+    def __init__(self, message: str, *, provider: str, item_id: str) -> None:
+        super().__init__(message)
+        self.provider = provider
+        self.item_id = item_id
+
 
 class _ProbeCompletion(TypedDict):
     """One subject generation, unified across the local and cloud shapes."""
@@ -364,6 +369,9 @@ class _RunContext:
     roster_version: int
     fiche_hash: str
     gate_result: SuiteGateResult
+    # The retry total each cloud provider's calls drew from this invocation,
+    # by provider: every probe row's subject or judges called both.
+    retry_budget: dict[str, int]
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -375,9 +383,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "Resume a prior invocation's run_id: a batch whose rows for that "
             "run_id are already complete is skipped, never re-paid for; an "
-            "incomplete one is re-run from item 1. Every row this invocation "
-            "writes is marked resumed=true, including a batch a resume "
-            "re-ran from scratch."
+            "incomplete one generates and judges only the items it never "
+            "wrote. Every row this invocation writes is marked resumed=true."
         ),
     )
     return parser.parse_args(argv)
@@ -403,6 +410,8 @@ def main() -> None:
         mistral_client.MistralRequestError,
         google_client.GoogleRequestError,
         retry.RetryBudgetExhausted,
+        # `--resume` over rows written under another configuration.
+        results.ResumeConfigurationError,
     ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -416,10 +425,11 @@ def _run(resume_run_id: str | None = None) -> None:
 
     run_id = resume_run_id or new_run_id()
     is_resume = resume_run_id is not None
-    # Printed before anything can fail. A live-run finding: the probe writes
-    # no row until a whole batch is judged, so a run that dies mid-judging
-    # leaves nothing on disk to read its own id back off -- and `--resume`
-    # needs that id. It costs one stdout line to make the failure recoverable.
+    # Printed before anything can fail. A live-run finding: a run that dies
+    # before its first row is written (a generation failure, a judge failure
+    # on the first item) leaves nothing on disk to read its own id back off --
+    # and `--resume` needs that id. It costs one stdout line to make the
+    # failure recoverable.
     print(f"run_id={run_id}")
     provenance_fields = provenance.capture_provenance()
     loaded_roster = roster.load_roster(settings.roster_path)
@@ -431,6 +441,8 @@ def _run(resume_run_id: str | None = None) -> None:
     # declaration is missing or self-inconsistent, which is worth having on a
     # hand-written set.
     gate_result = suite_gate.gate_suite(JUDGE_PROBE_ITEMS)
+    if is_resume:
+        _refuse_a_resume_under_another_configuration(settings, run_id, roster_entry)
     flags = server.build_flags(
         roster_entry, settings.host_n_cpu_moe, settings.host_threads, model_path
     )
@@ -454,15 +466,36 @@ def _run(resume_run_id: str | None = None) -> None:
         print(deprecation_notice, file=sys.stderr)
     google_model_info = google_client.check_model_available(settings.google_api_key)
 
+    # Which items this invocation calls for: every one on a fresh run, only
+    # the ones this run_id never wrote under `--resume` (none when complete).
+    local_indexes = _indexes_to_run(settings, run_id, PROVIDER_LOCAL, is_resume)
+    cloud_item_due = bool(
+        not is_resume
+        or results.resume_missing_items(
+            settings.judge_probe_reference_path,
+            run_id,
+            judge_backends.PROVIDER_GOOGLE,
+            [CLOUD_SUBJECT_ITEM_ID],
+            task_suite=TASK_SUITE,
+        )
+    )
     # One pacer and one retry budget per provider for the whole run, not per
-    # batch: the local batch's twenty judge calls, the cloud item's own two
-    # subject requests and its one judge call are all spaced against the same
+    # batch: the local batch's judge calls, the cloud item's own two subject
+    # requests and its one judge call are all spaced against the same
     # per-provider clock, which is what the free tier's RPM ceiling actually
-    # measures.
+    # measures. Each budget is derived from the items this invocation judges
+    # -- every one of them draws on both providers -- by the same rule the
+    # quality CLI's batches run under.
+    items_called = len(local_indexes) + int(cloud_item_due)
+    budget_total = retry.derived_retry_budget(
+        items_called,
+        per_item=settings.cloud_retry_retries_per_item,
+        minimum=settings.cloud_retry_min_retries,
+    )
     mistral_pacer = retry.Pacer(settings.mistral_request_pacing_s, sleep=time.sleep)
-    mistral_budget = retry.RetryBudget(settings.cloud_retry_max_attempts)
+    mistral_budget = retry.RetryBudget(budget_total)
     google_pacer = retry.Pacer(settings.google_request_pacing_s, sleep=time.sleep)
-    google_budget = retry.RetryBudget(settings.cloud_retry_max_attempts)
+    google_budget = retry.RetryBudget(budget_total)
 
     mistral_judge = judge.Judge(
         model_id=mistral_client.MODEL,
@@ -502,19 +535,113 @@ def _run(resume_run_id: str | None = None) -> None:
         roster_version=loaded_roster.roster_version,
         fiche_hash=fiche_hash_value,
         gate_result=gate_result,
+        retry_budget={
+            judge_backends.PROVIDER_MISTRAL: mistral_budget.total,
+            judge_backends.PROVIDER_GOOGLE: google_budget.total,
+        },
     )
 
     local_summary = _run_local_batch(
-        context, flags, judges=[mistral_judge, google_judge]
+        context, flags, local_indexes, judges=[mistral_judge, google_judge]
     )
-    _run_cloud_subject_item(
-        context,
-        google_model_info,
-        pacer=google_pacer,
-        budget=google_budget,
-        subject_judge=mistral_judge,
-    )
+    if cloud_item_due:
+        _run_cloud_subject_item(
+            context,
+            google_model_info,
+            pacer=google_pacer,
+            budget=google_budget,
+            subject_judge=mistral_judge,
+        )
+    else:
+        print(
+            f"{judge_backends.PROVIDER_GOOGLE} skipped: run {run_id} already complete",
+            file=sys.stderr,
+        )
     _print_summary(local_summary)
+
+
+def _judge_model_ids(row: dict[str, Any]) -> list[str]:
+    """The judges a row was scored by, as sorted model ids."""
+    return sorted(str(record.get("model_id")) for record in row.get("judges") or [])
+
+
+def _refuse_a_resume_under_another_configuration(
+    settings: Settings, run_id: str, roster_entry: roster.RosterEntry
+) -> None:
+    """Raise `ResumeConfigurationError` unless every row this run already
+    wrote was produced, and judged, the way this invocation would.
+
+    The quality CLI's rule, plus the judges: a resume folds the rows on disk
+    into the batch's agreement and headline, so a row judged by another
+    judge model would make one published agreement span two judge pairs.
+    Checked before anything spawns or is written.
+    """
+    prompt_variant = prompt_variants.resolve(PROMPT_VARIANT_ID)
+    shared = {
+        "suite_version": SUITE_VERSION,
+        "prompt_set_hash": PROMPT_SET_HASH,
+        "prompt_variant_id": prompt_variant.variant_id,
+        "prompt_variant_version": prompt_variant.version,
+        "roster_entry_id": roster_entry.entry_id,
+        "thinking_policy": THINKING_POLICY,
+    }
+    by_provider = {
+        PROVIDER_LOCAL: (
+            roster_entry.display_id,
+            LOCAL_SAMPLING,
+            prompt_provenance.LOCAL_CHAT_ENDPOINT,
+            sorted([mistral_client.MODEL, google_client.MODEL]),
+        ),
+        judge_backends.PROVIDER_GOOGLE: (
+            google_client.MODEL,
+            GOOGLE_SAMPLING,
+            google_client.GENERATE_URL,
+            [mistral_client.MODEL],
+        ),
+    }
+    for provider, (model_id, sampling, endpoint, judge_ids) in by_provider.items():
+        prior_rows = results.batch_rows(
+            settings.judge_probe_reference_path, run_id, provider, task_suite=TASK_SUITE
+        )
+        conflict = results.resume_configuration_conflict(
+            prior_rows,
+            {
+                **shared,
+                "model_id": model_id,
+                "sampling": dict(sampling),
+                "endpoint": endpoint,
+                "judge_model_ids": judge_ids,
+            },
+            derived={"judge_model_ids": _judge_model_ids},
+        )
+        if conflict is not None:
+            raise results.ResumeConfigurationError(
+                f"refusing --resume {run_id}: the {provider} batch's {conflict}; "
+                "a resumed batch's agreement would span two configurations"
+            )
+
+
+def _indexes_to_run(
+    settings: Settings, run_id: str, provider: str, is_resume: bool
+) -> list[int]:
+    """The positions in `JUDGE_PROBE_ITEMS` this invocation generates and judges.
+
+    The quality CLI's rule: every item on a fresh run, and under `--resume`
+    exactly the items this `(run_id, provider, task_suite)` batch never wrote.
+    """
+    if not is_resume:
+        return list(range(len(JUDGE_PROBE_ITEMS)))
+    item_ids = [item["item_id"] for item in JUDGE_PROBE_ITEMS]
+    missing = set(
+        results.resume_missing_items(
+            settings.judge_probe_reference_path,
+            run_id,
+            provider,
+            item_ids,
+            task_suite=TASK_SUITE,
+        )
+    )
+    return [index for index, item_id in enumerate(item_ids) if item_id in missing]
 
 
 def _preflight_judges(settings: Settings) -> None:
@@ -652,9 +779,11 @@ def _judge_item_naming_failures(item_id: str, **kwargs: Any) -> dict[str, Any]:
         google_client.GoogleRequestError,
         retry.RetryBudgetExhausted,
     ) as exc:
+        provider = _judge_failure_provider(exc)
         raise JudgeCallError(
-            f"judge call failed on item {item_id!r} at provider "
-            f"{_judge_failure_provider(exc)}: {exc}"
+            f"judge call failed on item {item_id!r} at provider {provider}: {exc}",
+            provider=provider,
+            item_id=item_id,
         ) from exc
 
 
@@ -716,6 +845,8 @@ def _build_row(
     # the cloud path sends the variant's output and declares its wrapper, so
     # it passes nothing.
     prompt: str | None = None,
+    # The failure that left the batch partial; `None` on a complete batch.
+    partial_failure: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """One probe row: the quality contract's key set, the judge block, the output.
 
@@ -779,6 +910,10 @@ def _build_row(
         # on that judge's record inside the block below.
         "retries": retries,
         "resumed": context.resumed,
+        "retry_budget": dict(context.retry_budget),
+        "partial_failure": (
+            dict(partial_failure) if partial_failure is not None else None
+        ),
         "verdict": {
             "verdict": verdict.VERDICT_NOT_COMPARABLE,
             "reference_run_id": None,
@@ -793,30 +928,37 @@ def _build_row(
 def _run_local_batch(
     context: _RunContext,
     flags: list[str],
+    indexes: list[int],
     *,
     judges: list[judge.Judge],
 ) -> tuple[agreement.Agreement, int] | None:
-    """Generate, judge and write the ten local rows. `None` when resume skips it."""
+    """Generate, judge and write the local rows of `indexes`.
+
+    `None` when there is nothing to run (a resume of a complete batch).
+
+    A judge call that fails on an item stops the judging there: the items
+    already judged are written as a partial batch naming the provider and
+    the item, then the failure is re-raised, so the probe still exits 1. A
+    `--resume` of that run generates and judges only the items never
+    written, so no judge call whose result is on a row is issued again; the
+    unwritten items' local generations are simply redone, which costs
+    nothing. Once every item is on disk, the batch figures (agreement,
+    headline, failure counts) are computed over the prior rows and the new
+    ones together, so a resumed batch publishes what an uninterrupted one
+    over the same responses would.
+    """
     settings = context.settings
-    skip_reason = (
-        results.resume_skip_reason(
-            settings.judge_probe_reference_path,
-            context.run_id,
-            PROVIDER_LOCAL,
-            len(JUDGE_PROBE_ITEMS),
-            task_suite=TASK_SUITE,
+    if not indexes:
+        print(
+            f"{PROVIDER_LOCAL} skipped: run {context.run_id} already complete",
+            file=sys.stderr,
         )
-        if context.resumed
-        else None
-    )
-    if skip_reason is not None:
-        print(f"local skipped: {skip_reason}", file=sys.stderr)
         return None
 
+    items = [JUDGE_PROBE_ITEMS[index] for index in indexes]
     prompt_variant = prompt_variants.resolve(PROMPT_VARIANT_ID)
     variant_prompts = [
-        prompt_variants.apply_variant(prompt_variant, item["prompt"])
-        for item in JUDGE_PROBE_ITEMS
+        prompt_variants.apply_variant(prompt_variant, item["prompt"]) for item in items
     ]
     local_batch, energy = measure_energy(
         lambda: _generate_local_outputs(
@@ -833,51 +975,112 @@ def _run_local_batch(
         context.roster_entry.display_id, context.roster_entry
     )
     threshold = agreement.ContestedThreshold(settings.contested_ordinal_max_delta)
-    blocks = [
-        _judge_item_naming_failures(
-            item["item_id"],
-            subject_family=subject_family,
-            subject_provider=PROVIDER_LOCAL,
-            subject_output=completion["content"],
-            item_prompt=item["prompt"],
-            item_language=item["language"],
-            rubric=RUBRIC,
-            judges=judges,
-            threshold=threshold,
-            single_judge_reason=None,
-        )
-        for item, completion in zip(JUDGE_PROBE_ITEMS, completions, strict=True)
-    ]
-
-    # The suite-level figures replace the per-item ones `judge_item` returns.
-    # Kappa over one item is null by construction -- `agreement.cohens_kappa`
-    # answers `insufficient_items` there, and says why in its own docstring --
-    # so the batch figure is the only real one this run can publish. Repeating
-    # it on every row of the batch is the pattern `suite_accuracy`,
-    # `failure_counts` and `language_breakdown` already follow. Nothing is
-    # lost: each row keeps its own two judge scores under `judges` and its own
-    # `contested` marking, so any other statistic is recomputable from the
-    # published rows alone.
-    pairs = [
-        (
-            _judge_score(block, judge_backends.PROVIDER_MISTRAL),
-            _judge_score(block, judge_backends.PROVIDER_GOOGLE),
-        )
-        for block in blocks
-    ]
-    batch_agreement = agreement.agreement_for_rubric(RUBRIC, pairs)
-    contested_flags = [bool(block["contested"]) for block in blocks]
-    headline = agreement.headline_score([list(pair) for pair in pairs], contested_flags)
-    for block in blocks:
-        block["agreement"] = batch_agreement
-        block["judged_headline_score"] = headline["score"]
-        block["judged_headline_excluded_n"] = headline["n_excluded"]
+    blocks: list[dict[str, Any]] = []
+    failure: JudgeCallError | None = None
+    for item, completion in zip(items, completions, strict=True):
+        try:
+            blocks.append(
+                _judge_item_naming_failures(
+                    item["item_id"],
+                    subject_family=subject_family,
+                    subject_provider=PROVIDER_LOCAL,
+                    subject_output=completion["content"],
+                    item_prompt=item["prompt"],
+                    item_language=item["language"],
+                    rubric=RUBRIC,
+                    judges=judges,
+                    threshold=threshold,
+                    single_judge_reason=None,
+                )
+            )
+        except JudgeCallError as exc:
+            failure = exc
+            break
+    judged = len(blocks)
 
     failure_reasons = [
         _subject_failure_reason(completion["content"], completion["truncated"])
-        for completion in completions
+        for completion in completions[:judged]
     ]
-    failure_counts = _failure_counts(failure_reasons)
+    prior_rows = (
+        results.batch_rows(
+            settings.judge_probe_reference_path,
+            context.run_id,
+            PROVIDER_LOCAL,
+            task_suite=TASK_SUITE,
+        )
+        if context.resumed
+        else []
+    )
+    # Every item the batch has now written, in suite order: its two judge
+    # scores, its contested marking and its failure reason, read off the
+    # prior rows or off this invocation's judging.
+    outcome_by_item: dict[str, tuple[tuple[Any, Any], bool, str | None]] = {
+        row["item_id"]: (
+            (
+                _judge_score(row, judge_backends.PROVIDER_MISTRAL),
+                _judge_score(row, judge_backends.PROVIDER_GOOGLE),
+            ),
+            bool(row["contested"]),
+            row["failure_reason"],
+        )
+        for row in prior_rows
+    }
+    for item, block, reason in zip(items, blocks, failure_reasons, strict=False):
+        outcome_by_item[item["item_id"]] = (
+            (
+                _judge_score(block, judge_backends.PROVIDER_MISTRAL),
+                _judge_score(block, judge_backends.PROVIDER_GOOGLE),
+            ),
+            bool(block["contested"]),
+            reason,
+        )
+    outcomes = [
+        outcome_by_item[item["item_id"]]
+        for item in JUDGE_PROBE_ITEMS
+        if item["item_id"] in outcome_by_item
+    ]
+    failure_counts = _failure_counts([reason for _, _, reason in outcomes])
+
+    partial_failure: dict[str, str] | None = None
+    summary: tuple[agreement.Agreement, int] | None = None
+    if failure is not None:
+        partial_failure = {
+            "provider": failure.provider,
+            "item_id": failure.item_id,
+            "reason": str(failure),
+        }
+        # A partial batch publishes no headline: each row keeps the per-item
+        # figures `judge_item` returned, and no suite-level score is computed
+        # over the items that happened to be judged before the failure.
+        for block in blocks:
+            block["judged_headline_score"] = None
+            block["judged_headline_excluded_n"] = None
+    else:
+        # The suite-level figures replace the per-item ones `judge_item`
+        # returns. Kappa over one item is null by construction --
+        # `agreement.cohens_kappa` answers `insufficient_items` there, and
+        # says why in its own docstring -- so the batch figure is the only
+        # real one this run can publish. Repeating it on every row of the
+        # batch is the pattern `suite_accuracy`, `failure_counts` and
+        # `language_breakdown` already follow. Nothing is lost: each row keeps
+        # its own two judge scores under `judges` and its own `contested`
+        # marking, so any other statistic is recomputable from the published
+        # rows alone.
+        pairs = [pair for pair, _, _ in outcomes]
+        contested_flags = [contested for _, contested, _ in outcomes]
+        batch_agreement = agreement.agreement_for_rubric(RUBRIC, pairs)
+        headline = agreement.headline_score(
+            [list(pair) for pair in pairs], contested_flags
+        )
+        for block in blocks:
+            block["agreement"] = batch_agreement
+            block["judged_headline_score"] = headline["score"]
+            block["judged_headline_excluded_n"] = headline["n_excluded"]
+        summary = (batch_agreement, sum(contested_flags))
+
+    # What this invocation's local generation spent, every generated item
+    # included: an item generated but never judged is regenerated on resume.
     batch_fields = quality_rows.local_batch_fields(settings, energy, completions)
     model_id = context.roster_entry.display_id
 
@@ -889,13 +1092,13 @@ def _run_local_batch(
         variant_prompt,
         rendered_prompt,
     ) in zip(
-        JUDGE_PROBE_ITEMS,
+        items,
         completions,
         blocks,
         failure_reasons,
         variant_prompts,
         rendered_prompts,
-        strict=True,
+        strict=False,
     ):
         row = _build_row(
             context,
@@ -913,15 +1116,25 @@ def _run_local_batch(
             failure_reason=failure_reason,
             failure_counts=failure_counts,
             retries=completion["retries"],
+            partial_failure=partial_failure,
         )
         append_row(settings.judge_probe_reference_path, "quality", row)
 
     judge_calls = sum(len(block["judges"]) for block in blocks)
     print(
         f"model={model_id} provider={PROVIDER_LOCAL} "
-        f"items={len(JUDGE_PROBE_ITEMS)} judge_calls={judge_calls}"
+        f"items={judged} judge_calls={judge_calls}"
     )
-    return batch_agreement, sum(contested_flags)
+    if failure is not None:
+        print(
+            f"{PROVIDER_LOCAL} partial: run {context.run_id} stopped at item "
+            f"{failure.item_id!r} (judge provider {failure.provider}) after "
+            f"{judged} item(s) this invocation; resume with --resume "
+            f"{context.run_id}",
+            file=sys.stderr,
+        )
+        raise failure
+    return summary
 
 
 def _run_cloud_subject_item(
@@ -939,21 +1152,6 @@ def _run_cloud_subject_item(
     the behaviour being proven, not a code path to route around.
     """
     settings = context.settings
-    skip_reason = (
-        results.resume_skip_reason(
-            settings.judge_probe_reference_path,
-            context.run_id,
-            judge_backends.PROVIDER_GOOGLE,
-            1,
-            task_suite=TASK_SUITE,
-        )
-        if context.resumed
-        else None
-    )
-    if skip_reason is not None:
-        print(f"google skipped: {skip_reason}", file=sys.stderr)
-        return
-
     item = _item_by_id(CLOUD_SUBJECT_ITEM_ID)
     api_key = settings.google_api_key
     prompt_variant = prompt_variants.resolve(PROMPT_VARIANT_ID)

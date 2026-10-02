@@ -27,6 +27,8 @@ from typing import Any
 
 from wave_local_ai_v2 import chrf
 from wave_local_ai_v2.scoring import (
+    GradedItem,
+    ScoredItem,
     score_graded_suite,
     score_graded_suite_by_language,
     score_item,
@@ -37,6 +39,60 @@ from wave_local_ai_v2.scoring import (
 
 ScoringRule = Callable[..., tuple[list[dict[str, Any]], dict[str, Any]]]
 """`(items, completions, *, max_output_tokens) -> (per_item_fields, batch_fields)`."""
+
+BatchAggregate = Callable[[Sequence[Any], Sequence[Mapping[str, Any]]], dict[str, Any]]
+"""`(items, per_item_fields) -> batch_fields`: a rule's suite-level fields,
+computed from its per-item fields alone.
+
+Split out so a batch completed by `--resume` -- whose earlier items exist only
+as rows, never as completions -- reaches its suite-level score through the
+same function an uninterrupted batch does. Every input it reads is a field
+the rows carry.
+"""
+
+
+def aggregate_exact_label_match(
+    items: Sequence[Any], per_item: Sequence[Mapping[str, Any]]
+) -> dict[str, Any]:
+    """The exact-match batch fields over `items`, paired by position with `per_item`."""
+    scored_items = [
+        ScoredItem(
+            item_id=item["item_id"],
+            expected_label=fields["expected_label"],
+            predicted_label=fields["predicted_label"],
+            correct=fields["correct"],
+            failure_reason=fields["failure_reason"],
+        )
+        for item, fields in zip(items, per_item, strict=True)
+    ]
+    suite_score = score_suite(scored_items)
+    return {
+        "suite_accuracy": suite_score["accuracy"],
+        "language_breakdown": score_suite_by_language(items, scored_items),
+        "failure_counts": dict(suite_score["failure_counts"]),
+    }
+
+
+def aggregate_chrf_against_reference(
+    items: Sequence[Any], per_item: Sequence[Mapping[str, Any]]
+) -> dict[str, Any]:
+    """The graded batch fields over `items`, paired by position with `per_item`."""
+    graded_items = [
+        GradedItem(
+            item_id=item["item_id"],
+            item_score=fields["item_score"],
+            failure_reason=fields["failure_reason"],
+        )
+        for item, fields in zip(items, per_item, strict=True)
+    ]
+    suite_score = score_graded_suite(graded_items)
+    return {
+        "suite_accuracy": None,
+        "language_breakdown": None,
+        "suite_score": suite_score["suite_score"],
+        "score_breakdown": score_graded_suite_by_language(items, graded_items),
+        "failure_counts": dict(suite_score["failure_counts"]),
+    }
 
 
 def exact_label_match(
@@ -57,7 +113,6 @@ def exact_label_match(
         )
         for item, completion in zip(items, completions, strict=True)
     ]
-    suite_score = score_suite(scored_items)
     per_item = [
         {
             "expected_label": scored["expected_label"],
@@ -67,12 +122,7 @@ def exact_label_match(
         }
         for scored in scored_items
     ]
-    batch = {
-        "suite_accuracy": suite_score["accuracy"],
-        "language_breakdown": score_suite_by_language(items, scored_items),
-        "failure_counts": dict(suite_score["failure_counts"]),
-    }
-    return per_item, batch
+    return per_item, aggregate_exact_label_match(items, per_item)
 
 
 def chrf_against_reference(
@@ -101,7 +151,6 @@ def chrf_against_reference(
         )
         for item, completion in zip(items, completions, strict=True)
     ]
-    suite_score = score_graded_suite(graded_items)
     per_item = [
         {
             "expected_label": None,
@@ -121,17 +170,17 @@ def chrf_against_reference(
             items, completions, graded_items, strict=True
         )
     ]
-    batch = {
-        "suite_accuracy": None,
-        "language_breakdown": None,
-        "suite_score": suite_score["suite_score"],
-        "score_breakdown": score_graded_suite_by_language(items, graded_items),
-        "failure_counts": dict(suite_score["failure_counts"]),
-    }
-    return per_item, batch
+    return per_item, aggregate_chrf_against_reference(items, per_item)
 
 
 SCORING_RULES: dict[str, ScoringRule] = {
     "exact_label_match": exact_label_match,
     "chrf_against_reference": chrf_against_reference,
+}
+
+# One aggregate per rule, keyed by the same name: the registry refuses a rule
+# that has none, so every registered suite can complete a batch by resume.
+BATCH_AGGREGATES: dict[str, BatchAggregate] = {
+    "exact_label_match": aggregate_exact_label_match,
+    "chrf_against_reference": aggregate_chrf_against_reference,
 }

@@ -230,7 +230,7 @@ def select_quality_references(
     """Reference rows sharing the candidate's suite, model, suite version and seed.
 
     `task_suite` is part of the key for the same reason it is part of
-    `results.resume_skip_reason`'s: one store -- and so one reference file --
+    `results.batch_rows`'s: one store -- and so one reference file --
     now holds rows from more than one suite, and two suites version
     themselves independently, so `model_id` + `suite_version` + seed is not
     on its own evidence that two rows describe the same batch. Without it, a

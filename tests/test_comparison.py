@@ -449,6 +449,33 @@ def test_a_confound_outside_the_dimension_makes_an_observation() -> None:
     assert member["verdict"] == comparison.VERDICT_NOT_COMPARABLE
 
 
+_PARTIAL = {"provider": "local", "item_id": "item-19", "reason": "boom"}
+
+
+def test_a_side_whose_batch_stayed_partial_is_an_observation_naming_it() -> None:
+    # A failure-truncated batch is the prefix answered before the failure,
+    # not a random subset: its p is kept but never read as a test.
+    ref, cand = _pairs_outcomes(14, 1, 4, 1)
+    member = _compare(
+        _binary_rows("run-ref", "model-a", ref),
+        _binary_rows("run-cand", "model-b", cand, partial_failure=dict(_PARTIAL)),
+    )
+    assert member["comparison_kind"] == comparison.KIND_OBSERVATION
+    assert "candidate side's batch is partial" in member["observation_reason"]
+    assert "partial_failure" in member["observation_reason"]
+    assert member["result"]["p_value"] is not None
+    assert member["verdict"] == comparison.VERDICT_NOT_COMPARABLE
+
+
+def test_a_batch_completed_by_resume_is_still_a_clean_test() -> None:
+    ref, cand = _pairs_outcomes(14, 1, 4, 1)
+    candidate = _binary_rows("run-cand", "model-b", cand)
+    for row in candidate[:5]:
+        row["partial_failure"] = dict(_PARTIAL)
+    member = _compare(_binary_rows("run-ref", "model-a", ref), candidate)
+    assert member["comparison_kind"] == comparison.KIND_TEST
+
+
 def test_a_local_and_a_cloud_subject_differ_on_egress_without_a_confound() -> None:
     # `subject_egress` is a function of `provider`: it moves with the model
     # axis, so a local-versus-cloud comparison stays a clean test.

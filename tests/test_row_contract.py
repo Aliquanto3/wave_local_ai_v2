@@ -215,6 +215,8 @@ COMPLETE_QUALITY_ROW = {
     },
     "retries": 0,
     "resumed": False,
+    "retry_budget": {},
+    "partial_failure": None,
 }
 
 
@@ -1051,14 +1053,14 @@ def test_the_schema_version_moved_once_for_the_thinking_policy() -> None:
     # `thinking_policy` is required on every quality row, because a score
     # produced with the subject allowed to reason and one produced without it
     # are not the same measurement and a row has to say which it is.
-    assert SCHEMA_VERSION == "16"
+    assert SCHEMA_VERSION == "17"
 
 
 def test_the_schema_version_moved_for_the_runtime_energy_window() -> None:
     # "12" fixes audit finding C3: the runtime row's energy figures used to
     # span the whole counted-repetition window, cooldowns included. Required
     # only on runtime rows -- quality rows carry no energy window at all.
-    assert SCHEMA_VERSION == "16"
+    assert SCHEMA_VERSION == "17"
     assert {"active_window_s", "idle_window_s", "energy_window_method"} <= (
         REQUIRED_FIELDS["runtime"]
     )
@@ -1071,7 +1073,7 @@ def test_the_schema_version_moved_for_the_judge_call_record_extension() -> None:
     # "13" adds five fields inside each judge call record. Additive inside the
     # conditional judge block: neither row kind's required set moves, so a
     # deterministic quality row validates unchanged.
-    assert SCHEMA_VERSION == "16"
+    assert SCHEMA_VERSION == "17"
     assert set(NEW_JUDGE_RECORD_FIELDS).isdisjoint(REQUIRED_FIELDS["quality"])
     assert set(NEW_JUDGE_RECORD_FIELDS).isdisjoint(JUDGED_FIELDS)
     validate_row("quality", COMPLETE_QUALITY_ROW)
@@ -1081,7 +1083,7 @@ def test_the_schema_version_moved_for_the_prompt_variant() -> None:
     # "14" makes both row kinds name the variant they ran under and carry the
     # prompt as the variant left it. Not conditional: every row ran under some
     # variant, and a row below "14" is never back-filled with `baseline`.
-    assert SCHEMA_VERSION == "16"
+    assert SCHEMA_VERSION == "17"
     for kind in ("runtime", "quality"):
         assert set(PROMPT_VARIANT_FIELDS) <= REQUIRED_FIELDS[kind]
 
@@ -1091,7 +1093,7 @@ def test_the_schema_version_moved_for_the_suite_level() -> None:
     # and its item's licence, source and source revision. Not conditional:
     # every suite is certified at some level. Quality rows only -- a runtime
     # row runs no suite.
-    assert SCHEMA_VERSION == "16"
+    assert SCHEMA_VERSION == "17"
     assert set(SUITE_LEVEL_FIELDS) <= REQUIRED_FIELDS["quality"]
     assert set(SUITE_LEVEL_FIELDS).isdisjoint(REQUIRED_FIELDS["runtime"])
 
@@ -1268,7 +1270,7 @@ def test_a_registered_non_baseline_variant_is_not_held_to_the_authored_text(
 def test_the_schema_version_moved_for_the_subject_egress() -> None:
     # "16" makes every row of either kind state where its subject prompt went.
     # Not conditional: every row was produced by sending a prompt somewhere.
-    assert SCHEMA_VERSION == "16"
+    assert SCHEMA_VERSION == "17"
     for kind in ("runtime", "quality"):
         assert "subject_egress" in REQUIRED_FIELDS[kind]
     # The subject field is not a member of the judge block, and the judge
@@ -1342,7 +1344,12 @@ def test_a_local_quality_row_recording_none_validates() -> None:
 def test_a_cloud_quality_row_recording_its_provider_validates(provider: str) -> None:
     validate_row(
         "quality",
-        {**COMPLETE_QUALITY_ROW, "provider": provider, "subject_egress": provider},
+        {
+            **COMPLETE_QUALITY_ROW,
+            "provider": provider,
+            "subject_egress": provider,
+            "retry_budget": {provider: 4},
+        },
     )
 
 
@@ -1393,3 +1400,138 @@ def test_a_judged_row_keeps_its_judge_egress_beside_the_subject_egress() -> None
     assert set(row["judge_egress"]) == JUDGE_EGRESS_FIELDS
 
     validate_row("quality", row)
+
+
+def test_the_schema_version_moved_for_the_retry_budget_and_partial_batches() -> None:
+    # "17" makes every quality row name the retry budget its batch ran under
+    # and whether that batch was left partial. The runtime row makes no cloud
+    # call and has no resume, so it is untouched.
+    assert SCHEMA_VERSION == "17"
+    for field in ("retry_budget", "partial_failure"):
+        assert field in REQUIRED_FIELDS["quality"]
+        assert field not in REQUIRED_FIELDS["runtime"]
+
+
+@pytest.mark.parametrize("field", ["retry_budget", "partial_failure"])
+def test_a_quality_row_without_a_schema_17_field_is_refused_by_name(field: str) -> None:
+    row = {key: value for key, value in COMPLETE_QUALITY_ROW.items() if key != field}
+
+    with pytest.raises(RowContractError, match=field):
+        validate_row("quality", row)
+
+
+@pytest.mark.parametrize(
+    "budget",
+    [None, [], {"mistral": -1}, {"mistral": True}, {"mistral": 1.5}, {"": 3}],
+)
+def test_a_malformed_retry_budget_is_refused(budget: object) -> None:
+    row = {**COMPLETE_QUALITY_ROW, "retry_budget": budget}
+
+    with pytest.raises(RowContractError, match="retry_budget"):
+        validate_row("quality", row)
+
+
+def test_a_cloud_row_that_does_not_name_its_own_providers_budget_is_refused() -> None:
+    row = {
+        **COMPLETE_QUALITY_ROW,
+        "provider": "mistral",
+        "subject_egress": "mistral",
+        "retry_budget": {"google": 4},
+    }
+
+    with pytest.raises(RowContractError, match="no retry_budget entry for it"):
+        validate_row("quality", row)
+
+
+def test_a_row_whose_retries_exceed_its_providers_budget_is_refused() -> None:
+    row = {
+        **COMPLETE_QUALITY_ROW,
+        "provider": "google",
+        "subject_egress": "google",
+        "retry_budget": {"google": 2},
+        "retries": 3,
+    }
+
+    with pytest.raises(RowContractError, match="above its provider's retry_budget"):
+        validate_row("quality", row)
+
+
+_PARTIAL = {"provider": "mistral", "item_id": "billing-02", "reason": "429"}
+
+
+def test_a_partial_row_naming_its_failure_and_carrying_no_score_validates() -> None:
+    validate_row(
+        "quality",
+        {
+            **COMPLETE_QUALITY_ROW,
+            "partial_failure": dict(_PARTIAL),
+            "suite_accuracy": None,
+            "language_breakdown": None,
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "429",
+        {"provider": "mistral", "item_id": "billing-02"},
+        {"provider": "", "item_id": "billing-02", "reason": "429"},
+        {"provider": "mistral", "item_id": None, "reason": "429"},
+    ],
+)
+def test_a_malformed_partial_failure_is_refused(failure: object) -> None:
+    row = {
+        **COMPLETE_QUALITY_ROW,
+        "partial_failure": failure,
+        "suite_accuracy": None,
+        "language_breakdown": None,
+    }
+
+    with pytest.raises(RowContractError, match="partial_failure"):
+        validate_row("quality", row)
+
+
+def test_a_partial_row_publishing_a_suite_score_is_refused_by_name() -> None:
+    # A mean over the items that finished before the failure is a biased
+    # sample, not a partial score.
+    row = {
+        **COMPLETE_QUALITY_ROW,
+        "partial_failure": dict(_PARTIAL),
+        "language_breakdown": None,
+    }
+
+    with pytest.raises(RowContractError, match="suite_accuracy"):
+        validate_row("quality", row)
+
+
+def test_a_partial_graded_row_validates_with_its_suite_score_null() -> None:
+    validate_row(
+        "quality",
+        {
+            **COMPLETE_GRADED_QUALITY_ROW,
+            "partial_failure": dict(_PARTIAL),
+            "suite_score": None,
+            "score_breakdown": None,
+        },
+    )
+
+
+def test_a_complete_graded_row_with_a_null_suite_score_is_still_refused() -> None:
+    row = {**COMPLETE_GRADED_QUALITY_ROW, "suite_score": None}
+
+    with pytest.raises(RowContractError, match="suite_score"):
+        validate_row("quality", row)
+
+
+def test_a_partial_judged_row_publishing_a_headline_is_refused_by_name() -> None:
+    row = {
+        **COMPLETE_JUDGED_QUALITY_ROW,
+        "partial_failure": dict(_PARTIAL),
+        "suite_accuracy": None,
+        "language_breakdown": None,
+        "judged_headline_score": 4.0,
+    }
+
+    with pytest.raises(RowContractError, match="judged_headline_score"):
+        validate_row("quality", row)

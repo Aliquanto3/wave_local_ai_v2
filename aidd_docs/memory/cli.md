@@ -58,27 +58,49 @@ The command-line interface for running benchmarks.
     translation quality absolutely.
   - Each cloud provider's requests are paced (`MISTRAL_REQUEST_PACING_S`,
     default `1.1`; `GOOGLE_REQUEST_PACING_S`, default `4.1`, seconds between
-    requests) and retried with backoff on a 429/5xx up to
-    `CLOUD_RETRY_MAX_ATTEMPTS` (default `4`, shared across the whole batch,
-    not per item, and counted as retries beyond the first attempt) before
-    that provider is skipped — the same skip-not-abort contract as a missing
-    key or a pre-flight failure. Every row records how many retries it took
-    (`retries`).
+    requests) and retried with backoff on a 429/5xx under a batch retry
+    budget derived from the number of items the invocation calls for:
+    `max(CLOUD_RETRY_MIN_RETRIES, ceil(items * CLOUD_RETRY_RETRIES_PER_ITEM))`
+    (defaults `4` and `0.2`: 4 for a 20-item batch, 20 for 100, 60 for 300;
+    shared across the whole batch, counted as retries beyond the first
+    attempt). A refusal (a model absent from the catalog, a 400) is never
+    retried whatever the budget. Every row records how many retries it took
+    (`retries`) and the budget each cloud provider's calls drew from
+    (`retry_budget`, `{}` on a local row).
+  - A cloud failure before the first item (pre-flight, missing key) skips
+    the provider and writes nothing. A failure **mid-batch** (provider
+    error, transport error, exhausted budget) stops the batch at that item:
+    the items already answered are written, each marked `partial_failure`
+    (`provider`, `item_id`, `reason`) with its suite-level score `null`, and
+    stderr says `"<provider> partial: run <run_id> failed on item '<id>'
+    ..."`; no headline is printed. A failure on the first item writes
+    nothing (`"<provider> skipped: failed on item '<id>': ..."`). The run
+    still exits 0. A local failure still aborts the run.
   - `--resume <run_id>` re-runs a prior invocation under its own id instead
-    of minting a fresh one: a provider whose rows for that `run_id` **and
-    this suite** are already all on disk is skipped (`"<provider> skipped:
-    run <run_id> already complete"`), never re-paid for; one with no rows at
-    all (including `local`) is re-run from item 1. A provider holding *some*
-    of the suite's items is skipped too (`"... is partially written (N/M
-    items); re-running would duplicate them"`): resume works per
-    `(run_id, provider, task_suite)` batch, so re-running it would write a
-    second row for every item already on disk. The `task_suite` element is
-    load-bearing now that one store holds two suites — a classification
+    of minting a fresh one and works **per item**: for each provider it
+    issues calls only for the suite items that `(run_id, provider,
+    task_suite)` never wrote (`results.resume_missing_items`) and appends
+    their rows; a provider with every item on disk is skipped (`"<provider>
+    skipped: run <run_id> already complete"`), never re-paid for. Rows
+    already on disk are never rewritten. A resume whose earlier rows were
+    written under another configuration (`model_id`, `suite_version`,
+    `prompt_set_hash`, `prompt_variant_id`/`_version`, `sampling`,
+    `roster_entry_id`, `endpoint`, `thinking_policy`; on the probe also the
+    judge model ids) is refused before anything runs, naming the field, and
+    exits 1 writing nothing. A batch the resume completes
+    publishes its suite-level score over every item (prior rows plus new),
+    through the same per-rule aggregate an uninterrupted batch uses; one
+    that fails again stays partial and names the new failing item. Cost and
+    token totals on a resumed segment's rows cover that invocation's calls
+    only: sum the segments for the batch's cost. The `task_suite` element
+    is load-bearing now that one store holds two suites — a classification
     `run_id` is not evidence about a translation batch that never ran. Every
-    row a `--resume` invocation writes is marked `resumed: true`, even a
-    provider it re-ran from scratch, and even when the given `run_id` was
-    never used before (behaves like a fresh run, honestly marked resumed
-    anyway).
+    row a `--resume` invocation writes is marked `resumed: true`, even when
+    the given `run_id` was never used before (behaves like a fresh run,
+    honestly marked resumed anyway). `wave-local-ai-v2-judge-probe
+    --resume` follows the same rule: a judge failure writes the items
+    already judged as partial (exit 1), and the resume generates and judges
+    only the missing items, so no recorded judge call is issued again.
 - `uv run python -m wave_local_ai_v2.suite_snapshot` — exports **every
   registered** suite's identity (id, version, prompt-set hash), caps, thinking policy and
   every item to

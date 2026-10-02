@@ -1131,6 +1131,38 @@ def test_overview_quality_view_over_the_reference_bundle_names_every_suites_lead
             assert comparator["provider"] != read_model.PROVIDER_LOCAL
 
 
+def test_a_cloud_batch_completed_by_resume_shows_its_completing_score(
+    bundle: dict[str, Path],
+) -> None:
+    # A resumed batch holds the failed invocation's partial rows (no score)
+    # before the completing rows that carry the whole batch's score: the
+    # card renders the batch's score, not the partial segment's absence.
+    partial = make_row(
+        "quality",
+        task_suite="suite-a",
+        provider="mistral",
+        run_id="run-r",
+        item_id="item-1",
+        suite_accuracy=None,
+        language_breakdown=None,
+        partial_failure={"provider": "mistral", "item_id": "item-2", "reason": "429"},
+    )
+    completing = make_row(
+        "quality",
+        task_suite="suite-a",
+        provider="mistral",
+        run_id="run-r",
+        item_id="item-2",
+        suite_accuracy=0.5,
+    )
+
+    view = build_overview_quality(bundle, [partial, completing])
+
+    (use_case,) = view["use_cases"]
+    (comparator,) = use_case["cloud_comparators"]
+    assert comparator["suite_accuracy"] == 0.5
+
+
 def test_overview_quality_view_groups_by_task_suite_leader_and_cloud_provider(
     bundle: dict[str, Path],
 ) -> None:

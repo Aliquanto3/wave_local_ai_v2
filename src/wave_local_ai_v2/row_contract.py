@@ -117,7 +117,20 @@ from wave_local_ai_v2 import (
 # never in contradiction with `provider`. It describes the subject call alone: the judge block's
 # `judge_egress` stays as it is and is not merged into it. A row below "16"
 # is read under its own version and never back-filled with `none`.
-SCHEMA_VERSION = "16"
+# "17": `retry_budget` and `partial_failure` became required on quality rows
+# only (Story: a publication-size cloud batch survives its rate limits and
+# resumes per item). `retry_budget` maps each cloud provider the row's batch
+# called (subject and judges) to the retry total those calls drew from,
+# derived from the batch's item count rather than one fixed total, and is
+# `{}` for a batch that made no cloud call. `partial_failure` is `null` on a
+# row whose batch was complete when the row was written, else the provider,
+# item and reason of the call that stopped it: a cloud failure mid-batch now
+# persists the items already answered instead of discarding them, and
+# `--resume` completes the batch per item. A partial row publishes no
+# suite-level score. The runtime row is untouched: it makes no cloud call
+# and has no resume. A row below "17" is read under its own version and never
+# back-filled.
+SCHEMA_VERSION = "17"
 
 # The value `subject_egress` takes when the subject prompt never left the
 # machine, and the `provider` a quality row names for a subject served by the
@@ -359,9 +372,29 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             # rate-limited run persists, resumes and never re-pays)
             "retries",
             "resumed",
+            # The retry total each cloud provider's calls drew from, and the
+            # failure that left the batch partial, if any (schema "17").
+            "retry_budget",
+            "partial_failure",
         }
     ),
 }
+
+# The keys a non-null `partial_failure` carries: who failed, on which item,
+# and what it said.
+PARTIAL_FAILURE_FIELDS: frozenset[str] = frozenset({"provider", "item_id", "reason"})
+
+# The suite-level score fields a partial row holds `null`: a mean over the
+# items that happened to finish before a failure is a biased sample, not a
+# partial score. `failure_counts` is not among them -- it is a tally of the
+# items written, a count rather than a rate.
+PARTIAL_NULL_SCORE_FIELDS: tuple[str, ...] = (
+    "suite_accuracy",
+    "language_breakdown",
+    "suite_score",
+    "score_breakdown",
+    "judged_headline_score",
+)
 
 
 # The complete judge block. Not a member of REQUIRED_FIELDS["quality"]: a
@@ -544,6 +577,8 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
 
     if kind == "quality":
         _validate_suite_level(row)
+        _validate_retry_budget(row)
+        _validate_partial_failure(row)
         _validate_judged_fields(row)
         _validate_graded_fields(row)
 
@@ -597,6 +632,77 @@ def _validate_subject_egress(kind: RowKind, row: dict[str, Any]) -> None:
             f"{provider!r}: a subject served by {provider!r} records "
             f"subject_egress {expected!r}"
         )
+
+
+def _validate_retry_budget(row: dict[str, Any]) -> None:
+    """Refuse a malformed `retry_budget`, a cloud row that does not name its
+    own provider's budget, and per-item `retries` beyond that budget.
+
+    The subject call of a cloud row drew its retries from its provider's
+    budget, so that budget is on the row and the item's retries fit in it.
+    """
+    budget = row["retry_budget"]
+    if not isinstance(budget, dict):
+        raise RowContractError(
+            f"row of kind 'quality' has a non-object retry_budget: {budget!r}"
+        )
+    for provider, total in budget.items():
+        if not (isinstance(provider, str) and provider.strip()):
+            raise RowContractError(
+                f"row of kind 'quality' has a retry_budget keyed by {provider!r}: "
+                "each key names a cloud provider"
+            )
+        if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+            raise RowContractError(
+                f"row of kind 'quality' has retry_budget[{provider!r}]={total!r}: "
+                "a retry budget is a non-negative whole number"
+            )
+    provider = row["provider"]
+    if provider == SUBJECT_PROVIDER_LOCAL:
+        return
+    if provider not in budget:
+        raise RowContractError(
+            f"row of kind 'quality' has provider {provider!r} but no "
+            f"retry_budget entry for it: a cloud subject's calls ran under a "
+            "budget, and the row names it"
+        )
+    retries = row["retries"]
+    if isinstance(retries, int) and retries > budget[provider]:
+        raise RowContractError(
+            f"row of kind 'quality' carries retries={retries!r} above its "
+            f"provider's retry_budget of {budget[provider]!r}"
+        )
+
+
+def _validate_partial_failure(row: dict[str, Any]) -> None:
+    """Refuse a malformed `partial_failure`, and a partial row that publishes
+    a suite-level score."""
+    failure = row["partial_failure"]
+    if failure is None:
+        return
+    if not isinstance(failure, dict):
+        raise RowContractError(
+            f"row of kind 'quality' has a non-object partial_failure: {failure!r}"
+        )
+    missing = PARTIAL_FAILURE_FIELDS - failure.keys()
+    if missing:
+        raise RowContractError(
+            f"row of kind 'quality' has a partial_failure missing field(s): "
+            f"{', '.join(sorted(missing))}"
+        )
+    for field in ("provider", "item_id"):
+        value = failure[field]
+        if not (isinstance(value, str) and value.strip()):
+            raise RowContractError(
+                f"row of kind 'quality' has a partial_failure whose {field} is "
+                f"{value!r}: a partial batch names the failing provider and item"
+            )
+    for field in PARTIAL_NULL_SCORE_FIELDS:
+        if row.get(field) is not None:
+            raise RowContractError(
+                f"row of kind 'quality' is partial but carries {field}="
+                f"{row[field]!r}: a partial batch publishes no suite-level score"
+            )
 
 
 _ITEM_SOURCE_FIELDS = ("item_licence", "item_source", "item_source_revision")
@@ -917,8 +1023,12 @@ def _validate_graded_fields(row: dict[str, Any]) -> None:
 
 def _validate_graded_structure(row: dict[str, Any]) -> None:
     """Raise on a graded block that cannot back the score it publishes."""
+    partial = row.get("partial_failure") is not None
     for field in ("item_score", "suite_score"):
         value = row[field]
+        # Held null by `_validate_partial_failure` on a partial row.
+        if partial and field == "suite_score" and value is None:
+            continue
         if isinstance(value, bool) or not isinstance(value, int | float):
             raise RowContractError(
                 f"row of kind 'quality' has a non-numeric {field}: {value!r}"
@@ -957,7 +1067,8 @@ def _validate_graded_structure(row: dict[str, Any]) -> None:
                 "exact-match score cannot both be published on one row"
             )
 
-    _validate_graded_breakdown(row["score_breakdown"])
+    if not (partial and row["score_breakdown"] is None):
+        _validate_graded_breakdown(row["score_breakdown"])
 
 
 def _validate_graded_breakdown(breakdown: Any) -> None:

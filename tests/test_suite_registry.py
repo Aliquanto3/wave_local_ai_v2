@@ -137,6 +137,49 @@ def test_an_unknown_scoring_rule_is_refused_naming_the_rule(tmp_path) -> None:
     assert "does not know" in str(exc.value)
 
 
+def test_a_scoring_rule_with_no_batch_aggregate_is_refused(
+    tmp_path, monkeypatch
+) -> None:
+    # A batch scored under it could never be completed by --resume: its
+    # earlier items exist only as rows, and only an aggregate reads those.
+    monkeypatch.setitem(
+        scoring_rules.SCORING_RULES,
+        "aggregate_less_rule",
+        scoring_rules.exact_label_match,
+    )
+    path = _write(tmp_path, _variant(scoring_rule="aggregate_less_rule"))
+
+    with pytest.raises(SuiteRegistryError, match="has no batch aggregate"):
+        suite_registry.load_definition(path)
+
+
+@pytest.mark.parametrize(
+    "suite_id", ["classification-support-routing", "translation-business-short-form"]
+)
+def test_the_aggregate_over_rows_reproduces_the_rules_own_batch_fields(
+    suite_id: str,
+) -> None:
+    # The resume path reaches the suite score through the aggregate over
+    # per-item fields; the uninterrupted path through the rule. Splitting the
+    # batch in two and re-aggregating must give the same fields.
+    spec = suite_registry.resolve(suite_id)
+    completions = [
+        {
+            "content": "billing" if index % 2 else "Une reponse.",
+            "truncated": False,
+            "generated_tokens": 3,
+            "truncation_reason": None,
+        }
+        for index in range(len(spec.items))
+    ]
+    _, whole = spec.score_batch(completions)
+    half = len(spec.items) // 2
+    first = spec.score_items(spec.items[:half], completions[:half])
+    second = spec.score_items(spec.items[half:], completions[half:])
+
+    assert spec.aggregate_batch(spec.items, first + second) == whole
+
+
 @pytest.mark.parametrize("missing", ["language", "provenance"])
 def test_an_item_missing_its_tag_is_refused_by_the_gate_at_load(
     tmp_path, missing

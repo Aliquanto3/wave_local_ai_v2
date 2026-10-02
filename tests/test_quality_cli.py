@@ -25,7 +25,7 @@ from wave_local_ai_v2.google_client import (
 )
 from wave_local_ai_v2.mistral_client import MistralRequestError, ModelUnavailableError
 from wave_local_ai_v2.prompt_provenance import template_hash
-from wave_local_ai_v2.results import read_rows
+from wave_local_ai_v2.results import ResumeConfigurationError, read_rows
 from wave_local_ai_v2.row_contract import GRADED_FIELDS, SCHEMA_VERSION
 from wave_local_ai_v2.settings import DEFAULT_ROSTER_ENTRY_ID, Settings
 from wave_local_ai_v2.suite_gate import SuiteGateError
@@ -771,7 +771,11 @@ def test_run_skips_mistral_on_a_request_error_without_raising(
 
     rows = read_rows(quality_results_path)
     assert {row["provider"] for row in rows} == {"local"}
-    assert "mistral skipped: boom" in capsys.readouterr().err
+    # Failing on the first item answers nothing, so nothing is written and
+    # the line names the item the provider failed on.
+    assert "mistral skipped: failed on item 'billing-01': boom" in (
+        capsys.readouterr().err
+    )
 
 
 def test_run_raises_local_completion_error_when_response_is_not_an_object(
@@ -1385,7 +1389,10 @@ def test_a_cloud_transport_failure_skips_that_provider_rather_than_aborting(
     quality_cli.main()
 
     stderr = capsys.readouterr().err
-    assert "google skipped: connection reset by peer" in stderr
+    assert (
+        "google skipped: failed on item 'billing-01': connection reset by peer"
+        in stderr
+    )
     rows = read_rows(quality_results_path)
     assert {row["provider"] for row in rows} == {"local", "mistral"}
 
@@ -1551,14 +1558,51 @@ def test_resume_reruns_an_incomplete_provider_from_scratch(stubbed_run) -> None:
     assert all(row["resumed"] is True for row in google_rows)
 
 
-def test_resume_refuses_a_partially_written_provider_instead_of_duplicating_it(
+def _mistral_answer(content: str) -> dict:
+    return {
+        "content": content,
+        "endpoint": mistral_client.CHAT_COMPLETIONS_URL,
+        "finish_reason": "stop",
+        "generated_tokens": 3,
+        "prompt_tokens": 12,
+        "total_tokens": 15,
+    }
+
+
+def _per_item_mistral_stub(
+    *, fail_on_calls: set[int] | None = None, fail_with: Exception | None = None
+) -> tuple:
+    """A Mistral stub whose answer depends on the item alone, counting calls.
+
+    Every third item gets a wrong label, so the batch's accuracy is a real
+    fraction a resumed batch has to reproduce. `fail_on_calls` (1-based call
+    numbers) raise `fail_with` instead of answering. Returns the stub and the
+    per-prompt count of calls that answered.
+    """
+    answered: dict[str, int] = {}
+    state = {"calls": 0}
+
+    def complete(prompt, api_key, **kwargs):
+        state["calls"] += 1
+        if fail_on_calls and state["calls"] in fail_on_calls:
+            raise fail_with or mistral_client.RetryableRequestError(
+                "rate limited", status_code=429, retry_after_s=0
+            )
+        answered[prompt] = answered.get(prompt, 0) + 1
+        number = int(prompt.rsplit("#", 1)[1].rstrip("."))
+        return _mistral_answer("technical" if number % 3 == 0 else "billing")
+
+    return complete, answered, state
+
+
+def test_resume_runs_only_the_items_a_partially_written_provider_never_wrote(
     stubbed_run, capsys
 ) -> None:
     quality_results_path, started = stubbed_run
     run_id = "resume-run-partial"
     quality_cli._run(resume_run_id=run_id)
     # Truncate mistral's half to five items, the state an interrupt or a disk
-    # failure part-way through _score_and_write's append loop leaves behind.
+    # failure part-way through the append loop leaves behind.
     rows = read_rows(quality_results_path)
     kept = [row for row in rows if row["provider"] == "local"] + [
         row for row in rows if row["provider"] == "mistral"
@@ -1570,11 +1614,266 @@ def test_resume_refuses_a_partially_written_provider_instead_of_duplicating_it(
 
     quality_cli._run(resume_run_id=run_id)
 
-    assert started["complete_prompt"].call_count == 0
-    stderr = capsys.readouterr().err
-    assert f"mistral skipped: run {run_id} is partially written (5/" in stderr
-    # Not one new row: five mistral items would otherwise be on disk twice.
-    assert len(read_rows(quality_results_path)) == len(kept)
+    remaining = len(CLASSIFICATION_TASK_SUITE) - 5
+    assert started["complete_prompt"].call_count == remaining
+    rows = read_rows(quality_results_path)
+    mistral = [row for row in rows if row["provider"] == "mistral"]
+    assert [row["item_id"] for row in mistral] == [
+        item["item_id"] for item in CLASSIFICATION_TASK_SUITE
+    ]
+    # The rows already on disk are unchanged; local stayed complete.
+    assert rows[: len(kept)] == kept
+    assert f"local skipped: run {run_id} already complete" in capsys.readouterr().err
+
+
+def test_a_twenty_item_cloud_batch_runs_under_four_retries_and_says_so(
+    stubbed_run,
+) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    for row in read_rows(quality_results_path):
+        expected = {} if row["provider"] == "local" else {"mistral": 4}
+        assert row["retry_budget"] == expected
+        assert row["partial_failure"] is None
+
+
+def test_a_mid_batch_failure_persists_the_answered_items_as_a_partial_batch(
+    stubbed_run, capsys
+) -> None:
+    quality_results_path, started = stubbed_run
+    stub, _, _ = _per_item_mistral_stub(
+        fail_on_calls={6},
+        fail_with=mistral_client.MistralRequestError("Mistral request failed: 500"),
+    )
+    started["complete_prompt"].side_effect = lambda prompt, *a, **k: stub(
+        prompt + " #1", *a, **k
+    )
+    run_id = "partial-mistral"
+
+    quality_cli._run(resume_run_id=run_id)
+
+    mistral = [
+        row for row in read_rows(quality_results_path) if row["provider"] == "mistral"
+    ]
+    failing_item = CLASSIFICATION_TASK_SUITE[5]["item_id"]
+    assert [row["item_id"] for row in mistral] == [
+        item["item_id"] for item in CLASSIFICATION_TASK_SUITE[:5]
+    ]
+    for row in mistral:
+        assert row["partial_failure"] == {
+            "provider": "mistral",
+            "item_id": failing_item,
+            "reason": "Mistral request failed: 500",
+        }
+        assert row["suite_accuracy"] is None
+        assert row["language_breakdown"] is None
+    captured = capsys.readouterr()
+    assert f"mistral partial: run {run_id} failed on item {failing_item!r}" in (
+        captured.err
+    )
+    # No headline for the partial batch; the local one still prints its own.
+    assert "provider=mistral" not in captured.out
+    assert "provider=local" in captured.out
+
+
+@pytest.mark.parametrize(
+    "refusal",
+    [
+        ModelUnavailableError("model mistral-small-2603 is no longer listed"),
+        MistralRequestError("Mistral request failed with status 400"),
+    ],
+)
+def test_a_refusal_mid_batch_is_never_retried_whatever_the_budget(
+    stubbed_run, refusal
+) -> None:
+    quality_results_path, started = stubbed_run
+    started["load_settings"].return_value = dataclasses.replace(
+        started["load_settings"].return_value,
+        cloud_retry_min_retries=1000,
+        cloud_retry_retries_per_item=50.0,
+    )
+    stub, _, state = _per_item_mistral_stub(fail_on_calls={3}, fail_with=refusal)
+    started["complete_prompt"].side_effect = lambda prompt, *a, **k: stub(
+        prompt + " #1", *a, **k
+    )
+
+    quality_cli._run()
+
+    # Three calls, one per item reached: the refusal on the third was not
+    # retried, and the batch stopped there.
+    assert state["calls"] == 3
+    mistral = [
+        row for row in read_rows(quality_results_path) if row["provider"] == "mistral"
+    ]
+    assert len(mistral) == 2
+    assert all(row["retry_budget"] == {"mistral": 1000} for row in mistral)
+
+
+# A publication-size suite: 100 hand-written fixture items, registered from a
+# definition outside the CLI exactly as any further suite would be.
+_PUBLICATION_SIZE_ID = "fixture-routing-hundred"
+_PUBLICATION_SIZE_DEFINITION = {
+    "suite_id": _PUBLICATION_SIZE_ID,
+    "suite_version": "1",
+    "task_suite": "classification",
+    "scoring_rule": "exact_label_match",
+    "max_output_tokens": 16,
+    "stop_sequences": [],
+    "context_length": 4096,
+    "thinking_policy": "disabled",
+    "level": "development",
+    "items": [
+        {
+            "item_id": f"hundred-{number:03d}",
+            "prompt": f"Route this message: invoice question #{number}.",
+            "expected_label": "billing",
+            "language": ("en", "fr", "de")[number % 3],
+            "provenance": "hand_written",
+            "contamination_risk": False,
+        }
+        for number in range(100)
+    ],
+}
+
+
+@pytest.fixture
+def hundred_item_suite(tmp_path):
+    path = tmp_path / f"{_PUBLICATION_SIZE_ID}.json"
+    path.write_text(json.dumps(_PUBLICATION_SIZE_DEFINITION), encoding="utf-8")
+    definition = suite_registry.register(path)
+    yield definition
+    suite_registry.unregister(_PUBLICATION_SIZE_ID)
+
+
+def _mistral_rows(path: Path, run_id: str) -> list[dict]:
+    return [
+        row
+        for row in read_rows(path)
+        if row["provider"] == "mistral" and row["run_id"] == run_id
+    ]
+
+
+def test_a_hundred_item_cloud_batch_survives_429s_a_fixed_four_would_not(
+    stubbed_run, hundred_item_suite
+) -> None:
+    quality_results_path, started = stubbed_run
+    # A 429 on every tenth call: ten retries over the batch.
+    rate_limited = set(range(10, 120, 11))
+    stub, answered, _ = _per_item_mistral_stub(fail_on_calls=rate_limited)
+    started["complete_prompt"].side_effect = stub
+
+    quality_cli._run(resume_run_id="hundred-derived", suite=_PUBLICATION_SIZE_ID)
+
+    rows = _mistral_rows(quality_results_path, "hundred-derived")
+    assert len(rows) == 100
+    assert all(row["retry_budget"] == {"mistral": 20} for row in rows)
+    assert all(row["partial_failure"] is None for row in rows)
+    assert sum(row["retries"] for row in rows) == 10
+    assert all(count == 1 for count in answered.values())
+
+    # The same 429s under the fixed total the batch used to get.
+    stub, _, _ = _per_item_mistral_stub(fail_on_calls=rate_limited)
+    started["complete_prompt"].side_effect = stub
+    started["load_settings"].return_value = dataclasses.replace(
+        started["load_settings"].return_value, cloud_retry_retries_per_item=0.0
+    )
+
+    quality_cli._run(resume_run_id="hundred-fixed", suite=_PUBLICATION_SIZE_ID)
+
+    fixed = _mistral_rows(quality_results_path, "hundred-fixed")
+    assert len(fixed) < 100
+    assert all(row["retry_budget"] == {"mistral": 4} for row in fixed)
+    assert all(row["partial_failure"] is not None for row in fixed)
+
+
+def test_a_hundred_item_batch_interrupted_then_resumed_pays_for_no_item_twice(
+    stubbed_run, hundred_item_suite, capsys
+) -> None:
+    quality_results_path, started = stubbed_run
+    # The uninterrupted reference over the same per-item responses.
+    stub, _, _ = _per_item_mistral_stub()
+    started["complete_prompt"].side_effect = stub
+    quality_cli._run(resume_run_id="hundred-whole", suite=_PUBLICATION_SIZE_ID)
+    whole = _mistral_rows(quality_results_path, "hundred-whole")
+
+    # Interrupted: a 400 on the 38th call stops the batch after 37 items.
+    stub, answered, state = _per_item_mistral_stub(
+        fail_on_calls={38}, fail_with=MistralRequestError("Mistral request failed")
+    )
+    started["complete_prompt"].side_effect = stub
+    run_id = "hundred-interrupted"
+    quality_cli._run(resume_run_id=run_id, suite=_PUBLICATION_SIZE_ID)
+    before = _mistral_rows(quality_results_path, run_id)
+    assert len(before) == 37
+    calls_first = state["calls"]
+
+    # Resumed: the provider answers again.
+    stub_resume, answered_resume, state_resume = _per_item_mistral_stub()
+    started["complete_prompt"].side_effect = stub_resume
+    quality_cli._run(resume_run_id=run_id, suite=_PUBLICATION_SIZE_ID)
+
+    rows = _mistral_rows(quality_results_path, run_id)
+    item_ids = [row["item_id"] for row in rows]
+    assert len(item_ids) == 100
+    assert len(set(item_ids)) == 100
+    # Calls only for the 63 items the batch never wrote, one each.
+    assert state_resume["calls"] == 63
+    assert set(answered).isdisjoint(answered_resume)
+    assert all(count == 1 for count in answered_resume.values())
+    # The rows already written are unchanged by the resume.
+    assert rows[:37] == before
+    # The resume ran under the budget derived from its own 63 items.
+    assert all(row["retry_budget"] == {"mistral": 13} for row in rows[37:])
+    # The completed batch publishes what the uninterrupted one did.
+    completing = rows[37:]
+    for row in completing:
+        assert row["partial_failure"] is None
+        assert row["suite_accuracy"] == whole[0]["suite_accuracy"]
+        assert row["language_breakdown"] == whole[0]["language_breakdown"]
+        assert row["failure_counts"] == whole[0]["failure_counts"]
+    assert {row["item_id"]: row["correct"] for row in rows} == {
+        row["item_id"]: row["correct"] for row in whole
+    }
+    print(
+        f"evidence: first invocation {calls_first} call(s), 37 rows; "
+        f"resume {state_resume['calls']} call(s), 63 rows; "
+        f"items answered twice: {len(set(answered) & set(answered_resume))}; "
+        f"suite_accuracy {completing[0]['suite_accuracy']:.4f} "
+        f"(uninterrupted {whole[0]['suite_accuracy']:.4f})"
+    )
+
+
+def test_a_resume_that_fails_again_stays_partial_and_names_the_new_item(
+    stubbed_run, hundred_item_suite, capsys
+) -> None:
+    quality_results_path, started = stubbed_run
+    run_id = "hundred-twice"
+    stub, _, _ = _per_item_mistral_stub(
+        fail_on_calls={20}, fail_with=MistralRequestError("first failure")
+    )
+    started["complete_prompt"].side_effect = stub
+    quality_cli._run(resume_run_id=run_id, suite=_PUBLICATION_SIZE_ID)
+    capsys.readouterr()
+
+    stub, _, _ = _per_item_mistral_stub(
+        fail_on_calls={10}, fail_with=MistralRequestError("second failure")
+    )
+    started["complete_prompt"].side_effect = stub
+    quality_cli._run(resume_run_id=run_id, suite=_PUBLICATION_SIZE_ID)
+
+    rows = _mistral_rows(quality_results_path, run_id)
+    assert len(rows) == 19 + 9
+    # Every row of the batch says it is partial; the resumed ones name the
+    # item the resume stopped on.
+    assert rows[0]["partial_failure"]["item_id"] == "hundred-019"
+    assert rows[-1]["partial_failure"]["item_id"] == "hundred-028"
+    assert rows[-1]["partial_failure"]["reason"] == "second failure"
+    assert all(row["suite_accuracy"] is None for row in rows)
+    captured = capsys.readouterr()
+    assert "provider=mistral" not in captured.out
+    assert "mistral partial:" in captured.err
 
 
 def test_resume_with_a_never_used_run_id_behaves_like_a_fresh_run(
@@ -1685,6 +1984,11 @@ def fixture_suite(tmp_path, monkeypatch):
         )
 
     monkeypatch.setitem(scoring_rules.SCORING_RULES, _FIXTURE_RULE, fixture_rule)
+    monkeypatch.setitem(
+        scoring_rules.BATCH_AGGREGATES,
+        _FIXTURE_RULE,
+        scoring_rules.aggregate_exact_label_match,
+    )
     path = tmp_path / f"{_FIXTURE_SUITE_ID}.json"
     path.write_text(json.dumps(_FIXTURE_DEFINITION), encoding="utf-8")
     definition = suite_registry.register(path)
@@ -2170,3 +2474,89 @@ def test_the_shipped_qwen_control_renders_the_same_prompt_as_before(
         if row["provider"] == "local":
             assert row["prompt"] == fake_render(row["prompt_before_template"])
             assert row["prompt_template_hash"] == template_hash(FAKE_CHAT_TEMPLATE)
+
+
+def _truncate_mistral_half(path: Path, keep: int, **edits: object) -> list[dict]:
+    """Keep the local rows and the first `keep` mistral rows, editing those."""
+    rows = read_rows(path)
+    kept = [row for row in rows if row["provider"] == "local"] + [
+        {**row, **edits} for row in rows if row["provider"] == "mistral"
+    ][:keep]
+    path.write_text("".join(f"{json.dumps(row)}\n" for row in kept), encoding="utf-8")
+    return kept
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("model_id", "mistral-small-2501"),
+        ("suite_version", "0"),
+        ("prompt_set_hash", "0" * 64),
+        ("prompt_variant_id", "terse"),
+        ("prompt_variant_version", "0"),
+        ("sampling", {"temperature": 0.7, "random_seed": 1}),
+        ("roster_entry_id", "another-entry"),
+        ("endpoint", "https://example.invalid/v1/chat/completions"),
+        ("thinking_policy", "enabled"),
+    ],
+)
+def test_a_resume_over_rows_of_another_configuration_is_refused_writing_nothing(
+    stubbed_run, capsys, field, value
+) -> None:
+    quality_results_path, started = stubbed_run
+    run_id = "resume-other-config"
+    quality_cli._run(resume_run_id=run_id)
+    kept = _truncate_mistral_half(quality_results_path, 5, **{field: value})
+    started["complete_prompt"].reset_mock()
+    started["running_server"].reset_mock()
+    started["check_model"].reset_mock()
+    with (
+        patch("sys.argv", ["wave-local-ai-v2-quality", "--resume", run_id]),
+        pytest.raises(SystemExit) as exit_info,
+    ):
+        quality_cli.main()
+
+    assert exit_info.value.code == 1
+    stderr = capsys.readouterr().err
+    assert f"refusing --resume {run_id}: the mistral batch's" in stderr
+    assert f"{field}=" in stderr
+    # Nothing ran and nothing was written: no server, no call, no row.
+    assert started["running_server"].call_count == 0
+    assert started["complete_prompt"].call_count == 0
+    assert read_rows(quality_results_path) == kept
+
+
+def test_a_resume_after_the_cloud_model_changed_is_refused(
+    stubbed_run, monkeypatch
+) -> None:
+    # The PRD's own failure case: a model retired mid-batch, its successor
+    # pinned, the batch resumed. One score over two models is refused.
+    quality_results_path, _ = stubbed_run
+    run_id = "resume-retired-model"
+    quality_cli._run(resume_run_id=run_id)
+    _truncate_mistral_half(quality_results_path, 5)
+    monkeypatch.setattr(mistral_client, "MODEL", "mistral-small-2610")
+
+    with pytest.raises(ResumeConfigurationError) as excinfo:
+        quality_cli._run(resume_run_id=run_id)
+
+    assert "model_id='mistral-small-2603'" in str(excinfo.value)
+    assert "model_id='mistral-small-2610'" in str(excinfo.value)
+
+
+def test_a_resume_under_the_same_configuration_completes_the_batch(
+    stubbed_run,
+) -> None:
+    quality_results_path, _ = stubbed_run
+    run_id = "resume-same-config"
+    quality_cli._run(resume_run_id=run_id)
+    _truncate_mistral_half(quality_results_path, 5)
+
+    quality_cli._run(resume_run_id=run_id)
+
+    mistral = [
+        row for row in read_rows(quality_results_path) if row["provider"] == "mistral"
+    ]
+    assert len(mistral) == len(CLASSIFICATION_TASK_SUITE)
+    assert mistral[-1]["partial_failure"] is None
+    assert mistral[-1]["suite_accuracy"] is not None

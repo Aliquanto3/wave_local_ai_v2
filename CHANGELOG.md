@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A publication-size cloud batch survives its rate limits and resumes per
+  item (row schema "17")** -- the cloud retry budget is no longer one fixed
+  batch total: it is `max(CLOUD_RETRY_MIN_RETRIES, ceil(items *
+  CLOUD_RETRY_RETRIES_PER_ITEM))` over the items a batch calls for (defaults
+  `4` and `0.2`, so a 20-item batch keeps its 4 retries and a 100-item one
+  gets 20). `CLOUD_RETRY_MAX_ATTEMPTS` is removed. A cloud failure mid-batch
+  now writes the items already answered, each marked `partial_failure`
+  (provider, item, reason) with no suite-level score, instead of discarding
+  them; `--resume` issues calls only for the items a batch never wrote
+  (`results.resume_missing_items` replaces `resume_skip_reason`), appends
+  their rows, and computes the completed batch's score, agreement and
+  contested set over every item through the same aggregate an
+  uninterrupted batch uses (`scoring_rules.BATCH_AGGREGATES`; the registry
+  refuses a rule without one). A resume over rows written under another
+  configuration (model, suite version, prompt set, prompt variant, sampler,
+  roster entry, endpoint, thinking policy, or the probe's judge models) is
+  refused naming the field, writing nothing. A comparison side whose batch
+  stayed partial is published as an observation naming `partial_failure`.
+  Both the suite CLI and the judged probe follow the rule. Every quality row carries `retry_budget` and
+  `partial_failure`; the writer gate refuses a partial row publishing a
+  score, a malformed budget, and retries above the provider's budget. Rows
+  already written keep their schema version and are not rewritten.
+
 - **Every row records whether its prompt left the machine (row schema
   "16")** -- every runtime and quality row carries `subject_egress`: `none`
   when the subject prompt was served on the machine, or the id of the cloud

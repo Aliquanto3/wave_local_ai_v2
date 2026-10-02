@@ -105,6 +105,30 @@ class SuiteDefinition:
         rule = scoring_rules.SCORING_RULES[self.scoring_rule]
         return rule(self.items, completions, max_output_tokens=self.max_output_tokens)
 
+    def score_items(
+        self,
+        items: Sequence[Mapping[str, Any]],
+        completions: Sequence[Mapping[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Score a subset of this suite's items: the per-item fields only.
+
+        A resumed batch runs only its missing items, so their per-item fields
+        are scored here and the batch fields come from `aggregate_batch`
+        over the whole suite.
+        """
+        rule = scoring_rules.SCORING_RULES[self.scoring_rule]
+        per_item, _ = rule(items, completions, max_output_tokens=self.max_output_tokens)
+        return per_item
+
+    def aggregate_batch(
+        self,
+        items: Sequence[Mapping[str, Any]],
+        per_item: Sequence[Mapping[str, Any]],
+    ) -> dict[str, Any]:
+        """The suite-level fields over `items` and their per-item fields."""
+        # Checked against the table when the definition loaded.
+        return scoring_rules.BATCH_AGGREGATES[self.scoring_rule](items, per_item)
+
 
 def prompt_set_hash(items: Sequence[Mapping[str, Any]]) -> str:
     """SHA-256 hex digest over the items' prompts only, deterministically ordered.
@@ -186,6 +210,12 @@ def _definition_from_data(data: dict[str, Any], *, origin: str) -> SuiteDefiniti
             f"suite definition {origin} names scoring rule {rule_name!r}, which "
             "the registry does not know (known: "
             f"{', '.join(sorted(scoring_rules.SCORING_RULES))})"
+        )
+    if rule_name not in scoring_rules.BATCH_AGGREGATES:
+        raise SuiteRegistryError(
+            f"suite definition {origin} names scoring rule {rule_name!r}, which "
+            "has no batch aggregate: a batch under it could not be completed "
+            "by --resume"
         )
 
     items = _items(data["items"], origin)

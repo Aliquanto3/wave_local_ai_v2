@@ -11,11 +11,12 @@ from wave_local_ai_v2.results import (
     UNREADABLE_UNPARSABLE_LINE,
     UnreadableRows,
     append_row,
+    batch_rows,
     captured_at,
     new_run_id,
     read_rows,
     read_rows_from_floor,
-    resume_skip_reason,
+    resume_missing_items,
     rows_for_run,
 )
 from wave_local_ai_v2.row_contract import RowContractError, subject_egress_for
@@ -117,6 +118,8 @@ COMPLETE_QUALITY_ROW = {
     },
     "retries": 0,
     "resumed": False,
+    "retry_budget": {},
+    "partial_failure": None,
 }
 
 
@@ -232,6 +235,7 @@ def _write_items(
                 "run_id": run_id,
                 "provider": provider,
                 "subject_egress": subject_egress_for(provider),
+                "retry_budget": {} if provider == "local" else {provider: 4},
                 "item_id": item["item_id"],
                 "prompt_before_template": item["prompt"],
                 "task_suite": task_suite,
@@ -239,66 +243,99 @@ def _write_items(
         )
 
 
-def test_resume_skip_reason_runs_a_batch_that_wrote_nothing(tmp_path: Path) -> None:
+_IDS = [
+    item["item_id"]
+    for item in suite_registry.resolve("classification-support-routing").items
+]
+
+
+def test_resume_missing_items_returns_every_id_of_a_batch_that_wrote_nothing(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "quality.jsonl"
     _write_items(path, "run-1", "local", 3)
 
     # Another provider's completed batch says nothing about this one.
     assert (
-        resume_skip_reason(path, "run-1", "mistral", 3, task_suite="classification")
-        is None
+        resume_missing_items(
+            path, "run-1", "mistral", _IDS[:3], task_suite="classification"
+        )
+        == _IDS[:3]
     )
     # Nor does another run's.
     assert (
-        resume_skip_reason(path, "run-2", "local", 3, task_suite="classification")
-        is None
+        resume_missing_items(
+            path, "run-2", "local", _IDS[:3], task_suite="classification"
+        )
+        == _IDS[:3]
     )
     # Nor does an absent store.
     assert (
-        resume_skip_reason(
-            tmp_path / "absent.jsonl", "run-1", "local", 3, task_suite="classification"
+        resume_missing_items(
+            tmp_path / "absent.jsonl",
+            "run-1",
+            "local",
+            _IDS[:3],
+            task_suite="classification",
         )
-        is None
+        == _IDS[:3]
     )
 
 
-def test_resume_skip_reason_skips_a_complete_batch_by_name(tmp_path: Path) -> None:
+def test_resume_missing_items_returns_none_for_a_complete_batch(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "quality.jsonl"
     _write_items(path, "run-1", "local", 3)
 
     assert (
-        resume_skip_reason(path, "run-1", "local", 3, task_suite="classification")
-        == "run run-1 already complete"
+        resume_missing_items(
+            path, "run-1", "local", _IDS[:3], task_suite="classification"
+        )
+        == []
     )
 
 
-def test_resume_skip_reason_refuses_a_partially_written_batch(tmp_path: Path) -> None:
+def test_resume_missing_items_returns_exactly_the_ids_a_partial_batch_never_wrote(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "quality.jsonl"
     _write_items(path, "run-1", "local", 2)
 
-    assert resume_skip_reason(
-        path, "run-1", "local", 5, task_suite="classification"
-    ) == ("run run-1 is partially written (2/5 items); re-running would duplicate them")
-
-
-def test_resume_skip_reason_decides_against_the_callers_own_item_count(
-    tmp_path: Path,
-) -> None:
-    # The same two rows are a complete batch for a two-item caller and a
-    # partial one for a five-item caller: the count is the caller's, not a
-    # suite length read from a module.
-    path = tmp_path / "probe.jsonl"
-    _write_items(path, "run-1", "google", 2)
-
-    assert resume_skip_reason(
-        path, "run-1", "google", 2, task_suite="classification"
-    ) == ("run run-1 already complete")
-    assert "partially written (2/5" in str(
-        resume_skip_reason(path, "run-1", "google", 5, task_suite="classification")
+    # In the caller's order, not the store's: a resume runs them as the
+    # suite declares them.
+    assert (
+        resume_missing_items(
+            path, "run-1", "local", _IDS[:5], task_suite="classification"
+        )
+        == _IDS[2:5]
     )
 
 
-def test_resume_never_skips_a_batch_on_the_strength_of_another_suites_rows(
+def test_resume_missing_items_decides_against_the_callers_own_items(
+    tmp_path: Path,
+) -> None:
+    # The same two rows are a complete batch for a two-item caller and a
+    # partial one for a five-item caller: the item list is the caller's, not
+    # a suite read from a module.
+    path = tmp_path / "probe.jsonl"
+    _write_items(path, "run-1", "google", 2)
+
+    assert (
+        resume_missing_items(
+            path, "run-1", "google", _IDS[:2], task_suite="classification"
+        )
+        == []
+    )
+    assert (
+        resume_missing_items(
+            path, "run-1", "google", _IDS[:5], task_suite="classification"
+        )
+        == _IDS[2:5]
+    )
+
+
+def test_resume_never_counts_another_suites_rows_under_the_same_run_id(
     tmp_path: Path,
 ) -> None:
     # One store now holds two suites. A run_id complete under classification
@@ -309,12 +346,17 @@ def test_resume_never_skips_a_batch_on_the_strength_of_another_suites_rows(
     _write_items(path, "run-1", "local", 3, task_suite="classification")
 
     assert (
-        resume_skip_reason(path, "run-1", "local", 3, task_suite="translation") is None
+        resume_missing_items(path, "run-1", "local", _IDS[:3], task_suite="translation")
+        == _IDS[:3]
     )
     assert (
-        resume_skip_reason(path, "run-1", "local", 3, task_suite="classification")
-        == "run run-1 already complete"
+        resume_missing_items(
+            path, "run-1", "local", _IDS[:3], task_suite="classification"
+        )
+        == []
     )
+    assert batch_rows(path, "run-1", "local", task_suite="translation") == []
+    assert len(batch_rows(path, "run-1", "local", task_suite="classification")) == 3
 
 
 def _write_lines(path: Path, lines: list[str]) -> None:
@@ -483,6 +525,8 @@ def test_the_existing_readers_are_untouched_by_the_floor_aware_path(
     assert read_rows(path, schema_version="7") == [row_v7]
     assert rows_for_run(path, "run-2") == [row_v11]
     assert (
-        resume_skip_reason(path, "run-1", "local", 1, task_suite="classification")
-        == "run run-1 already complete"
+        resume_missing_items(
+            path, "run-1", "local", ["billing-01"], task_suite="classification"
+        )
+        == []
     )

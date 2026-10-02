@@ -282,6 +282,20 @@ No committed row carries the field: every row in this directory predates `"16"`,
 under its own version and is never back-filled with `none`. The reference rows carry it
 from their next regeneration, which nothing has scheduled yet.
 
+## A batch's retry budget, and partial batches (2026-10-02)
+
+From schema `"17"` every quality row carries `retry_budget`, the retry total each cloud
+provider's calls in its batch drew from (derived from the batch's item count, `{}` for a
+batch with no cloud call), and `partial_failure`: `null` on a row whose batch was complete
+when it was written, else the provider, item and reason of the call that stopped it. A
+partial row carries no suite-level score. A batch completed by `--resume` holds its partial
+rows from the failed invocation beside the completing rows, which carry the whole batch's
+score; read the score off a row whose `partial_failure` is `null`. Cost and token totals on
+each segment cover that invocation's calls only.
+
+No committed row carries either field: every row in this directory predates `"17"`, is read
+under its own version and is never back-filled.
+
 ## Paired comparisons: both committed pairs are refused (2026-10-02)
 
 `comparisons/` holds the comparison records `wave-local-ai-v2-compare` writes over this

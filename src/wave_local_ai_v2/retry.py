@@ -8,6 +8,7 @@ fake clock/sleep/jitter -- no real `time.sleep` in its own tests.
 
 from __future__ import annotations
 
+import math
 import random
 import time
 from collections.abc import Callable
@@ -56,15 +57,30 @@ class Pacer:
         self._last_call_at = max(now, self._last_call_at + self._min_interval_s)
 
 
+def derived_retry_budget(item_count: int, *, per_item: float, minimum: int) -> int:
+    """The retry total a batch of `item_count` items runs under.
+
+    `max(minimum, ceil(item_count * per_item))`: the budget grows with the
+    batch instead of being one fixed total, so a 100-item batch is not held to
+    what a 20-item batch gets. Both knobs are the caller's configuration
+    (`settings.cloud_retry_min_retries`/`cloud_retry_retries_per_item`).
+    """
+    if item_count < 0:
+        raise ValueError(f"item_count cannot be negative: {item_count}")
+    return max(minimum, math.ceil(item_count * per_item))
+
+
 class RetryBudget:
     """A run-scoped count of retries left, shared across every item of one batch.
 
     One instance per provider batch, not one per call: a budget shared across
     every item is what makes "N retries total for this batch" the enforced
-    behavior, rather than N retries per item.
+    behavior, rather than N retries per item. `total` is what the batch
+    started with, which every row of it records as the budget it ran under.
     """
 
     def __init__(self, max_retries: int) -> None:
+        self.total = max_retries
         self._remaining = max_retries
 
     def take(self) -> bool:

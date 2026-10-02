@@ -143,6 +143,8 @@ EXCLUDED_FROM_DIFFERING: frozenset[str] = frozenset(
         "tree_dirty",
         "retries",
         "resumed",
+        "retry_budget",
+        "partial_failure",
         "verdict",
         # per item
         "item_id",
@@ -664,6 +666,23 @@ def _per_item_values(
     return values
 
 
+def _partial_sides(
+    reference_rows: Sequence[Mapping[str, Any]],
+    candidate_rows: Sequence[Mapping[str, Any]],
+) -> list[str]:
+    """The sides whose batch never completed: no row has `partial_failure` null.
+
+    A batch completed by `--resume` holds partial rows beside complete ones
+    and is complete. A row predating `partial_failure` carries no such key
+    and was written by a batch that wrote nothing unless it completed.
+    """
+    return [
+        side
+        for side, rows in (("reference", reference_rows), ("candidate", candidate_rows))
+        if rows and all(row.get("partial_failure") is not None for row in rows)
+    ]
+
+
 def _comparison_kind(
     differing: Sequence[str], dimension: Dimension
 ) -> tuple[str, list[str], str | None]:
@@ -800,6 +819,23 @@ def compare_sides(
             [candidate_values[i] - reference_values[i] for i in paired_ids]
         )
     comparison_kind, confounds, observation_reason = _comparison_kind(differing, axis)
+    partial_sides = _partial_sides(reference_rows, candidate_rows)
+    if partial_sides:
+        # A partially observed row set shrinks the paired n, but a batch left
+        # partial by a failure is a prefix of the suite in run order, not a
+        # random subset of it: its p is kept in `result` and never read as a
+        # test.
+        partial_reason = (
+            f"the {' and '.join(partial_sides)} side's batch is partial "
+            "(every row carries a partial_failure): its items are the ones "
+            "answered before a failure, not the suite"
+        )
+        comparison_kind = KIND_OBSERVATION
+        observation_reason = (
+            partial_reason
+            if observation_reason is None
+            else f"{observation_reason}; {partial_reason}"
+        )
     return {
         **member,
         "comparison_kind": comparison_kind,

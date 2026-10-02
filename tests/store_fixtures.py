@@ -59,6 +59,8 @@ NAMED_VALUES: dict[str, Any] = {
         "reference_run_id": None,
         "differing_fields": [],
     },
+    "retry_budget": {},
+    "partial_failure": None,
 }
 
 GRADED_VALUES: dict[str, Any] = {

@@ -360,6 +360,14 @@ _ENERGY_COST_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     ),
 }
 
+# A partial row (`partial_failure` set) publishes no suite-level score: the
+# batch stopped on a failure, and a mean over the items that finished first
+# is a biased sample.
+_PARTIAL_SCORE_DOC = (
+    "or the row's batch was partial when it was written (see partial_failure): "
+    "a partial batch publishes no suite-level score."
+)
+
 _QUALITY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     ("model_id",): FieldDoc("Model that answered the item.", _ID),
     ("provider",): FieldDoc("Who ran the model: local, mistral or google.", _ID),
@@ -387,7 +395,7 @@ _QUALITY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
         "Share of the batch's items answered correctly, as published on the "
         "row; the same on every row of one (run_id, provider, model_id) batch.",
         _RATIO,
-        "Not an exact-match row.",
+        f"Not an exact-match row, {_PARTIAL_SCORE_DOC}",
     ),
     ("language_breakdown", "*", "accuracy"): FieldDoc(
         "Share of the batch's items in this language answered correctly.", _RATIO
@@ -399,7 +407,9 @@ _QUALITY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
         "Whether the language cell is too small to rank on.", _BOOL
     ),
     ("language_breakdown",): FieldDoc(
-        "Per-language accuracy block.", _JSON_OBJECT, "Not an exact-match row."
+        "Per-language accuracy block.",
+        _JSON_OBJECT,
+        f"Not an exact-match row, {_PARTIAL_SCORE_DOC}",
     ),
     ("max_output_tokens",): FieldDoc("Output token cap per item.", "tokens"),
     ("stop_sequences",): FieldDoc("Stop sequences sent with each item.", _JSON_ARRAY),
@@ -467,6 +477,19 @@ _QUALITY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     ("failure_counts",): FieldDoc("Batch failure counts block.", _JSON_OBJECT),
     ("retries",): FieldDoc("Retries the item's request took.", _COUNT),
     ("resumed",): FieldDoc("Whether the row was written by a --resume run.", _BOOL),
+    ("retry_budget",): FieldDoc(
+        "The retry total each cloud provider's calls in this row's batch drew "
+        "from, keyed by provider, derived from the batch's item count; {} for "
+        "a batch with no cloud call.",
+        _JSON_OBJECT,
+    ),
+    ("partial_failure",): FieldDoc(
+        "Empty when the batch was complete when this row was written; else the "
+        "provider, item_id and reason of the call that left it partial. A "
+        "partial row carries no suite-level score.",
+        _JSON_OBJECT,
+        "The batch was complete when this row was written.",
+    ),
     ("subject_output",): FieldDoc(
         "The model's raw answer.", _TEXT, "Not recorded for this suite kind."
     ),
@@ -482,7 +505,11 @@ _GRADED_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     ),
     ("metric_params",): FieldDoc("Metric parameter block.", _JSON_OBJECT, _GRADED_DOC),
     ("item_score",): FieldDoc("This item's score.", _RATIO, _GRADED_DOC),
-    ("suite_score",): FieldDoc("Mean item_score of the batch.", _RATIO, _GRADED_DOC),
+    ("suite_score",): FieldDoc(
+        "Mean item_score of the batch.",
+        _RATIO,
+        f"Not a graded row, {_PARTIAL_SCORE_DOC}",
+    ),
     ("score_breakdown", "*", "score"): FieldDoc(
         "Mean item_score over the batch's items in this source language.", _RATIO
     ),
@@ -493,7 +520,9 @@ _GRADED_FIELDS: dict[tuple[str, ...], FieldDoc] = {
         "Whether the language cell is too small to rank on.", _BOOL
     ),
     ("score_breakdown",): FieldDoc(
-        "Per-language score block.", _JSON_OBJECT, _GRADED_DOC
+        "Per-language score block.",
+        _JSON_OBJECT,
+        f"Not a graded row, {_PARTIAL_SCORE_DOC}",
     ),
     ("reference_output",): FieldDoc(
         "Reference text the score was computed against.", _TEXT, _GRADED_DOC
@@ -534,10 +563,15 @@ _JUDGED_FIELDS: dict[tuple[str, ...], FieldDoc] = {
         "Disagreement threshold applied.", "score points", _JUDGED_DOC
     ),
     ("judged_headline_score",): FieldDoc(
-        "Headline judged score, contested items excluded.", "score", _JUDGED_DOC
+        "Headline judged score, contested items excluded.",
+        "score",
+        "Not a judged row, no judge left a numeric score on an included item, "
+        + _PARTIAL_SCORE_DOC,
     ),
     ("judged_headline_excluded_n",): FieldDoc(
-        "Items excluded from the headline as contested.", _COUNT, _JUDGED_DOC
+        "Items excluded from the headline as contested.",
+        _COUNT,
+        f"Not a judged row, {_PARTIAL_SCORE_DOC}",
     ),
     ("judge_egress",): FieldDoc(
         "What left the machine for judging, and how many calls it took.",

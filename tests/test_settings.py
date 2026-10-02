@@ -4,7 +4,8 @@ import pytest
 
 import wave_local_ai_v2.settings as settings_module
 from wave_local_ai_v2.settings import (
-    DEFAULT_CLOUD_RETRY_MAX_ATTEMPTS,
+    DEFAULT_CLOUD_RETRY_MIN_RETRIES,
+    DEFAULT_CLOUD_RETRY_RETRIES_PER_ITEM,
     DEFAULT_DASHBOARD_BUNDLE_DIR,
     DEFAULT_EMISSION_COUNTRY_ISO_CODE,
     DEFAULT_EMISSION_FACTOR_KG_PER_KWH,
@@ -475,13 +476,15 @@ def test_load_settings_defaults_the_pacing_and_retry_fields_when_unset(
     monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
     monkeypatch.delenv("MISTRAL_REQUEST_PACING_S", raising=False)
     monkeypatch.delenv("GOOGLE_REQUEST_PACING_S", raising=False)
-    monkeypatch.delenv("CLOUD_RETRY_MAX_ATTEMPTS", raising=False)
+    monkeypatch.delenv("CLOUD_RETRY_MIN_RETRIES", raising=False)
+    monkeypatch.delenv("CLOUD_RETRY_RETRIES_PER_ITEM", raising=False)
 
     settings = load_settings()
 
     assert settings.mistral_request_pacing_s == DEFAULT_MISTRAL_REQUEST_PACING_S
     assert settings.google_request_pacing_s == DEFAULT_GOOGLE_REQUEST_PACING_S
-    assert settings.cloud_retry_max_attempts == DEFAULT_CLOUD_RETRY_MAX_ATTEMPTS
+    assert settings.cloud_retry_min_retries == DEFAULT_CLOUD_RETRY_MIN_RETRIES
+    assert settings.cloud_retry_retries_per_item == DEFAULT_CLOUD_RETRY_RETRIES_PER_ITEM
 
 
 def test_load_settings_reads_the_pacing_and_retry_overrides(
@@ -496,13 +499,15 @@ def test_load_settings_reads_the_pacing_and_retry_overrides(
     monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
     monkeypatch.setenv("MISTRAL_REQUEST_PACING_S", "2.5")
     monkeypatch.setenv("GOOGLE_REQUEST_PACING_S", "6")
-    monkeypatch.setenv("CLOUD_RETRY_MAX_ATTEMPTS", "9")
+    monkeypatch.setenv("CLOUD_RETRY_MIN_RETRIES", "9")
+    monkeypatch.setenv("CLOUD_RETRY_RETRIES_PER_ITEM", "0.5")
 
     settings = load_settings()
 
     assert settings.mistral_request_pacing_s == 2.5
     assert settings.google_request_pacing_s == 6.0
-    assert settings.cloud_retry_max_attempts == 9
+    assert settings.cloud_retry_min_retries == 9
+    assert settings.cloud_retry_retries_per_item == 0.5
 
 
 def test_load_settings_accepts_a_zero_pacing_interval(
@@ -533,11 +538,16 @@ def test_load_settings_accepts_a_zero_pacing_interval(
         ("MISTRAL_REQUEST_PACING_S", "not-a-number"),
         ("GOOGLE_REQUEST_PACING_S", "-0.1"),
         ("GOOGLE_REQUEST_PACING_S", "not-a-number"),
-        # Zero attempts would make the budget refuse every retry, which is not
-        # "no retry configuration" but a batch that gives up on its first 429.
-        ("CLOUD_RETRY_MAX_ATTEMPTS", "0"),
-        ("CLOUD_RETRY_MAX_ATTEMPTS", "not-a-number"),
-        ("CLOUD_RETRY_MAX_ATTEMPTS", "1.5"),
+        # A zero floor would let a small batch refuse every retry, which is
+        # not "no retry configuration" but a batch that gives up on its first
+        # 429.
+        ("CLOUD_RETRY_MIN_RETRIES", "0"),
+        ("CLOUD_RETRY_MIN_RETRIES", "not-a-number"),
+        ("CLOUD_RETRY_MIN_RETRIES", "1.5"),
+        ("CLOUD_RETRY_RETRIES_PER_ITEM", "-0.1"),
+        ("CLOUD_RETRY_RETRIES_PER_ITEM", "not-a-number"),
+        ("CLOUD_RETRY_RETRIES_PER_ITEM", "inf"),
+        ("CLOUD_RETRY_RETRIES_PER_ITEM", "nan"),
     ],
 )
 def test_load_settings_refuses_invalid_pacing_and_retry_values(
