@@ -4,7 +4,92 @@ Branch `feat/ready-stories-unattended` (worktree `wave_local_ai_v2-impl`), cut f
 
 ## Final report
 
-_Pending: written at the end of the run._
+Written 2026-10-02 at the end of the run. Branch `feat/ready-stories-unattended`, 78 commits after `ef1249e` before this report; nothing pushed, no PR opened, no paid API call made.
+
+Final gates, run from the worktree root on the last code commit:
+- `uv run pytest` => 2097 passed, 2 warnings, coverage 98.10% (floor 95%).
+- `uv run pre-commit run --all-files` => ruff check, ruff format, mypy, detect-secrets all passed. `--all-files` hands the secrets hook no filenames, so every commit's staged files were also scanned with the hook's own exclude pattern (all exit 0).
+- `uv run wave-local-ai-v2-validate` on `runtime-reference.jsonl` and `quality-reference.jsonl` => 82 rows, exit 0. No committed row was rewritten.
+
+### Done
+
+Each row: feat commit, then its `status: done` commit. Evidence and review notes are in the tables below.
+
+| Story | Feat | Done |
+| ----- | ---- | ---- |
+| 1 every-quality-batch-publishes-its-interval-and-what-it-could-resolve (acceptance amended `ec8839b`) | `1cfe5a7` | `96d0a5d` |
+| 2 every-judge-call-names-who-answered-its-reasoning-effort-and-its-reasoning-tokens | `0a6bdfb` | `af67610` |
+| 3 every-row-names-its-prompt-variant-and-a-baseline-row-carries-the-authored-prompt | `29e46ed` | `ddbd2aa` |
+| 4 the-published-bundle-reads-as-four-flat-tables-and-their-column-dictionary | `8f21d7e` | `11c1ef3` |
+| 5 a-thinking-switch-the-template-ignores-is-refused-never-published-as-disabled | `e9c1c69` | `898f1dd` |
+| 6 a-suite-is-data-resolved-by-its-id-not-an-import-in-the-cli | `d66f760` | `8fe1211` |
+| 7 every-prd-use-case-carries-a-coverage-state-or-the-record-refuses-to-publish | `5ebf868` | `f98b4f5` |
+| 8 a-suite-is-certified-to-its-declared-level-and-every-item-names-its-licence-and-source | `99c8f5c` | `1812afc` |
+| 9 a-publication-subset-redraws-to-the-same-items-from-its-recorded-rule | `73e1685` | `9b661b1` |
+| 10 two-configurations-on-the-same-items-receive-a-paired-test-or-a-refusal | `598a946` | `c319db5` |
+| 11 a-comparison-family-carries-its-adjusted-p-values-and-is-superseded-not-edited | `d5b528a` | `4c1a53c` |
+| 12 every-roster-entry-states-its-family-its-licence-and-its-language-claim | `cce1605` | `3208053` |
+| 13 a-candidate-model-enters-the-roster-only-through-the-verification-gate-or-leaves-a-recorded-refusal | `efd5f47` | `451edbd` |
+| 14 every-row-names-the-engine-that-produced-it-and-the-fiche-hashes-it (acceptance amended `44c8953`) | `e2d0f21` | `32cadef` |
+| 15 the-data-is-cc-by-4-0-the-code-stays-mit-and-each-says-so-where-it-lives | `74e1b45` | `5a79e5d` |
+| C3 each-quality-item-records-the-tokens-and-the-first-token-time-its-generation-took | `98b6127` | `f485acc` |
+| C4 the-composition-check-names-every-size-class-and-refuses-an-unlabelled-single-family-one | `11b9b2b` | `a26e20b` |
+| C10 task register-the-closed-harness-candidate-set-and-its-three-row-fields | `3e8a188` | `38f55c2` |
+| the-tabular-export-carries-the-interval-and-the-comparison-record | `122e98e` | `4b97038` |
+| fix: family and size class move with the model axis (C4 defect found reviewing C10) | `e5c2b93` | n/a |
+
+Done in code only, because the story exists only on the PR #54 head; set `status: done` after the PR merges:
+- C1 every-row-records-whether-its-prompt-left-the-machine: `179dc21`.
+- C2 a-publication-size-cloud-batch-survives-its-rate-limits-and-resumes-per-item: `0da8abf`.
+- C5 each-suite-and-machine-publishes-the-local-models-not-distinguishable-from-the-best: `15e0e5b`.
+- C6 comparison-family-and-leader-set-records-read-as-a-fifth-table: `e3858a8`.
+
+Row schema went from "14" to "22" over the run; each bump is in `CHANGELOG.md` and `row_contract.py`.
+
+### Skipped
+
+- C7 a-campaign-is-declared-as-data-and-an-empty-cell-fails-it: `depends_on` a-gpu-run-and-a-cpu-only-run-never-share-a-fiche, which is not implemented and was not in this run's queue (its other dependency, story 14, is now done). Unblocked by implementing that story; per Q74 it rebases onto fiche projection "2", which story 14 now owns.
+- C8 the-terse-output-variant-runs-every-item-and-meets-baseline-in-a-paired-test: `depends_on` C7.
+- C9 the-constrained-output-variant-runs-under-a-llama-cpp-grammar-and-names-its-mechanism: `depends_on` C8.
+
+Stories 1 and 14 were skipped earlier for acceptance conflicts and are done after the owner's decisions of 2026-10-02 (section below).
+
+### Evidence still pending
+
+- The committed bundle predates `thinking_policy` and schemas 15 to 22, so every committed comparison is refused on `thinking_policy` and the first leader set is incomplete. Real paired tests, intervals and leader sets need the bundle regeneration (a-laptop-proves-both-modes-and-republishes-the-bundle-once). Then re-run `scripts/recompute_from_export.py` over the published values (no backlog item owns that re-run).
+- C3: the story's order-4 `baseline` vs `output_compressed` pair written into `aidd_docs/results/README.md` (order 4 not implemented; local runs stay out of committed results). Two `baseline` runs are in its task evidence instead.
+- Story 13: the live pass record for `qwen3-0.6b-q8` is kept at the task's `evidence/candidate-record-pass.jsonl`; the story's "Evidence it publishes" line puts it in `aidd_docs/roster/candidate-records.jsonl`. Publish it if wanted.
+- Story 2: Mistral's `inside_output` reasoning-token billing is an assumption, not confirmed by a live call.
+
+### Code against the backlog
+
+Needs an owner edit:
+- PR #54 copies of stories 1 and 14 need the amended acceptance (`ec8839b`, `44c8953`); both were identical to this branch's copies before.
+- Interval epic, Success Evidence: still "Wilson within 0.01 at n=20 and n=100".
+- Engine epic, decision "Thinking control is per engine": still says a switchless engine's rows "declare `allowed` honestly".
+- Story 2 AC4 says a provider not reporting reasoning tokens gets null; Google's count is derived from usage totals (`reasoning_tokens_source` says so).
+
+Stale wording (the code follows the intent; each is logged on its row):
+- Story 15 "(today classification_suite.py and translation_suite.py)": since `d66f760` only `judge_probe.py` holds item literals; suite items live in `suite_data/*.json`.
+- C4 bullet 8 "of the entry it cites": a cloud row carries its own subject's family and a null size class.
+- C6 "today all three [record kinds] ... not carried": the committed bundle now holds all three.
+- Story 12 bullet 2 ("unchanged" test) against bullet 6 (its version assertion follows the file).
+- Story 13 evidence "bytes and template hash matching the shipped entry": `models.json` carries neither.
+- Several "Code it changes" and "Current state" sections predate this run's changes (named on each row).
+
+Open points in code or data:
+- Roster `expert_count` 40 for the flagship is its layer count; its card and GGUF header say 256 experts.
+- `judge_backends.py` still binds Mistral and Google as judges, which the judge epic retires.
+- The rewriting suite id `rewriting-business-email` was chosen by story 7 (nothing named it); the rewriting story must register it or edit the coverage record.
+- `__init__.py` `FIXED_PROMPT` is a hand-written prompt published in runtime rows under CC-BY while its source is MIT.
+- Runtime rows carry no harness fields, although the PRD says "every row" records the harness.
+- Pre-existing, unchanged: `scripts/audit_dependencies.py` exits 1 with 14 blocking findings (urllib3, virtualenv); `tests/test_prompt_provenance.py` `_MINIMAL_QUALITY_ROW` lacks ~35 required fields, so one test passes on a missing-field refusal.
+
+### Housekeeping
+
+- Local branch `parked/story-14-engine-registry` (`c0fdfef`) is superseded by `e2d0f21` and can be deleted.
+- After removing the worktree, run `uv run pre-commit install` in the main repo: the worktree's install rewrote the shared hooks.
+- The C10 implementer stopped its server with `taskkill /IM llama-server.exe`, which kills every llama-server; it reported one process and an idle GPU before. Later briefs say to stop by PID.
 
 ## Setup
 
