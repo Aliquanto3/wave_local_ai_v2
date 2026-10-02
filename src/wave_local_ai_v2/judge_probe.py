@@ -1,3 +1,6 @@
+# Licence notice: the hand-written item literals in this module
+# (`JUDGE_PROBE_ITEMS`) are data licensed under CC-BY 4.0, see LICENSE-DATA.
+# The surrounding code is licensed under the MIT License, see LICENSE.
 """The judge probe: ten hand-written open-ended items in EN, FR and DE, run
 end to end through the judged machinery on this machine.
 

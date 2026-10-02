@@ -235,6 +235,40 @@ built or tested by this project's CI.
   the NVIDIA path works at all. Those belong to the epic's fresh-machine
   walk, done by a human on real hardware — not to this repository's CI.
 
+## Licence
+
+The code and the data are licensed separately.
+
+- **Code: MIT.** Everything that runs (the Python package, scripts, tests,
+  workflows) is licensed under the MIT License; see [`LICENSE`](LICENSE).
+- **Data: CC-BY 4.0.** The published results and what they cite are licensed
+  under Creative Commons Attribution 4.0 International; see
+  [`LICENSE-DATA`](LICENSE-DATA), which names every covered path. That is the
+  reference bundle's rows (current and superseded), the hardware fiches, the
+  suite definitions and their hand-written items (as published and as stored
+  in `src/wave_local_ai_v2/suite_data/`), the comparison records, the model
+  roster, the use-case coverage record, and the judge probe's hand-written
+  items in `judge_probe.py` (the code around them stays MIT). Each covered
+  directory holds a `NOTICE.md` stating its terms.
+
+`LICENSE-DATA` does not grant CC-BY 4.0 over what the repository does not own:
+
+- model weights, which their publishers license;
+- the third-party licences the roster records, which it records but does not
+  grant;
+- the model-output fields the rows carry (`predicted_label` today), which are
+  redistributed on the author's declaration that this is permitted, unverified
+  against each model's and provider's terms until the open spike on that
+  question concludes.
+
+The untracked per-machine `runtime.jsonl` and `quality.jsonl` are not
+published and not covered. No item is drawn from a public benchmark today; one
+that is will carry its source's licence, recorded per item, not CC-BY 4.0.
+
+The attribution string a reuser reproduces will be stated in this section,
+together with a `CITATION.cff` file. Until then, attribute as `LICENSE-DATA`
+section 4 describes.
+
 ## Project status
 
 This is an active benchmark harness, not a finished product. See
