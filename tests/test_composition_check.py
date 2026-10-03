@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from store_fixtures import ROSTER_REQUIREMENTS
 
 from wave_local_ai_v2 import composition_check
 
@@ -48,6 +49,7 @@ def _entry(
         "display_id": display_id,
         "quant": "Q8_0",
         "sha256": "a" * 64,
+        "requirements": ROSTER_REQUIREMENTS,
         "architecture": architecture,
         "server_flags": {
             "n_gpu_layers": 99,

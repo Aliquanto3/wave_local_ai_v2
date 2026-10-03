@@ -9,6 +9,7 @@ from unittest.mock import DEFAULT, MagicMock, patch
 import pytest
 import requests
 from conftest import mark_prompt
+from store_fixtures import ROSTER_REQUIREMENTS, single_refusal, write_raised_roster
 
 from wave_local_ai_v2 import (
     chrf,
@@ -80,6 +81,7 @@ FAKE_ROSTER = {
             "file": "fake.gguf",
             "quant": "UD-IQ4_XS",
             "sha256": "0" * 64,
+            "requirements": ROSTER_REQUIREMENTS,
             "family": "qwen",
             "size_class": "~8B-and-up",
             "thinking_control": QWEN_THINKING_CONTROL,
@@ -3127,3 +3129,34 @@ def test_a_batch_whose_interval_covers_other_items_is_refused_before_writing(
     with pytest.raises(score_interval.IntervalInvariantError, match="n=5"):
         quality_cli._run()
     assert not quality_results_path.exists() or read_rows(quality_results_path) == []
+
+
+def test_a_run_below_its_declared_minimum_refuses_before_the_weights_and_any_spawn(
+    stubbed_run, tmp_path, capsys
+) -> None:
+    quality_results_path, started = stubbed_run
+    settings = started["load_settings"].return_value
+    # The weights are absent too: the RAM refusal must not be masked by them.
+    (
+        settings.slm_models_dir
+        / FAKE_ROSTER["entries"][DEFAULT_ROSTER_ENTRY_ID]["file"]
+    ).unlink()
+    started["load_settings"].return_value = dataclasses.replace(
+        settings,
+        roster_path=write_raised_roster(FAKE_ROSTER, tmp_path),
+        refusals_dir=tmp_path / "refusals",
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        quality_cli.main()
+
+    assert exit_info.value.code == 1
+    err = capsys.readouterr().err
+    assert "refused:" in err and "ram_gb" in err and "compute mode 'gpu'" in err
+    assert "model file not found" not in err
+    started["running_server"].assert_not_called()
+    started["probe_build"].assert_not_called()
+    record = single_refusal(tmp_path / "refusals", "laptop-mobile-gpu")
+    assert record["requirement"] == "ram_gb"
+    assert record["profile_id"] == f"{DEFAULT_ROSTER_ENTRY_ID}@laptop-mobile-gpu/gpu"
+    assert not quality_results_path.exists()

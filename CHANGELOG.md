@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A model below its declared minimum refuses, and the refusal is published
+  (roster_version 6)** -- every roster entry declares, per compute mode, a
+  minimum total RAM, VRAM (`gpu` only) and free disk (`requirements`, each
+  `{value, source, read_from}` in decimal GB), required by `load_roster`. The
+  first declarations are calibrated from published peaks (the flagship's
+  15.23 GB and the 0.6B's 1.08 GB `gpu` RSS, the 0.6B's 4.77 GB `cpu_only`
+  RSS) and the weights' size; the other `cpu_only` RAM minimums are labelled
+  lower bounds, and no VRAM minimum is declared yet (the published
+  `vram_used_mib` is device-wide). A pre-flight (`preflight.py`), called by
+  the runtime, quality and judge-probe writers before the weights are looked
+  for or `llama-server` starts, compares them with the machine's total RAM,
+  its declared allocatable VRAM and, while the weights are absent, its free
+  disk. A run below a minimum exits non-zero naming the requirement, the mode,
+  the declared and the observed value, writes no row, substitutes nothing (a
+  refused `gpu` run names the `cpu_only` profile and runs nothing), and
+  appends one refusal record under its own contract
+  (`row_contract.REFUSAL_FIELDS`, no `schema_version`) to the machine's tracked
+  `aidd_docs/results/refusals/<machine_id>.jsonl` (`REFUSALS_DIR`). The
+  requirement table is `docs/setup.md` section 1.2, which replaces the
+  README's hardware prose.
 - **Each model, machine and mode runs under its own named run profile (row
   schema "26", roster_version 5)** -- the host-fitted launch values of every
   (roster entry x machine x compute mode) triple are declared in the tracked

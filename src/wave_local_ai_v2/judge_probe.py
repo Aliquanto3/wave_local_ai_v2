@@ -54,6 +54,7 @@ from wave_local_ai_v2 import (
     judge_protocol,
     local_client,
     mistral_client,
+    preflight,
     profiles,
     prompt_provenance,
     prompt_variants,
@@ -476,6 +477,15 @@ def _run(resume_run_id: str | None = None) -> None:
         run_profile.compute_mode,
         operator_n_cpu_moe=settings.host_n_cpu_moe,
         operator_threads=settings.host_threads,
+    )
+    # Below the entry's declared minimum for this mode, the run refuses here,
+    # recorded, before the weights are looked for or any process starts.
+    preflight.enforce(
+        roster_entry,
+        run_profile.machine,
+        launch_profile,
+        models_dir=settings.slm_models_dir,
+        refusals_dir=settings.refusals_dir,
     )
     model_path = _local_model_path(settings, roster_entry)
     # Expected to come back indicative, naming the sub-20 item count. Not

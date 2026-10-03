@@ -12,6 +12,7 @@ from store_fixtures import (
     GRADED_VALUES,
     NAMED_VALUES,
     ROSTER_ENTRY_ID,
+    ROSTER_REQUIREMENTS,
     RUN_ID,
     SUITE_ID,
     make_row,
@@ -674,6 +675,7 @@ def two_entry_roster_path(tmp_path: Path) -> Path:
                         "display_id": "Qwen3.6-35B-A3B",
                         "quant": "UD-IQ4_XS",
                         "sha256": "c" * 64,
+                        "requirements": ROSTER_REQUIREMENTS,
                         "architecture": {
                             "kind": "moe",
                             "expert_count": 48,
@@ -688,6 +690,7 @@ def two_entry_roster_path(tmp_path: Path) -> Path:
                         "display_id": "Qwen3-4B",
                         "quant": "Q4_K_M",
                         "sha256": "d" * 64,
+                        "requirements": ROSTER_REQUIREMENTS,
                         "architecture": {
                             "kind": "dense",
                             "expert_count": None,

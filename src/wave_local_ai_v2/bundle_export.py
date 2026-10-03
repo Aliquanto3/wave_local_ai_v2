@@ -1025,6 +1025,38 @@ FICHE_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     ("roster_entry_id",): FieldDoc("Roster entry the fiche was recorded for.", _ID),
 }
 
+_REQUIREMENT_MEANINGS: dict[str, str] = {
+    "ram_gb": "total system RAM",
+    "vram_gb": "VRAM the GPU can allocate",
+    "disk_gb": "free disk on the models volume, checked only when the weights "
+    "are not on disk yet",
+}
+
+
+def _requirement_field_docs() -> dict[tuple[str, ...], FieldDoc]:
+    """The columns of every declared minimum (`roster.REQUIREMENTS_BY_MODE`)."""
+    docs: dict[tuple[str, ...], FieldDoc] = {}
+    for mode, names in roster.REQUIREMENTS_BY_MODE.items():
+        for name in names:
+            what = f"Declared minimum {_REQUIREMENT_MEANINGS[name]} under {mode}"
+            key = ("requirements", mode, name)
+            docs[(*key, "value")] = FieldDoc(
+                f"{what}; a run on a machine reporting less refuses before it starts.",
+                "GB (10^9 bytes)",
+                "Nobody has calibrated this minimum yet (source "
+                "not_yet_declared); the requirement is not checked.",
+            )
+            docs[(*key, "source")] = FieldDoc(
+                f"{what}: declared or not_yet_declared.", _ID
+            )
+            docs[(*key, "read_from")] = FieldDoc(
+                f"{what}: the published peak or figure it was calibrated from, "
+                "or what it awaits.",
+                _TEXT,
+            )
+    return docs
+
+
 ROSTER_ENTRY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     ("repo",): FieldDoc("Hugging Face repository the model file comes from.", _ID),
     ("revision",): FieldDoc("Repository revision pinned.", _ID),
@@ -1130,6 +1162,7 @@ ROSTER_ENTRY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     ("server_flags", "sampler", "presence_penalty"): FieldDoc(
         "Server default presence penalty.", "number"
     ),
+    **_requirement_field_docs(),
 }
 
 SUITE_DEFINITION_FIELDS: dict[tuple[str, ...], FieldDoc] = {

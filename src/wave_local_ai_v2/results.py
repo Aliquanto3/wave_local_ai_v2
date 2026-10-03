@@ -94,6 +94,18 @@ def append_row(path: Path, kind: RowKind, row: dict[str, Any]) -> None:
         f.write(json.dumps(row) + "\n")
 
 
+def append_refusal(path: Path, record: dict[str, Any]) -> None:
+    """Append one refusal record, `append_row`'s shape under its own contract.
+
+    Gated on `row_contract.validate_refusal`; `path` is a machine's refusal
+    file (`preflight.refusal_path`), never a results store.
+    """
+    row_contract.validate_refusal(record)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(record) + "\n")
+
+
 def read_rows(path: Path, schema_version: str | None = None) -> list[dict[str, Any]]:
     """Read all rows back from the results store. Returns an empty list if absent.
 

@@ -377,6 +377,14 @@ turn is a shell loop over the ids, not a runner script: `load_dotenv(override=
 False)` leaves a shell-set value in place, and `.env` does not set the
 variable at all. Each invocation is its own `run_id`.
 
+Right after the run profile resolves, every writer runs the pre-flight
+(`preflight.py`): a machine below the roster entry's declared minimum for the
+mode (`requirements` in `models.json`: RAM, VRAM under `gpu`, disk while the
+weights are absent) refuses with a `RosterError` before the weights are
+looked for or anything spawns, writes no row, and appends one refusal record
+to `REFUSALS_DIR/<machine_id>.jsonl` (default `aidd_docs/results/refusals/`,
+tracked). See `docs/setup.md` section 1.2.
+
 The host-fitted launch values are not roster data: every (roster entry x
 machine x compute mode) triple runs under a named run profile
 (`<entry>@<machine>/<mode>`) from `aidd_docs/roster/profiles.json`

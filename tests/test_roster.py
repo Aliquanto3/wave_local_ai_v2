@@ -6,6 +6,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+from store_fixtures import ROSTER_REQUIREMENTS
 
 from wave_local_ai_v2 import engines, profiles, roster, server
 from wave_local_ai_v2.roster import RosterError
@@ -20,6 +21,7 @@ MOE_ENTRY = {
     "file": "moe.gguf",
     "quant": "UD-IQ4_XS",
     "sha256": "a" * 64,
+    "requirements": ROSTER_REQUIREMENTS,
     "architecture": {
         "kind": "moe",
         "expert_count": 40,
@@ -49,6 +51,7 @@ DENSE_ENTRY = {
     "file": "dense.gguf",
     "quant": "Q4_K_M",
     "sha256": "b" * 64,
+    "requirements": ROSTER_REQUIREMENTS,
     "architecture": {
         "kind": "dense",
         "expert_count": 0,
@@ -442,7 +445,7 @@ def test_the_shipped_moe_entry_still_loads_with_no_family_of_its_own() -> None:
     # not back-filled, so the assertion follows the file rather than pinning
     # a version the file has moved past. 5: `validated_host` moved into the
     # run profile registry.
-    assert loaded.roster_version == 5
+    assert loaded.roster_version == 6
     assert entry.family is None
     assert roster.family_of(entry.display_id, entry) == "qwen"
 

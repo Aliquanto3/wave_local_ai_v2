@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 from conftest import mark_prompt
+from store_fixtures import ROSTER_REQUIREMENTS, single_refusal, write_raised_roster
 
 import wave_local_ai_v2
 from wave_local_ai_v2 import FIXED_MAX_TOKENS, FIXED_PROMPT, _run, engines, main
@@ -30,6 +31,7 @@ FAKE_ROSTER = {
             "file": "fake.gguf",
             "quant": "UD-IQ4_XS",
             "sha256": "0" * 64,
+            "requirements": ROSTER_REQUIREMENTS,
             "architecture": {
                 "kind": "moe",
                 "expert_count": 40,
@@ -1189,4 +1191,35 @@ def test_a_runtime_run_outside_its_campaign_refuses_before_any_server_starts(
     assert "run refused under campaign 'test-campaign'" in capsys.readouterr().err
     started["running_server"].assert_not_called()
     started["probe_build"].assert_not_called()
+    assert not results_path.exists()
+
+
+def test_a_run_below_its_declared_minimum_refuses_before_the_weights_and_any_spawn(
+    stubbed_run, tmp_path, capsys
+) -> None:
+    results_path, started = stubbed_run
+    settings = started["load_settings"].return_value
+    # The weights are absent too: the RAM refusal must not be masked by them.
+    (
+        settings.slm_models_dir
+        / FAKE_ROSTER["entries"][DEFAULT_ROSTER_ENTRY_ID]["file"]
+    ).unlink()
+    started["load_settings"].return_value = replace(
+        settings,
+        roster_path=write_raised_roster(FAKE_ROSTER, tmp_path),
+        refusals_dir=tmp_path / "refusals",
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        main()
+
+    assert exit_info.value.code == 1
+    err = capsys.readouterr().err
+    assert "refused:" in err and "ram_gb" in err and "compute mode 'gpu'" in err
+    assert "model file not found" not in err
+    started["running_server"].assert_not_called()
+    started["probe_build"].assert_not_called()
+    record = single_refusal(tmp_path / "refusals", "laptop-mobile-gpu")
+    assert record["requirement"] == "ram_gb"
+    assert record["profile_id"] == f"{DEFAULT_ROSTER_ENTRY_ID}@laptop-mobile-gpu/gpu"
     assert not results_path.exists()

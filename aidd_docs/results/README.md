@@ -655,7 +655,7 @@ command's output.
 
 <!-- composition-check:start -->
 ```text
-Roster composition: aidd_docs/roster/models.json (roster_version 5)
+Roster composition: aidd_docs/roster/models.json (roster_version 6)
 Size classes, banded on total parameters: ~0.5B < 1,000,000,000 <= ~2B < 3,000,000,000 <= ~4B < 6,000,000,000 <= ~8B-and-up
   ~0.5B: 1 entry; families: qwen; dense: yes; MoE: no; label: none; MoE sought: no; MoE absence reason: none
   ~2B: 1 entry; families: qwen; dense: yes; MoE: no; label: none; MoE sought: no; MoE absence reason: none

@@ -23,6 +23,8 @@ from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from wave_local_ai_v2 import machines
+
 if TYPE_CHECKING:
     from wave_local_ai_v2.profiles import ResolvedProfile
 
@@ -61,6 +63,17 @@ REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
         "min_p",
         "presence_penalty",
     ),
+}
+
+# The minimum requirements every entry declares per compute mode (Methodology
+# 21), each a `{value, source, read_from}` fact in decimal GB (10^9 bytes):
+# total system RAM, VRAM the GPU can allocate (`gpu` only: a `cpu_only` run
+# puts no layer on it) and free disk on the models volume (checked only when
+# the weights are not on disk yet). `preflight.py` checks them before the
+# weights are looked for or any process starts.
+REQUIREMENTS_BY_MODE: dict[str, tuple[str, ...]] = {
+    machines.COMPUTE_MODE_GPU: ("ram_gb", "vram_gb", "disk_gb"),
+    machines.COMPUTE_MODE_CPU_ONLY: ("ram_gb", "disk_gb"),
 }
 
 _SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
@@ -242,6 +255,11 @@ class RosterEntry:
     # that omits them rather than the loader refusing it first.
     size_class: str | None = None
     bytes_on_disk: int | None = None
+    # compute mode -> requirement name -> `{value, source, read_from}`, per
+    # `REQUIREMENTS_BY_MODE`. Required by `load_roster` (a run reads only
+    # roster files) and optional to `parse_entry`, whose candidate has no
+    # measured peak to calibrate a minimum from before its first run.
+    requirements: dict[str, dict[str, dict[str, Any]]] | None = None
 
 
 @dataclass(frozen=True)
@@ -317,6 +335,10 @@ def load_roster(path: Path) -> RosterFile:
     entries: dict[str, RosterEntry] = {}
     for entry_id, raw_entry in raw_entries.items():
         entries[entry_id] = _parse_entry(entry_id, raw_entry)
+        if isinstance(raw_entry, dict) and "requirements" not in raw_entry:
+            raise RosterError(
+                f"roster entry {entry_id!r} is missing required field(s): requirements"
+            )
 
     return RosterFile(
         roster_version=roster_version,
@@ -462,7 +484,90 @@ def _parse_entry(entry_id: str, raw_entry: Any) -> RosterEntry:
         language_claim=_parse_language_claim(entry_id, raw_entry),
         size_class=_parse_size_class(entry_id, raw_entry),
         bytes_on_disk=_optional_count(entry_id, raw_entry, "bytes_on_disk"),
+        requirements=_parse_requirements(entry_id, raw_entry),
     )
+
+
+def _parse_requirements(
+    entry_id: str, raw_entry: dict[str, Any]
+) -> dict[str, dict[str, dict[str, Any]]] | None:
+    """The declared minimums per compute mode, or `None` when absent.
+
+    Every mode of `REQUIREMENTS_BY_MODE` and every requirement of each is
+    required, and nothing else is accepted (a `vram_gb` under `cpu_only` is
+    refused, not ignored). A `declared` value is a positive number; a
+    `not_yet_declared` one is `null` and names what it awaits.
+    """
+    if "requirements" not in raw_entry:
+        return None
+    block = raw_entry["requirements"]
+    if not isinstance(block, dict):
+        raise RosterError(
+            f"roster entry {entry_id!r}: 'requirements' must be an object"
+        )
+    _require_exact_keys(entry_id, "requirements", block, tuple(REQUIREMENTS_BY_MODE))
+    parsed: dict[str, dict[str, dict[str, Any]]] = {}
+    for mode, names in REQUIREMENTS_BY_MODE.items():
+        where = f"requirements.{mode}"
+        mode_block = block[mode]
+        if not isinstance(mode_block, dict):
+            raise RosterError(f"roster entry {entry_id!r}: {where!r} must be an object")
+        _require_exact_keys(entry_id, where, mode_block, names)
+        parsed[mode] = {
+            name: _requirement_fact(entry_id, f"{where}.{name}", mode_block[name])
+            for name in names
+        }
+    return parsed
+
+
+def _require_exact_keys(
+    entry_id: str, where: str, block: dict[str, Any], names: tuple[str, ...]
+) -> None:
+    missing = [name for name in names if name not in block]
+    if missing:
+        raise RosterError(
+            f"roster entry {entry_id!r} is missing required field(s): "
+            f"{', '.join(f'{where}.{name}' for name in missing)}"
+        )
+    unknown = sorted(set(block) - set(names))
+    if unknown:
+        raise RosterError(
+            f"roster entry {entry_id!r}: {where!r} declares unknown field(s) "
+            f"{', '.join(unknown)} (expected: {', '.join(names)})"
+        )
+
+
+def _requirement_fact(entry_id: str, where: str, fact: Any) -> dict[str, Any]:
+    if not isinstance(fact, dict) or set(fact) != set(machines.FACT_FIELDS):
+        raise _malformed(
+            entry_id, where, "an object with exactly value, source, read_from", fact
+        )
+    read_from = fact["read_from"]
+    if not isinstance(read_from, str) or not read_from.strip():
+        raise _malformed(
+            entry_id, f"{where}.read_from", "a non-empty string", read_from
+        )
+    value = fact["value"]
+    if fact["source"] == machines.SOURCE_DECLARED:
+        if not isinstance(value, int | float) or isinstance(value, bool) or value <= 0:
+            raise _malformed(entry_id, f"{where}.value", "a positive number", value)
+    elif fact["source"] == machines.SOURCE_NOT_YET_DECLARED:
+        if value is not None:
+            raise _malformed(
+                entry_id,
+                f"{where}.value",
+                "null while not_yet_declared (a minimum nobody calibrated is "
+                "never published)",
+                value,
+            )
+    else:
+        raise _malformed(
+            entry_id,
+            f"{where}.source",
+            f"one of {sorted(machines.FACT_SOURCES)}",
+            fact["source"],
+        )
+    return dict(fact)
 
 
 def _parse_size_class(entry_id: str, raw_entry: dict[str, Any]) -> str | None:

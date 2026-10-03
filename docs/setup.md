@@ -11,11 +11,9 @@ where `llama-server` actually loads the model and runs inference.
 - Python 3.12+
 - [`uv`](https://docs.astral.sh/uv/) installed
 - `git`
-- **~18 GB free disk** for the weights and the binary, **32 GB system RAM**, and
-  an **NVIDIA GPU with CUDA 12.x support** to reach a runtime row comparable to
-  the committed evidence — see
-  [the README's hardware section](../README.md#hardware-you-need-before-downloading-anything)
-  before starting step 3, which downloads 17.7 GB.
+- What each model needs per compute mode (RAM, VRAM, disk) is the declared
+  minimums table in [section 1.2](#12-what-each-model-needs-declared-minimums);
+  read it before starting step 3, which downloads 17.7 GB for the flagship.
 
 The GPU/CUDA driver is only required to *run* the benchmarks (step 4 onward),
 not to reach this point.
@@ -54,6 +52,51 @@ serve the dashboard from the service's own origin.
 
 For the TLS certificate, the key, and reaching the dashboard from a second
 machine (the demo/pitch path), see `docs/demo.md`.
+
+### 1.2 What each model needs: declared minimums
+
+Every roster entry declares, per compute mode, the minimum it needs to start:
+total system RAM, VRAM the GPU can allocate (`gpu` only) and free disk on the
+models volume (`requirements` in `aidd_docs/roster/models.json`, each value
+`{value, source, read_from}` in decimal GB, 10^9 bytes). Before a run looks
+for the weights or starts `llama-server`, its pre-flight compares them with
+what the machine reports: total RAM, the machine registry's declared
+allocatable VRAM (NVML's reported total where none is declared), and free disk
+only while the weights are not on disk yet. A machine below a minimum refuses
+the run: it names the requirement, the mode, the declared minimum and the
+observed value, exits non-zero, writes no runtime or quality row, and appends
+one refusal record (roster entry, machine, mode, profile id, requirement,
+declared and observed values, release version, commit sha, timestamp) to the
+machine's own tracked file `aidd_docs/results/refusals/<machine_id>.jsonl`
+(`REFUSALS_DIR` moves it). Nothing is substituted: no smaller quant, no
+shorter context, no switch from `gpu` to `cpu_only`; a refused `gpu` run names
+the `cpu_only` profile that exists for the same machine and runs nothing.
+
+| Model | Mode | RAM (GB) | VRAM (GB) | Disk (GB) | Calibrated from |
+| ----- | ---- | -------- | --------- | --------- | --------------- |
+| `Qwen3.6-35B-A3B` `UD-IQ4_XS` | `gpu` | 15.23 | not yet declared | 17.74 | RAM: peak `process_rss_bytes` 15225831424 of the published laptop rows; disk: `bytes_on_disk` |
+| `Qwen3.6-35B-A3B` `UD-IQ4_XS` | `cpu_only` | 17.74 | n/a | 17.74 | RAM: lower bound, the larger of the `gpu` peak and the weights' size (no `cpu_only` peak published) |
+| `Qwen3-0.6B` `Q8_0` | `gpu` | 1.08 | not yet declared | 0.64 | RAM: peak 1077411840 B (1077 MB) of the laptop gpu row in the gpu-cpu-never-share-a-fiche task evidence |
+| `Qwen3-0.6B` `Q8_0` | `cpu_only` | 4.77 | n/a | 0.64 | RAM: peak 4761899008 B of the laptop `cpu_only` rows (named-run-profiles evidence) |
+| `Qwen3-1.7B` `Q8_0` | `gpu` | 2.28 | not yet declared | 1.84 | RAM: peak 2277 MB of the published laptop row |
+| `Qwen3-1.7B` `Q8_0` | `cpu_only` | 2.28 | n/a | 1.84 | RAM: lower bound, as for the flagship |
+| `Qwen3-4B` `Q4_K_M` | `gpu` | 4.28 | not yet declared | 2.50 | RAM: peak 4275 MB of the published laptop row |
+| `Qwen3-4B` `Q4_K_M` | `cpu_only` | 4.28 | n/a | 2.50 | RAM: lower bound, as for the flagship |
+
+The `gpu` RAM peaks are the side-by-side runtime table of
+`aidd_docs/results/README.md`; each declaration's full source is its
+`read_from`. No VRAM minimum is declared yet: the published `vram_used_mib` is
+NVML's device-wide used memory (4527 MiB for the 0.6B, whose weights are
+0.64 GB), not a model's own need, so a VRAM requirement is not checked and the
+pre-flight says so on stderr. A `gpu` run on the laptop also needs an NVIDIA
+GPU with CUDA 12.x support; the flagship's laptop evidence offloads experts to
+CPU RAM with `--n-cpu-moe`, so system RAM, not VRAM, is its ceiling.
+
+These minimums are declared, not verified. Nothing checks that a declaration
+is right: one set too low surfaces as a run that starts and then fails (an
+out-of-memory exit or a load error), not as a refusal. The `cpu_only` lower
+bounds are the likeliest to be too low until a measured `cpu_only` peak
+replaces them.
 
 ## 2. Get `llama-server`, build `b10537`
 

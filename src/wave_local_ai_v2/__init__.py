@@ -19,6 +19,7 @@ from wave_local_ai_v2 import (
     engines,
     fiche_registry,
     machines,
+    preflight,
     profiles,
     prompt_provenance,
     prompt_variants,
@@ -270,6 +271,15 @@ def _run() -> None:
         compute_mode=run_profile.compute_mode,
     )
 
+    # Below the entry's declared minimum for this mode, the run refuses here,
+    # recorded, before the weights are looked for or any process starts.
+    preflight.enforce(
+        roster_entry,
+        run_profile.machine,
+        launch_profile,
+        models_dir=settings.slm_models_dir,
+        refusals_dir=settings.refusals_dir,
+    )
     model_path = settings.slm_models_dir / roster_entry.file
     if not model_path.exists():
         raise SettingsError(f"model file not found: {model_path}")

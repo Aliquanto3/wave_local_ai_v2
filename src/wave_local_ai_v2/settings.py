@@ -26,6 +26,11 @@ DEFAULT_LEADER_SETS_DIR = "aidd_docs/results/leader-sets"
 # Where campaign declarations live, one `<campaign_id>.json` each: beside the
 # results, outside the committed stores (`campaigns.py`).
 DEFAULT_CAMPAIGNS_DIR = "aidd_docs/campaigns"
+# Where the pre-flight appends each machine's refusal records, one tracked
+# `<machine_id>.jsonl` per machine (`preflight.refusal_path`). Tracked, unlike
+# the live results stores: the ignore rule covers only the top-level
+# `aidd_docs/results/*.jsonl`.
+DEFAULT_REFUSALS_DIR = "aidd_docs/results/refusals"
 # Where `use_case_coverage` publishes the coverage record, and only once every
 # PRD use case in it carries a resolvable state.
 DEFAULT_USE_CASE_COVERAGE_PATH = "aidd_docs/results/use-case-coverage.json"
@@ -186,6 +191,8 @@ class Settings:
     # run checked against it by `campaigns.require_run_campaign`.
     campaign_id: str | None = None
     campaigns_dir: Path = Path(DEFAULT_CAMPAIGNS_DIR)
+    # No existence check at load time: `results.append_refusal` creates it.
+    refusals_dir: Path = Path(DEFAULT_REFUSALS_DIR)
     # No existence check at load time, mirrors roster_path: fiche_registry.write_fiche
     # creates it via mkdir(parents=True, exist_ok=True), matching results.append_row's
     # own pattern.
@@ -422,6 +429,7 @@ def load_settings() -> Settings:
     compute_mode = os.environ.get("COMPUTE_MODE") or None
     campaign_id = os.environ.get("CAMPAIGN_ID") or None
     campaigns_dir = Path(os.environ.get("CAMPAIGNS_DIR", DEFAULT_CAMPAIGNS_DIR))
+    refusals_dir = Path(os.environ.get("REFUSALS_DIR", DEFAULT_REFUSALS_DIR))
     host_threads = (
         None
         if os.environ.get("SERVER_THREADS") is None
@@ -532,6 +540,7 @@ def load_settings() -> Settings:
         compute_mode=compute_mode,
         campaign_id=campaign_id,
         campaigns_dir=campaigns_dir,
+        refusals_dir=refusals_dir,
         runtime_reference_path=runtime_reference_path,
         quality_reference_path=quality_reference_path,
         judge_probe_reference_path=judge_probe_reference_path,

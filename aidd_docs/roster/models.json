@@ -1,5 +1,5 @@
 {
-  "roster_version": 5,
+  "roster_version": 6,
   "size_classes": {
     "~0.5B": {
       "single_family_ladder": false,
@@ -36,6 +36,37 @@
       "sha256": "649d7508507b84638732c4f52c24c8b15843c6dca2f3ff793ae07c14a67ebbb3",
       "size_class": "~8B-and-up",
       "bytes_on_disk": 17730509792,
+      "requirements": {
+        "gpu": {
+          "ram_gb": {
+            "value": 15.23,
+            "source": "declared",
+            "read_from": "peak process_rss_bytes 15225831424 of the flagship's published gpu runtime rows on laptop-mobile-gpu (aidd_docs/results/runtime-reference.jsonl; aidd_docs/results/README.md side-by-side runtime table, 15226 MB)"
+          },
+          "vram_gb": {
+            "value": null,
+            "source": "not_yet_declared",
+            "read_from": "awaits a per-process VRAM peak: the published vram_used_mib is NVML's device-wide used memory (4527 MiB for the 0.6B, whose weights are 0.64 GB), not this model's own need"
+          },
+          "disk_gb": {
+            "value": 17.74,
+            "source": "declared",
+            "read_from": "bytes_on_disk 17730509792 (the weights file), checked only when the weights are not yet on disk"
+          }
+        },
+        "cpu_only": {
+          "ram_gb": {
+            "value": 17.74,
+            "source": "declared",
+            "read_from": "lower bound, no cpu_only peak published: the larger of the gpu-mode RSS peak (15.23 GB) and the weights' bytes_on_disk 17730509792, since a cpu_only run holds every weight in host memory"
+          },
+          "disk_gb": {
+            "value": 17.74,
+            "source": "declared",
+            "read_from": "bytes_on_disk 17730509792 (the weights file), checked only when the weights are not yet on disk"
+          }
+        }
+      },
       "thinking_control": {
         "chat_template_kwargs": {
           "enable_thinking": false
@@ -83,6 +114,37 @@
       "sha256": "9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031",
       "size_class": "~0.5B",
       "bytes_on_disk": 639446688,
+      "requirements": {
+        "gpu": {
+          "ram_gb": {
+            "value": 1.08,
+            "source": "declared",
+            "read_from": "peak process_rss_bytes 1077411840 of the 0.6B gpu runtime row on laptop-mobile-gpu, 1077 MB (aidd_docs/tasks/2026_10/2026_10_02_gpu-cpu-never-share-a-fiche/evidence/runtime.jsonl)"
+          },
+          "vram_gb": {
+            "value": null,
+            "source": "not_yet_declared",
+            "read_from": "awaits a per-process VRAM peak: the published vram_used_mib is NVML's device-wide used memory (4527 MiB for the 0.6B, whose weights are 0.64 GB), not this model's own need"
+          },
+          "disk_gb": {
+            "value": 0.64,
+            "source": "declared",
+            "read_from": "bytes_on_disk 639446688 (the weights file), checked only when the weights are not yet on disk"
+          }
+        },
+        "cpu_only": {
+          "ram_gb": {
+            "value": 4.77,
+            "source": "declared",
+            "read_from": "peak process_rss_bytes 4761899008 of the 0.6B's cpu_only runtime rows on laptop-mobile-gpu (aidd_docs/tasks/2026_10/2026_10_02_named-run-profiles/evidence/runtime.jsonl)"
+          },
+          "disk_gb": {
+            "value": 0.64,
+            "source": "declared",
+            "read_from": "bytes_on_disk 639446688 (the weights file), checked only when the weights are not yet on disk"
+          }
+        }
+      },
       "family": "qwen",
       "thinking_control": {
         "chat_template_kwargs": {
@@ -132,6 +194,37 @@
       "sha256": "061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a",
       "size_class": "~2B",
       "bytes_on_disk": 1834426016,
+      "requirements": {
+        "gpu": {
+          "ram_gb": {
+            "value": 2.28,
+            "source": "declared",
+            "read_from": "peak process_rss_bytes of the 1.7B's gpu runtime row on laptop-mobile-gpu (aidd_docs/results/README.md side-by-side runtime table, 2277 MB)"
+          },
+          "vram_gb": {
+            "value": null,
+            "source": "not_yet_declared",
+            "read_from": "awaits a per-process VRAM peak: the published vram_used_mib is NVML's device-wide used memory (4527 MiB for the 0.6B, whose weights are 0.64 GB), not this model's own need"
+          },
+          "disk_gb": {
+            "value": 1.84,
+            "source": "declared",
+            "read_from": "bytes_on_disk 1834426016 (the weights file), checked only when the weights are not yet on disk"
+          }
+        },
+        "cpu_only": {
+          "ram_gb": {
+            "value": 2.28,
+            "source": "declared",
+            "read_from": "lower bound, no cpu_only peak published: the larger of the gpu-mode RSS peak (2.28 GB) and the weights' bytes_on_disk 1834426016, since a cpu_only run holds every weight in host memory"
+          },
+          "disk_gb": {
+            "value": 1.84,
+            "source": "declared",
+            "read_from": "bytes_on_disk 1834426016 (the weights file), checked only when the weights are not yet on disk"
+          }
+        }
+      },
       "family": "qwen",
       "thinking_control": {
         "chat_template_kwargs": {
@@ -181,6 +274,37 @@
       "sha256": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
       "size_class": "~4B",
       "bytes_on_disk": 2497280256,
+      "requirements": {
+        "gpu": {
+          "ram_gb": {
+            "value": 4.28,
+            "source": "declared",
+            "read_from": "peak process_rss_bytes of the 4B's gpu runtime row on laptop-mobile-gpu (aidd_docs/results/README.md side-by-side runtime table, 4275 MB)"
+          },
+          "vram_gb": {
+            "value": null,
+            "source": "not_yet_declared",
+            "read_from": "awaits a per-process VRAM peak: the published vram_used_mib is NVML's device-wide used memory (4527 MiB for the 0.6B, whose weights are 0.64 GB), not this model's own need"
+          },
+          "disk_gb": {
+            "value": 2.5,
+            "source": "declared",
+            "read_from": "bytes_on_disk 2497280256 (the weights file), checked only when the weights are not yet on disk"
+          }
+        },
+        "cpu_only": {
+          "ram_gb": {
+            "value": 4.28,
+            "source": "declared",
+            "read_from": "lower bound, no cpu_only peak published: the larger of the gpu-mode RSS peak (4.28 GB) and the weights' bytes_on_disk 2497280256, since a cpu_only run holds every weight in host memory"
+          },
+          "disk_gb": {
+            "value": 2.5,
+            "source": "declared",
+            "read_from": "bytes_on_disk 2497280256 (the weights file), checked only when the weights are not yet on disk"
+          }
+        }
+      },
       "family": "qwen",
       "thinking_control": {
         "chat_template_kwargs": {

@@ -780,6 +780,53 @@ class RowContractError(ValueError):
     """Raised when a row is missing one or more of its kind's required fields."""
 
 
+# The refusal record (`preflight.py`): a run refused below its entry's declared
+# minimum. Its own small contract, versioned apart from the row schema: it
+# carries no `schema_version`, so no view's schema floor ever selects it as a
+# row, and it lives in its own per-machine file, never in a results store.
+REFUSAL_RECORD_KIND = "refusal"
+REFUSAL_CONTRACT_VERSION = "1"
+REFUSAL_FIELDS: frozenset[str] = frozenset(
+    {
+        "record_kind",
+        "refusal_contract_version",
+        "roster_entry_id",
+        "machine_id",
+        "compute_mode",
+        "profile_id",
+        "requirement",
+        "declared",
+        "observed",
+        "unit",
+        "release_version",
+        "commit_sha",
+        "refused_at",
+    }
+)
+
+
+def validate_refusal(record: dict[str, Any]) -> None:
+    """Raise `RowContractError` unless `record` is a complete refusal record.
+
+    Refuses a missing field by name, a `record_kind` other than `refusal`,
+    and a record carrying `schema_version`: a refusal is never a row.
+    """
+    missing = REFUSAL_FIELDS - record.keys()
+    if missing:
+        raise RowContractError(
+            f"refusal record missing required fields: {', '.join(sorted(missing))}"
+        )
+    if record["record_kind"] != REFUSAL_RECORD_KIND:
+        raise RowContractError(
+            f"refusal record has record_kind {record['record_kind']!r}, "
+            f"expected {REFUSAL_RECORD_KIND!r}"
+        )
+    if "schema_version" in record:
+        raise RowContractError(
+            "a refusal record carries no schema_version: it is never a row"
+        )
+
+
 def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
     """Raise `RowContractError` naming every field `kind` requires but `row` lacks.
 
