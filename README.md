@@ -242,6 +242,11 @@ release build regenerates the tables from the bundle at the tagged commit
 and refuses to publish an archive whose tables differ, or whose files point
 at a path only a clone holds (`scripts/assemble_release_archive.py`).
 
+A release has no DOI by default. When a venue asks for one, the archive is
+deposited on Zenodo by hand, following
+[`docs/zenodo-deposit.md`](docs/zenodo-deposit.md); nothing in CI deposits
+it, and no release waits for a deposit.
+
 ## Licence
 
 The code and the data are licensed separately.
@@ -290,6 +295,10 @@ year of its `CHANGELOG.md` heading. The copy in a release's archive also
 names the release's commit; this repository's copy cannot, since a
 committed file cannot name the commit that contains it. If you changed the
 data, say so after the string.
+
+No release has a DOI yet. Once one is deposited, its DOI is recorded in
+`CITATION.cff` and in a list that replaces this paragraph, outside the
+marked string, as [`docs/zenodo-deposit.md`](docs/zenodo-deposit.md) states.
 
 The author fields are placeholders until the owner states the identity to
 cite; a build on a release tag fails while any `PLACEHOLDER-` value remains.

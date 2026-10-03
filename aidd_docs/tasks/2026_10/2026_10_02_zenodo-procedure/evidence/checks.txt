@@ -1,0 +1,6 @@
+2026-10-03, worktree root
+uv run pytest => 2895 passed, 20 skipped, 2 warnings in 209.54s; Required test coverage of 95% reached. Total coverage: 98.49%
+uv run pre-commit run --all-files => ruff check, ruff format --check, mypy, detect-secrets: Passed
+detect_secrets on changed files => exit 0
+scripts/audit_dependencies.py => exit 0
+wave-local-ai-v2-validate quality-reference.jsonl / runtime-reference.jsonl => exit 0 / 0
