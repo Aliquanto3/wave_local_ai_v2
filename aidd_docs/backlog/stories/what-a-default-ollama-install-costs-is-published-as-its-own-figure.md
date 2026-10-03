@@ -18,7 +18,7 @@ Maps to: Methodology 6, 15, 20, 22; epic Boundaries "the defaults side-run, on o
 
 Needs: a real local model run on the reference machine with Ollama installed (operator), and a network download of the model from the Ollama library. No API key.
 
-Blocked: by the spike `aidd_docs/backlog/spikes/can-a-pinned-ollama-build-serve-the-roster-gguf-under-the-runtime-protocol.md` (`blocked`; its live session on Ollama v0.35.1 remains, here its defaults part: `pull qwen3:0.6b` into a fresh model store, then the quant `/api/show` reports and the `context_length` `/api/ps` reports). And through `depends_on` on `aidd_docs/backlog/stories/ollama-runtime-rows-stand-beside-llama-cpp-rows-on-the-same-artifact.md` (order 6, `proposed`), blocked in turn by the same spike's live session.
+Blocked: only through `depends_on` on `aidd_docs/backlog/stories/ollama-runtime-rows-stand-beside-llama-cpp-rows-on-the-same-artifact.md` (order 6, `proposed`). Spike `aidd_docs/backlog/spikes/can-a-pinned-ollama-build-serve-the-roster-gguf-under-the-runtime-protocol.md` is `resolved` (defaults side-run on Ollama v0.35.1, 2026-10-04: `qwen3:0.6b` pulls as `Q4_K_M`, `/api/ps` reports `context_length` 4096, the runner uses Ollama's Go `chatml` template with context shift on).
 
 Current state (verified on `main` at `c68b23e`, 2026-10-03):
 

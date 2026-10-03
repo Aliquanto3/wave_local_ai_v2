@@ -19,7 +19,7 @@ Maps to: PRD AC "Given a campaign, every row records its engine (with build iden
 
 Needs: a real local model run on the reference machine with a pinned Ollama build installed beside llama.cpp (an operator installs it once). No API key.
 
-Blocked: spike `aidd_docs/backlog/spikes/can-a-pinned-ollama-build-serve-the-roster-gguf-under-the-runtime-protocol.md` (`blocked`; desk research done, only its live session on Ollama v0.35.1 remains: the captured model-layer digest against the roster entry's `sha256`, `/api/ps` across a warm-up and five counted repetitions without reload, the over-long prompt's response, a second client's visibility). Its `depends_on` are `done` (`every-row-names-the-engine-that-produced-it-and-the-fiche-hashes-it.md`) and `ready` (`a-campaign-is-declared-as-data-and-an-empty-cell-fails-it.md`).
+Blocked: none by a spike. Spike `aidd_docs/backlog/spikes/can-a-pinned-ollama-build-serve-the-roster-gguf-under-the-runtime-protocol.md` is `resolved` (live session on Ollama v0.35.1, 2026-10-04: `same_gguf` reached by import, the model held loaded across a warm-up and five counted repetitions with no reload, the over-long prompt refused with HTTP 400, a second client not observable through any endpoint). Both `depends_on` are `done`. Readiness is the owner's to reassess against that spike's remaining uncertainty: every counted repetition on Ollama reused 60 of its 61 prompt tokens from the runner's prompt cache and no captured request field disables it, while this story runs the runtime protocol exactly as written (a full prefill per repetition, `cache_prompt: false`).
 
 Current state (verified on `main` at `c68b23e`, 2026-10-03):
 
