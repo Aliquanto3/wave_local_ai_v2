@@ -21,13 +21,15 @@ Maps to: PRD AC "Given the full use-case list, each of the nine task use cases .
 
 Needs: a real local model run (including a one-time download of the pinned embedding model), and paid API keys for Z.ai (GLM judge) and DeepSeek (DeepSeek judge).
 
-Blocked: by Q110 (how a row names the client package a framework reaches the engine through: `llamaindex` reaches llama-server only through `llama-index-llms-openai-like`, while `harness.HARNESS_DISTRIBUTIONS` reads `llama-index-core`) and Q109 (whether an adapter keeps its framework's request defaults; LlamaIndex streams by default, and streamed Qwen3.6 output is llama.cpp #24807); and through `depends_on` on `aidd_docs/backlog/stories/glm-and-deepseek-are-the-only-judges-and-mistral-and-google-never-judge-again.md` (`proposed`), which waits on its orders 8 and 9, each blocked by its judge-provider spike (`is-z-ai-glm-callable-as-a-pinned-judge-and-on-what-data-terms.md`, `is-deepseek-callable-as-a-pinned-judge-and-on-what-data-terms.md`, both `blocked` on live calls with a paid key) and by Q102. The corpus, retriever and harness fields can be built before the judges land; no judged score is published until they do.
+Blocked: through `depends_on` on `aidd_docs/backlog/stories/glm-and-deepseek-are-the-only-judges-and-mistral-and-google-never-judge-again.md` (`proposed`), which waits on its orders 8 and 9, each blocked by its judge-provider spike (`is-z-ai-glm-callable-as-a-pinned-judge-and-on-what-data-terms.md`, `is-deepseek-callable-as-a-pinned-judge-and-on-what-data-terms.md`, both `blocked` on live calls with a paid key) and by Q102. The corpus, retriever and harness fields can be built before the judges land; no judged score is published until they do.
 
 Current state (verified on `main` at `c68b23e`, 2026-10-03): `harness.py` closes the set at five (`HARNESS_IDS`) and implements only `direct`; `HARNESS_DISTRIBUTIONS["llamaindex"]` is `llama-index-core`, which `pyproject.toml` does not depend on, so `harness.harness_version("llamaindex")` raises `HarnessError` today. The only writer of the three harness fields is `quality_rows.direct_harness_fields`, and `row_contract._validate_harness` gates them on quality rows from schema "20" (`SCHEMA_VERSION` is "22"). `harness.prompt_overhead` already implements Q33 (a) with `unmeasurable` for a rewriting harness. No corpus, embedding entry or retriever exists; `aidd_docs/roster/models.json` holds subjects only. `subject_egress` (`row_contract.subject_egress_for`) records only where the subject prompt went (`none` or the provider id); nothing records retrieval locality. `use_case_coverage.json` has `rag-answer-generation` at `null`; judged scoring runs only in `judge_probe.py`, and `judge_backends.py` binds only Mistral and Google.
 
 ## Acceptance
 
 - This story implements `llamaindex` against the closed harness registry the harness task ships, and every row this suite writes carries that task's three fields: harness id `llamaindex`, its version read from the installed package at run time, and its per-call prompt overhead apart from the task's own tokens, or the unmeasurable value where the rule cannot measure it.
+- The `llamaindex` adapter keeps LlamaIndex's request defaults, streaming included, rather than aligning them with `direct` (owner answer Q109 (a), 2026-10-03). Every row records the `tool_choice`, `parallel_tool_calls` and `stream` its request actually sent, read from the captured request, with a field the request did not carry recorded as not sent; a failure traced to an engine defect met under those defaults (streamed Qwen3.6 output, llama.cpp #24807) is published as a harness-by-engine finding naming the defect, the harness and the engine build.
+- Every row carries `harness_client_version` (owner answer Q110 (c), 2026-10-03): the installed version of `llama-index-llms-openai-like`, the client package through which `llamaindex` reaches llama-server, read at run time. `the-same-tool-calling-items-run-under-each-compared-harness.md` (order 7) owns this field, the three request fields above and their schema bump; this story does not depend on order 7. Whichever of the two lands first adds the fields and the bump under that definition (null for `direct`, `smolagents` and `pydantic-ai`), and the second reuses them with no second bump.
 - A small repo-owned corpus exists, every document declaring its provenance and any public-origin document marked contamination-risk; no client material is in it.
 - An embedding model is pinned like a roster entry (revision, file, checksum, licence), covers EN, FR and DE, and is never run as a benchmark subject. Retrieval is a fixed part of each item: the same query retrieves the same passages for every model compared, and the retrieved passage ids are stored on the row.
 - The suite holds at least 20 items with EN, FR and DE each at 25% or more, every item tagged and provenanced; below either threshold it publishes indicative.
@@ -39,13 +41,15 @@ Current state (verified on `main` at `c68b23e`, 2026-10-03): `harness.py` closes
 ## Code it changes
 
 - The `llamaindex` adapter against the harness registry.
+- `src/wave_local_ai_v2/harness.py` and `row_contract.py`: `harness_client_version` and the three request fields with their schema bump, if order 7 has not added them first.
 - The corpus, the pinned embedding entry, the `llamaindex` retriever, the suite's data file and scoring rule.
 - `pyproject.toml` and `uv.lock`: `llamaindex` and the embedding runtime, pinned.
 - The coverage record entry.
 
 ## Tests it needs
 
-- The harness version on a `llamaindex` row equals the installed package's version.
+- The harness version on a `llamaindex` row equals the installed package's version, and its `harness_client_version` equals the installed `llama-index-llms-openai-like` version.
+- A row's recorded `tool_choice`, `parallel_tool_calls` and `stream` equal those in its captured request.
 - The same query retrieves the same passage ids twice; the embedding entry's checksum is verified before use.
 - With HTTP stubbed, a row carries the harness fields, the overhead apart from task tokens, the local-retrieval egress record, and both judge blocks.
 
