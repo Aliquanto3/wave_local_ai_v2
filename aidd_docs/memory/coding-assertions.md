@@ -39,7 +39,8 @@ one stable `required` check. Each leg runs:
 | ----- | ------- | ------ |
 | 1 | `uv run pre-commit run --all-files` | the four before-commit hooks above (lint, format, types, secrets) |
 | 2 | `uv run pytest` | tests, coverage-gated at 95% over lines and branches combined — the floor sits near the measured total since `--cov-fail-under` has no separate branch-only mode (`pyproject.toml`'s `--cov-branch` + `--cov-fail-under`) |
-| 3 | `uv run python scripts/audit_dependencies.py` | dependency vulnerabilities, severity-resolved via OSV, waivable via `docs/dependency-waivers.yml` |
+| 3 | `uv run wave-local-ai-v2-merge-bundle --check` | the published bundle equals what the merge derives from the per-machine locations (`bundle_merge.py`; the pinned schema-"7" snapshot passes only while every location is empty) |
+| 4 | `uv run python scripts/audit_dependencies.py` | dependency vulnerabilities, severity-resolved via OSV, waivable via `docs/dependency-waivers.yml` |
 
 `coverage.xml` is uploaded per OS and the coverage percentage is printed to
 the job summary. This is the same command set as local enforcement — CI is

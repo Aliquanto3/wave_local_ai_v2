@@ -13,8 +13,10 @@ from pathlib import Path
 import pytest
 
 from wave_local_ai_v2 import (
+    bundle_merge,
     fiche_registry,
     machines,
+    profiles,
     read_model,
     results,
     roster,
@@ -34,6 +36,7 @@ RESULTS_DIR = Path("aidd_docs/results")
 RUNTIME_REFERENCE_PATH = Path(settings.DEFAULT_RUNTIME_REFERENCE_PATH)
 QUALITY_REFERENCE_PATH = Path(settings.DEFAULT_QUALITY_REFERENCE_PATH)
 SUITE_DEFINITIONS_DIR = Path(settings.DEFAULT_SUITE_DEFINITIONS_DIR)
+REFUSALS_REFERENCE_PATH = Path(settings.DEFAULT_REFUSALS_REFERENCE_PATH)
 SUPERSEDED_PATHS = (
     RESULTS_DIR / "runtime-reference.schema-1.jsonl",
     RESULTS_DIR / "quality-reference.schema-1.jsonl",
@@ -114,6 +117,78 @@ def test_every_quality_row_resolves_its_suite_definition() -> None:
         # The hash, not the version, is what catches a suite edited without a
         # version bump -- the one drift `suite_version` alone cannot see.
         assert snapshot["prompt_set_hash"] == row["prompt_set_hash"]
+
+
+def _rows_owing_a_machine() -> list[tuple[row_contract.RowKind, dict[str, object]]]:
+    """Every bundle row whose schema owes `machine_id` (from "23"), by kind.
+
+    A row below it predates the field and claims no machine; a row at or
+    above it that lacks the key reads as `None` and fails to resolve.
+    """
+    floor = int(row_contract.MACHINE_FICHE_SCHEMA_VERSION)
+    kinded: list[tuple[row_contract.RowKind, dict[str, object]]] = [
+        ("runtime", row) for row in results.read_rows(RUNTIME_REFERENCE_PATH)
+    ] + [("quality", row) for row in results.read_rows(QUALITY_REFERENCE_PATH)]
+    return [
+        (kind, row) for kind, row in kinded if int(str(row["schema_version"])) >= floor
+    ]
+
+
+def test_every_rows_machine_id_resolves_to_a_declared_entry() -> None:
+    assert (
+        bundle_merge.unresolved_machine_rows(
+            _rows_owing_a_machine(), machines.declared_machine_ids()
+        )
+        == []
+    )
+
+
+def test_no_two_machines_rows_share_a_fiche_hash() -> None:
+    rows = [row for _kind, row in _rows_owing_a_machine()]
+    collisions = bundle_merge.fiche_collisions(rows, machines.declared_machine_ids())
+    assert [c.describe() for c in collisions] == []
+
+
+def test_every_refusal_record_resolves_its_roster_entry_machine_and_profile() -> None:
+    records = results.read_rows(REFUSALS_REFERENCE_PATH)
+    loaded_roster = roster.load_roster(Path(settings.DEFAULT_ROSTER_PATH))
+    assert (
+        bundle_merge.unresolved_refusals(
+            records,
+            roster_entry_ids=loaded_roster.entries,
+            profile_registry=profiles.tracked_registry(),
+            declared=machines.declared_machine_ids(),
+        )
+        == []
+    )
+
+
+def test_the_three_bundle_assertions_refuse_a_constructed_violation() -> None:
+    # Against the schema-7 snapshot the three above have nothing to resolve
+    # (its rows predate `machine_id`, no refusal is published); this proves
+    # each one bites before the republication gives them rows.
+    declared = machines.declared_machine_ids()
+    laptop = {"machine_id": "laptop-mobile-gpu", "fiche_hash": "h", "run_id": "a"}
+    tower = {"machine_id": "tower-desktop-gpu", "fiche_hash": "h", "run_id": "b"}
+    stray = {"machine_id": "garage-box", "fiche_hash": "g", "run_id": "c"}
+    assert bundle_merge.unresolved_machine_rows([("runtime", stray)], declared)
+    assert bundle_merge.fiche_collisions([laptop, tower], declared)
+    refusal = {
+        "roster_entry_id": "ghost",
+        "machine_id": "garage-box",
+        "profile_id": "ghost@garage-box/gpu",
+    }
+    assert (
+        len(
+            bundle_merge.unresolved_refusals(
+                [refusal],
+                roster_entry_ids=[],
+                profile_registry=profiles.tracked_registry(),
+                declared=declared,
+            )
+        )
+        == 3
+    )
 
 
 def test_every_row_carries_the_published_bundle_schema_version() -> None:

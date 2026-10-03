@@ -278,7 +278,7 @@ def _run() -> None:
         run_profile.machine,
         launch_profile,
         models_dir=settings.slm_models_dir,
-        refusals_dir=settings.refusals_dir,
+        machine_results_root=settings.machine_results_root,
     )
     model_path = settings.slm_models_dir / roster_entry.file
     if not model_path.exists():

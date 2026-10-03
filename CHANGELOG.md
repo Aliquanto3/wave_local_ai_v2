@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Each machine returns its rows by pull request, and a hash collision is
+  refused** -- every declared machine owns a tracked results location,
+  `aidd_docs/results/machines/<machine_id>/` (`runtime.jsonl`,
+  `quality.jsonl`, `refusals.jsonl`; `MACHINE_RESULTS_ROOT`).
+  `wave-local-ai-v2-promote` copies named runs' rows line-for-line and their
+  fiches file-for-file into it, refusing a foreign `machine_id`, an unknown
+  `run_id` and a missing or differing fiche, idempotently.
+  `wave-local-ai-v2-merge-bundle` derives the bundle
+  (`runtime-reference.jsonl`, `quality-reference.jsonl` and the new
+  `refusals-reference.jsonl`) from every location, deterministically, and
+  refuses a fiche hash claimed under two machine ids (naming both rows, both
+  machine ids and the hash), an undeclared machine id, a misfiled row and one
+  run in two locations. CI's new **Derived bundle** step fails a bundle that
+  differs from the merge; the schema-"7" snapshot is pinned by digest until
+  its republication. `tests/test_reference_bundle.py` asserts every row's
+  machine id resolves, no two machines share a fiche hash, and every refusal
+  record resolves its roster entry, machine and profile. `docs/setup.md`
+  section 6 walks the per-machine loop and the operator-carried fallback.
+
 - **A model below its declared minimum refuses, and the refusal is published
   (roster_version 6)** -- every roster entry declares, per compute mode, a
   minimum total RAM, VRAM (`gpu` only) and free disk (`requirements`, each
@@ -26,7 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refused `gpu` run names the `cpu_only` profile and runs nothing), and
   appends one refusal record under its own contract
   (`row_contract.REFUSAL_FIELDS`, no `schema_version`) to the machine's tracked
-  `aidd_docs/results/refusals/<machine_id>.jsonl` (`REFUSALS_DIR`). The
+  results location, `aidd_docs/results/machines/<machine_id>/refusals.jsonl`
+  (`MACHINE_RESULTS_ROOT`). The
   requirement table is `docs/setup.md` section 1.2, which replaces the
   README's hardware prose.
 - **Each model, machine and mode runs under its own named run profile (row
@@ -374,6 +394,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   level.
 
 ### Changed
+
+- The pre-flight's refusal records move from
+  `aidd_docs/results/refusals/<machine_id>.jsonl` (`REFUSALS_DIR`, removed) to
+  the machine's location, `aidd_docs/results/machines/<machine_id>/refusals.jsonl`.
 
 - **`validated_host` leaves the roster** -- its thread count and `--n-cpu-moe`
   moved into the laptop's run profiles and its `fiche_summary` is replaced by

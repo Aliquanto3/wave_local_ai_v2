@@ -85,7 +85,10 @@ flowchart LR
   than measuring translation quality absolutely.
 - The published reference bundle is five parts handed to an auditor together,
   not any one file alone: `runtime-reference.jsonl` + `quality-reference.jsonl`
-  (curated snapshots, no CLI writes to them) + `fiches/` (cited by
+  + `refusals-reference.jsonl` (derived by `wave-local-ai-v2-merge-bundle`
+  from each machine's tracked location `machines/<machine_id>/`, never
+  hand-edited, checked in CI; the schema-"7" snapshot stays pinned by digest
+  until its republication) + `fiches/` (cited by
   `fiche_hash`) + `aidd_docs/roster/models.json` (cited by `roster_entry_id`)
   + `suite-definitions/` (cited by `suite_id`/`suite_version` on quality
   rows, `suite_snapshot.py` — see `cli.md`). `tests/test_reference_bundle.py`

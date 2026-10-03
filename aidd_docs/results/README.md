@@ -14,11 +14,29 @@ beside it: `fiche_hash` resolves only against `fiches/`, `roster_entry_id` only 
 `suite-definitions/`. `tests/test_reference_bundle.py` asserts every pointer on every
 row of the current-schema bundle resolves.
 
-The two `*-reference.jsonl` files are curated snapshots: no CLI ever writes to them, and
-nothing appends to them on a benchmark run. The two files the CLIs actually append to,
-`runtime.jsonl` and `quality.jsonl`, are per-machine output and stay untracked
-(`.gitignore`). Tracking them instead would dirty the working tree on every run and would
-ship rows that do not belong to any acceptance criterion.
+The bundle is derived, never hand-edited. This replaces the earlier rule that the
+`*-reference.jsonl` files were curated snapshots no CLI ever writes to. Each declared
+machine owns one tracked location, `machines/<machine_id>/` (`runtime.jsonl`,
+`quality.jsonl`, `refusals.jsonl`); the operator promotes named runs from the machine's
+live stores into it (`wave-local-ai-v2-promote`), each machine through its own pull
+request, and `wave-local-ai-v2-merge-bundle` writes `runtime-reference.jsonl`,
+`quality-reference.jsonl` and `refusals-reference.jsonl` from every location, refusing a
+fiche-hash collision between two machines, an undeclared machine id, a misfiled row and
+a run promoted by two machines. CI runs `wave-local-ai-v2-merge-bundle --check` and fails
+when the committed bundle differs from what the merge derives. The loop, and the
+operator-carried fallback for a machine that cannot push, are `docs/setup.md` section 6.
+
+Until the bundle republication story, the two committed `*-reference.jsonl` files are
+still the schema-"7" curated snapshot of 2026-08-27, whose rows predate `machine_id` and
+so cannot be derived. `bundle_merge.PRE_MERGE_SNAPSHOT` pins their bytes: `--check`
+accepts exactly them while no location holds a record, and the merge refuses to
+overwrite them. The republication `git mv`s them to `*-reference.schema-7.jsonl`, runs
+the merge, and deletes the pin.
+
+The two files the CLIs actually append to, `runtime.jsonl` and `quality.jsonl`, are
+per-machine output and stay untracked (`.gitignore`). Tracking them instead would dirty
+the working tree on every run and would ship rows that do not belong to any acceptance
+criterion.
 
 ## The published bundle is one schema behind the code
 

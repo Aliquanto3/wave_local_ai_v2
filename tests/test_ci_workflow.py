@@ -123,3 +123,11 @@ def test_every_uses_across_the_whole_file_is_sha_pinned() -> None:
         uses for uses in _every_uses(workflow) if not PINNED_USES_RE.match(uses)
     ]
     assert unpinned == [], f"unpinned action reference(s): {unpinned}"
+
+
+def test_the_test_job_checks_the_bundle_is_derived() -> None:
+    # The step's command is the one tests/test_bundle_merge.py proves fails a
+    # hand-edited bundle; asserting it here keeps the two from drifting apart.
+    workflow = _load_workflow()
+    runs = [step.get("run", "") for step in workflow["jobs"]["test"]["steps"]]
+    assert "uv run wave-local-ai-v2-merge-bundle --check" in runs

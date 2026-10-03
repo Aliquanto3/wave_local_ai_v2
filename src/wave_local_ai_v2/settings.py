@@ -26,11 +26,16 @@ DEFAULT_LEADER_SETS_DIR = "aidd_docs/results/leader-sets"
 # Where campaign declarations live, one `<campaign_id>.json` each: beside the
 # results, outside the committed stores (`campaigns.py`).
 DEFAULT_CAMPAIGNS_DIR = "aidd_docs/campaigns"
-# Where the pre-flight appends each machine's refusal records, one tracked
-# `<machine_id>.jsonl` per machine (`preflight.refusal_path`). Tracked, unlike
-# the live results stores: the ignore rule covers only the top-level
-# `aidd_docs/results/*.jsonl`.
-DEFAULT_REFUSALS_DIR = "aidd_docs/results/refusals"
+# The per-machine results root: one tracked location `<root>/<machine_id>/`
+# per declared machine (`machine_results.py`), holding the runtime and quality
+# rows promoted from that machine's live stores and the refusal records the
+# pre-flight appends there directly (`preflight.refusal_path`). Tracked,
+# unlike the live stores: the ignore rule covers only the top-level
+# `aidd_docs/results/*.jsonl`. The published bundle is merged from it
+# (`bundle_merge.py`).
+DEFAULT_MACHINE_RESULTS_ROOT = "aidd_docs/results/machines"
+# The bundle's third file: every location's refusal records, never a row.
+DEFAULT_REFUSALS_REFERENCE_PATH = "aidd_docs/results/refusals-reference.jsonl"
 # Where `use_case_coverage` publishes the coverage record, and only once every
 # PRD use case in it carries a resolvable state.
 DEFAULT_USE_CASE_COVERAGE_PATH = "aidd_docs/results/use-case-coverage.json"
@@ -192,7 +197,7 @@ class Settings:
     campaign_id: str | None = None
     campaigns_dir: Path = Path(DEFAULT_CAMPAIGNS_DIR)
     # No existence check at load time: `results.append_refusal` creates it.
-    refusals_dir: Path = Path(DEFAULT_REFUSALS_DIR)
+    machine_results_root: Path = Path(DEFAULT_MACHINE_RESULTS_ROOT)
     # No existence check at load time, mirrors roster_path: fiche_registry.write_fiche
     # creates it via mkdir(parents=True, exist_ok=True), matching results.append_row's
     # own pattern.
@@ -346,6 +351,28 @@ def fiche_registry_dir_from_env() -> Path:
     return Path(os.environ.get("FICHE_REGISTRY_DIR", DEFAULT_FICHE_REGISTRY_DIR))
 
 
+def machine_results_root_from_env() -> Path:
+    """Resolve `MACHINE_RESULTS_ROOT` alone, without a full settings load.
+
+    Promotion and the bundle merge touch tracked files only, never a model or
+    a server, so they must not refuse on a machine with no local install.
+    """
+    load_dotenv()
+    return Path(os.environ.get("MACHINE_RESULTS_ROOT", DEFAULT_MACHINE_RESULTS_ROOT))
+
+
+def tracked_fiche_registry_dir_from_env() -> Path:
+    """The tracked fiche registry promotion copies cited fiches into.
+
+    `FICHE_REGISTRY_DIR` is where a run writes them; by default the two are
+    the same directory and the copy finds every file already there.
+    """
+    load_dotenv()
+    return Path(
+        os.environ.get("TRACKED_FICHE_REGISTRY_DIR", DEFAULT_FICHE_REGISTRY_DIR)
+    )
+
+
 def load_settings() -> Settings:
     """Load settings from the environment (`.env` included), validating paths exist.
 
@@ -429,7 +456,7 @@ def load_settings() -> Settings:
     compute_mode = os.environ.get("COMPUTE_MODE") or None
     campaign_id = os.environ.get("CAMPAIGN_ID") or None
     campaigns_dir = Path(os.environ.get("CAMPAIGNS_DIR", DEFAULT_CAMPAIGNS_DIR))
-    refusals_dir = Path(os.environ.get("REFUSALS_DIR", DEFAULT_REFUSALS_DIR))
+    machine_results_root = machine_results_root_from_env()
     host_threads = (
         None
         if os.environ.get("SERVER_THREADS") is None
@@ -540,7 +567,7 @@ def load_settings() -> Settings:
         compute_mode=compute_mode,
         campaign_id=campaign_id,
         campaigns_dir=campaigns_dir,
-        refusals_dir=refusals_dir,
+        machine_results_root=machine_results_root,
         runtime_reference_path=runtime_reference_path,
         quality_reference_path=quality_reference_path,
         judge_probe_reference_path=judge_probe_reference_path,

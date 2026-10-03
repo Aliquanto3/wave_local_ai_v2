@@ -247,6 +247,29 @@ The command-line interface for running benchmarks.
   not load. Run before a roster table is published; not in the merge gate
   while the shipped roster fails it (four unlabelled `qwen` classes, quoted in
   `aidd_docs/results/README.md`).
+- `wave-local-ai-v2-promote --run-id <id> [--run-id <id> ...] [--machine
+  <machine_id>]` — copies the named runs' rows from the live stores
+  (`RUNTIME_RESULTS_PATH`, `QUALITY_RESULTS_PATH`) line-for-line into the
+  machine's tracked location `<MACHINE_RESULTS_ROOT>/<machine_id>/` (default
+  root `aidd_docs/results/machines`; machine from `--machine` or `MACHINE_ID`)
+  and their fiches file-for-file from `FICHE_REGISTRY_DIR` into
+  `TRACKED_FICHE_REGISTRY_DIR` (default `aidd_docs/results/fiches`)
+  (`machine_results.py`). All or nothing: exits `1`, writing nothing, on an
+  undeclared machine, a `run_id` with no row, a row whose `machine_id` is not
+  the machine's (a cloud subject's `not_applicable` quality row is accepted),
+  or a fiche absent from the live registry or differing from the tracked copy.
+  Idempotent. Loads no model settings.
+- `wave-local-ai-v2-merge-bundle [--check] [--bundle-dir <dir>]` — derives
+  the published bundle (`runtime-reference.jsonl`, `quality-reference.jsonl`,
+  `refusals-reference.jsonl`; `RUNTIME_REFERENCE_PATH`,
+  `QUALITY_REFERENCE_PATH`, `REFUSALS_REFERENCE_PATH`, or all three in
+  `--bundle-dir`) from every declared machine's location, lines unchanged, in
+  sorted machine order (`bundle_merge.py`). Exits `1`, writing nothing, on a
+  fiche-hash collision (two rows, two machine ids, one hash: both named,
+  neither chosen), an undeclared machine id or location, a misfiled row or
+  refusal, a row with no `run_id`, or one `run_id` in two locations; refuses
+  to overwrite the pinned schema-"7" snapshot. `--check` writes nothing and exits `1` when the
+  committed bundle differs (line endings normalised); CI runs it.
 - `wave-local-ai-v2-campaign-completeness --campaign <id> [--campaigns-dir
   <dir>] [--rows <jsonl> ...]` — Methodology 22's completeness check
   (`campaigns.py`). A campaign is one tracked declaration,
@@ -382,8 +405,9 @@ Right after the run profile resolves, every writer runs the pre-flight
 mode (`requirements` in `models.json`: RAM, VRAM under `gpu`, disk while the
 weights are absent) refuses with a `RosterError` before the weights are
 looked for or anything spawns, writes no row, and appends one refusal record
-to `REFUSALS_DIR/<machine_id>.jsonl` (default `aidd_docs/results/refusals/`,
-tracked). See `docs/setup.md` section 1.2.
+to `<MACHINE_RESULTS_ROOT>/<machine_id>/refusals.jsonl` (default root
+`aidd_docs/results/machines`, tracked: the machine's results location). See
+`docs/setup.md` section 1.2.
 
 The host-fitted launch values are not roster data: every (roster entry x
 machine x compute mode) triple runs under a named run profile

@@ -107,7 +107,7 @@ def _enforce(
         _machine(profile.machine_id),
         profile,
         models_dir=tmp_path,
-        refusals_dir=tmp_path / "refusals",
+        machine_results_root=tmp_path / "refusals",
         observe_machine=_observing(**observed),
     )
 
@@ -263,7 +263,7 @@ def test_a_refused_gpu_run_with_no_cpu_only_profile_names_none(tmp_path: Path) -
             _machine(),
             _profile(),
             models_dir=tmp_path,
-            refusals_dir=tmp_path / "refusals",
+            machine_results_root=tmp_path / "refusals",
             observe_machine=_observing(ram=1.0),
             profile_registry=registry,
         )

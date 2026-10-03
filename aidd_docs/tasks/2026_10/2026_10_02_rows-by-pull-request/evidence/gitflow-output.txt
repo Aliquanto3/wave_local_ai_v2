@@ -1,0 +1,81 @@
+== laptop and tower both branch from the same main
+== laptop: promote, regenerate the bundle on the branch, check, one commit
+promoted into <scratch>/gitflow\laptop-mobile-gpu\results\machines\laptop-mobile-gpu: 1 runtime row(s), 1 quality row(s) added, 0 already present; 1 fiche(s) copied, 0 already tracked
+bundle written from <scratch>/gitflow\laptop-mobile-gpu\results\machines: 1 runtime, 1 quality, 0 refusals
+exit 0
+bundle check: committed bundle equals the merge (1 runtime, 1 quality, 0 refusals)
+exit 0
+feat(results): promote laptop-mobile-gpu runs
+
+ results/bundle/quality-reference.jsonl           | 1 +
+ results/bundle/refusals-reference.jsonl          | 0
+ results/bundle/runtime-reference.jsonl           | 1 +
+ results/fiches/aaa111.json                       | 1 +
+ results/machines/laptop-mobile-gpu/quality.jsonl | 1 +
+ results/machines/laptop-mobile-gpu/runtime.jsonl | 1 +
+ 6 files changed, 5 insertions(+)
+== tower: same, in parallel
+promoted into <scratch>/gitflow\tower-desktop-gpu\results\machines\tower-desktop-gpu: 1 runtime row(s), 0 quality row(s) added, 0 already present; 1 fiche(s) copied, 0 already tracked
+bundle written from <scratch>/gitflow\tower-desktop-gpu\results\machines: 1 runtime, 0 quality, 0 refusals
+exit 0
+bundle check: committed bundle equals the merge (1 runtime, 0 quality, 0 refusals)
+exit 0
+feat(results): promote tower-desktop-gpu runs
+
+ results/bundle/quality-reference.jsonl           | 0
+ results/bundle/refusals-reference.jsonl          | 0
+ results/bundle/runtime-reference.jsonl           | 1 +
+ results/fiches/bbb222.json                       | 1 +
+ results/machines/tower-desktop-gpu/runtime.jsonl | 1 +
+ 5 files changed, 3 insertions(+)
+== the laptop's pull request lands first
+-- CI on results/laptop-mobile-gpu:
+bundle check: committed bundle equals the merge (1 runtime, 1 quality, 0 refusals)
+exit 0
+landed results/laptop-mobile-gpu on main
+== the tower's branch, as pushed, against the new main: its bundle is stale
+conflicts with main (bundle files)
+== tower: rebase, take main's bundle files, re-run the merge, never hand-resolve
+AA results/bundle/runtime-reference.jsonl
+A  results/fiches/bbb222.json
+A  results/machines/tower-desktop-gpu/runtime.jsonl
+bundle written from <scratch>/gitflow\tower-desktop-gpu\results\machines: 2 runtime, 1 quality, 0 refusals
+exit 0
+bundle check: committed bundle equals the merge (2 runtime, 1 quality, 0 refusals)
+exit 0
+rebase continued
+-- CI on results/tower-desktop-gpu:
+bundle check: committed bundle equals the merge (2 runtime, 1 quality, 0 refusals)
+exit 0
+landed results/tower-desktop-gpu on main
+== operator-carried: pro-pc-no-gpu cannot push; its location is carried to the laptop
+bundle written from <scratch>/gitflow\laptop-mobile-gpu\results\machines: 2 runtime, 1 quality, 1 refusals
+exit 0
+bundle check: committed bundle equals the merge (2 runtime, 1 quality, 1 refusals)
+exit 0
+feat(results): promote pro-pc-no-gpu records
+Transport: operator-carried
+Source-machine: pro-pc-no-gpu
+Carried-by: laptop-mobile-gpu
+Transport-verification: declared, not verified
+
+-- CI on results/pro-pc-no-gpu:
+bundle check: committed bundle equals the merge (2 runtime, 1 quality, 1 refusals)
+exit 0
+landed results/pro-pc-no-gpu on main
+== main after three pull requests
+results/bundle/quality-reference.jsonl
+results/bundle/refusals-reference.jsonl
+results/bundle/runtime-reference.jsonl
+results/fiches/aaa111.json
+results/fiches/bbb222.json
+results/machines/.keep
+results/machines/laptop-mobile-gpu/quality.jsonl
+results/machines/laptop-mobile-gpu/runtime.jsonl
+results/machines/pro-pc-no-gpu/refusals.jsonl
+results/machines/tower-desktop-gpu/runtime.jsonl
+bundle check: committed bundle equals the merge (2 runtime, 1 quality, 1 refusals)
+exit 0
+== remotes are only the local bare repo:
+origin	<scratch>/gitflow/origin.git (fetch)
+origin	<scratch>/gitflow/origin.git (push)

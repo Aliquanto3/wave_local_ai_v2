@@ -13,7 +13,13 @@ import json
 from pathlib import Path
 from typing import Any
 
-from wave_local_ai_v2 import machines, row_contract, score_interval, suite_snapshot
+from wave_local_ai_v2 import (
+    machines,
+    preflight,
+    row_contract,
+    score_interval,
+    suite_snapshot,
+)
 
 # The declared minimums a constructed roster entry carries (`roster.load_roster`
 # requires them): tiny enough that the pre-flight passes on any machine. Every
@@ -49,9 +55,10 @@ def write_raised_roster(roster_file: dict[str, Any], tmp_path: Path) -> Path:
     return path
 
 
-def single_refusal(refusals_dir: Path, machine_id: str) -> dict[str, Any]:
+def single_refusal(machine_results_root: Path, machine_id: str) -> dict[str, Any]:
     """The one refusal record a refused run wrote for `machine_id`."""
-    lines = (refusals_dir / f"{machine_id}.jsonl").read_text("utf-8").splitlines()
+    path = preflight.refusal_path(machine_results_root, machine_id)
+    lines = path.read_text("utf-8").splitlines()
     assert len(lines) == 1, lines
     record: dict[str, Any] = json.loads(lines[0])
     assert record.keys() == row_contract.REFUSAL_FIELDS

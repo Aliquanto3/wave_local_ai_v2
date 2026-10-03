@@ -33,6 +33,12 @@ jobs:
       - name: Tests (coverage-gated)
         run: uv run pytest
 
+      # The published bundle is derived from the per-machine locations, never
+      # hand-edited: this fails when the committed bundle differs from what
+      # the merge produces (tests/test_bundle_merge.py backs it).
+      - name: Derived bundle
+        run: uv run wave-local-ai-v2-merge-bundle --check
+
       - name: Upload coverage report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

@@ -1207,7 +1207,7 @@ def test_a_run_below_its_declared_minimum_refuses_before_the_weights_and_any_spa
     started["load_settings"].return_value = replace(
         settings,
         roster_path=write_raised_roster(FAKE_ROSTER, tmp_path),
-        refusals_dir=tmp_path / "refusals",
+        machine_results_root=tmp_path / "refusals",
     )
 
     with pytest.raises(SystemExit) as exit_info:

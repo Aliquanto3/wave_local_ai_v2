@@ -106,6 +106,20 @@ def append_refusal(path: Path, record: dict[str, Any]) -> None:
         f.write(json.dumps(record) + "\n")
 
 
+def read_lines(path: Path) -> list[str]:
+    """Every non-blank line of a JSONL file, without its line ending.
+
+    The raw text, not the parsed row: promotion and the bundle merge carry a
+    row from one file to the next byte-for-byte, so the bundle holds the line
+    the harness wrote, never a re-serialisation of it. An absent file reads as
+    no lines.
+    """
+    if not path.exists():
+        return []
+    with path.open("r", encoding="utf-8") as f:
+        return [line.rstrip("\r\n") for line in f if line.strip()]
+
+
 def read_rows(path: Path, schema_version: str | None = None) -> list[dict[str, Any]]:
     """Read all rows back from the results store. Returns an empty list if absent.
 

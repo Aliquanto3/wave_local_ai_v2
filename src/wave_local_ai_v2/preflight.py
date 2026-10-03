@@ -34,6 +34,7 @@ from typing import Any
 import psutil
 
 from wave_local_ai_v2 import (
+    machine_results,
     machines,
     profiles,
     provenance,
@@ -80,9 +81,9 @@ class Observation:
     disk_free_gb: float | None
 
 
-def refusal_path(refusals_dir: Path, machine_id: str) -> Path:
-    """The tracked per-machine file a machine's refusals are appended to."""
-    return refusals_dir / f"{machine_id}.jsonl"
+def refusal_path(machine_results_root: Path, machine_id: str) -> Path:
+    """The refusal file of the machine's tracked results location."""
+    return machine_results.location(machine_results_root, machine_id).refusals
 
 
 def observe(
@@ -223,7 +224,7 @@ def enforce(
     profile: profiles.ResolvedProfile,
     *,
     models_dir: Path,
-    refusals_dir: Path,
+    machine_results_root: Path,
     observe_machine: Callable[..., Observation] = observe,
     profile_registry: profiles.ProfileRegistry | None = None,
 ) -> None:
@@ -247,7 +248,7 @@ def enforce(
         return
     requirement, declared, observed = failure
     record = refusal_record(entry, profile, requirement, declared, observed)
-    path = refusal_path(refusals_dir, profile.machine_id)
+    path = refusal_path(machine_results_root, profile.machine_id)
     results.append_refusal(path, record)
     message = (
         f"refused: roster entry {entry.entry_id!r} under compute mode {mode!r} "

@@ -67,8 +67,9 @@ the run: it names the requirement, the mode, the declared minimum and the
 observed value, exits non-zero, writes no runtime or quality row, and appends
 one refusal record (roster entry, machine, mode, profile id, requirement,
 declared and observed values, release version, commit sha, timestamp) to the
-machine's own tracked file `aidd_docs/results/refusals/<machine_id>.jsonl`
-(`REFUSALS_DIR` moves it). Nothing is substituted: no smaller quant, no
+machine's own tracked results location,
+`aidd_docs/results/machines/<machine_id>/refusals.jsonl` (`MACHINE_RESULTS_ROOT`
+moves the root; see section 6). Nothing is substituted: no smaller quant, no
 shorter context, no switch from `gpu` to `cpu_only`; a refused `gpu` run names
 the `cpu_only` profile that exists for the same machine and runs nothing.
 
@@ -690,3 +691,109 @@ the Scope-3 estimate has no local counterpart yet for facility overhead or
 hardware amortization, so a Scope-2 number and a Scope-3 number on the same
 dashboard describe different boundaries, not the same thing measured two
 ways. Read `emissions_scope` before comparing any two rows' `emissions_kg`.
+
+## 6. Returning a machine's rows: promote, branch, pull request
+
+Every machine returns its evidence the same way, and the published bundle is
+only ever derived from what came back. The live stores a run appends to
+(`RUNTIME_RESULTS_PATH`, `QUALITY_RESULTS_PATH`) are untracked; each declared
+machine instead owns one tracked location,
+`aidd_docs/results/machines/<machine_id>/`, holding `runtime.jsonl`,
+`quality.jsonl` and `refusals.jsonl`. Its fiches go to the shared, tracked,
+content-addressed registry `aidd_docs/results/fiches/`, where two machines'
+pull requests add different file names and never conflict.
+
+### 6.1 The per-machine loop
+
+1. **Declare.** The machine is an entry of `aidd_docs/roster/machines.json`
+   and every entry it runs has a profile in `aidd_docs/roster/profiles.json`.
+   `MACHINE_ID` and `COMPUTE_MODE` are set in `.env` (section 4).
+2. **Run.** Run the benchmark (section 4). Each invocation is one `run_id`, carried
+   by every row it wrote: the last line of the live store names the latest
+   run. A refused run needs no promotion: the
+   pre-flight already appended its record to the location's `refusals.jsonl`.
+3. **Promote** the runs to publish, by `run_id`:
+
+   ```bash
+   uv run wave-local-ai-v2-promote --run-id <run_id> [--run-id <run_id> ...]
+   ```
+
+   It copies those runs' runtime and quality rows line-for-line into the
+   machine's location and their fiches file-for-file into the tracked
+   registry. It refuses, writing nothing, a `run_id` with no row, a row whose
+   `machine_id` is another machine's (only the machine that produced a row
+   promotes it; a cloud subject's `not_applicable` row travels with the
+   machine that ran it), and a fiche the live registry lacks or that differs
+   from the tracked copy. Promoting the same run twice changes nothing.
+   `--machine` overrides `MACHINE_ID`; `FICHE_REGISTRY_DIR` is where the run
+   wrote its fiches, `TRACKED_FICHE_REGISTRY_DIR` (default
+   `aidd_docs/results/fiches`) where they are published.
+4. **Branch.** One branch per machine and batch, for example
+   `git switch -c results/<machine_id>-<yyyy-mm-dd>`, from an up-to-date
+   `main`.
+5. **Regenerate the bundle on the same branch.** Run
+
+   ```bash
+   uv run wave-local-ai-v2-merge-bundle
+   uv run wave-local-ai-v2-merge-bundle --check
+   ```
+
+   The first command writes `aidd_docs/results/runtime-reference.jsonl`,
+   `quality-reference.jsonl` and `refusals-reference.jsonl` from every
+   location on the branch; the second must print that the committed bundle
+   equals the merge. Commit the machine's location, the new fiche files and
+   the three bundle files together, in one commit. The merge refuses,
+   writing nothing, when two rows claim one fiche hash under two machine ids
+   (it names both rows, both machine ids and the hash, and never chooses),
+   when a row's or a refusal's `machine_id` is not a declared machine, when a
+   row sits in another machine's location, when a row carries no `run_id`,
+   and when one `run_id` appears in two locations.
+6. **Pull request.** Push the branch and open one pull request into `main`.
+   It runs the same check suite as any code change, including the
+   **Derived bundle** step (`wave-local-ai-v2-merge-bundle --check`), which
+   fails when the committed bundle differs from what the merge derives: the
+   bundle is never edited by hand. Merge it once `required` is green.
+7. **If another machine's pull request lands first**, the bundle files
+   conflict. Never resolve that conflict by hand: rebase the branch onto
+   `main`, take `main`'s bundle files, re-run step 5 (`merge-bundle`, then
+   `--check`), amend or add the regenerated bundle, and push again.
+
+**Until the bundle republication story.** The committed `*-reference.jsonl`
+files are still the schema-"7" snapshot, pinned by digest
+(`aidd_docs/results/README.md`). While it stands, committing any location
+record, a promoted row or a pre-flight refusal alike, turns the **Derived
+bundle** step red, and the merge in write mode refuses to overwrite the
+snapshot. The loop starts with the republication story, which supersedes the
+snapshot (`git mv` to `*-reference.schema-7.jsonl`) and runs the first merge.
+
+### 6.2 Fallback: a machine that cannot push
+
+When a machine cannot push (no git credentials, a managed network), its
+evidence is carried by the operator to a machine that can. It is recorded as
+carried, never passed off as the machine's own push.
+
+1. On the source machine, run steps 1 to 3 of section 6.1 as usual.
+2. Copy `aidd_docs/results/machines/<source_machine_id>/` and every fiche file
+   its rows cite from `aidd_docs/results/fiches/` to removable media.
+3. On the carrying machine, from an up-to-date `main`, create the branch
+   `results/<source_machine_id>-<yyyy-mm-dd>` and copy both into the same
+   paths. Do not promote again there: `MACHINE_ID` on the carrier is the
+   carrier, and its promotion would rightly refuse the source's rows.
+4. Commit with these trailers, exactly (with step 5's bundle files):
+
+   ```text
+   feat(results): promote <source_machine_id> records
+
+   Transport: operator-carried
+   Source-machine: <source_machine_id>
+   Carried-by: <carrying_machine_id>
+   Transport-verification: declared, not verified
+   ```
+
+   The transport is a declaration, under the same declared-not-verified
+   honesty as the energy labels: nothing proves the bytes left the source
+   machine unchanged, and the commit says so.
+5. On the same branch, regenerate and check the bundle (section 6.1 step 5),
+   then commit the three bundle files with the carried location in the same
+   commit as the trailers above. Open the pull request as in step 6; if
+   another pull request lands first, follow step 7.
