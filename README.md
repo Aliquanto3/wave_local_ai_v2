@@ -225,6 +225,21 @@ built or tested by this project's CI.
   the NVIDIA path works at all. Those belong to the epic's fresh-machine
   walk, done by a human on real hardware — not to this repository's CI.
 
+## Download the results (no clone)
+
+Each release on the repository's
+[Releases page](https://github.com/Aliquanto3/wave_local_ai_v2/releases/latest)
+carries one asset, `wave-local-ai-v2-<version>.zip`. It opens with no tool to
+install and holds the five result tables and their column dictionary (the
+`wave-local-ai-v2-export` CSV files), the reference bundle they were derived
+from (the runtime and quality rows, fiches, roster and suite definitions,
+plus the comparison and leader-set records), `LICENSE`, `LICENSE-DATA`,
+`CITATION.cff` stamped with the release's commit, and a README naming the
+release, the commit, the bundle schema version and what each file is. The
+release build regenerates the tables from the bundle at the tagged commit
+and refuses to publish an archive whose tables differ, or whose files point
+at a path only a clone holds (`scripts/assemble_release_archive.py`).
+
 ## Licence
 
 The code and the data are licensed separately.
@@ -269,8 +284,8 @@ The string above names the release this branch is at. To cite another
 release, take its `version` and the year of its `date-released` from that
 release's `CITATION.cff` (at its tag), and keep the rest. A tag older than
 `CITATION.cff` has none: cite it with the tag name as the version and the
-year of its `CHANGELOG.md` heading. Once releases ship an archive, its copy
-will also name the release's commit; this repository's copy cannot, since a
+year of its `CHANGELOG.md` heading. The copy in a release's archive also
+names the release's commit; this repository's copy cannot, since a
 committed file cannot name the commit that contains it. If you changed the
 data, say so after the string.
 

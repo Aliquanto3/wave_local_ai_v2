@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Each release attaches one archive that needs no clone** -- on a `v*`
+  tag, once `test`, `build` and `verify-tag` pass, a new `release` job (the
+  only job holding `contents: write`) runs `scripts/assemble_release_archive.py`
+  and creates the GitHub Release with one asset, `wave-local-ai-v2-<version>.zip`:
+  the five export tables, their column dictionary and manifest, the reference
+  bundle they were derived from at its repository paths, `LICENSE`,
+  `LICENSE-DATA`, `CITATION.cff` stamped with the tagged commit, and a README
+  naming the release, the commit, the bundle schema version and each file.
+  The build refuses an archive whose tables differ from those regenerated
+  from the bundle at the tagged commit, whose files name a repository path
+  the archive does not hold (beyond a reviewed list the README links at the
+  commit), or whose tag, packaged version, citation version or commit
+  disagree. Three column-dictionary meanings (`machine_id`, `profile_id`,
+  `campaign_id`) no longer name repository paths.
 - **A run started from the browser streams until its row lands** -- the
   service gains a demo console, off unless `SERVICE_DEMO_MODE=true` and keyed
   on every route from loopback too: the options route lists the kinds, the

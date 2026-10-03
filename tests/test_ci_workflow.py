@@ -131,3 +131,60 @@ def test_the_test_job_checks_the_bundle_is_derived() -> None:
     workflow = _load_workflow()
     runs = [step.get("run", "") for step in workflow["jobs"]["test"]["steps"]]
     assert "uv run wave-local-ai-v2-merge-bundle --check" in runs
+
+
+def test_the_release_job_runs_on_a_tag_after_test_build_and_verify_tag() -> None:
+    job = _load_workflow()["jobs"]["release"]
+
+    assert job["if"] == "startsWith(github.ref, 'refs/tags/v')"
+    assert sorted(job["needs"]) == ["build", "test", "verify-tag"]
+
+
+def test_only_the_release_job_may_write_contents() -> None:
+    workflow = _load_workflow()
+
+    assert workflow["permissions"] == {"contents": "read"}
+    assert workflow["jobs"]["release"]["permissions"] == {"contents": "write"}
+    writers = [
+        name
+        for name, job in workflow["jobs"].items()
+        if job.get("permissions", {}).get("contents") == "write"
+    ]
+    assert writers == ["release"]
+
+
+def test_publish_and_verify_tag_are_unchanged_by_the_release_job() -> None:
+    jobs = _load_workflow()["jobs"]
+
+    assert jobs["publish"]["needs"] == ["test", "build", "verify-tag"]
+    assert jobs["publish"]["permissions"] == {
+        "contents": "read",
+        "packages": "write",
+    }
+    assert jobs["verify-tag"]["permissions"] == {"contents": "read"}
+
+
+def test_the_release_is_created_only_after_the_archive_verifies() -> None:
+    steps = _load_workflow()["jobs"]["release"]["steps"]
+    runs = [" ".join(str(step.get("run", "")).split()) for step in steps]
+
+    assemble = next(
+        i
+        for i, run in enumerate(runs)
+        if "scripts/assemble_release_archive.py build" in run
+    )
+    create = next(i for i, run in enumerate(runs) if "gh release create" in run)
+    assert assemble < create
+    assert '--tag "$GITHUB_REF_NAME" --commit "$GITHUB_SHA"' in runs[assemble]
+    assert "--verify-tag" in runs[create]
+    assert '"dist/wave-local-ai-v2-${GITHUB_REF_NAME#v}.zip"' in runs[create]
+
+
+def test_the_release_job_keeps_its_write_token_out_of_the_checkout() -> None:
+    # `uv sync`/`uv run` execute dependency code; the write-scoped token must
+    # not sit in .git/config meanwhile, and no shared cache feeds the job.
+    steps = _load_workflow()["jobs"]["release"]["steps"]
+    checkout = next(s for s in steps if "actions/checkout" in s.get("uses", ""))
+    assert checkout["with"]["persist-credentials"] is False
+    setup_uv = next(s for s in steps if "setup-uv" in s.get("uses", ""))
+    assert "enable-cache" not in setup_uv.get("with", {})

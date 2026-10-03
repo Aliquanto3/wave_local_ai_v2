@@ -4,8 +4,8 @@
 # disagree or when `version` differs from the packaged version.
 #
 # This repository copy names no commit: a committed file cannot name the
-# commit that contains it. The copy shipped in the release archive, once the
-# release job builds one, will have the release's commit stamped into it.
+# commit that contains it. The copy shipped in the release archive has the
+# release's commit stamped into it (scripts/assemble_release_archive.py).
 #
 # `date-released` is the date of this version's CHANGELOG.md heading;
 # tests/test_citation.py fails when the two disagree.

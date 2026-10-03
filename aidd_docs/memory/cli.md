@@ -208,6 +208,14 @@ The command-line interface for running benchmarks.
   nothing from the package): recomputes every interval block, every
   `mcnemar_exact` comparison and each family's Holm-adjusted p from the CSVs,
   prints each value beside the published cell, exits `1` on any difference.
+- `uv run python scripts/assemble_release_archive.py build --tag v<x.y.z>
+  --commit <sha> --output-dir <dir>` (and `verify --tag --commit <zip>`) —
+  the release archive the `release` CI job attaches on a `v*` tag: the export
+  regenerated from the committed bundle, the bundle parts at their repository
+  paths, both licences, `CITATION.cff` stamped with the commit and a README.
+  Refuses a tag, packaged version, citation version or `HEAD` that disagree,
+  a table that differs from the regenerated export, and a file naming a
+  repository path the archive does not hold outside `PATHS_NOT_SHIPPED`.
 - `wave-local-ai-v2-compare (--reference <run_id> --candidate <run_id>
   [--reference-where field=value ...] [--candidate-where field=value ...] |
   --comparisons <declaration.json>) [--dimension model|prompt_variant]

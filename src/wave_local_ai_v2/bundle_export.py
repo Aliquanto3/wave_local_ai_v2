@@ -246,8 +246,8 @@ _COMMON_FIELDS: dict[tuple[str, ...], FieldDoc] = {
         "(engine_id is then not_applicable).",
     ),
     ("machine_id",): FieldDoc(
-        "Declared machine (aidd_docs/roster/machines.json) the run was executed "
-        "on; not_applicable on a row no local model produced (a cloud subject).",
+        "Declared machine the run was executed on, by its id in the machine "
+        "registry; not_applicable on a row no local model produced (a cloud subject).",
         _ID,
     ),
     ("compute_mode",): FieldDoc(
@@ -256,7 +256,7 @@ _COMMON_FIELDS: dict[tuple[str, ...], FieldDoc] = {
         _ID,
     ),
     ("profile_id",): FieldDoc(
-        "Run profile the launch resolved (aidd_docs/roster/profiles.json), "
+        "Run profile the launch resolved, by its id in the run-profile registry, "
         "named <roster_entry_id>@<machine_id>/<compute_mode>; not_applicable on "
         "a row no local model produced (a cloud subject).",
         _ID,
@@ -270,9 +270,9 @@ _COMMON_FIELDS: dict[tuple[str, ...], FieldDoc] = {
         "The row predates the run profile fields (schema below 26).",
     ),
     ("campaign_id",): FieldDoc(
-        "Campaign the run belongs to (aidd_docs/campaigns/<campaign_id>.json); "
-        "none for a run started under no campaign and on every cloud subject's "
-        "row.",
+        "Campaign the run belongs to, by the id its declaration is named "
+        "after; none for a run started under no campaign and on every cloud "
+        "subject's row.",
         _ID,
     ),
     ("fiche_hash",): FieldDoc(

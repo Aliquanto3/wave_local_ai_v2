@@ -1,0 +1,62 @@
+$ git rev-parse HEAD
+28bb23d3114ab942e42d1f301acebcc216a291ff
+$ uv run python scripts/assemble_release_archive.py build --tag v0.2.0 --commit 28bb23d3114ab942e42d1f301acebcc216a291ff --output-dir <tmp>
+built and verified C:/Users/Anael/AppData/Local/Temp/tmp.sdYBhbEDaQ/wave-local-ai-v2-0.2.0.zip
+exit=0
+$ unzip -l wave-local-ai-v2-0.2.0.zip
+Archive:  /tmp/tmp.sdYBhbEDaQ/wave-local-ai-v2-0.2.0.zip
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+     1063  1980-01-01 00:00   wave-local-ai-v2-0.2.0/CITATION.cff
+     1088  1980-01-01 00:00   wave-local-ai-v2-0.2.0/LICENSE
+    26096  1980-01-01 00:00   wave-local-ai-v2-0.2.0/LICENSE-DATA
+     8270  1980-01-01 00:00   wave-local-ai-v2-0.2.0/README.md
+      759  1980-01-01 00:00   wave-local-ai-v2-0.2.0/aidd_docs/results/NOTICE.md
+      353  1980-01-01 00:00   wave-local-ai-v2-0.2.0/aidd_docs/results/comparisons/NOTICE.md
+     5091  1980-01-01 00:00   wave-local-ai-v2-0.2.0/aidd_docs/results/comparisons/classification-support-routing@2.model.1e1658cbe073.json
+     2384  1980-01-01 00:00   wave-local-ai-v2-0.2.0/aidd_docs/results/comparisons/classification-support-routing@2.model.2ef9fd3581d2.json
+     6342  1980-01-01 00:00   wave-local-ai-v2-0.2.0/aidd_docs/results/comparisons/classification-support-routing@2.model.837e5355b954.json
+     2384  1980-01-01 00:00   wave-local-ai-v2-0.2.0/aidd_docs/results/comparisons/classification-support-routing@2.model.d4641d06a525.json
+      675  1980-01-01 00:00   wave-local-ai-v2-0.2.0/aidd_docs/results/fiches/067530efd6944e8bb09ddc91e61ce45364fcd6261bd22edeed9d33a82276a2f4.json
+      779  1980-01-01 00:00   wave-local-ai-v2-0.2.0/aidd_docs/results/fiches/197d2732769ec3056776fa671bfd77e059f61147ac42488d83b44f3aa97a87f8.json
+      343  1980-01-01 00:00   wave-local-ai-v2-0.2.0/aidd_docs/results/fiches/NOTICE.md
+      727  1980-01-01 00:00   wave-local-ai-v2-0.2.0/aidd_docs/results/fiches/b9d1af56db2b6a26bfb265842bfd757dc78ed2d95e4ad3fce0088b8396d9003a.json
+      675  1980-01-01 00:00   wave-local-ai-v2-0.2.0/aidd_docs/results/fiches/dfd5a5eaa441cff2f7aee55b6d2206561eb9d19cb955bddc566d3e9d7fcb2ab2.json
+      675  1980-01-01 00:00   wave-local-ai-v2-0.2.0/aidd_docs/results/fiches/f804bee0d215c89c05289907fd2573fa722d290896775749f3c6d16329efca18.json
+      346  1980-01-01 00:00   wave-local-ai-v2-0.2.0/aidd_docs/results/leader-sets/NOTICE.md
+     3445  1980-01-01 00:00   wave-local-ai-v2-0.2.0/aidd_docs/results/leader-sets/classification-support-routing@2.053c65354ff8.json
+   234039  1980-01-01 00:00   wave-local-ai-v2-0.2.0/aidd_docs/results/quality-reference.jsonl
+    31319  1980-01-01 00:00   wave-local-ai-v2-0.2.0/aidd_docs/results/runtime-reference.jsonl
+      559  1980-01-01 00:00   wave-local-ai-v2-0.2.0/aidd_docs/results/suite-definitions/NOTICE.md
+     9558  1980-01-01 00:00   wave-local-ai-v2-0.2.0/aidd_docs/results/suite-definitions/classification-support-routing@2.json
+     9592  1980-01-01 00:00   wave-local-ai-v2-0.2.0/aidd_docs/results/suite-definitions/classification-support-routing@3.json
+    10239  1980-01-01 00:00   wave-local-ai-v2-0.2.0/aidd_docs/results/suite-definitions/classification-support-routing@4.json
+    10920  1980-01-01 00:00   wave-local-ai-v2-0.2.0/aidd_docs/results/suite-definitions/classification-support-routing@5.json
+    21924  1980-01-01 00:00   wave-local-ai-v2-0.2.0/aidd_docs/results/suite-definitions/code-generation-python-javascript@1.json
+    12101  1980-01-01 00:00   wave-local-ai-v2-0.2.0/aidd_docs/results/suite-definitions/translation-business-short-form@1.json
+    12135  1980-01-01 00:00   wave-local-ai-v2-0.2.0/aidd_docs/results/suite-definitions/translation-business-short-form@2.json
+    12813  1980-01-01 00:00   wave-local-ai-v2-0.2.0/aidd_docs/results/suite-definitions/translation-business-short-form@3.json
+    13274  1980-01-01 00:00   wave-local-ai-v2-0.2.0/aidd_docs/results/suite-definitions/translation-business-short-form@4.json
+      576  1980-01-01 00:00   wave-local-ai-v2-0.2.0/aidd_docs/roster/NOTICE.md
+    12783  1980-01-01 00:00   wave-local-ai-v2-0.2.0/aidd_docs/roster/models.json
+      543  1980-01-01 00:00   wave-local-ai-v2-0.2.0/bundle_manifest.csv
+   146353  1980-01-01 00:00   wave-local-ai-v2-0.2.0/column_dictionary.csv
+    49522  1980-01-01 00:00   wave-local-ai-v2-0.2.0/comparison_records.csv
+     3321  1980-01-01 00:00   wave-local-ai-v2-0.2.0/fiches.csv
+   173832  1980-01-01 00:00   wave-local-ai-v2-0.2.0/quality_items.csv
+     7068  1980-01-01 00:00   wave-local-ai-v2-0.2.0/roster.csv
+    23123  1980-01-01 00:00   wave-local-ai-v2-0.2.0/runtime_aggregates.csv
+---------                     -------
+   857089                     39 files
+$ sha256 of two builds of one commit
+82f93c647aaec8160b6625b8b9043d368740829de35367a5078e79631f2f6802
+82f93c647aaec8160b6625b8b9043d368740829de35367a5078e79631f2f6802
+$ hand-edit one cell of quality_items.csv inside a copy of the zip, then verify it
+release archive refused: table quality_items.csv differs from what the bundle at 28bb23d3114ab942e42d1f301acebcc216a291ff derives
+exit=1
+$ verify the untouched build against a tag the package is not
+release archive refused: tag v0.3.0 names 0.3.0, the package is 0.2.0; tag v0.3.0 names 0.3.0, CITATION.cff names 0.2.0
+exit=1
+$ verify the untouched build
+verified C:/Users/Anael/AppData/Local/Temp/tmp.p6mAwQFhVu/wave-local-ai-v2-0.2.0.zip
+exit=0

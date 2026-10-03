@@ -215,6 +215,49 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
 
+  release:
+    name: release
+    # The GitHub Release and its one asset: the archive a third party reads
+    # with no clone. It is the only job holding `contents: write`, which
+    # creating a Release needs; the workflow default and `publish` keep theirs.
+    needs: [test, build, verify-tag]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # The write-scoped token stays out of .git/config while `uv sync` and
+      # `uv run` execute dependency code; `gh` reads GH_TOKEN instead. No uv
+      # cache either: this job's inputs are not restored from a shared cache.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          python-version: "3.12"
+
+      - run: uv sync --locked
+
+      # Builds the tables from the bundle at the tagged commit, assembles the
+      # archive, then verifies it: a hand-edited table, a clone-only path, or
+      # a tag, version or commit disagreement fails here, before any Release.
+      - name: Assemble and verify the release archive
+        run: >-
+          uv run python scripts/assemble_release_archive.py build
+          --tag "$GITHUB_REF_NAME" --commit "$GITHUB_SHA" --output-dir dist
+        shell: bash
+
+      - name: Create the Release and attach the archive
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME"
+          "dist/wave-local-ai-v2-${GITHUB_REF_NAME#v}.zip"
+          --verify-tag --title "$GITHUB_REF_NAME"
+          --notes "One archive: the result tables, their column dictionary, the reference bundle they were derived from, LICENSE, LICENSE-DATA and CITATION.cff. See its README.md."
+        shell: bash
+
   required:
     name: required
     needs: [test, build, frontend]
