@@ -928,6 +928,7 @@ def test_a_second_run_is_refused_naming_the_first_and_spawns_nothing(
 
     assert response.status_code == 409
     assert response.json()["detail"]["holder"] == {
+        "session": "run",
         "kind": "quality",
         "suite": QUALITY_SUITE,
         "roster_entry_id": ROSTER_ENTRY_ID,
@@ -1159,10 +1160,10 @@ def write_paths_in(module_path: Path) -> list[str]:
     return found
 
 
-def test_no_console_module_reaches_a_writer_or_opens_a_file_for_writing() -> None:
+def test_no_demo_module_reaches_a_writer_or_opens_a_file_for_writing() -> None:
     package = Path(service.__file__).parent
 
-    for module in ("demo_console.py", "service.py"):
+    for module in ("demo_console.py", "playground.py", "service.py"):
         assert write_paths_in(package / module) == [], module
 
 

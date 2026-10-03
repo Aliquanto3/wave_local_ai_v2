@@ -4,6 +4,7 @@ export type ConsoleKind = 'runtime' | 'quality'
 
 /** Who holds the console: the choices of the one run in flight. */
 export interface RunHolder {
+  session: 'run'
   kind: ConsoleKind
   suite: string | null
   roster_entry_id: string
@@ -11,6 +12,17 @@ export interface RunHolder {
   started_at: string
   run_id: string | null
 }
+
+/** Who holds the console: the playground, with one roster model loaded. */
+export interface PlaygroundHolder {
+  session: 'playground'
+  roster_entry_id: string
+  profile_id: string
+  started_at: string
+}
+
+/** The one llama-server owner: a console run or the playground. */
+export type Holder = RunHolder | PlaygroundHolder
 
 export interface ConsoleOptions {
   kinds: ConsoleKind[]
@@ -21,7 +33,7 @@ export interface ConsoleOptions {
   machine_absence: string | null
   /** Per roster entry, the declared run profiles of this machine. */
   profiles: Record<string, RunProfileOption[]>
-  holder: RunHolder | null
+  holder: Holder | null
 }
 
 /** One declared run profile: `<entry>@<machine>/<mode>`, and its two parts. */
@@ -36,9 +48,9 @@ export interface ConsoleLaunch {
   profile_id: string
 }
 
-/** The 409 body when a run is already in progress. */
+/** The 409 body when a run or the playground already holds the console. */
 export interface ConsoleOccupied {
-  detail: { message: string; holder: RunHolder }
+  detail: { message: string; holder: Holder }
 }
 
 /** The stream's last event: the run's row as read back, or its failure. */

@@ -16,8 +16,9 @@ import type {
   ConsoleLaunch,
   ConsoleOccupied,
   ConsoleOptions,
-  RunHolder,
+  Holder,
 } from './types'
+import { describeHolder } from './holder'
 
 type LoadState =
   | { status: 'loading' }
@@ -33,12 +34,6 @@ type RunState =
 
 /** How often a held console re-reads its holder, in milliseconds. */
 export const HOLDER_POLL_MS = 3000
-
-function describeHolder(holder: RunHolder): string {
-  const suite = holder.suite === null ? '' : ` ${holder.suite}`
-  const runId = holder.run_id ?? 'run_id not yet announced'
-  return `${holder.kind}${suite} under ${holder.profile_id}, started ${holder.started_at} (${runId})`
-}
 
 function Outcome({ final }: { final: ConsoleFinal }) {
   if (final.ok && final.run_id !== null) {
@@ -72,7 +67,7 @@ export function ConsolePanel({
 }: { holderPollMs?: number } = {}) {
   const { reportUnauthorized } = useKeyGate()
   const [load, setLoad] = useState<LoadState>({ status: 'loading' })
-  const [holder, setHolder] = useState<RunHolder | null>(null)
+  const [holder, setHolder] = useState<Holder | null>(null)
   const [kind, setKind] = useState<ConsoleKind>('runtime')
   const [suite, setSuite] = useState('')
   const [rosterEntry, setRosterEntry] = useState('')
@@ -260,7 +255,7 @@ export function ConsolePanel({
           type="submit"
           disabled={holder !== null || running || profile === undefined}
         >
-          {holder === null ? 'Start run' : `Run in progress: ${describeHolder(holder)}`}
+          {holder === null ? 'Start run' : describeHolder(holder)}
         </button>
       </form>
       {run.status === 'failed-to-start' && (

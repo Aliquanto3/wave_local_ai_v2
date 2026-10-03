@@ -148,6 +148,12 @@ DEFAULT_DASHBOARD_BUNDLE_DIR = "frontend/dist"
 DEFAULT_SERVICE_DEMO_MODE = False
 _DEMO_MODE_VALUES = {"true": True, "false": False}
 
+# The playground's caps: a pasted document cannot hold the demo machine. The
+# prompt is capped in characters (checked before anything is sent), the answer
+# in generated tokens (sent as the request's `max_tokens`).
+DEFAULT_PLAYGROUND_MAX_PROMPT_CHARS = 4000
+DEFAULT_PLAYGROUND_MAX_TOKENS = 512
+
 
 class SettingsError(RuntimeError):
     """Raised when required configuration is missing or invalid."""
@@ -278,6 +284,12 @@ class ServiceSettings:
     # console offers only this machine's run profiles and checks it against
     # the registry itself, so a run is never launched under another machine.
     machine_id: str | None = None
+    # The playground's local install, read raw from the same variables the run
+    # CLIs require and never required here: the read routes need no model.
+    llama_server_path: Path | None = None
+    slm_models_dir: Path | None = None
+    playground_max_prompt_chars: int = DEFAULT_PLAYGROUND_MAX_PROMPT_CHARS
+    playground_max_tokens: int = DEFAULT_PLAYGROUND_MAX_TOKENS
 
 
 def load_service_settings() -> ServiceSettings:
@@ -350,7 +362,29 @@ def load_service_settings() -> ServiceSettings:
         tls_keyfile=_require_existing_path("SERVICE_TLS_KEYFILE"),
         demo_mode=_parse_demo_mode(os.environ.get("SERVICE_DEMO_MODE")),
         machine_id=os.environ.get("MACHINE_ID") or None,
+        llama_server_path=_optional_path("LLAMA_SERVER_PATH"),
+        slm_models_dir=_optional_path("SLM_MODELS_DIR"),
+        playground_max_prompt_chars=_require_numeric(
+            "PLAYGROUND_MAX_PROMPT_CHARS",
+            DEFAULT_PLAYGROUND_MAX_PROMPT_CHARS,
+            int,
+            minimum=1,
+            minimum_reason="a playground prompt needs at least one character",
+        ),
+        playground_max_tokens=_require_numeric(
+            "PLAYGROUND_MAX_TOKENS",
+            DEFAULT_PLAYGROUND_MAX_TOKENS,
+            int,
+            minimum=1,
+            minimum_reason="a playground answer needs at least one token",
+        ),
     )
+
+
+def _optional_path(env_var: str) -> Path | None:
+    """`env_var` as a path, or `None` when unset or empty; never checked here."""
+    raw = os.environ.get(env_var)
+    return Path(raw) if raw else None
 
 
 def _parse_demo_mode(raw: str | None) -> bool:

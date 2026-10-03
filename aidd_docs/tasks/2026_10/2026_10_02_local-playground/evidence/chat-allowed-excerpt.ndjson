@@ -1,0 +1,7 @@
+{"reasoning": "Okay"}
+{"reasoning": ","}
+{"reasoning": " the"}
+...
+{"delta": "4"}
+{"delta": "."}
+{"final": {"thinking_policy": "allowed", "finish_reason": "stop", "error": null}}

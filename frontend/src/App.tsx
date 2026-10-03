@@ -5,6 +5,7 @@ import { ComparisonView } from './views/comparison/ComparisonView'
 import { ConsolePanel } from './views/console/ConsolePanel'
 import { EnergyView } from './views/energy/EnergyView'
 import { OverviewView } from './views/overview/OverviewView'
+import { PlaygroundPanel } from './views/playground/PlaygroundPanel'
 import { QualityView } from './views/quality/QualityView'
 import { RuntimeView } from './views/runtime/RuntimeView'
 import { RunsList } from './views/RunsList'
@@ -18,6 +19,7 @@ type Selection =
   | { status: 'selected'; runId: string; kind: RunKind; screen: Screen }
   | { status: 'comparison' }
   | { status: 'console' }
+  | { status: 'playground' }
 
 // A quality run_id and a runtime run_id are minted by two separate CLIs over
 // two separate stores (see read_model.runs_view's own docstring) -- there is
@@ -70,16 +72,25 @@ function TabStrip({
 }
 
 /**
- * "Console →", shown only when this machine's service answers the console's
- * options route: demo mode off (403), or any other refusal, shows nothing.
+ * A demo surface's entry ("Console →", "Playground →"), shown only when this
+ * machine's service answers that surface's options route: demo mode off
+ * (403), or any other refusal, shows nothing.
  */
-function ConsoleEntry({ onOpen }: { onOpen: () => void }) {
+function DemoEntry({
+  optionsPath,
+  label,
+  onOpen,
+}: {
+  optionsPath: string
+  label: string
+  onOpen: () => void
+}) {
   const { reportUnauthorized } = useKeyGate()
   const [available, setAvailable] = useState(false)
 
   useEffect(() => {
     let cancelled = false
-    apiFetch('/api/console/options')
+    apiFetch(optionsPath)
       .then(() => {
         if (!cancelled) {
           setAvailable(true)
@@ -93,14 +104,14 @@ function ConsoleEntry({ onOpen }: { onOpen: () => void }) {
     return () => {
       cancelled = true
     }
-  }, [reportUnauthorized])
+  }, [optionsPath, reportUnauthorized])
 
   if (!available) {
     return null
   }
   return (
     <button type="button" onClick={onOpen}>
-      Console →
+      {label}
     </button>
   )
 }
@@ -119,7 +130,16 @@ function App() {
             <button type="button" onClick={() => setSelection({ status: 'runs' })}>
               Runs →
             </button>
-            <ConsoleEntry onOpen={() => setSelection({ status: 'console' })} />
+            <DemoEntry
+              optionsPath="/api/console/options"
+              label="Console →"
+              onOpen={() => setSelection({ status: 'console' })}
+            />
+            <DemoEntry
+              optionsPath="/api/playground/options"
+              label="Playground →"
+              onOpen={() => setSelection({ status: 'playground' })}
+            />
           </nav>
           <OverviewView />
         </>
@@ -159,6 +179,16 @@ function App() {
             </button>
           </nav>
           <ConsolePanel />
+        </>
+      )}
+      {selection.status === 'playground' && (
+        <>
+          <nav className="top-nav">
+            <button type="button" onClick={() => setSelection({ status: 'overview' })}>
+              ← Overview
+            </button>
+          </nav>
+          <PlaygroundPanel />
         </>
       )}
       {selection.status === 'selected' && (

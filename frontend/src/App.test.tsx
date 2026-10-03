@@ -30,6 +30,18 @@ function mockEveryRoute({ demoMode = false }: { demoMode?: boolean } = {}) {
           })
         : Promise.reject(new client.ApiError(403, '{"detail": "SERVICE_DEMO_MODE"}'))
     }
+    if (url.includes('/api/playground/options')) {
+      return demoMode
+        ? Promise.resolve({
+            roster_entries: ['entry-a'],
+            thinking_policies: ['allowed', 'disabled'],
+            max_prompt_chars: 4000,
+            max_tokens: 512,
+            loaded: null,
+            holder: null,
+          })
+        : Promise.reject(new client.ApiError(403, '{"detail": "SERVICE_DEMO_MODE"}'))
+    }
     if (url.includes('/api/overview/runtime')) {
       return Promise.resolve(overviewRuntimeFixture)
     }
@@ -77,6 +89,7 @@ describe('App', () => {
     )
     await act(async () => {})
     expect(screen.queryByText('Console →')).not.toBeInTheDocument()
+    expect(screen.queryByText('Playground →')).not.toBeInTheDocument()
   })
 
   it('shows the console entry when demo mode is on, routing to the panel', async () => {
@@ -88,5 +101,19 @@ describe('App', () => {
     await user.click(await screen.findByText('Console →'))
 
     expect(await screen.findByRole('button', { name: 'Start run' })).toBeInTheDocument()
+  })
+
+  it('shows the playground entry when demo mode is on, routing to its labelled panel', async () => {
+    mockEveryRoute({ demoMode: true })
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    await user.click(await screen.findByText('Playground →'))
+
+    expect(
+      await screen.findByText('playground — nothing here is a benchmark row'),
+    ).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Start' })).toBeInTheDocument()
   })
 })

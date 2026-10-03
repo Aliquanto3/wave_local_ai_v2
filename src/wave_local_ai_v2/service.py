@@ -1,13 +1,14 @@
-"""The results service: `GET` routes over the two stores, plus the demo console.
+"""The results service: `GET` routes over the two stores, plus the demo surfaces.
 
 Read-only in the strict sense the story asks for. This module imports only
 read paths -- `read_model`, which itself imports no writer -- so
 `results.append_row`, `fiche_registry.write_fiche` and `suite_snapshot`'s
 exporter are not reachable from a request at all. Nothing here opens a file
-for writing. The one non-`GET` route, `POST /api/console/runs`, exists only
-with demo mode on and writes nothing itself: it starts the unchanged CLI as a
+for writing. The non-`GET` routes exist only with demo mode on and write
+nothing themselves: `POST /api/console/runs` starts the unchanged CLI as a
 child process (`demo_console`), and the row that run produces is the one the
-CLI appends.
+CLI appends; the `/api/playground/*` routes load one roster model and proxy
+a typed prompt to it (`playground`), recording nothing at all.
 
 Nothing here logs the API key, the `X-API-Key` header, or the settings object
 that carries the key.
@@ -24,7 +25,6 @@ import ssl
 import sys
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager
-from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -44,7 +44,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from uvicorn.config import STARTUP_FAILURE
 
-from wave_local_ai_v2 import demo_console, machines, read_model, roster
+from wave_local_ai_v2 import demo_console, machines, playground, read_model, roster
 from wave_local_ai_v2.settings import (
     ServiceSettings,
     SettingsError,
@@ -158,6 +158,8 @@ def create_app(settings: ServiceSettings) -> FastAPI:
     # The one console run this app launched, if any: only one runs at a time,
     # so the latest is the only one a stream can follow.
     console_runs: dict[str, demo_console.ConsoleRun] = {}
+    # The one playground model this app holds, if any.
+    playground_session = playground.PlaygroundSession(settings)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -166,6 +168,7 @@ def create_app(settings: ServiceSettings) -> FastAPI:
         # path, so its llama-server is torn down rather than orphaned.
         for run in console_runs.values():
             demo_console.stop_child(run.process)
+        playground_session.stop()
 
     app = FastAPI(
         lifespan=lifespan,
@@ -313,6 +316,8 @@ def create_app(settings: ServiceSettings) -> FastAPI:
     app.include_router(api)
     # Where the serving entry finds the running child on shutdown.
     app.state.console_runs = console_runs
+    app.state.playground = playground_session
+    app.include_router(_playground_router(settings, playground_session))
     app.include_router(
         _console_router(settings, console_runs, get_quality, get_runtime)
     )
@@ -354,21 +359,16 @@ def create_app(settings: ServiceSettings) -> FastAPI:
     return app
 
 
-def _console_router(
-    settings: ServiceSettings,
-    console_runs: dict[str, demo_console.ConsoleRun],
-    get_quality: Callable[[str], dict[str, Any]],
-    get_runtime: Callable[[str], dict[str, Any]],
-) -> APIRouter:
-    """The demo console's routes: options, start a run, follow its stream.
+def _demo_gates(settings: ServiceSettings) -> list[Any]:
+    """The gates every route that starts a process on this machine sits behind.
 
-    The key gate ignores loopback: the console starts processes on this
-    machine, so it is gated stricter than the read routes. It runs before the
-    demo-mode gate, so a keyless request is a 401 whether or not demo mode is
-    on and cannot probe which it is.
+    The key gate ignores loopback: these routes start processes, so they are
+    gated stricter than the read routes. It runs before the demo-mode gate, so
+    a keyless request is a 401 whether or not demo mode is on and cannot probe
+    which it is.
     """
 
-    def console_key_gate(
+    def demo_key_gate(
         x_api_key: Annotated[str | None, Header()] = None,
     ) -> None:
         _require_matching_key(settings, x_api_key)
@@ -380,10 +380,17 @@ def _console_router(
                 detail="demo mode is off on this machine (SERVICE_DEMO_MODE)",
             )
 
-    console = APIRouter(
-        prefix="/api/console",
-        dependencies=[Depends(console_key_gate), Depends(require_demo_mode)],
-    )
+    return [Depends(demo_key_gate), Depends(require_demo_mode)]
+
+
+def _console_router(
+    settings: ServiceSettings,
+    console_runs: dict[str, demo_console.ConsoleRun],
+    get_quality: Callable[[str], dict[str, Any]],
+    get_runtime: Callable[[str], dict[str, Any]],
+) -> APIRouter:
+    """The demo console's routes: options, start a run, follow its stream."""
+    console = APIRouter(prefix="/api/console", dependencies=_demo_gates(settings))
 
     @console.get("/options")
     def get_console_options() -> dict[str, Any]:
@@ -415,8 +422,8 @@ def _console_router(
             raise HTTPException(
                 status_code=409,
                 detail={
-                    "message": "a run is in progress",
-                    "holder": asdict(occupied_by),
+                    "message": demo_console.busy_message(occupied_by),
+                    "holder": demo_console.holder_payload(occupied_by),
                 },
             )
         try:
@@ -459,11 +466,91 @@ def _console_router(
     return console
 
 
+def _playground_router(
+    settings: ServiceSettings, session: playground.PlaygroundSession
+) -> APIRouter:
+    """The playground's routes: options, load or switch a model, stop it, chat.
+
+    Behind the console's gates, and under its one occupancy lock. Nothing here
+    writes: an exchange lives in the browser's memory only.
+    """
+    routes = APIRouter(prefix="/api/playground", dependencies=_demo_gates(settings))
+
+    def busy(exc: playground.PlaygroundBusy) -> HTTPException:
+        holder = exc.holder
+        return HTTPException(
+            status_code=409,
+            detail={
+                "message": str(exc),
+                "holder": None
+                if holder is None
+                else demo_console.holder_payload(holder),
+            },
+        )
+
+    @routes.get("/options")
+    def get_playground_options() -> dict[str, Any]:
+        """The roster ids and policies a client picks from, and who holds the lock."""
+        try:
+            return playground.options_payload(settings, session)
+        except roster.RosterError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @routes.post("/session")
+    def post_playground_session(
+        payload: Annotated[Any, Body()] = None,
+    ) -> dict[str, str]:
+        """Load the named roster model, replacing the playground's own one."""
+        try:
+            entry_id = playground.validate_entry(payload, settings)
+            return session.start(entry_id)
+        except playground.PlaygroundRequestError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except playground.PlaygroundBusy as exc:
+            raise busy(exc) from exc
+        except (
+            playground.PlaygroundUnavailable,
+            roster.RosterError,
+            machines.MachineRegistryError,
+        ) as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @routes.delete("/session")
+    def delete_playground_session() -> dict[str, bool]:
+        """Stop the loaded model and free the lock."""
+        return {"stopped": session.stop()}
+
+    @routes.post("/chat")
+    def post_playground_chat(
+        payload: Annotated[Any, Body()] = None,
+    ) -> StreamingResponse:
+        """One exchange, streamed as NDJSON text events, then one final event."""
+        try:
+            prepared = session.prepare_chat(playground.validate_chat(payload, settings))
+        except playground.PlaygroundRequestError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except playground.PlaygroundBusy as exc:
+            raise busy(exc) from exc
+
+        def events() -> Iterator[str]:
+            for event in playground.stream_chat(prepared):
+                yield json.dumps(event) + "\n"
+
+        return StreamingResponse(events(), media_type="application/x-ndjson")
+
+    return routes
+
+
 def _stop_console_runs(app: FastAPI) -> None:
-    """Stop the console child `app` launched, if one is still running."""
+    """Stop every demo child `app` launched: the console run and the playground model."""
     runs: dict[str, demo_console.ConsoleRun] = getattr(app.state, "console_runs", {})
     for run in list(runs.values()):
         demo_console.stop_child(run.process)
+    session: playground.PlaygroundSession | None = getattr(
+        app.state, "playground", None
+    )
+    if session is not None:
+        session.stop()
 
 
 class _ConsoleStoppingServer(uvicorn.Server):

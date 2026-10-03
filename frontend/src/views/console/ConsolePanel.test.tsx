@@ -17,6 +17,7 @@ vi.mock('../quality/QualityView', () => ({
 }))
 
 const HOLDER: RunHolder = {
+  session: 'run',
   kind: 'quality',
   suite: 'translation',
   roster_entry_id: 'entry-a',

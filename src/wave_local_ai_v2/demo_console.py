@@ -100,20 +100,50 @@ class RunHolder:
     run_id: str | None = None
 
 
+@dataclass(frozen=True)
+class PlaygroundHolder:
+    """Who holds the console: the playground, with one roster model loaded."""
+
+    roster_entry_id: str
+    profile_id: str
+    started_at: str
+
+
+# One llama-server, one owner: a benchmark run and the playground both launch
+# llama-server on the engine's one loopback port, and a runtime figure
+# measured beside a loaded playground model would describe another machine
+# state than its fiche records. So both take this one lock.
+Holder = RunHolder | PlaygroundHolder
+SESSION_RUN = "run"
+SESSION_PLAYGROUND = "playground"
+
 # The holder, not the guard's own `locked()` state, is the source of truth: a
 # second request must be able to read *who* holds the console without racing
 # the first, so the guard only ever protects reads and writes of `_holder`.
 _guard = threading.Lock()
-_holder: RunHolder | None = None
+_holder: Holder | None = None
 
 
-def current_holder() -> RunHolder | None:
-    """The run in flight, or `None` when the console is free."""
+def holder_payload(holder: Holder) -> dict[str, Any]:
+    """`holder` as a refusal or options payload names it, its session first."""
+    session = SESSION_RUN if isinstance(holder, RunHolder) else SESSION_PLAYGROUND
+    return {"session": session, **asdict(holder)}
+
+
+def busy_message(holder: Holder) -> str:
+    """The one-line reason a request is refused while `holder` holds the lock."""
+    if isinstance(holder, RunHolder):
+        return "a run is in progress"
+    return "the playground holds a local model"
+
+
+def current_holder() -> Holder | None:
+    """Who holds the console, or `None` when it is free."""
     with _guard:
         return _holder
 
 
-def try_acquire(holder: RunHolder) -> RunHolder | None:
+def try_acquire(holder: Holder) -> Holder | None:
     """Install `holder` and return `None`, or return the current holder unchanged.
 
     No queueing: a refused caller is told who holds the console and tries again
@@ -131,7 +161,7 @@ def record_run_id(run_id: str) -> None:
     """Attach the announced `run_id` to the current holder, if one is held."""
     global _holder
     with _guard:
-        if _holder is not None:
+        if isinstance(_holder, RunHolder):
             _holder = replace(_holder, run_id=run_id)
 
 
@@ -142,9 +172,18 @@ def release() -> None:
         _holder = None
 
 
-def options_payload(
-    settings: ServiceSettings, holder: RunHolder | None
-) -> dict[str, Any]:
+def release_if(holder: Holder) -> None:
+    """Free the console only while `holder` itself still holds it.
+
+    A late stop can then never free a lock another session took meanwhile.
+    """
+    global _holder
+    with _guard:
+        if _holder is holder:
+            _holder = None
+
+
+def options_payload(settings: ServiceSettings, holder: Holder | None) -> dict[str, Any]:
     """Every declared set the console offers, plus who holds it right now.
 
     With no usable service machine, every entry offers no profile and
@@ -167,7 +206,7 @@ def options_payload(
             entry: [] if machine_id is None else machine_profiles(entry, machine_id)
             for entry in entries
         },
-        "holder": None if holder is None else asdict(holder),
+        "holder": None if holder is None else holder_payload(holder),
     }
 
 

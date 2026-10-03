@@ -86,6 +86,7 @@ def test_the_options_payload_composes_every_set_and_the_holder(
     assert payload["machine_id"] == MACHINE
     assert payload["machine_absence"] is None
     assert payload["holder"] == {
+        "session": "run",
         "kind": "quality",
         "suite": SUITE,
         "roster_entry_id": ROSTER_ENTRY_ID,

@@ -380,6 +380,26 @@ The command-line interface for running benchmarks.
     gracefully (killed after 25 s) before uvicorn drains open connections, so
     an open stream cannot hold the service up, and a forced exit still stops
     it.
+  - The playground (`playground.py`), behind the same two gates (key from
+    loopback too, then demo mode). `GET /api/playground/options` lists the
+    roster ids, the two thinking policies, the caps
+    (`PLAYGROUND_MAX_PROMPT_CHARS`, default 4000; `PLAYGROUND_MAX_TOKENS`,
+    default 512), the loaded model and the lock's holder.
+    `POST /api/playground/session` (`{"roster_entry_id"}`) launches
+    llama-server through `server.build_flags` + `server.start_server` under
+    the service machine's declared `gpu` profile (else `cpu_only`), from
+    `LLAMA_SERVER_PATH`/`SLM_MODELS_DIR` (optional on the service; unset =
+    `503` naming them), after the entry's declared minimums are compared
+    with `preflight.observe`/`first_failure` (below one = `503` naming it, no
+    refusal record); a second start switches models. `DELETE` stops it.
+    `POST /api/playground/chat` (`{"prompt", "thinking_policy"}`) sends the
+    prompt as message content only to the loopback `/v1/chat/completions`
+    with `local_client.thinking_kwargs`' spelling, and streams NDJSON
+    (`{"delta"}`/`{"reasoning"}`, then `{"final"}` with the policy, finish
+    reason or error); no timing is forwarded. The playground and a console
+    run share the one occupancy lock: each `409` carries
+    `holder.session` (`run`/`playground`). Service shutdown stops the
+    playground model. Nothing is written or logged.
 
 Both benchmark commands stamp every row they write with a `run_id` and a UTC `captured_at`, so the
 rows of one invocation are selectable back out of the append-only store. The two

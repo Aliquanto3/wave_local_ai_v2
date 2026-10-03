@@ -717,6 +717,10 @@ SERVICE_ENV_VARS = (
     "SERVICE_TLS_KEYFILE",
     "SERVICE_DEMO_MODE",
     "MACHINE_ID",
+    "LLAMA_SERVER_PATH",
+    "SLM_MODELS_DIR",
+    "PLAYGROUND_MAX_PROMPT_CHARS",
+    "PLAYGROUND_MAX_TOKENS",
 )
 
 
@@ -1069,3 +1073,52 @@ def test_an_unreadable_machine_registry_refuses(monkeypatch, tmp_path: Path) -> 
         settings_module.require_run_profile(
             _run_settings(tmp_path, machine_id="laptop-mobile-gpu", compute_mode="gpu")
         )
+
+
+def test_load_service_settings_defaults_the_playground_and_needs_no_install(
+    monkeypatch, _clean_service_env: None, _tls_env: tuple[Path, Path]
+) -> None:
+    monkeypatch.setenv("SERVICE_API_KEY", "a-key")  # pragma: allowlist secret
+
+    settings = load_service_settings()
+
+    assert settings.llama_server_path is None
+    assert settings.slm_models_dir is None
+    assert settings.playground_max_prompt_chars == 4000
+    assert settings.playground_max_tokens == 512
+
+
+def test_load_service_settings_reads_the_playground_install_and_caps(
+    monkeypatch, _clean_service_env: None, _tls_env: tuple[Path, Path]
+) -> None:
+    monkeypatch.setenv("SERVICE_API_KEY", "a-key")  # pragma: allowlist secret
+    monkeypatch.setenv("LLAMA_SERVER_PATH", "C:/llama/llama-server.exe")
+    monkeypatch.setenv("SLM_MODELS_DIR", "D:/models")
+    monkeypatch.setenv("PLAYGROUND_MAX_PROMPT_CHARS", "100")
+    monkeypatch.setenv("PLAYGROUND_MAX_TOKENS", "64")
+
+    settings = load_service_settings()
+
+    # Never existence-checked: the playground route reports a missing install.
+    assert settings.llama_server_path == Path("C:/llama/llama-server.exe")
+    assert settings.slm_models_dir == Path("D:/models")
+    assert settings.playground_max_prompt_chars == 100
+    assert settings.playground_max_tokens == 64
+
+
+@pytest.mark.parametrize(
+    "env_var", ["PLAYGROUND_MAX_PROMPT_CHARS", "PLAYGROUND_MAX_TOKENS"]
+)
+@pytest.mark.parametrize("value", ["0", "many"])
+def test_load_service_settings_refuses_a_playground_cap_below_one(
+    monkeypatch,
+    _clean_service_env: None,
+    _tls_env: tuple[Path, Path],
+    env_var: str,
+    value: str,
+) -> None:
+    monkeypatch.setenv("SERVICE_API_KEY", "a-key")  # pragma: allowlist secret
+    monkeypatch.setenv(env_var, value)
+
+    with pytest.raises(SettingsError, match=env_var):
+        load_service_settings()
