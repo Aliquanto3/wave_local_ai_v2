@@ -439,6 +439,15 @@ def _run(resume_run_id: str | None = None) -> None:
     # The declared machine and compute mode, before anything else: a missing
     # or undeclared one refuses before any judge preflight or process.
     run_profile = require_run_profile(settings)
+    # No campaign can declare the probe: its suite is not a registered suite
+    # and its two judges are cloud calls. Refused rather than ignored, so a
+    # set `CAMPAIGN_ID` never yields rows that silently belong to none.
+    if settings.campaign_id is not None:
+        raise SettingsError(
+            f"CAMPAIGN_ID={settings.campaign_id!r} is set: the judge probe runs "
+            "under no campaign (its suite is not a registered suite and its "
+            "judges are cloud calls); unset CAMPAIGN_ID"
+        )
     # Offline, before anything is generated or paid for: a probe missing a
     # judge must cost nothing at all.
     _preflight_judges(settings)
@@ -451,7 +460,11 @@ def _run(resume_run_id: str | None = None) -> None:
     # and `--resume` needs that id. It costs one stdout line to make the
     # failure recoverable.
     print(f"run_id={run_id}")
-    provenance_fields = provenance.capture_provenance()
+    # Every row states that the probe belongs to no campaign.
+    provenance_fields = {
+        **provenance.capture_provenance(),
+        "campaign_id": row_contract.NO_CAMPAIGN,
+    }
     loaded_roster = roster.load_roster(settings.roster_path)
     roster_entry = roster.resolve_entry(loaded_roster, settings.roster_entry_id)
     model_path = _local_model_path(settings, roster_entry)
@@ -663,6 +676,7 @@ def _refuse_a_resume_under_another_configuration(
                 "sampling": dict(sampling),
                 "endpoint": endpoint,
                 "judge_model_ids": judge_ids,
+                "campaign_id": row_contract.NO_CAMPAIGN,
                 **producer_fields,
             },
             derived={"judge_model_ids": _judge_model_ids},

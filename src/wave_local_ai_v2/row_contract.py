@@ -204,7 +204,14 @@ from wave_local_ai_v2 import (
 # a `gpu` and a `cpu_only` run of one model on one machine never share a
 # fiche. Owed only from "23": a row below "23" still validates without them,
 # is verified under projection "1" or "2", and is never back-filled.
-SCHEMA_VERSION = "23"
+# "24": `campaign_id` became required on both row kinds (Story: a campaign is
+# declared as data, and an empty cell fails it; Methodology 22). A run started
+# under a campaign (`CAMPAIGN_ID`, `campaigns.py`) stamps that campaign's id on
+# every row; a run started under none states `NO_CAMPAIGN`, and a row no local
+# model produced (a cloud subject's quality row) always does, since a campaign
+# declares engines and a cloud subject runs on none. Owed only from "24": a row
+# below "24" still validates without it and is never back-filled.
+SCHEMA_VERSION = "24"
 
 # The two subject-composition fields "19" added, and the version from which a
 # quality row owes them.
@@ -280,6 +287,13 @@ MACHINE_FICHE_SCHEMA_VERSION = "23"
 # `cpu_only` produced it, which the row states rather than leaving null.
 MACHINE_NOT_APPLICABLE = "not_applicable"
 
+# The schema version from which a row owes `campaign_id`, fixed at "24".
+CAMPAIGN_SCHEMA_VERSION = "24"
+
+# What a row run under no campaign says in `campaign_id`: it belongs to none,
+# stated rather than left null. Reserved: no campaign may take it as its id.
+NO_CAMPAIGN = "none"
+
 
 def fiche_projection_for(schema_version: object) -> str:
     """The `hardware.FICHE_PROJECTIONS` version a row at `schema_version` cites.
@@ -338,6 +352,9 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             # executed under (schema "23")
             "machine_id",
             "compute_mode",
+            # campaigns: the campaign the run belongs to, or `NO_CAMPAIGN`
+            # (schema "24")
+            "campaign_id",
             # fiche_registry: the hardware + run-specific fiche, cited by hash
             "fiche_hash",
             # verdict.runtime_verdict
@@ -455,6 +472,9 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             # subject's row (schema "23")
             "machine_id",
             "compute_mode",
+            # campaigns: the campaign the run belongs to, or `NO_CAMPAIGN`
+            # (schema "24")
+            "campaign_id",
             "fiche_hash",
             # energy.EnergyResult / emissions.local_emissions / scope3_cloud_emissions
             # -- same twelve fields as the runtime row (plan.md's Decisions:
@@ -736,6 +756,8 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
         missing -= ENGINE_FIELDS
     if _predates(row, MACHINE_FICHE_SCHEMA_VERSION):
         missing -= MACHINE_FIELDS
+    if _predates(row, CAMPAIGN_SCHEMA_VERSION):
+        missing -= {"campaign_id"}
     if missing:
         raise RowContractError(
             f"row of kind {kind!r} is missing required field(s): "
@@ -757,6 +779,8 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
         _validate_engine(kind, row)
     if not _predates(row, MACHINE_FICHE_SCHEMA_VERSION):
         _validate_machine(kind, row)
+    if not _predates(row, CAMPAIGN_SCHEMA_VERSION):
+        _validate_campaign(kind, row)
 
     cost_total = row["cost_total"]
     # The two bases are the values the cost was actually computed from: a kWh
@@ -1240,6 +1264,31 @@ def _validate_engine(kind: RowKind, row: dict[str, Any]) -> None:
             f"by no local engine: it must carry engine_id "
             f"{ENGINE_NOT_APPLICABLE!r} and a null engine_build, got "
             f"{engine_id!r} / {engine_build!r}"
+        )
+
+
+def _validate_campaign(kind: RowKind, row: dict[str, Any]) -> None:
+    """Refuse a `campaign_id` that is not a non-empty string, and a campaign
+    id on a row no local model produced.
+
+    A cloud subject's quality row always states `NO_CAMPAIGN`: a campaign
+    declares engines, and a cloud subject runs on none.
+    """
+    campaign_id = row["campaign_id"]
+    if not isinstance(campaign_id, str) or not campaign_id.strip():
+        raise RowContractError(
+            f"row of kind {kind!r} has campaign_id {campaign_id!r}; it names "
+            f"its campaign, or {NO_CAMPAIGN!r} for a run under none"
+        )
+    if (
+        kind == "quality"
+        and row["provider"] != SUBJECT_PROVIDER_LOCAL
+        and campaign_id != NO_CAMPAIGN
+    ):
+        raise RowContractError(
+            f"row of kind {kind!r} from provider {row['provider']!r} names "
+            f"campaign {campaign_id!r}: a cloud subject belongs to no campaign "
+            f"and states {NO_CAMPAIGN!r}"
         )
 
 

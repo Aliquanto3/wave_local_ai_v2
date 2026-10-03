@@ -50,6 +50,7 @@ from typing import Any, NotRequired, TypedDict
 import requests
 
 from wave_local_ai_v2 import (
+    campaigns,
     cost,
     engines,
     fiche_registry,
@@ -240,6 +241,9 @@ def main() -> None:
         # An unregistered `--suite`, an unknown scoring rule or a malformed
         # definition: refused before any process spawns, naming what is wrong.
         SuiteRegistryError,
+        # A run outside its campaign's declaration, or a declaration that
+        # fails its own check: refused before any process spawns.
+        campaigns.CampaignError,
         # `--resume` over rows written under another configuration: refused
         # before any process spawns or any row is written, naming the field.
         results.ResumeConfigurationError,
@@ -285,6 +289,23 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
     # listens, how its build is probed, how its reasoning switch is spelled.
     engine = engines.tracked_reference_engine()
 
+    # Under a campaign, checked against its declaration before the build
+    # probe or any spawn, cloud providers included: a campaign declares
+    # engines and a cloud subject runs on none. Every row of the invocation
+    # carries the id, or `NO_CAMPAIGN` for a run under none, beside the code
+    # identity the invocation was run as.
+    campaign_id = campaigns.require_run_campaign(
+        settings,
+        engine_id=engine.engine_id,
+        prompt_variant=prompt_variant,
+        roster_entry_id=roster_entry.entry_id,
+        suite_id=spec.suite_id,
+        machine_id=run_profile.machine_id,
+        compute_mode=run_profile.compute_mode,
+        cloud_providers=settings.quality_providers - {"local"},
+    )
+    provenance_fields["campaign_id"] = campaign_id
+
     # Resolved once, before any process spawns: an entry that declares no
     # thinking control cannot run a `disabled` suite, and every render and
     # answer of the batch sends exactly these arguments. An entry whose
@@ -329,6 +350,7 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
             roster_entry=roster_entry,
             prompt_variant=prompt_variant,
             local_producer_fields=local_producer_fields,
+            campaign_id=campaign_id,
         )
 
     # One fiche per invocation, built from the one local launch this run
@@ -594,6 +616,7 @@ def _refuse_a_resume_under_another_configuration(
     roster_entry: roster.RosterEntry,
     prompt_variant: prompt_variants.PromptVariant,
     local_producer_fields: Mapping[str, str | None],
+    campaign_id: str,
 ) -> None:
     """Raise `ResumeConfigurationError` unless every row this run already
     wrote for this suite was produced the way this invocation would.
@@ -613,6 +636,8 @@ def _refuse_a_resume_under_another_configuration(
         "prompt_variant_version": prompt_variant.version,
         "roster_entry_id": roster_entry.entry_id,
         "thinking_policy": spec.thinking_policy,
+        # One batch never spans two campaigns, nor a campaign and none.
+        "campaign_id": campaign_id,
     }
     by_provider = {
         "local": (

@@ -238,6 +238,12 @@ _COMMON_FIELDS: dict[tuple[str, ...], FieldDoc] = {
         "not_applicable on a row no local model produced (a cloud subject).",
         _ID,
     ),
+    ("campaign_id",): FieldDoc(
+        "Campaign the run belongs to (aidd_docs/campaigns/<campaign_id>.json); "
+        "none for a run started under no campaign and on every cloud subject's "
+        "row.",
+        _ID,
+    ),
     ("fiche_hash",): FieldDoc(
         "Hardware and run fiche the row cites. Resolved into the fiche_* columns.",
         _SHA,

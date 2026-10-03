@@ -1036,3 +1036,69 @@ def test_a_run_without_a_valid_run_profile_refuses_before_any_server_starts(
     started["running_server"].assert_not_called()
     started["probe_build"].assert_not_called()
     assert not results_path.exists()
+
+
+def _declare_campaign(tmp_path: Path, **overrides) -> Path:
+    campaigns_dir = tmp_path / "campaigns"
+    campaigns_dir.mkdir()
+    declaration = {
+        "campaign_id": "test-campaign",
+        "description": "Test campaign.",
+        "engines": ["llama.cpp"],
+        "prompt_variants": [{"id": "baseline", "version": "1"}],
+        "roster_entries": [DEFAULT_ROSTER_ENTRY_ID],
+        "suites": ["classification-support-routing"],
+        "machine": {"machine_id": "laptop-mobile-gpu", "compute_mode": "gpu"},
+        "exclusions": [],
+        **overrides,
+    }
+    (campaigns_dir / "test-campaign.json").write_text(
+        json.dumps(declaration), encoding="utf-8"
+    )
+    return campaigns_dir
+
+
+def test_a_runtime_row_with_no_campaign_belongs_to_none(stubbed_run) -> None:
+    results_path, _ = stubbed_run
+
+    _run()
+
+    (row,) = read_rows(results_path)
+    assert row["campaign_id"] == "none"
+
+
+def test_a_runtime_row_under_a_campaign_carries_its_id(stubbed_run, tmp_path) -> None:
+    results_path, started = stubbed_run
+    started["load_settings"].return_value = replace(
+        started["load_settings"].return_value,
+        campaign_id="test-campaign",
+        campaigns_dir=_declare_campaign(tmp_path),
+    )
+
+    _run()
+
+    (row,) = read_rows(results_path)
+    assert row["campaign_id"] == "test-campaign"
+
+
+def test_a_runtime_run_outside_its_campaign_refuses_before_any_server_starts(
+    stubbed_run, tmp_path, capsys
+) -> None:
+    results_path, started = stubbed_run
+    started["load_settings"].return_value = replace(
+        started["load_settings"].return_value,
+        campaign_id="test-campaign",
+        campaigns_dir=_declare_campaign(
+            tmp_path,
+            machine={"machine_id": "laptop-mobile-gpu", "compute_mode": "cpu_only"},
+        ),
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        main()
+
+    assert exit_info.value.code == 1
+    assert "run refused under campaign 'test-campaign'" in capsys.readouterr().err
+    started["running_server"].assert_not_called()
+    started["probe_build"].assert_not_called()
+    assert not results_path.exists()

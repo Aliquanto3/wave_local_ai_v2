@@ -622,6 +622,7 @@ def test_local_probe_rows_name_the_engine_and_the_cloud_row_states_none(
         ("local", "laptop-mobile-gpu", "gpu"),
         ("google", "not_applicable", "not_applicable"),
     }
+    assert {row["campaign_id"] for row in rows} == {"none"}
 
 
 def test_the_local_probe_row_publishes_the_rendered_prompt_and_the_policy(
@@ -894,6 +895,7 @@ def test_the_run_id_is_printed_before_the_batches(stubbed_probe, capsys) -> None
         ),
         ("machine_id", None, "MACHINE_ID is not set"),
         ("compute_mode", "hybrid", "COMPUTE_MODE='hybrid'"),
+        ("campaign_id", "some-campaign", "the judge probe runs under no campaign"),
     ],
 )
 def test_a_missing_judge_refuses_the_run_before_anything_is_generated(

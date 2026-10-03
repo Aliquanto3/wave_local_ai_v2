@@ -196,6 +196,9 @@ EXCLUDED_FROM_DIFFERING: frozenset[str] = frozenset(
         "schema_version",
         "run_id",
         "captured_at",
+        # campaign membership: a campaign row and a no-campaign row of one
+        # configuration are not a confound
+        "campaign_id",
         "release_version",
         "commit_sha",
         "tree_dirty",

@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A campaign is declared as data, and an empty cell fails it (row schema
+  "24")** -- a campaign is one tracked file,
+  `aidd_docs/campaigns/<campaign_id>.json` (`campaigns.py`), naming its
+  engines, prompt variants (id and version), roster entries, suites and one
+  declared machine with its compute mode, plus the cells it will not run
+  (`refused` or `dropped`, each with its reason and evidence). Loading
+  refuses, naming the offending value, more than 2 engines, more than 4
+  variants, any id absent from its registry and an engine entry the engine
+  registry refuses. `CAMPAIGN_ID` puts a runtime or quality run under a
+  campaign: the run is checked against the declaration before the build
+  probe or any server starts (engine, variant, roster entry, suite, machine
+  and mode, an excluded cell, and any cloud provider enabled), and every row
+  carries `campaign_id`; a run with no campaign records `none`, as every
+  cloud subject's row does. The judge probe refuses `CAMPAIGN_ID`. A resume
+  under another campaign is refused. `wave-local-ai-v2-campaign-completeness
+  --campaign <id>` lists every declared cell (engine x variant x roster entry
+  x suite) with the run ids filling it, lists refused and dropped cells with
+  their reason, and exits `1` naming each empty cell (or an excluded cell
+  holding rows), `2` when the declaration or the rows do not load. Rows below
+  "24" are not back-filled.
+
 - **A GPU run and a CPU-only run never share a fiche (row schema "23")** --
   a tracked machine registry (`aidd_docs/roster/machines.json`,
   `machines.py`) declares the three PRD machines (`laptop-mobile-gpu`,

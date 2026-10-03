@@ -247,6 +247,26 @@ The command-line interface for running benchmarks.
   not load. Run before a roster table is published; not in the merge gate
   while the shipped roster fails it (four unlabelled `qwen` classes, quoted in
   `aidd_docs/results/README.md`).
+- `wave-local-ai-v2-campaign-completeness --campaign <id> [--campaigns-dir
+  <dir>] [--rows <jsonl> ...]` — Methodology 22's completeness check
+  (`campaigns.py`). A campaign is one tracked declaration,
+  `aidd_docs/campaigns/<campaign_id>.json` (`CAMPAIGNS_DIR`; the file stem is
+  the id, `none` is reserved): `engines`, `prompt_variants` (`{id,
+  version}`), `roster_entries`, `suites`, one `machine` (`{machine_id,
+  compute_mode}`) and `exclusions` (cells `refused` or `dropped`, each with
+  `reason` and `evidence`; an omitted coordinate covers every declared value
+  on its axis). Loading refuses, naming the value, more than 2 engines or 4
+  variants, an id absent from its registry, an engine entry the engine
+  registry refuses, an unknown key, and a cell excluded twice. The command
+  lists every cell (engine x variant x roster entry x suite, declaration
+  order) as `filled` with its sorted run ids, `refused`/`dropped` with its
+  reason, `empty`, or `contradicted` (excluded yet holding rows), from the
+  quality rows (`--rows`, repeatable; default `QUALITY_RESULTS_PATH`) whose
+  `campaign_id`, engine, variant, roster entry, suite, machine and mode all
+  match. Exits `1` naming each empty or contradicted cell, `2` when the
+  declaration or a rows file does not load. Runtime rows name no suite and
+  fill no cell. A later dimension (the harness list) extends this one
+  declaration and its cell product.
 - `wave-local-ai-v2-serve` — read-only results service: four `GET` routes over
   the two stores, answering the views a pitch screen needs without a terminal.
   Writes nothing: every store file is opened for reading, and every non-`GET`
@@ -371,6 +391,14 @@ quality CLI and the judge probe, with no default: each refuses a missing or
 undeclared value, or `gpu` on a machine declared GPU-less, before any server
 starts. `cpu_only` launches `-ngl 0 --device none` with no `--n-cpu-moe`, and
 refuses a `SERVER_N_CPU_MOE` value naming the mode.
+
+`CAMPAIGN_ID` (optional) puts a runtime or quality run under a campaign
+declaration: checked before the build probe or any spawn, it refuses a run
+whose engine, variant, roster entry, suite (quality only), machine or mode
+is outside the declaration, a declared-excluded cell, and a quality run with
+a cloud provider enabled. Every row carries `campaign_id` (schema "24"): the
+campaign's id, or `none` for a run under none and on every cloud row. The
+judge probe refuses `CAMPAIGN_ID`.
 
 ## Distribution
 

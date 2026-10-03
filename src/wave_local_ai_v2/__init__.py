@@ -12,6 +12,7 @@ import requests
 
 from wave_local_ai_v2 import (
     aggregation,
+    campaigns,
     cost,
     emissions,
     energy,
@@ -207,6 +208,9 @@ def main() -> None:
     except (
         SettingsError,
         roster.RosterError,
+        # A run outside its campaign's declaration, or a declaration that
+        # fails its own check: refused before any process spawns.
+        campaigns.CampaignError,
         server.ServerStartupError,
         # requests.RequestException subclasses OSError, so every HTTP failure is
         # still caught here and the disk failures append_row can raise now are
@@ -236,6 +240,23 @@ def _run() -> None:
     # The engine that will produce the row, from the tracked registry: where it
     # listens, how its build is probed, how its launch configuration is hashed.
     engine = engines.tracked_reference_engine()
+    # The fixed prompt passes through the declared variant like every suite
+    # item does. `/completion` applies no template, so what the variant
+    # returns is also the string the engine receives and the row publishes.
+    prompt_variant = prompt_variants.resolve(PROMPT_VARIANT_ID)
+    sent_prompt = prompt_variants.apply_variant(prompt_variant, FIXED_PROMPT)
+    # Under a campaign, checked against its declaration before the build
+    # probe or any spawn. The fixed prompt scores no suite, so no suite is
+    # checked; with no campaign the row records that it belongs to none.
+    campaign_id = campaigns.require_run_campaign(
+        settings,
+        engine_id=engine.engine_id,
+        prompt_variant=prompt_variant,
+        roster_entry_id=roster_entry.entry_id,
+        suite_id=None,
+        machine_id=run_profile.machine_id,
+        compute_mode=run_profile.compute_mode,
+    )
 
     model_path = settings.slm_models_dir / roster_entry.file
     if not model_path.exists():
@@ -267,12 +288,6 @@ def _run() -> None:
     engine_fields = engines.fiche_fields(
         engine, settings.llama_server_path, flags, roster_entry.entry_id
     )
-
-    # The fixed prompt passes through the declared variant like every suite
-    # item does. `/completion` applies no template, so what the variant
-    # returns is also the string the engine receives and the row publishes.
-    prompt_variant = prompt_variants.resolve(PROMPT_VARIANT_ID)
-    sent_prompt = prompt_variants.apply_variant(prompt_variant, FIXED_PROMPT)
 
     run_fiche = build_fiche(
         fiche,
@@ -443,6 +458,7 @@ def _run() -> None:
         "engine_build": engine_fields["engine_build"],
         "machine_id": run_profile.machine_id,
         "compute_mode": run_profile.compute_mode,
+        "campaign_id": campaign_id,
         "fiche_hash": fiche_hash_value,
         "prompt": sent_prompt,
         "max_tokens": FIXED_MAX_TOKENS,

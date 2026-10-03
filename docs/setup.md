@@ -378,6 +378,16 @@ until they are set, and every fiche and row records them.
   model on one machine produce two fiches and are never compared as a
   reproduction of each other.
 
+`CAMPAIGN_ID` is optional. Unset, a run belongs to no campaign and every row
+records `campaign_id: "none"`. Set, it names a campaign declaration,
+`aidd_docs/campaigns/<campaign_id>.json` (`CAMPAIGNS_DIR` overrides the
+directory): the run is checked against it before any server starts and
+refused, naming the dimension, when its engine, prompt variant, roster entry,
+suite, machine or compute mode is outside the declaration, when it runs a
+cell the declaration excludes, or when a quality run enables a cloud
+provider. `wave-local-ai-v2-campaign-completeness --campaign <campaign_id>`
+then lists every declared cell and fails naming each one nobody ran.
+
 Two more env vars set the host-fitted launch flags that are not part of the
 roster's model data: `SERVER_N_CPU_MOE` and `SERVER_THREADS` (default `8`),
 matching `--n-cpu-moe` and `-t` on this project's own laptop fiche. They

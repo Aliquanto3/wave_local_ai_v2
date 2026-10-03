@@ -289,6 +289,10 @@ RUNTIME_FIELDS_NOT_RENDERED: frozenset[str] = frozenset(
         # excludes it), not this one's.
         "machine_id",
         "compute_mode",
+        # The campaign the run belongs to, or `none` (schema "24"): campaign
+        # membership is bookkeeping a completeness listing reads, not a value
+        # a view renders.
+        "campaign_id",
     }
 )
 
@@ -386,6 +390,10 @@ QUALITY_FIELDS_NOT_RENDERED: frozenset[str] = frozenset(
         # Rendering the machine dimension is the pitch epic's call.
         "machine_id",
         "compute_mode",
+        # The campaign the run belongs to, or `none` (schema "24"): campaign
+        # membership is bookkeeping a completeness listing reads, not a value
+        # a view renders.
+        "campaign_id",
         # The retry total the batch's cloud calls drew from, and the failure
         # that left it partial if any (schema "17"). Bookkeeping about how a
         # batch was run; a partial row's null score already renders as an

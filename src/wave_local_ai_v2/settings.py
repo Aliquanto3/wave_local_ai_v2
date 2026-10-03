@@ -34,6 +34,9 @@ DEFAULT_FICHE_REGISTRY_DIR = "aidd_docs/results/fiches"
 DEFAULT_SUITE_DEFINITIONS_DIR = "aidd_docs/results/suite-definitions"
 DEFAULT_COMPARISONS_DIR = "aidd_docs/results/comparisons"
 DEFAULT_LEADER_SETS_DIR = "aidd_docs/results/leader-sets"
+# Where campaign declarations live, one `<campaign_id>.json` each: beside the
+# results, outside the committed stores (`campaigns.py`).
+DEFAULT_CAMPAIGNS_DIR = "aidd_docs/campaigns"
 # Where `use_case_coverage` publishes the coverage record, and only once every
 # PRD use case in it carries a resolvable state.
 DEFAULT_USE_CASE_COVERAGE_PATH = "aidd_docs/results/use-case-coverage.json"
@@ -188,6 +191,12 @@ class Settings:
     # that writes no row (the candidate gate, the validator) load settings.
     machine_id: str | None = None
     compute_mode: str | None = None
+    # The campaign a run belongs to, as `CAMPAIGN_ID` named it, or `None`: a
+    # run under no campaign stays possible and its rows record that they
+    # belong to none. A named campaign is loaded from `campaigns_dir` and the
+    # run checked against it by `campaigns.require_run_campaign`.
+    campaign_id: str | None = None
+    campaigns_dir: Path = Path(DEFAULT_CAMPAIGNS_DIR)
     # No existence check at load time, mirrors roster_path: fiche_registry.write_fiche
     # creates it via mkdir(parents=True, exist_ok=True), matching results.append_row's
     # own pattern.
@@ -423,6 +432,8 @@ def load_settings() -> Settings:
     # that writes no row still loads.
     machine_id = os.environ.get("MACHINE_ID") or None
     compute_mode = os.environ.get("COMPUTE_MODE") or None
+    campaign_id = os.environ.get("CAMPAIGN_ID") or None
+    campaigns_dir = Path(os.environ.get("CAMPAIGNS_DIR", DEFAULT_CAMPAIGNS_DIR))
     host_threads = _require_numeric(
         "SERVER_THREADS",
         DEFAULT_HOST_THREADS,
@@ -527,6 +538,8 @@ def load_settings() -> Settings:
         host_threads=host_threads,
         machine_id=machine_id,
         compute_mode=compute_mode,
+        campaign_id=campaign_id,
+        campaigns_dir=campaigns_dir,
         runtime_reference_path=runtime_reference_path,
         quality_reference_path=quality_reference_path,
         judge_probe_reference_path=judge_probe_reference_path,

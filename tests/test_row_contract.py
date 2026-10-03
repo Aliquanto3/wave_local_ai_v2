@@ -18,6 +18,7 @@ from wave_local_ai_v2 import (
 )
 from wave_local_ai_v2.results import append_row
 from wave_local_ai_v2.row_contract import (
+    CAMPAIGN_SCHEMA_VERSION,
     ENGINE_FICHE_SCHEMA_VERSION,
     ENGINE_NOT_APPLICABLE,
     GRADED_FIELDS,
@@ -28,6 +29,7 @@ from wave_local_ai_v2.row_contract import (
     JUDGED_FIELDS,
     MACHINE_FICHE_SCHEMA_VERSION,
     MACHINE_NOT_APPLICABLE,
+    NO_CAMPAIGN,
     PARTIAL_NULL_SCORE_FIELDS,
     REQUIRED_FIELDS,
     SCHEMA_VERSION,
@@ -88,6 +90,7 @@ COMPLETE_RUNTIME_ROW = {
     "engine_build": "b10537",
     "machine_id": "laptop-mobile-gpu",
     "compute_mode": "gpu",
+    "campaign_id": "none",
     "fiche_hash": "a" * 64,
     "verdict": {"verdict": "not_comparable", "reference_run_id": None},
     "prompt": "hello",
@@ -176,6 +179,7 @@ COMPLETE_QUALITY_ROW = {
     "engine_build": "b10537",
     "machine_id": "laptop-mobile-gpu",
     "compute_mode": "gpu",
+    "campaign_id": "none",
     "fiche_hash": "a" * 64,
     "cpu_energy_kwh": 0.0003,
     "cpu_energy_method": "estimated_tdp",
@@ -1104,14 +1108,14 @@ def test_the_schema_version_moved_once_for_the_thinking_policy() -> None:
     # `thinking_policy` is required on every quality row, because a score
     # produced with the subject allowed to reason and one produced without it
     # are not the same measurement and a row has to say which it is.
-    assert SCHEMA_VERSION == "23"
+    assert SCHEMA_VERSION == "24"
 
 
 def test_the_schema_version_moved_for_the_runtime_energy_window() -> None:
     # "12" fixes audit finding C3: the runtime row's energy figures used to
     # span the whole counted-repetition window, cooldowns included. Required
     # only on runtime rows -- quality rows carry no energy window at all.
-    assert SCHEMA_VERSION == "23"
+    assert SCHEMA_VERSION == "24"
     assert {"active_window_s", "idle_window_s", "energy_window_method"} <= (
         REQUIRED_FIELDS["runtime"]
     )
@@ -1124,7 +1128,7 @@ def test_the_schema_version_moved_for_the_judge_call_record_extension() -> None:
     # "13" adds five fields inside each judge call record. Additive inside the
     # conditional judge block: neither row kind's required set moves, so a
     # deterministic quality row validates unchanged.
-    assert SCHEMA_VERSION == "23"
+    assert SCHEMA_VERSION == "24"
     assert set(NEW_JUDGE_RECORD_FIELDS).isdisjoint(REQUIRED_FIELDS["quality"])
     assert set(NEW_JUDGE_RECORD_FIELDS).isdisjoint(JUDGED_FIELDS)
     validate_row("quality", COMPLETE_QUALITY_ROW)
@@ -1134,7 +1138,7 @@ def test_the_schema_version_moved_for_the_prompt_variant() -> None:
     # "14" makes both row kinds name the variant they ran under and carry the
     # prompt as the variant left it. Not conditional: every row ran under some
     # variant, and a row below "14" is never back-filled with `baseline`.
-    assert SCHEMA_VERSION == "23"
+    assert SCHEMA_VERSION == "24"
     for kind in ("runtime", "quality"):
         assert set(PROMPT_VARIANT_FIELDS) <= REQUIRED_FIELDS[kind]
 
@@ -1142,7 +1146,7 @@ def test_the_schema_version_moved_for_the_prompt_variant() -> None:
 def test_the_schema_version_moved_for_the_engine() -> None:
     # "22" makes every row name the engine that produced it and its build,
     # and moves the cited fiche to the projection carrying the engine fields.
-    assert SCHEMA_VERSION == "23"
+    assert SCHEMA_VERSION == "24"
     assert ENGINE_FICHE_SCHEMA_VERSION == "22"
     for kind in ("runtime", "quality"):
         assert {"engine_id", "engine_build"} <= REQUIRED_FIELDS[kind]
@@ -1269,7 +1273,7 @@ def test_an_unreadable_engine_registry_refuses_the_row(monkeypatch) -> None:
 def test_the_schema_version_moved_for_the_machine_and_mode() -> None:
     # "23" makes every row name the declared machine and the compute mode,
     # and moves the cited fiche to the projection carrying both.
-    assert SCHEMA_VERSION == "23"
+    assert SCHEMA_VERSION == "24"
     assert MACHINE_FICHE_SCHEMA_VERSION == "23"
     for kind in ("runtime", "quality"):
         assert {"machine_id", "compute_mode"} <= REQUIRED_FIELDS[kind]
@@ -1374,7 +1378,7 @@ def test_the_schema_version_moved_for_the_suite_level() -> None:
     # and its item's licence, source and source revision. Not conditional:
     # every suite is certified at some level. Quality rows only -- a runtime
     # row runs no suite.
-    assert SCHEMA_VERSION == "23"
+    assert SCHEMA_VERSION == "24"
     assert set(SUITE_LEVEL_FIELDS) <= REQUIRED_FIELDS["quality"]
     assert set(SUITE_LEVEL_FIELDS).isdisjoint(REQUIRED_FIELDS["runtime"])
 
@@ -1551,7 +1555,7 @@ def test_a_registered_non_baseline_variant_is_not_held_to_the_authored_text(
 def test_the_schema_version_moved_for_the_subject_egress() -> None:
     # "16" makes every row of either kind state where its subject prompt went.
     # Not conditional: every row was produced by sending a prompt somewhere.
-    assert SCHEMA_VERSION == "23"
+    assert SCHEMA_VERSION == "24"
     for kind in ("runtime", "quality"):
         assert "subject_egress" in REQUIRED_FIELDS[kind]
     # The subject field is not a member of the judge block, and the judge
@@ -1690,7 +1694,7 @@ def test_the_schema_version_moved_for_the_retry_budget_and_partial_batches() -> 
     # "17" makes every quality row name the retry budget its batch ran under
     # and whether that batch was left partial. The runtime row makes no cloud
     # call and has no resume, so it is untouched.
-    assert SCHEMA_VERSION == "23"
+    assert SCHEMA_VERSION == "24"
     for field in ("retry_budget", "partial_failure"):
         assert field in REQUIRED_FIELDS["quality"]
         assert field not in REQUIRED_FIELDS["runtime"]
@@ -1833,7 +1837,7 @@ def test_the_schema_version_moved_for_the_per_item_measurement() -> None:
     # "18" puts each item's own tokens, engine-reported TTFT and cached prompt
     # tokens on every quality row (Q24 (a)); the runtime row keeps its
     # Methodology 6 aggregate and is untouched.
-    assert SCHEMA_VERSION == "23"
+    assert SCHEMA_VERSION == "24"
     assert ITEM_MEASUREMENT_FIELDS <= REQUIRED_FIELDS["quality"]
     assert ITEM_MEASUREMENT_FIELDS.isdisjoint(REQUIRED_FIELDS["runtime"])
 
@@ -2063,7 +2067,7 @@ def test_the_writers_block_names_a_cloud_subject_by_its_own_family() -> None:
 def test_the_schema_version_moved_for_the_harness_fields() -> None:
     # "20" puts the harness id, its installed version and its per-call prompt
     # overhead on every quality row; the runtime row is untouched.
-    assert SCHEMA_VERSION == "23"
+    assert SCHEMA_VERSION == "24"
     assert HARNESS_SCHEMA_VERSION == "20"
     assert HARNESS_FIELDS == {
         "harness_id",
@@ -2352,3 +2356,48 @@ def test_a_partial_row_carrying_an_interval_is_refused() -> None:
 def test_an_interval_reason_is_only_the_one_its_item_count_names(cell: dict) -> None:
     with pytest.raises(RowContractError, match=r"n=\d"):
         validate_row("quality", _with_suite_cell(**cell))
+
+
+def test_the_schema_version_moved_for_the_campaign() -> None:
+    # "24" makes every row name the campaign it belongs to, or none.
+    assert SCHEMA_VERSION == "24"
+    assert CAMPAIGN_SCHEMA_VERSION == "24"
+    for kind in ("runtime", "quality"):
+        assert "campaign_id" in REQUIRED_FIELDS[kind]
+
+
+@pytest.mark.parametrize("kind", ["runtime", "quality"])
+def test_a_row_missing_its_campaign_is_refused_naming_it(kind: str) -> None:
+    complete = COMPLETE_RUNTIME_ROW if kind == "runtime" else COMPLETE_QUALITY_ROW
+    row = {key: value for key, value in complete.items() if key != "campaign_id"}
+
+    with pytest.raises(RowContractError, match="missing required field.*campaign_id"):
+        validate_row(kind, row)
+
+
+def test_a_row_below_the_campaign_schema_validates_without_it() -> None:
+    old = {
+        key: value
+        for key, value in COMPLETE_RUNTIME_ROW.items()
+        if key != "campaign_id"
+    }
+
+    validate_row("runtime", {**old, "schema_version": "23"})
+
+
+def test_a_row_names_its_campaign() -> None:
+    validate_row("runtime", {**COMPLETE_RUNTIME_ROW, "campaign_id": "engine-campaign"})
+    validate_row("quality", {**COMPLETE_QUALITY_ROW, "campaign_id": "engine-campaign"})
+
+
+@pytest.mark.parametrize("campaign_id", [None, "", "  ", 3])
+def test_a_campaign_id_that_is_not_a_name_is_refused(campaign_id: object) -> None:
+    with pytest.raises(RowContractError, match="campaign_id"):
+        validate_row("runtime", {**COMPLETE_RUNTIME_ROW, "campaign_id": campaign_id})
+
+
+def test_a_cloud_row_belongs_to_no_campaign() -> None:
+    validate_row("quality", _cloud_row("mistral", campaign_id=NO_CAMPAIGN))
+
+    with pytest.raises(RowContractError, match="cloud subject belongs to no campaign"):
+        validate_row("quality", _cloud_row("mistral", campaign_id="engine-campaign"))

@@ -1,5 +1,6 @@
 import dataclasses
 import json
+import re
 from datetime import datetime, timedelta
 from importlib import metadata
 from pathlib import Path
@@ -607,6 +608,126 @@ def test_a_batch_without_a_machine_refuses_before_any_server_starts(
     assert "MACHINE_ID is not set" in capsys.readouterr().err
     assert started["running_server"].call_count == 0
     assert not quality_results_path.exists()
+
+
+def _declare_campaign(tmp_path, **overrides) -> Path:
+    campaigns_dir = tmp_path / "campaigns"
+    campaigns_dir.mkdir()
+    declaration = {
+        "campaign_id": "test-campaign",
+        "description": "Test campaign.",
+        "engines": ["llama.cpp"],
+        "prompt_variants": [{"id": "baseline", "version": "1"}],
+        "roster_entries": [DEFAULT_ROSTER_ENTRY_ID],
+        "suites": ["classification-support-routing"],
+        "machine": {"machine_id": "laptop-mobile-gpu", "compute_mode": "gpu"},
+        "exclusions": [],
+        **overrides,
+    }
+    (campaigns_dir / "test-campaign.json").write_text(
+        json.dumps(declaration), encoding="utf-8"
+    )
+    return campaigns_dir
+
+
+def test_a_run_with_no_campaign_records_that_it_belongs_to_none(stubbed_run) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    assert {(row["provider"], row["campaign_id"]) for row in rows} == {
+        ("local", "none"),
+        ("mistral", "none"),
+    }
+
+
+def test_a_run_under_a_campaign_records_its_id_on_every_row(
+    stubbed_run, tmp_path
+) -> None:
+    quality_results_path, started = stubbed_run
+    started["load_settings"].return_value = dataclasses.replace(
+        started["load_settings"].return_value,
+        campaign_id="test-campaign",
+        campaigns_dir=_declare_campaign(tmp_path),
+        quality_providers=frozenset({"local"}),
+    )
+
+    quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    assert rows
+    assert {(row["provider"], row["campaign_id"]) for row in rows} == {
+        ("local", "test-campaign")
+    }
+
+
+@pytest.mark.parametrize(
+    ("declared", "providers", "named"),
+    [
+        (
+            {"suites": ["translation-business-short-form"]},
+            frozenset({"local"}),
+            "suite 'classification-support-routing' is not declared",
+        ),
+        (
+            {
+                "machine": {
+                    "machine_id": "laptop-mobile-gpu",
+                    "compute_mode": "cpu_only",
+                }
+            },
+            frozenset({"local"}),
+            "machine 'laptop-mobile-gpu' in mode 'gpu' is not the declared",
+        ),
+        ({}, frozenset({"local", "mistral"}), r"cloud provider\(s\) mistral"),
+    ],
+)
+def test_a_run_outside_its_campaign_refuses_before_any_server_starts(
+    stubbed_run, tmp_path, capsys, declared, providers, named
+) -> None:
+    quality_results_path, started = stubbed_run
+    started["load_settings"].return_value = dataclasses.replace(
+        started["load_settings"].return_value,
+        campaign_id="test-campaign",
+        campaigns_dir=_declare_campaign(tmp_path, **declared),
+        quality_providers=providers,
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        quality_cli.main()
+
+    assert exit_info.value.code == 1
+    stderr = capsys.readouterr().err
+    assert "run refused under campaign 'test-campaign'" in stderr
+    assert re.search(named, stderr)
+    assert started["running_server"].call_count == 0
+    assert not quality_results_path.exists()
+
+
+def test_a_resume_under_another_campaign_is_refused(stubbed_run, capsys) -> None:
+    quality_results_path, started = stubbed_run
+    run_id = "resume-other-campaign"
+    quality_cli._run(resume_run_id=run_id)
+    rows = read_rows(quality_results_path)
+    kept = [
+        {**row, "campaign_id": "another-campaign"}
+        for row in rows
+        if row["provider"] == "local"
+    ][:5]
+    quality_results_path.write_text(
+        "".join(f"{json.dumps(row)}\n" for row in kept), encoding="utf-8"
+    )
+    started["running_server"].reset_mock()
+    with (
+        patch("sys.argv", ["wave-local-ai-v2-quality", "--resume", run_id]),
+        pytest.raises(SystemExit) as exit_info,
+    ):
+        quality_cli.main()
+
+    assert exit_info.value.code == 1
+    assert "campaign_id='another-campaign'" in capsys.readouterr().err
+    assert started["running_server"].call_count == 0
 
 
 def test_the_verified_thinking_switch_is_recorded(stubbed_run, capsys) -> None:
@@ -1341,7 +1462,7 @@ def test_every_row_names_its_subjects_family_and_size_class(stubbed_run) -> None
         ("mistral", "mistral", None),
         ("google", "google", None),
     }
-    assert {row["schema_version"] for row in rows} == {"23"}
+    assert {row["schema_version"] for row in rows} == {"24"}
 
 
 def test_every_row_names_direct_its_version_and_its_measured_overhead(
