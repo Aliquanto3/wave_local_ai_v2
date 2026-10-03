@@ -16,4 +16,5 @@ Pending; written at the end of the run.
 
 | Spike | Status | What remains | Commit |
 | --- | --- | --- | --- |
-| is-deepseek-callable-as-a-pinned-judge-and-on-what-data-terms | blocked | Live calls with a paid key (10 listed in the spike); Q102 (no dated id: names repointed in place), Q103 (training opt-out). Terms are compatible with the egress non-goal (training on inputs unless opted out, PRC storage, no fixed retention). | (this commit) |
+| is-deepseek-callable-as-a-pinned-judge-and-on-what-data-terms | blocked | Live calls with a paid key (10 listed in the spike); Q102 (no dated id: names repointed in place), Q103 (training opt-out). Terms are compatible with the egress non-goal (training on inputs unless opted out, PRC storage, no fixed retention). | d842df4 |
+| is-z-ai-glm-callable-as-a-pinned-judge-and-on-what-data-terms | blocked | Live calls with a paid Z.ai key (8 listed in the spike); Q102 (release ids only, e.g. `glm-5.2`, and no documented model-list endpoint). `glm-5.3` excluded (forced thinking). Terms are compatible with the egress non-goal (no training on API content without consent, processed in Singapore, not stored). | (this commit) |
