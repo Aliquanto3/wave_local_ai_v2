@@ -50,3 +50,23 @@ Spikes: `aidd_docs/backlog/spikes/which-public-classification-benchmark-seeds-th
 - Recommended default: (a). The dataset's publisher licenses it Apache-2.0 at a pinned revision, the repository already ships declarations of exactly this kind, and the disclosure makes the reliance visible to a reviewer rather than hidden. Cost: the published items rest on Google's declaration; if it is ever withdrawn, the items move to (b), which the supersede-don't-backfill discipline allows. (b) is the zero-risk option and costs readers a fetch step per item.
 - Blocks: interval epic order 8, hence order 9 and the bundle epic's order 7.
 
+## Size-class candidates
+
+Spike: `aidd_docs/backlog/spikes/which-candidate-ggufs-exist-per-size-class-and-does-the-pinned-build-load-them.md` (`blocked`). Every shortlisted family has a pinnable GGUF in each class, and every architecture is in b10537's source table; what remains is one live load per architecture.
+
+### Q107. Which LFM2 models stand for the LFM2 line at ~0.5B and ~2B?
+
+- Artifact: `aidd_docs/backlog/stories/the-half-billion-class-spans-two-families-or-is-published-as-a-searched-single-family-ladder.md` (order 5) and `aidd_docs/backlog/stories/the-two-billion-class-spans-two-families-or-is-published-as-a-searched-single-family-ladder.md` (order 6).
+- Question: Q12 names "the smallest LFM2" at ~0.5B and "LFM2" at ~2B. The hub now holds two LFM2 generations; the literal smallest is `LFM2.5-230M`, released after the epic was written and described by its card as distilled from the 350M and "not recommended for reasoning-heavy workloads". Which models stand for the line?
+- Options: (a) the current generation at the size nearest the class's Qwen entry: `LFM2.5-350M` at ~0.5B and `LFM2.5-1.2B-Instruct` at ~2B; (b) the literal smallest: `LFM2.5-230M` at ~0.5B and `LFM2.5-1.2B-Instruct` at ~2B; (c) the first generation: `LFM2-350M` and `LFM2-1.2B`.
+- Recommended default: (a). It keeps the comparison about the family rather than a 0.23B model against Qwen3-0.6B, takes Liquid's current release, and both templates carry no thinking switch, so `none` is verifiable. Cost: about 133 MB more than (b), and in strict smallest-download order Granite 4.0 H 350M is tried first anyway. `LFM2.5-2.6B` stays out under every option because it always thinks.
+- Blocks: the LFM2 gate run in orders 5 and 6; the Granite runs are unaffected.
+
+### Q108. Are the spike's remaining live loads folded into the class stories' gate runs?
+
+- Artifact: the spike, and orders 5 to 8 of `every-size-class-spans-two-families-or-says-it-does-not`.
+- Question: what the spike still needs is one `llama-server` load under b10537 per architecture, plus the `/props` template. That load is exactly what `wave-local-ai-v2-candidate-gate` does as the first step of each class story, and each story already handles both outcomes: a pass enters the roster, a refusal or a deferred architecture is recorded under the epic's defer-by-default rule. As written, the stories wait on the spike and the spike waits on the stories' commands. Does the spike close on the stories' first gate runs, so that the class stories can be `ready`?
+- Options: (a) yes: the spike's Follow-up becomes the stories' first gate run per architecture; the spike is resolved by the first pass or refusal per architecture, and the stories drop it from their `Blocked:` lines once the owner answers; (b) no: an operator runs the eight loads as a separate session first, the spike closes, then the stories become `ready`; (c) re-scope the spike to existence only and resolve it now, leaving loading to the stories.
+- Recommended default: (a). The load result changes no story's acceptance, since a refusal is already a recorded outcome, so a separate session repeats work. Cost: a class story's first run can end in a recorded refusal rather than a roster entry, which the epic allows.
+- Blocks: orders 7 and 8 entirely (no other blocker), and orders 5 and 6 together with Q107.
+
