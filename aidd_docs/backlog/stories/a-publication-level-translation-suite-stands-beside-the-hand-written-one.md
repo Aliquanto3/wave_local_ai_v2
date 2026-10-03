@@ -19,11 +19,20 @@ order: 8
 
 Maps to: PRD AC "Given a published suite, its rows state whether it was built to the development or the publication level, and a publication-level suite names each public benchmark its subset came from, that benchmark's licence, and the selection rule that produced the subset"; PRD AC "Given a published quality score, it is shown with a bootstrap confidence interval"; PRD Dependencies "Licence and redistribution terms of the public benchmarks whose subsets seed the publication-level suites"; Methodology 4, 5, 24; epic decisions "The two levels coexist", "The licence spike returns one of three verdicts, each with its consequence written in advance"; epic Dependencies "The publication-level translation suite also stands beside `translation-business-short-form`"; epic success check 12 (translation half).
 
-Needs: a real local model run (one published batch on the bench machine), after the licence spike has returned its verdict.
+Needs: a real local model run (one published batch on the bench machine), after Q106 is answered; the network fetch of the source at its pinned revision.
 
-Blocked: by the spike `aidd_docs/backlog/spikes/which-public-translation-benchmark-seeds-the-publication-suite-and-on-what-terms.md`. The suite seam is `aidd_docs/backlog/stories/a-suite-is-data-resolved-by-its-id-not-an-import-in-the-cli.md`, declared in `depends_on`.
+Blocked: by Q106 in `aidd_docs/tasks/2026_10/2026_10_02_backlog-refinement/owner-questions.md` (accept Google's Apache-2.0 label over the WMT24 source text and publish WMT24++ on the permissive rung, publish it on the no-redistribution rung, or take NTREX-128 on the share-alike rung), on which the spike `aidd_docs/backlog/spikes/which-public-translation-benchmark-seeds-the-publication-suite-and-on-what-terms.md` is `blocked` (no live run remains). Also by Q118 and Q119, two acceptance doubts the spike leaves to this story's own definition: Q118, the suite's `max_output_tokens` (the hand-written suite's 128 truncates WMT24++ paragraph-level segments, which Methodology 9 scores 0 as a suite-cap failure), and Q119, whether the draw is stratified by `domain` as well as by language (sampler version `"1"` accepts only `['language']` on a translation rule, so domain strata need a sampler version `"2"`). Every `depends_on` story, the suite seam `aidd_docs/backlog/stories/a-suite-is-data-resolved-by-its-id-not-an-import-in-the-cli.md` included, is `done`.
 
-Scope note: a cloud batch on this suite waits on `aidd_docs/backlog/stories/a-publication-size-cloud-batch-survives-its-rate-limits-and-resumes-per-item.md` (retry budget and per-item resume at publication size). It is not a `depends_on`, because the published batch this story requires can be a local one.
+Scope note: a cloud batch on this suite runs under the item-scaled retry budget (`retry.derived_retry_budget`) and the per-item `--resume` of `aidd_docs/backlog/stories/a-publication-size-cloud-batch-survives-its-rate-limits-and-resumes-per-item.md` (`done`). It is not a `depends_on`, because the published batch this story requires can be a local one.
+
+Current state (verified on `main` at `c68b23e`, 2026-10-03):
+- Suites are data: `suite_registry.resolve` loads `src/wave_local_ai_v2/suite_data/*.json`, and `quality_cli._run` resolves `--suite` through it. `translation-business-short-form` is `suite_version` `"3"`, 21 items, seven per direction (`en`->`fr`, `fr`->`de`, `de`->`en`; an item's `language` is its source language), `level` `development`, `max_output_tokens` 128, scored by `chrf_against_reference`.
+- `suite_gate.gate_suite` certifies `publication`: at least `MIN_PUBLICATION_SUITE_ITEMS` (100), a `size_target` in `PUBLICATION_SIZE_TARGETS` (100, 300) with a `size_target_reason`, every item declaring `licence`, `source`, `source_revision`, and `contamination_risk` true exactly when `provenance` is `public`.
+- `subset_sampler` (sampler version `"1"`): a translation rule's `stratify_by` must be exactly `['language']` (`_stratify_problems`), split equally across EN, FR and DE. An item id is `<source>:<stable key>` and `canonical_order` refuses a key repeated within one source, so a source table offering one WMT24++ segment in all three directions under the bare `segment_id` the spike names is refused: the loader either computes a direction-qualified key (as the spike does for MASSIVE's `locale/id`) or assigns each segment to one direction before the draw. The rule's keys are closed (`RULE_KEYS`): the `is_bad_source` exclusion, the pair join and the post-filter pool size live in the loader and the README, not in the rule, which records the loader as library and version only. No loader for any public benchmark exists.
+- A quality row copies `suite_level`, `item_licence`, `item_source` and `item_source_revision` (`quality_rows.suite_item_fields`) and, from schema `"21"`, the `score_interval` block; it carries no item `content_hash`.
+- `use_case_coverage.json`: the translation entry is `exercised` with `suite_ids` `["translation-business-short-form"]`, a list a second id joins.
+- The hand-written suite's "published rows" are its suite-definition snapshots (`aidd_docs/results/suite-definitions/translation-business-short-form@1.json` to `@3.json`) only: the committed `quality-reference.jsonl` holds no translation row, and the 2026-09-06 translation runs live in the untracked live store (`aidd_docs/results/README.md`, "The translation suite's first live run").
+- `LICENSE-DATA` section 2 excludes drawn items from the CC-BY 4.0 grant and names no drawn source; section 3 holds two declarations.
 
 ## Acceptance
 
@@ -39,8 +48,8 @@ Scope note: a cloud batch on this suite waits on `aidd_docs/backlog/stories/a-pu
 
 ## Code it changes
 
-- The suite definition and its items, in the form the suite seam settles.
-- `quality_cli.py`'s suite selection, through the registry if it exists by then.
+- A new suite definition with its items and selection rule as JSON under `src/wave_local_ai_v2/suite_data/` (the seam settled data, Q1 (a)), and the loader that writes the source as the JSONL table `subset_replay` reads.
+- `use_case_coverage.json`: the second suite id. `quality_cli.py` already resolves `--suite` through `suite_registry`; no change is expected there.
 
 ## Tests it needs
 

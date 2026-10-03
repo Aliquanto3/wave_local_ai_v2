@@ -19,7 +19,12 @@ Maps to: PRD Open Question "Whether the Methodology's initial thresholds ... sur
 
 Needs: an operator: the owner decides whether Methodology 4 is amended or left, and the review records that decision. No new model run, API key or hardware beyond the published batches of orders 7 and 8.
 
-Blocked: by orders 7 and 8, which are themselves blocked (see each).
+Blocked: through `depends_on` on `aidd_docs/backlog/stories/a-publication-level-classification-suite-stands-beside-the-hand-written-one.md` (`proposed`; blocked by Q105, the owner's choice of source) and `aidd_docs/backlog/stories/a-publication-level-translation-suite-stands-beside-the-hand-written-one.md` (`proposed`; blocked by Q106, Q118 and Q119), whose published batches are this review's input. Also by one acceptance doubt of its own: the first bullet's n=20 side "from the published rows" does not exist for translation (the committed `quality-reference.jsonl` holds no translation row) and exists for classification only as the `aidd_docs/results/README.md` analysis over interval-less schema `"7"` rows; no `depends_on` story publishes a development-level translation batch carrying `score_interval`. Raised as owner question Q120.
+
+Current state (verified on `main` at `c68b23e`, 2026-10-03):
+- `suite_gate.py` holds the constants under review: `MIN_SUITE_ITEMS` 20, `MIN_LANGUAGE_SHARE` 0.25, `MIN_PER_LANGUAGE_CELL_ITEMS` 10, `MIN_PUBLICATION_SUITE_ITEMS` 100, `PUBLICATION_SIZE_TARGETS` (100, 300). A row carries the gate's `indicative` and `indicative_reasons` (`quality_cli`), which is where a fired cell floor is counted.
+- From schema `"21"` a quality row carries `score_interval`: a suite cell and one cell per language, each with its interval and `minimum_detectable_effect` (`score_interval.interval_block`). The export flattens it to `score_interval_*` columns, and `scripts/recompute_from_export.py` recomputes every interval block from the tables alone.
+- No committed row carries `score_interval`: `quality-reference.jsonl` is 80 `classification-support-routing` rows at schema `"7"`. The n=20 classification widths and minimum detectable effects (for example Qwen3.6-35B-A3B 0.80 [0.600, 0.950], 0.175) are an analysis recorded in `aidd_docs/results/README.md`, "Each batch's interval and what it could resolve", not row fields.
 
 ## Acceptance
 
