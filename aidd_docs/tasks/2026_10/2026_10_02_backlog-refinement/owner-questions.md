@@ -127,3 +127,15 @@ Spike: `aidd_docs/backlog/spikes/which-two-search-tools-are-obtainable-archivabl
 - Recommended default: (a). No provider's terms and no snippet author grants republication, and (a) still lets any holder of the archive reproduce the score with the network off. Cost: a bundle reader cannot recompute web-research scores without the archive, which the PRD's offline-recompute criterion then reaches only for the archive holder.
 - Blocks: order 9's archive format and its publication.
 
+## Input compressor
+
+Spike: `aidd_docs/backlog/spikes/which-llmlingua-2-class-compressor-fits-the-reference-machine-and-in-which-placement.md` (`blocked` on a live CPU measurement). Reference compressor: `microsoft/llmlingua-2-xlm-roberta-large-meetingbank` (MIT, 559M parameters, 2,132 MiB of fp32 weights) through `llmlingua==0.2.2`; GPU co-residence beside any roster model is excluded by this repo's measured VRAM peaks (at most 1,617 MiB left on the laptop).
+
+### Q115. Where does the input compressor run on the reference laptop?
+
+- Artifact: `aidd_docs/backlog/stories/the-input-compression-variant-records-its-compressor-as-a-step-of-its-own.md` (order 9) and its optional dependency group (Q23 (a)).
+- Question: two placements fit the hardware. Which does the `input_compressed` variant declare?
+- Options: (a) CPU, in the same phase, per item just before the request, with the plain PyPI torch wheel (CPU-only on Windows, about 124 MB); (b) GPU, in a separate phase that compresses every item before the subject's server starts, with the CUDA torch build from the PyTorch `cu126` index (about 2.6 GB, an extra index in `uv.lock`); (c) GPU co-resident beside the subject, excluded by the measured headroom and listed only for completeness.
+- Recommended default: (a). It keeps the optional group on plain PyPI, cannot touch the subject's VRAM profile, and counts tokens with the subject's own tokenizer while its server is up. Cost: the compressor's energy is mostly the estimated CPU channel rather than a measured GPU one, and each item takes longer (about 1 to 2 s per item, estimated, not measured).
+- Blocks: order 9's declared placement and where its torch comes from; the live CPU measurement the spike lists can proceed under (a).
+

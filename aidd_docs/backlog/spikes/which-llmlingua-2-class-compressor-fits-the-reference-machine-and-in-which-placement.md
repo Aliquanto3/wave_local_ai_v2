@@ -1,6 +1,6 @@
 ---
 type: spike
-status: open
+status: blocked
 source: aidd_docs/backlog/epics/the-engine-and-the-prompt-variant-are-measured-not-assumed.md
 parents:
   - aidd_docs/backlog/stories/the-input-compression-variant-records-its-compressor-as-a-step-of-its-own.md
@@ -20,3 +20,219 @@ The `input_compressed` variant entry's build inputs (order 9): the compressor's 
 
 - Evidence needed: on the reference machine (the laptop under Q22's recommended default), for the reference LLMLingua-2 checkpoint the literature names and at most one alternative: its licence and pinned revision; the packages and versions it requires and their installed size; peak VRAM and RAM when run on GPU beside `qwen3-0.6b-q8` and the flagship's profile, and when run on CPU; per-item compression duration on the classification and translation suites' items in each placement; the before and after token counts and the resulting ratio on those items, per language, including the items where the compressor changes nothing; one EN, one FR and one DE example of input and compressed output, recorded as evidence of whether the meaning-bearing tokens survive.
 - Stop when: one compressor and placement are shown to run on the reference machine without displacing the subject model's declared profile, with per-item duration and per-language ratios recorded, or no candidate is shown to fit, which is recorded as the finding that blocks the variant on that machine.
+
+## Investigation
+
+Desk research only (no model run, no install, no download). All reads 2026-10-02.
+
+| Attempt | Evidence | Result |
+| ------- | -------- | ------ |
+| Read the reference checkpoint's repo metadata | HF `microsoft/llmlingua-2-xlm-roberta-large-meetingbank`, commit `ebaba9b0e874dadd3003ffcff828e4397e568089`, https://huggingface.co/api/models/microsoft/llmlingua-2-xlm-roberta-large-meetingbank?blobs=true (read 2026-10-02) | Licence MIT. 558.9M params, `XLMRobertaForTokenClassification`, config `torch_dtype` float32, vocab 250102. `model.safetensors` 2,235,829,648 B (2132 MiB), LFS sha256 `a33a153b2493bff6be06af6921e69de9c0d0bb6ff06fe5bbb68670ba8d980ae2`; `tokenizer.json` 17,082,756 B, sha256 `f59925fcb90c92b894cb93e51bb9b4a6105c5c249fe54ce1c704420ac39b81af`. No custom code in the repo. |
+| Read the alternative checkpoint's repo metadata | HF `microsoft/llmlingua-2-bert-base-multilingual-cased-meetingbank`, commit `5f0c82792b7ea14c6484e015b6a072009496b7f2`, https://huggingface.co/api/models/microsoft/llmlingua-2-bert-base-multilingual-cased-meetingbank?blobs=true (read 2026-10-02) | Licence Apache-2.0. 177.3M params, `BertForTokenClassification`, float32, vocab 119647. `model.safetensors` 709,388,104 B (677 MiB), LFS sha256 `22b9ecde52fec5c97e8c54a293be768727df95a81c6c8dccb03f262a50c58324`. |
+| Read the base encoders' language claims | HF `FacebookAI/xlm-roberta-large` @ `c23d21b0620b635a76227c604d44e43a9f0ee389`; `google-bert/bert-base-multilingual-cased` @ `3f076fdb1ab68d5b2880cb87a0886f315b8146f8` (read 2026-10-02) | XLM-R large declares 94 languages, mBERT 104; both list `en`, `fr`, `de`. |
+| Read the LLMLingua-2 paper | https://arxiv.org/html/2403.12968v2 (read 2026-10-02), Table 1, Table 5, Appendices H, I, J | "LLMLingua-2" = xlm-roberta-large, "LLMLingua-2-small" = multilingual-BERT; trained on MeetingBank, English only. MeetingBank in-domain QA 86.92 vs 85.82 (small), LongBench 5x avg 39.1 vs 38.2: the small model is within about 1 point. Compressor latency 0.4 to 0.5 s per MeetingBank prompt (about 3k tokens) on a V100-32G (Table 5); peak GPU memory 2.1 GB (Appendix I). Multilingual evidence is Chinese LongBench only (Appendix J); no French or German evaluation is published. The paper's "355M parameters" for xlm-roberta-large disagrees with the hub's 558.9M; the file size (2.24 GB at fp32) matches the hub figure. |
+| Read the package metadata | https://pypi.org/pypi/llmlingua/json; GitHub tags https://api.github.com/repos/microsoft/LLMLingua/tags (read 2026-10-02) | Latest release `llmlingua==0.2.2` (2024-04-09), tag `v0.2.2` = commit `a411a3fa61df74411157b2512b592d5357bd8f17`, MIT. `setup.py` at that tag: `transformers>=4.26.0`, `accelerate`, `torch`, `tiktoken`, `nltk`, `numpy`, all unpinned. `main` has commits to 2026-09-10 but no newer release. |
+| Read `llmlingua/prompt_compressor.py` at `v0.2.2` | https://github.com/microsoft/LLMLingua/blob/a411a3fa61df74411157b2512b592d5357bd8f17/llmlingua/prompt_compressor.py (read 2026-10-02), lines 71-160, 725-960, 973-980, 2160-2250 | `PromptCompressor(model_name, device_map="cuda", model_config={}, use_llmlingua2=False, ...)`. `device_map` defaults to `"cuda"`; `"cpu"` loads in float32, `"cuda"` loads with `torch_dtype="auto"` (float32 for both checkpoints, from their configs). `model_config` is passed to `AutoConfig`, `AutoTokenizer` and `from_pretrained`, and sets `trust_remote_code=True` unless given. `__init__` calls `tiktoken.encoding_for_model("gpt-3.5-turbo")` (line 87), and `compress_prompt_llmlingua2` reports `origin_tokens` / `compressed_tokens` under that OpenAI tokenizer (lines 807, 890), not the subject model's tokenizer or the compressor's. `rate` (default 0.5), `target_token` (overrides `rate`), `force_tokens`, `drop_consecutive`, `chunk_end_tokens` are the settings. Text is cut into chunks of at most 510 tokens; batch size 50. |
+| Read `llmlingua/utils.py` `TokenClfDataset` at `v0.2.2` | https://github.com/microsoft/LLMLingua/blob/a411a3fa61df74411157b2512b592d5357bd8f17/llmlingua/utils.py (read 2026-10-02), lines 43-65 | Every chunk is padded to 512 tokens before the forward pass. A suite item (well under 510 tokens) is one chunk, and the compressor does a full 512-token forward pass on it whatever its length. |
+| Read the tiktoken encoding loader at `0.14.0` | https://github.com/openai/tiktoken/blob/0.14.0/tiktoken_ext/openai_public.py lines 75-79; `tiktoken/load.py` lines 35-57 (read 2026-10-02) | `cl100k_base` is fetched at first use from `https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken`, checked against sha256 `223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7`, and cached under `TIKTOKEN_CACHE_DIR`. That is a second runtime download besides the weights. |
+| Read the LLMLingua issues on Windows CPU and offline use | https://github.com/microsoft/LLMLingua/issues/216, /issues/121, /issues/206 (read 2026-10-02) | On Windows with a CPU torch, the default `device_map="cuda"` fails with "Torch not compiled with CUDA enabled"; the maintainers' fix is `device_map="cpu"`. A hub lookup at load needs network unless the model is a local path or offline mode is set. |
+| Read the dependency versions and wheel sizes | https://pypi.org/pypi/torch/2.14.1/json, https://pypi.org/pypi/transformers/json, https://pypi.org/pypi/accelerate/json, https://pypi.org/pypi/tiktoken/json, https://pypi.org/pypi/nltk/json; HEAD of https://download.pytorch.org/whl/cu126/torch-2.14.1%2Bcu126-cp312-cp312-win_amd64.whl (read 2026-10-02) | `torch 2.14.1` PyPI `cp312-win_amd64` wheel: 124,113,906 B, sha256 `38bee9f2a2ccfc6898172a5075e4ba52522fbe143eeb099674fc67ab390e858d`, no CUDA dependency on Windows (the CUDA requirements are `platform_system == "Linux"` only), so it is a CPU build. The CUDA build for Windows comes only from the PyTorch index: `cu126` wheel 2,602,768,778 B; `cu128`/`cu129` carry no 2.14 Windows wheel, and `cu130` exceeds the laptop driver's CUDA 12.8 ceiling (`context_input/hardware.md`). `transformers` latest 5.18.0 (needs `huggingface-hub>=1.31`), last 4.x is 4.57.6 (needs `huggingface-hub<1.0`, `tokenizers<=0.23.0`); 5.18.0 still accepts `torch_dtype` and `special_tokens_map`. `accelerate 1.15.0`, `tiktoken 0.14.0` (0.9 MB), `nltk 3.10.3` (1.8 MB). The project's `uv.lock` carries no torch, transformers or huggingface-hub today. |
+| Read the measured VRAM of the roster on the laptop | `aidd_docs/results/README.md` lines 972-982 and 1096-1119 (this repo); `aidd_docs/roster/models.json` | Peak `vram_used_mib` (NVML, device-wide) on the 6144 MiB RTX 3060 Laptop at 32768 context: `qwen3-0.6b-q8` 4527, `qwen3-1.7b-q8` 5689, `qwen3-4b-q4km` 6115, flagship `qwen3.6-35b-a3b-ud-iq4xs` at `--n-cpu-moe 37` 4549 (host RSS 15,226 MB). Device headroom left: 1617, 455, 29 and 1595 MiB respectively. |
+| Read NVIDIA's system-memory fallback note | https://nvidia.custhelp.com/app/answers/detail/a_id/5490/~/system-memory-fallback-for-stable-diffusion (read 2026-10-02) | Since driver 536.40 on Windows, an allocation that exceeds VRAM spills to shared system memory instead of failing, at lower speed. The laptop's driver 572.70 is past that version, so a compressor overflowing VRAM beside a subject would slow the subject silently rather than raise an error. |
+| Read the project's energy and token-count code | `src/wave_local_ai_v2/energy.py` (`RepetitionEnergyTracker`, lines 120-200); `src/wave_local_ai_v2/local_client.py` lines 78-83, 351-360 | Energy is already measured per wrapped call through CodeCarbon `start_task`/`stop_task` (about 1.6 ms overhead), with per-channel method labels: CPU `estimated_tdp` (no RAPL on Windows), GPU `measured_nvml`, RAM `estimated_constant`. `local_client.count_tokens` counts a string with the loaded subject model's own tokenizer through llama-server `POST /tokenize` (`add_special: true`), verified live on b10537. |
+| Read the suites' item lengths | `src/wave_local_ai_v2/suite_data/classification-support-routing.json`, `translation-business-short-form.json` | Classification: 20 items (10 EN, 5 FR, 5 DE), 33 to 43 words per rendered prompt, of which the message is 8 to 18 words. Translation: 21 items (7 per source language), 22 to 29 words per prompt, source text 7 to 14 words. Every item is one compressor chunk. |
+
+### Decisions already taken (not re-opened)
+
+- Q22 (`aidd_docs/tasks/2026_10/2026_10_01_autonomous-slicing/owner-questions.md`), default (a): the reference machine is the laptop (RTX 3060 Laptop, 6 GB, about 5.1 GB allocatable), in GPU mode.
+- Q23, default (a): the compressor's dependencies enter as one optional, pinned dependency group, locked in `uv.lock`, excluded from the default install and the container; weights fetched by revision with a checksum.
+- Epic decision "Compressor cost is counted and kept separate", and epic Unknown "Whether input compression is meaningful at all on short items" (accepted: it is not; applicability is declared per suite).
+
+### Assumptions (inferred, not measured)
+
+- Compute per item, from the padded 512-token forward pass: XLM-R large has about 303M non-embedding parameters (558.9M minus 250102 x 1024 embedding rows), so about 0.34 TFLOP per item; mBERT has about 85M (177.3M minus 119647 x 768), about 0.1 TFLOP. At an assumed 0.15 to 0.4 TFLOPS sustained fp32 on the Ryzen 7 5800H (8 cores, AVX2), that is about 0.8 to 2.3 s per item for XLM-R large and 0.25 to 0.65 s for mBERT on CPU. Not a measurement; the run in Follow-up replaces it.
+- GPU footprint: fp32 weights 2132 MiB (XLM-R) and 677 MiB (mBERT), fp16 about 1066 and 338 MiB, plus a PyTorch CUDA context of a few hundred MiB on Windows (not measured here). Activations for one 512-token chunk are small beside the weights.
+- CPU footprint: about 2.1 GiB of fp32 weights plus the Python and torch runtime in host RAM, beside the flagship's 15.2 GB RSS on a 32 GB host.
+- The PyPI CPU wheel's installed size is not published; it is measured by the Follow-up run.
+- `llmlingua 0.2.2` with `transformers 4.57.6` is assumed to load these checkpoints (the checkpoints were saved with 4.38.2 and the package targets 4.x); the run confirms it.
+
+## Outcome
+
+- Result: settled by desk evidence, with the measurements still to take.
+  - Compressor: the reference is `microsoft/llmlingua-2-xlm-roberta-large-meetingbank` @ `ebaba9b0e874dadd3003ffcff828e4397e568089` (MIT, `model.safetensors` sha256 `a33a153b...0ae2`), driven by `llmlingua==0.2.2` (tag `v0.2.2`, `a411a3fa`). The one alternative is `microsoft/llmlingua-2-bert-base-multilingual-cased-meetingbank` @ `5f0c82792b7ea14c6484e015b6a072009496b7f2` (Apache-2.0, sha256 `22b9ecde...8324`), measured in the same run. Both licences allow client commercial use.
+  - GPU co-residence is excluded. The reference checkpoint's fp32 weights alone (2132 MiB) exceed the device headroom beside every roster entry (1617 MiB at most, beside `qwen3-0.6b-q8`; 1595 beside the flagship; 29 beside `qwen3-4b-q4km`). fp16 (about 1066 MiB plus a CUDA context) would not fit beside the 1.7B or the 4B and would change the published fp32 numerics. On Windows an overflow spills to system memory silently instead of failing, so it would displace the subject's declared profile without an error.
+  - Placement left: CPU in the same phase, or the GPU in a separate phase before the subject loads. Both fit the hardware. The evidence favours CPU. It needs only the plain PyPI torch wheel, which is a 124 MB CPU build on Windows and lockable under Q23 (a) with no extra index. It cannot touch VRAM, because the wheel has no CUDA. It counts "before" and "after" with the subject model's own tokenizer at compression time, since the subject server is up. The separate GPU phase needs the CUDA build from the PyTorch index (2.60 GB `cu126` wheel, the only 2.14 Windows build under the driver's CUDA 12.8 ceiling) and a second token-count pass. In exchange, its compressor energy is measured through NVML and its per-item duration is lower. CPU's compressor energy is mostly the `estimated_tdp` CPU channel. This is a trade-off, not a fit question, so it is framed as an owner question. The recommended default is CPU.
+  - Token counter: the subject model's tokenizer through llama-server `POST /tokenize` (`local_client.count_tokens`), recorded under the row's tokenizer. LLMLingua's own `origin_tokens`/`compressed_tokens` use the `gpt-3.5-turbo` tiktoken encoding, which is neither the subject's nor the compressor's tokenizer, so they are not the row's counts.
+  - Languages: apply to EN, FR and DE. Both encoders cover `fr` and `de`, but the compressor was trained on English only and no FR or DE result is published. Whether meaning-bearing tokens survive in FR and DE is left to the run's examples.
+  - Dependency set for the Q23 group: `llmlingua==0.2.2`, `torch==2.14.1` (PyPI, CPU on Windows), `transformers==4.57.6`, `accelerate==1.15.0`, `tiktoken==0.14.0`, `nltk==3.10.3` (imported by llmlingua, unused on the LLMLingua-2 path), with their transitive pins. Two runtime fetches must be pinned: the weights (revision and sha256), and the `cl100k_base` tiktoken file that `PromptCompressor.__init__` loads (hash-checked, cached under `TIKTOKEN_CACHE_DIR`). Load from the verified local directory with `HF_HUB_OFFLINE=1`, `device_map="cpu"` and `model_config={"trust_remote_code": False}`.
+  - Timing and energy as a step of its own: yes. The compressor call is serial before the request (CPU placement), or in a phase of its own (GPU placement). Its windows therefore never overlap generation. A `time.perf_counter` span and a separate CodeCarbon task around the compressor call alone give its own duration and its own per-channel energy, with the existing method labels. Like the generation's energy, this figure is machine-wide over the window and not attributed per process.
+- Confidence: high on the checkpoint identities, licences, sizes, the co-residence exclusion and the dependency facts, which are all read from pinned sources and this repo's measured VRAM. Low on the CPU per-item duration and the FR/DE behaviour, which are estimates or unknowns until the run.
+- Remaining uncertainty:
+  - Measured per-item CPU duration, peak RSS, and the unchanged VRAM beside the flagship and beside `qwen3-0.6b-q8`, for both checkpoints.
+  - Per-language before/after counts and ratios, the items left unchanged, and one EN, one FR and one DE example.
+  - The installed size of the optional group.
+  - Whether `llmlingua 0.2.2` loads under `transformers 4.57.6` and `torch 2.14.1`.
+  - The owner's choice of placement.
+  - Which segment is compressed: compressing the whole rendered prompt at `rate=0.6` can drop the classification label words from the instruction. The run measures the whole prompt and the payload alone, so order 9's compression setting is chosen on evidence. The epic's per-suite applicability declaration already covers a "not meaningful" outcome.
+
+## Follow-up
+
+Parent `aidd_docs/backlog/stories/the-input-compression-variant-records-its-compressor-as-a-step-of-its-own.md` (order 9) stays blocked. Its `Blocked:` line should now say: "Blocked: the live CPU measurement in the Follow-up of spike `which-llmlingua-2-class-compressor-fits-the-reference-machine-and-in-which-placement` (per-item duration, RSS, per-language ratios, EN/FR/DE examples), and the owner's answer on the compressor's placement (CPU recommended; GPU co-residence excluded by evidence)." Its acceptance needs no change: "CPU, or a separate phase before generation" already excludes co-residence.
+
+Owner question, filed as Q115 in `aidd_docs/tasks/2026_10/2026_10_02_backlog-refinement/owner-questions.md`: which placement `input_compressed` declares on the laptop (CPU in the same phase recommended; a separate GPU phase is the alternative; co-residence is excluded by the measured headroom).
+
+Live measurement, to run on the laptop in PowerShell from the main repo root `C:\Users\Anael\dev\wave_local_ai_v2`, with the GPU free of other sessions. It covers placement (a) only. If the owner picks (b), the same script is rerun with `torch==2.14.1+cu126` from `https://download.pytorch.org/whl/cu126`, `device_map="cuda"`, and no subject server, with token counts taken afterwards.
+
+1. Build the isolated environment, record its pins and installed size, and fetch both checkpoints by revision:
+
+```powershell
+uv venv $env:TEMP\llmlingua-env --python 3.12
+uv pip install --python $env:TEMP\llmlingua-env\Scripts\python.exe llmlingua==0.2.2 torch==2.14.1 transformers==4.57.6 accelerate==1.15.0 tiktoken==0.14.0 nltk==3.10.3 psutil==7.2.2 requests
+uv pip freeze --python $env:TEMP\llmlingua-env\Scripts\python.exe
+"{0:N0} MB" -f ((Get-ChildItem -Recurse -File $env:TEMP\llmlingua-env | Measure-Object Length -Sum).Sum / 1MB)
+& $env:TEMP\llmlingua-env\Scripts\hf.exe download microsoft/llmlingua-2-xlm-roberta-large-meetingbank --revision ebaba9b0e874dadd3003ffcff828e4397e568089 --local-dir D:\ia\models\llmlingua-2-xlm-roberta-large-meetingbank
+& $env:TEMP\llmlingua-env\Scripts\hf.exe download microsoft/llmlingua-2-bert-base-multilingual-cased-meetingbank --revision 5f0c82792b7ea14c6484e015b6a072009496b7f2 --local-dir D:\ia\models\llmlingua-2-bert-base-multilingual-cased-meetingbank
+(Get-FileHash D:\ia\models\llmlingua-2-xlm-roberta-large-meetingbank\model.safetensors -Algorithm SHA256).Hash   # expect A33A153B2493BFF6BE06AF6921E69DE9C0D0BB6FF06FE5BBB68670BA8D980AE2
+(Get-FileHash D:\ia\models\llmlingua-2-bert-base-multilingual-cased-meetingbank\model.safetensors -Algorithm SHA256).Hash   # expect 22B9ECDE52FEC5C97E8C54A293BE768727DF95A81C6C8DCCB03F262A50C58324
+```
+
+2. Save this script as `$env:TEMP\measure_compressor.py`, outside the repo:
+
+```python
+# usage: python measure_compressor.py MODEL_DIR OUT_JSON  (cwd = repo root, llama-server on 127.0.0.1:8080)
+import json, subprocess, sys, time
+from pathlib import Path
+import psutil, requests, torch
+from llmlingua import PromptCompressor
+
+model_dir, out_path = sys.argv[1], Path(sys.argv[2])
+proc = psutil.Process()
+
+
+def vram_mib():
+    q = ["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"]
+    return int(subprocess.check_output(q, text=True).split()[0])
+
+
+def count(text):  # the subject model's own tokenizer, as local_client.count_tokens
+    r = requests.post(
+        "http://127.0.0.1:8080/tokenize",
+        json={"content": text, "add_special": True},
+        timeout=30,
+    )
+    r.raise_for_status()
+    return len(r.json()["tokens"])
+
+
+print("torch", torch.__version__, "cuda_available", torch.cuda.is_available())
+vram_before, t0 = vram_mib(), time.perf_counter()
+pc = PromptCompressor(
+    model_name=model_dir,
+    device_map="cpu",
+    use_llmlingua2=True,
+    model_config={"trust_remote_code": False},
+)
+load_s, rows = time.perf_counter() - t0, []
+for suite in ("classification-support-routing", "translation-business-short-form"):
+    items = json.loads(
+        Path(f"src/wave_local_ai_v2/suite_data/{suite}.json").read_text(
+            encoding="utf-8"
+        )
+    )["items"]
+    for it in items:
+        prompt = it["prompt"]
+        head, _, payload = prompt.rpartition("\n\n")
+        for segment, target in (("whole_prompt", prompt), ("payload_only", payload)):
+            t = time.perf_counter()
+            res = pc.compress_prompt_llmlingua2(
+                [target],
+                rate=0.6,
+                force_tokens=["\n", ".", "!", "?", ","],
+                drop_consecutive=True,
+            )
+            seconds = time.perf_counter() - t
+            out = (
+                res["compressed_prompt"]
+                if segment == "whole_prompt"
+                else f"{head}\n\n{res['compressed_prompt']}"
+            )
+            before, after = count(prompt), count(out)
+            rows.append(
+                {
+                    "suite": suite,
+                    "item_id": it["item_id"],
+                    "language": it["language"],
+                    "segment": segment,
+                    "seconds": seconds,
+                    "tokens_before": before,
+                    "tokens_after": after,
+                    "ratio": before / after,
+                    "unchanged": out == prompt,
+                    "input": prompt,
+                    "output": out,
+                }
+            )
+summary = {
+    "model_dir": model_dir,
+    "load_seconds": load_s,
+    "peak_rss_mb": proc.memory_info().peak_wset / 1e6,
+    "vram_used_mib_before": vram_before,
+    "vram_used_mib_after": vram_mib(),
+    "rows": rows,
+}
+out_path.write_text(json.dumps(summary, ensure_ascii=False, indent=1), encoding="utf-8")
+for seg in ("whole_prompt", "payload_only"):
+    for lang in ("en", "fr", "de"):
+        sel = [r for r in rows if r["segment"] == seg and r["language"] == lang]
+        sec, rat = sorted(r["seconds"] for r in sel), sorted(r["ratio"] for r in sel)
+        print(
+            seg,
+            lang,
+            len(sel),
+            "median_s",
+            round(sec[len(sec) // 2], 3),
+            "max_s",
+            round(sec[-1], 3),
+            "median_ratio",
+            round(rat[len(rat) // 2], 2),
+            "unchanged",
+            sum(r["unchanged"] for r in sel),
+        )
+        print("  example:", sel[0]["input"], "=>", sel[0]["output"])
+print(
+    "load_s",
+    round(load_s, 1),
+    "peak_rss_mb",
+    round(summary["peak_rss_mb"]),
+    "vram_mib",
+    vram_before,
+    "->",
+    summary["vram_used_mib_after"],
+)
+```
+
+3. For each subject, start its server with its declared profile in a second terminal and wait for it to be ready. Flagship:
+
+```powershell
+& "C:\Users\Anael\llama_cpp\llama-b10537-bin-win-cuda-12.4-x64\llama-server.exe" -m "D:\ia\models\Qwen3.6-35B-A3B\Qwen3.6-35B-A3B-UD-IQ4_XS.gguf" -ngl 99 --n-cpu-moe 37 -c 32768 -fa on -t 8 --jinja -np 1 --load-mode none --host 127.0.0.1 --port 8080
+```
+
+Then `qwen3-0.6b-q8`: the same command with `-m "D:\ia\models\Qwen3-0.6B\Qwen3-0.6B-Q8_0.gguf"`, no `--n-cpu-moe`, and `--load-mode auto`.
+
+4. With the server up, run both checkpoints. The first run fetches `cl100k_base` once into the cache:
+
+```powershell
+$env:HF_HUB_OFFLINE = "1"; $env:TIKTOKEN_CACHE_DIR = "D:\ia\models\tiktoken-cache"
+& $env:TEMP\llmlingua-env\Scripts\python.exe $env:TEMP\measure_compressor.py D:\ia\models\llmlingua-2-xlm-roberta-large-meetingbank $env:TEMP\compressor-xlmr-<subject>.json
+& $env:TEMP\llmlingua-env\Scripts\python.exe $env:TEMP\measure_compressor.py D:\ia\models\llmlingua-2-bert-base-multilingual-cased-meetingbank $env:TEMP\compressor-mbert-<subject>.json
+```
+
+The spike resolves when these outputs show, for the reference checkpoint on CPU:
+
+- `cuda_available False` and `vram_mib` unchanged beside both subjects;
+- the peak RSS beside the flagship's 15.2 GB within the 32 GB host;
+- the per-language median and maximum seconds;
+- the per-language ratios and unchanged counts, for both segments;
+- one EN, one FR and one DE example in which the meaning-bearing tokens can be judged.
+
+Record these in this spike together with the `uv pip freeze` pins and the installed size, then set `status: resolved`.
