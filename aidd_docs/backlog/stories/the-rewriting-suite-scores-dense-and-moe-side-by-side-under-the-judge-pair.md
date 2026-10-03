@@ -17,7 +17,7 @@ Maps to: PRD AC "Given the model roster, for each in-scope use case it includes 
 
 Needs: a real local model run of every local roster entry on the development laptop, and paid API keys for Z.ai and DeepSeek (the judge pair). The cloud columns reuse order 2's Mistral and Google rows where they match, and otherwise need those subjects' keys.
 
-Blocked: only through `depends_on` on `aidd_docs/backlog/stories/judge-scoring-with-inter-judge-agreement-proves-judged-machinery.md` (order 2, `proposed`), which waits on the judge pair's retirement story (judge epic order 10) and the judged probe, both `proposed`, and through them on the GLM and DeepSeek spikes' outstanding live calls (`aidd_docs/backlog/spikes/is-z-ai-glm-callable-as-a-pinned-judge-and-on-what-data-terms.md`, `aidd_docs/backlog/spikes/is-deepseek-callable-as-a-pinned-judge-and-on-what-data-terms.md`, both `blocked`) and on owner question Q102. It does not wait on the calibration judge.
+Blocked: only through `depends_on` on `aidd_docs/backlog/stories/judge-scoring-with-inter-judge-agreement-proves-judged-machinery.md` (order 2, `proposed`), which waits on the judge pair's retirement story (judge epic order 10) and the judged probe, both `proposed`, and through them on the GLM and DeepSeek spikes' outstanding live calls (`aidd_docs/backlog/spikes/is-z-ai-glm-callable-as-a-pinned-judge-and-on-what-data-terms.md`, `aidd_docs/backlog/spikes/is-deepseek-callable-as-a-pinned-judge-and-on-what-data-terms.md`, both `blocked`). It does not wait on the calibration judge.
 
 Current state (verified on `main` at `c68b23e`, 2026-10-03):
 
