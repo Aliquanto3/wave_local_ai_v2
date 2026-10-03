@@ -105,3 +105,7 @@ Decisions taken under this run's authority, each a delivery or interpretation ch
 - Revocation follows append order, not session dates (epic check 4 says "planted after a verdict was reached").
 - A sustained challenge to one of the three claims blocks whether or not its session is complete or backfilled; an internal session neither counts nor blocks.
 - A follow-up item may also be linked from a resolved challenge (the first draft's refusal had no source); its path is frozen once cited, and its status never changes whether the challenge is sustained.
+
+## The redistribution task
+
+`aidd_docs/backlog/tasks/the-model-output-fields-cite-the-terms-they-were-checked-against-and-carry-the-ai-generated-notice.md` (bundle epic, created with the redistribution spike's commit) moved `proposed -> ready` after the second-round three-amigos check: it gained `README.md`'s licence section (which carries the same unverified wording), the section 3 assumption count, and a whitespace-collapsed test for the notice. Code-only; Q111 (the epic's assumption row) does not block it.
