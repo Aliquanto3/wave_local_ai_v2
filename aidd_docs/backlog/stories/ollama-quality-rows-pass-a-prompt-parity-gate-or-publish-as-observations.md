@@ -19,7 +19,7 @@ Maps to: PRD AC "given a claim that two models, engines or prompt variants diffe
 
 Needs: a real local model run on the reference machine with the pinned Ollama build installed (order 6). No API key.
 
-Blocked: by the spike `aidd_docs/backlog/spikes/does-ollama-expose-the-prompt-it-finally-rendered.md` (`blocked`; desk research done, only its live session remains: `_debug_render_only` renders on Ollama v0.35.1 for the first EN and the first FR classification item, `think` on and off, byte diff against llama.cpp b10537 `/apply-template`). And through `depends_on` on `aidd_docs/backlog/stories/ollama-runtime-rows-stand-beside-llama-cpp-rows-on-the-same-artifact.md` (order 6, `proposed`), blocked in turn by the live session of spike `can-a-pinned-ollama-build-serve-the-roster-gguf-under-the-runtime-protocol.md`, whose running instance this spike's commands also need. Its other `depends_on` is `done`.
+Blocked: only through `depends_on` on `aidd_docs/backlog/stories/ollama-runtime-rows-stand-beside-llama-cpp-rows-on-the-same-artifact.md` (order 6, `proposed`), which no spike blocks any more. Spike `aidd_docs/backlog/spikes/does-ollama-expose-the-prompt-it-finally-rendered.md` is `resolved` (live session on Ollama v0.35.1, 2026-10-04: `_debug_render_only` renders byte-identical to llama.cpp b10537 `/apply-template` for `billing-01` and `billing-fr-01`, `think` on and off; `prompt_capture: reconstructed`, never `captured`). Its other `depends_on` is `done`.
 
 Current state (verified on `main` at `c68b23e`, 2026-10-03):
 

@@ -1,6 +1,6 @@
 ---
 type: spike
-status: blocked
+status: resolved
 source: aidd_docs/backlog/epics/the-engine-and-the-prompt-variant-are-measured-not-assumed.md
 parents:
   - aidd_docs/backlog/stories/ollama-quality-rows-pass-a-prompt-parity-gate-or-publish-as-observations.md
@@ -41,23 +41,28 @@ Evidence, decisions and assumptions:
 - Decisions already taken: the epic's decision "Prompt parity across engines is a gate, not an assumption" and its current llama.cpp path (`/apply-template`, `prompt_capture: reconstructed`) (`aidd_docs/backlog/epics/the-engine-and-the-prompt-variant-are-measured-not-assumed.md`).
 - Assumptions: (1) the imported Qwen3 GGUF runs in native mode (verified live by `/api/show` returning empty `template`, `renderer`, `parser`); (2) llama-server's `/apply-template` and `/v1/chat/completions` render one body identically inside the same process, which is how llama.cpp's own reconstructed path is already treated; (3) the b11232 jinja engine may render differently from b10537 on the same template, which only the byte diff shows.
 
+### Live session on Ollama v0.35.1, 2026-10-04
+
+Run by the execution spike `aidd_docs/backlog/spikes/are-the-three-ollama-spikes-live-captures-obtainable-in-one-ollama-v0-35-1-session.md` (runbook steps 3, 7, 10 and 12, 2026-10-04 00:20 to 00:22, reference laptop). Evidence folder `aidd_docs/tasks/2026_10/2026_10_04_local-spike-runs/ollama-v0.35.1/`, written `E/` below: the cited files copied from the capture folder `D:\ia\ollama-v0.35.1-captures`, under their original names; `33-show.excerpt.json` is a labelled excerpt. Items: `billing-01` (first EN) and `billing-fr-01` (first FR) of `classification-support-routing` version 4.
+
+| Attempt | Evidence | Result |
+| ------- | -------- | ------ |
+| `_debug_render_only: true` on `POST /api/chat`, two items, `think` false and true | `E/50-ollama-render-*.json` and their `.body.json`; `E/http-status.txt` | All four HTTP 200. Each returns `_debug_info.rendered_template` with an empty `message` and `done: false`: a render without a generation. The JSON escapes the turn markers' angle brackets as `\u003c` and `\u003e`. |
+| llama.cpp b10537 `/apply-template` on the same GGUF and the same bodies | `E/21-llamacpp-render-*.json` and their `.body.json`; `E/00-llama-server-version.txt`; `E/20-llamacpp-serve.log` | Server `version: 0.1.2-dev (build 10537, commit bf0040e15)`, loading `Qwen3-0.6B-Q8_0.gguf`; four `prompt` strings. |
+| Byte-level diff, and the thinking switch on each engine | `E/A0-render-diff.txt` | Identical on all four: `billing-01` 319 bytes (`think` false) and 300 bytes (true), `billing-fr-01` 364 and 345 bytes, first difference `identical`. The `think` on and off renders differ on both engines for both items. |
+| `_debug_render_only` on `POST /api/generate` (templated) | `E/51-ollama-generate-render-billing-01-think-false.json` and its `.body.json` | Same string as the chat render and the llama.cpp render for `billing-01`, `think: false` (checked by string equality, 319 bytes). |
+| Raw pre-templated mode fed llama.cpp's own render | `E/52-ollama-raw-billing-01.json` and its `.body.json`, `E/62-unconstrained-billing-01.json`, last line of `E/A0-render-diff.txt` | HTTP 200, output `technical`, `prompt_eval_count` 61; the templated chat call on the same item and sampling also counts 61 prompt tokens and answers `technical`. |
+| Template and routing the server reports | `E/33-show.excerpt.json`; `E/30-serve-roster.log` lines 268, 273 | `/api/show` returns the GGUF's own jinja template, no `renderer`, no `parser`; the log shows `selected=gguf_chat_template` and each generation sent as a `llama-server chat request` to the bundled runner, which renders it there. The `_debug_render_only` string is therefore a separate render of the same body, not the string the generation received. |
+| Server debug log and request logs searched for a rendered prompt | `E/80-log-rendered-prompt.txt`, `E/80-request-logs.txt`, `E/RUN-NOTES.md` (section "Runbook gaps observed") | The turn-marker hits in the server log are the GGUF template (template detection and the GGUF metadata line) and the runner's `example_format` init line: no rendered request prompt. The request logs, written to `%TEMP%\ollama-request-logs-*` (deleted by the runbook's cleanup), hold the client request bodies, with angle brackets escaped, so they record requests, not a rendered prompt. No log yields a `captured` prompt. |
+
+Desk assumptions checked: (1) native mode holds (log line 268), although `/api/show` `template` carries the GGUF template rather than being empty; (2) not observable: no captured path exposes the string the runner rendered inside the generation, only the token count, which matches; (3) b11232 (bundled) and b10537 render these four bodies identically.
+
 ## Outcome
 
-- Result: blocked on the live render and diff the Bounds require. Desk research shows a candidate path: `_debug_render_only: true` on `POST /api/chat`, returning `_debug_info.rendered_template` from the bundled llama-server's `/apply-template` on the same body, i.e. `prompt_capture: reconstructed`; no `captured` path exists (no generation response carries the prompt). The path reflects the thinking switch through `chat_template_kwargs.enable_thinking`. It is undocumented and underscore-prefixed, so the engine entry must pin the Ollama version it was verified on. Fallback paths: `raw: true` pre-templated mode (parity by construction, not Ollama's own rendering), or "no rendered prompt available".
-- Confidence: high that no `captured` path exists and that `_debug_render_only` routes to `/apply-template` (read in pinned source); unknown whether its output is byte-identical to llama.cpp b10537's `/apply-template` for the same items.
-- Remaining uncertainty: the captured strings and the byte diff. Commands, with the Ollama session of the runtime spike running on `127.0.0.1:11500` and model `wla-qwen3-0.6b-q8`:
-
-```powershell
-# Ollama render, per item (EN item, FR item) and per think value (false, true)
-curl.exe -s http://127.0.0.1:11500/api/chat -d '{"model":"wla-qwen3-0.6b-q8","_debug_render_only":true,"think":false,"messages":[{"role":"user","content":"<item prompt>"}]}' -o ollama-<item>-think-false.json
-# llama.cpp b10537 render of the same GGUF and body (after the Ollama session is stopped)
-C:\Users\Anael\llama_cpp\llama-b10537-bin-win-cuda-12.4-x64\llama-server.exe -m D:\ia\models\Qwen3-0.6B\Qwen3-0.6B-Q8_0.gguf --jinja -c 32768 --port 8080
-curl.exe -s http://127.0.0.1:8080/apply-template -d '{"messages":[{"role":"user","content":"<item prompt>"}],"chat_template_kwargs":{"enable_thinking":false}}' -o llamacpp-<item>-think-false.json
-```
-
-Compare `_debug_info.rendered_template` with `prompt` byte for byte (UTF-8, first differing offset), for the two items and both think values; also confirm that the `false` and `true` renders differ on each engine; record `/api/show` `template`/`renderer`/`parser`. Items: the first EN and the first FR item of the classification suite.
+- Result: resolved. Ollama v0.35.1 exposes a rendered prompt of kind `reconstructed`, never `captured`: `POST /api/chat` with `_debug_render_only: true` returns `_debug_info.rendered_template`, rendered by the bundled llama-server from the same request body the generation would send. For `qwen3-0.6b-q8` on `billing-01` and `billing-fr-01`, `think` false and true, that string is byte-identical to llama.cpp b10537's `/apply-template` output, so the parity record for these items is `identical`. The thinking switch is verifiable by comparing two renders: they differ on both engines. No generation response or log carries the prompt the model received. The field is undocumented and underscore-prefixed, so the engine entry pins the Ollama version it was verified on (`0.35.1`). Fallback, not needed here: `raw: true` with llama.cpp's render (parity by construction). Decisive evidence: `aidd_docs/tasks/2026_10/2026_10_04_local-spike-runs/ollama-v0.35.1/A0-render-diff.txt`.
+- Confidence: high for the four renders on this version and model; parity is shown on two items and a single user message only.
+- Remaining uncertainty: parity on other items, other roster models, and bodies with a system message or tools is not shown; that the runner's in-generation render equals its `/apply-template` render stays an assumption, consistent with the equal 61-token prompt counts of the raw and templated calls.
 
 ## Follow-up
 
-- `aidd_docs/backlog/stories/ollama-quality-rows-pass-a-prompt-parity-gate-or-publish-as-observations.md`: still blocked by this spike, now on the live render and diff only. `Blocked:` should read: spike `does-ollama-expose-the-prompt-it-finally-rendered.md` (live `_debug_render_only` renders on Ollama v0.35.1 for one EN and one FR item, think on and off, byte diff against llama.cpp b10537 `/apply-template`). Desk answer the story can already use: Ollama rows can carry `prompt_capture: reconstructed` at most, never `captured`; the thinking switch is verifiable by render comparison if the path works. If the diff shows divergence, the story's acceptance already handles it (cells published as observations).
-- Execution vehicle: spike `aidd_docs/backlog/spikes/are-the-three-ollama-spikes-live-captures-obtainable-in-one-ollama-v0-35-1-session.md` runs this spike's live session (runbook with every command and request value, prerequisites, capture map); record its captures here.
+- `aidd_docs/backlog/stories/ollama-quality-rows-pass-a-prompt-parity-gate-or-publish-as-observations.md`: no longer blocked by this spike; blocked through `depends_on` on order 6 only. Captured answer: Ollama rows carry `prompt_capture: reconstructed` through `_debug_render_only`; the parity command's record for `qwen3-0.6b-q8` on these two items would read `identical`; the `think` switch is verifiable by render comparison.
