@@ -13,6 +13,7 @@ Epic: `aidd_docs/backlog/epics/a-release-is-called-credible-only-by-its-logged-c
 - Options: (a) the PRD's literal reading: a dismissed session with no sustained challenge to the three claims qualifies, and the verdict states how many of the counted sessions were dismissals; (b) a dismissal never qualifies: it is recorded and shown, but only `accepted` and `challenged` sessions count; (c) a dismissal must name its reason, and one whose reason bears on one of the three claims is treated as a sustained challenge to it.
 - Recommended default: (a). It is the PRD's own text, and stating the dismissal count beside the verdict keeps a release validated mostly by dismissals visible rather than hidden. Cost: three dismissals could validate a release; (b) and (c) change the rule the PRD states, which only the owner can do.
 - Blocks: order 3, and order 4 through its `depends_on`. Order 3 is written to the default and stays `proposed` until the answer; (b) or (c) changes one acceptance bullet and one test there, and (c) also adds a dismissal-reason field to order 1's record format.
+- Owner answer: (a), the recommended default (2026-10-03).
 
 ### Q101. Does the epic move to `ready` now that it has stories?
 
@@ -21,6 +22,7 @@ Epic: `aidd_docs/backlog/epics/a-release-is-called-credible-only-by-its-logged-c
 - Options: (a) move it to `ready`: its decisions are settled (Q60 to Q69) and its stories are written; (b) keep it `proposed` until order 1 is delivered; (c) keep it `proposed` until a real client session is in sight.
 - Recommended default: (a). Nothing in it is undecided, and order 4 already carries the dependency on a real session. Cost: none beyond the edit.
 - Blocks: nothing in delivery; a story may be `ready` under a `proposed` epic, but a delivery run picking it should know the owner has not accepted the epic yet.
+- Owner answer: (a), the recommended default (2026-10-03).
 
 ## Judge providers
 
@@ -33,6 +35,7 @@ Spikes: `aidd_docs/backlog/spikes/is-deepseek-callable-as-a-pinned-judge-and-on-
 - Options: (a) extend the Google precedent to judges: pin the provider's release or snapshot id; the pre-flight reads the live model list where one exists, and where none exists sends a one-token probe to the pinned id, recorded on the row as a probe; every row records each build marker the provider returns (listing `version`, `name` or `created`, response `system_fingerprint`), and a run refuses to start when a recorded marker differs from the pinned one; Methodology 12's text is amended to say so; (b) literal reading: every provider without a dated id is a no-go, the judge pair and the calibration judge are reopened, and new spikes look for families that publish dated ids; (c) decide per provider after the live calls, keeping the literal rule as the default.
 - Recommended default: (a). It is the reading the project already applies to its Google subject, it keeps the pair and the calibration model the PRD names, and the live calls the spikes list still capture whatever marker each provider actually returns. Cost: a silent weight change under an unchanged name and marker (DeepSeek's 2026-08-13 update is one) is not detected; judged scores are then reproducible only within a dated window, and the inter-judge agreement and the calibration figure are the only drift signals. Only the owner can amend PRD text.
 - Blocks: orders 8, 9 and 11 of `any-open-ended-output-carries-two-judges-or-an-honest-flag`, and through orders 8 and 9 every story that needs a judged score (order 10, the judged probe, the rewriting suite, document comparison, RAG, web research, and the judged re-run verdict).
+- Owner answer: (a), the recommended default (2026-10-03).
 
 ### Q103. Is DeepSeek's training opt-out requested before the first paid call?
 
@@ -41,6 +44,7 @@ Spikes: `aidd_docs/backlog/spikes/is-deepseek-callable-as-a-pinned-judge-and-on-
 - Options: (a) request it from the account owner's address before the first paid call, keep the reply, and state the opt-out and its date in the README; (b) do not opt out, and state in the README that suite items and local outputs sent to DeepSeek may be used for training; (c) send the request, and state in the README that it was sent and whether DeepSeek confirmed it.
 - Recommended default: (c). One email lowers the contamination risk for the publication suites, and the policy promises no confirmation, so the README claims only what was sent and received. Cost: one owner email.
 - Blocks: the wording of order 9's egress statement only, not its code.
+- Owner answer: (c), the recommended default (2026-10-03).
 
 ### Q104. Does the calibration judge stay GPT-5.6 Luna now that GPT-6 Luna exists?
 
@@ -49,6 +53,7 @@ Spikes: `aidd_docs/backlog/spikes/is-deepseek-callable-as-a-pinned-judge-and-on-
 - Options: (a) keep `gpt-5.6-luna`, as the PRD names it; (b) switch to `gpt-6-luna` and amend Methodology 11; (c) keep `gpt-5.6-luna` and switch only when OpenAI publishes a deprecation notice.
 - Recommended default: (a). The PRD names it, it is not deprecated, the saving is about a dollar per large campaign (the spike's projection puts calibration well under the ten-dollar estimate either way), and switching changes nothing for Q102. Cost: a calibration judge one generation behind OpenAI's current Luna.
 - Blocks: nothing; order 11 is written against the PRD's model.
+- Owner answer: (a), the recommended default (2026-10-03).
 
 ## Publication suites
 
@@ -61,6 +66,7 @@ Spikes: `aidd_docs/backlog/spikes/which-public-classification-benchmark-seeds-th
 - Options: (a) MInDS-14, 300 items, 100 per language, stratified by intent; (b) MASSIVE 1.1, `test` partition, `scenario` label, 300 items, stable key `locale/id`; (c) both, as two publication suites, at the cost of a second published batch.
 - Recommended default: (a). The story's outcome is to show whether a finding on the hand-written support-routing suite survives at a scale where a 10-point gap can be resolved; MInDS-14 is the only candidate whose labels are customer-service routing, while a MASSIVE score would measure a different task. Cost: its licence evidence is the card's identifier and a prose line, not a licence file (the loader records any licence file the source ships, and a different licence reopens the spike); ASR noise lowers the exact-match ceiling; the pool is small enough that a later redraw overlaps.
 - Blocks: interval epic order 7, hence order 9 (`the-threshold-review-is-written-from-the-first-publication-run.md`) and the bundle epic's order 7 (`a-drawn-item-reaches-the-download-under-its-own-terms-or-as-a-visible-hole.md`).
+- Owner answer: (a), the recommended default (2026-10-03).
 
 ### Q106. Is Google's Apache-2.0 label over WMT24 source text accepted for the translation publication suite?
 
@@ -69,6 +75,7 @@ Spikes: `aidd_docs/backlog/spikes/which-public-classification-benchmark-seeds-th
 - Options: (a) accept it on the permissive rung: items ship with `licence` `Apache-2.0`, the Apache-2.0 text ships beside them, and `LICENSE-DATA` section 3 discloses the WMT24 research-use origin as a declaration, on the same footing as the two declarations already there; (b) keep WMT24++ but publish its items on the no-redistribution rung: `prompt` and `reference_output` redacted to the per-item content hash, with source, revision and `segment_id` per item and one fetch instruction per source (Q41 (a)); (c) take NTREX-128 on the share-alike rung instead, segregated under its own licence file.
 - Recommended default: (a). The dataset's publisher licenses it Apache-2.0 at a pinned revision, the repository already ships declarations of exactly this kind, and the disclosure makes the reliance visible to a reviewer rather than hidden. Cost: the published items rest on Google's declaration; if it is ever withdrawn, the items move to (b), which the supersede-don't-backfill discipline allows. (b) is the zero-risk option and costs readers a fetch step per item.
 - Blocks: interval epic order 8, hence order 9 and the bundle epic's order 7.
+- Owner answer: (a), the recommended default (2026-10-03).
 
 ## Size-class candidates
 
@@ -81,6 +88,7 @@ Spike: `aidd_docs/backlog/spikes/which-candidate-ggufs-exist-per-size-class-and-
 - Options: (a) the current generation at the size nearest the class's Qwen entry: `LFM2.5-350M` at ~0.5B and `LFM2.5-1.2B-Instruct` at ~2B; (b) the literal smallest: `LFM2.5-230M` at ~0.5B and `LFM2.5-1.2B-Instruct` at ~2B; (c) the first generation: `LFM2-350M` and `LFM2-1.2B`.
 - Recommended default: (a). It keeps the comparison about the family rather than a 0.23B model against Qwen3-0.6B, takes Liquid's current release, and both templates carry no thinking switch, so `none` is verifiable. Cost: about 133 MB more than (b), and in strict smallest-download order Granite 4.0 H 350M is tried first anyway. `LFM2.5-2.6B` stays out under every option because it always thinks.
 - Blocks: the LFM2 gate run in orders 5 and 6; the Granite runs are unaffected.
+- Owner answer: (a), the recommended default (2026-10-03).
 
 ### Q108. Are the spike's remaining live loads folded into the class stories' gate runs?
 
@@ -89,6 +97,7 @@ Spike: `aidd_docs/backlog/spikes/which-candidate-ggufs-exist-per-size-class-and-
 - Options: (a) yes: the spike's Follow-up becomes the stories' first gate run per architecture; the spike is resolved by the first pass or refusal per architecture, and the stories drop it from their `Blocked:` lines once the owner answers; (b) no: an operator runs the eight loads as a separate session first, the spike closes, then the stories become `ready`; (c) re-scope the spike to existence only and resolve it now, leaving loading to the stories.
 - Recommended default: (a). The load result changes no story's acceptance, since a refusal is already a recorded outcome, so a separate session repeats work. Cost: a class story's first run can end in a recorded refusal rather than a roster entry, which the epic allows.
 - Blocks: orders 7 and 8 entirely (no other blocker), and orders 5 and 6 together with Q107.
+- Owner answer: (a), the recommended default (2026-10-03).
 
 ## Tool calling and harnesses
 
@@ -101,6 +110,7 @@ Spike: `aidd_docs/backlog/spikes/does-each-roster-model-emit-parseable-tool-call
 - Options: (a) keep each framework's defaults, record on the row the `tool_choice`, `parallel_tool_calls` and `stream` actually sent (read from the captured request), and publish an engine-defect failure as a harness-by-engine finding; (b) align every adapter to `direct`'s settings and record the override; (c) run and publish both.
 - Recommended default: (a). It measures each framework as a user runs it, and the captured request keeps the difference readable on the row. Cost: smolagents rows may measure llama.cpp #27767 rather than smolagents; the spike's attribution run shows whether it reproduces at b10537.
 - Blocks: order 7's adapters and order 8's reuse of them, and the `llamaindex` adapter of `a-rag-answer-is-scored-over-a-local-corpus-under-a-named-harness.md` (order 5), since LlamaIndex streams by default (llama.cpp #24807).
+- Owner answer: (a), the recommended default (2026-10-03).
 
 ### Q110. How does a row name the client package a framework reaches the engine through?
 
@@ -109,6 +119,7 @@ Spike: `aidd_docs/backlog/spikes/does-each-roster-model-emit-parseable-tool-call
 - Options: (a) keep the one field and rely on the published lockfile hash; (b) make `harness_version` a composite string naming both packages; (c) add a `harness_client_version` field, null for `direct`, `smolagents` and `pydantic-ai`.
 - Recommended default: (c). It keeps the existing field's meaning and shows on the row which package built the request. Cost: one more row field and a schema bump, which a new story under order 7 (or order 7 itself) carries; the done task is not reopened.
 - Blocks: order 7 rows for `langgraph` and `llamaindex`, and order 5's `llamaindex` rows. Related, for delivery: `harness.HARNESS_DISTRIBUTIONS` reads `pydantic-ai` while the slim install the spike probes is `pydantic-ai-slim`, which the order 7 adapter must reconcile.
+- Owner answer: (c), the recommended default (2026-10-03).
 
 ## Model-output redistribution
 
@@ -121,6 +132,7 @@ Spike: `aidd_docs/backlog/spikes/may-the-model-outputs-in-the-published-rows-be-
 - Options: (a) the owner rewrites the row as verified by the spike, names the marking condition and the new task, and leaves the hand-written-items declaration as the epic's only open licensing assumption; (b) leave the epic as written and let the spike and the task carry the finding.
 - Recommended default: (a). An epic that still lists a settled question as open invites a later run to re-investigate it. Cost: one owner edit.
 - Blocks: nothing; the task proceeds either way.
+- Owner answer: (a), the recommended default (2026-10-03).
 
 ## Web research search tools
 
@@ -132,6 +144,7 @@ Spike: `aidd_docs/backlog/spikes/which-two-search-tools-are-obtainable-archivabl
 - Options: (a) the Mojeek API on its Business plan (storage rights stated, own index, about £2 to £3 per 1,000 queries, the owner opens the account and buys credits); (b) Tavily's free tier (no cost, terms silent on storage, keeps and may train on queries); (c) Serper or Jina (free credits, results scraped from Google or undisclosed backends, so egress is two-hop).
 - Recommended default: (a). It is the only hosted option whose terms say storage is allowed, and its egress is one destination, so a row's egress field is exact. Cost: an account and a small prepaid amount, an owner act.
 - Blocks: order 10, and order 9's second adapter.
+- Owner answer: (a), the recommended default (2026-10-03).
 
 ### Q113. Which SearXNG engine set is pinned?
 
@@ -139,6 +152,7 @@ Spike: `aidd_docs/backlog/spikes/which-two-search-tools-are-obtainable-archivabl
 - Options: (a) the default set as shipped (DuckDuckGo, the Brave website, Google CSE through a hard-coded partner id, Wikipedia, Wikidata); (b) the default set minus `google cse`; (c) only engines with sanctioned access (Wikipedia, Wikidata, keyed API engines).
 - Recommended default: (b). `google cse` reaches Google through a third party's partner id against Google's terms on automated access; dropping it removes the clearest terms problem and keeps a metasearch representative of a typical deployment. Cost: the remaining engines still scrape two websites, which the row's egress field names; (c) leaves no general web engine.
 - Blocks: order 9's egress field and order 10.
+- Owner answer: (b), the recommended default (2026-10-03).
 
 ### Q114. What does the bundle publish from the archived search responses?
 
@@ -146,6 +160,7 @@ Spike: `aidd_docs/backlog/spikes/which-two-search-tools-are-obtainable-archivabl
 - Options: (a) keep each full response in the run archive, which the offline recompute reads, and publish per row only the result URLs, a content hash of the archived response, the tool, the egress destinations and the scores, without titles or snippets; (b) publish full responses in the bundle under a per-item third-party notice, outside CC-BY; (c) ask Mojeek for written permission to republish, publish its responses if granted, otherwise (a).
 - Recommended default: (a). No provider's terms and no snippet author grants republication, and (a) still lets any holder of the archive reproduce the score with the network off. Cost: a bundle reader cannot recompute web-research scores without the archive, which the PRD's offline-recompute criterion then reaches only for the archive holder.
 - Blocks: order 9's archive format and its publication.
+- Owner answer: (a), the recommended default (2026-10-03).
 
 ## Input compressor
 
@@ -158,6 +173,7 @@ Spike: `aidd_docs/backlog/spikes/which-llmlingua-2-class-compressor-fits-the-ref
 - Options: (a) CPU, in the same phase, per item just before the request, with the plain PyPI torch wheel (CPU-only on Windows, about 124 MB); (b) GPU, in a separate phase that compresses every item before the subject's server starts, with the CUDA torch build from the PyTorch `cu126` index (about 2.6 GB, an extra index in `uv.lock`); (c) GPU co-resident beside the subject, excluded by the measured headroom and listed only for completeness.
 - Recommended default: (a). It keeps the optional group on plain PyPI, cannot touch the subject's VRAM profile, and counts tokens with the subject's own tokenizer while its server is up. Cost: the compressor's energy is mostly the estimated CPU channel rather than a measured GPU one, and each item takes longer (about 1 to 2 s per item, estimated, not measured).
 - Blocks: order 9's declared placement and where its torch comes from; the live CPU measurement the spike lists can proceed under (a).
+- Owner answer: (a), the recommended default (2026-10-03).
 
 ## Calibration agreement
 
@@ -168,6 +184,7 @@ Spike: `aidd_docs/backlog/spikes/which-llmlingua-2-class-compressor-fits-the-ref
 - Options: (a) two two-rater figures, calibration against GLM and calibration against DeepSeek, each under the rubric kind's statistic, with n and the EN versus FR and DE split, published beside the pair's own figure; a shared bias then shows as the pair agreeing with each other more than either agrees with the calibrator; (b) one figure against the pair's per-item consensus (for example the rounded mean), undefined for a categorical rubric and sensitive to rounding half-points; (c) one three-rater statistic over all three judges (Fleiss' kappa or Krippendorff's alpha), a statistic Methodology 10 does not name and `agreement.py` does not have.
 - Recommended default: (a). It reuses `agreement.agreement_for_rubric` unchanged, works for both rubric kinds, and lets the shared-bias reading the PRD asks of calibration come straight from published numbers. Cost: "its own figure" becomes two figures per suite and language group, a wording change to order 11, order 6's calibration bullet and the epic (an owner edit, since the epic is `ready`).
 - Blocks: order 11. Order 6's calibration bullet takes the same wording but order 6 does not wait on order 11.
+- Owner answer: (a), the recommended default (2026-10-03).
 
 ## Raised while refining proposed stories
 
@@ -178,6 +195,7 @@ Spike: `aidd_docs/backlog/spikes/which-llmlingua-2-class-compressor-fits-the-ref
 - Options: (a) follow the shipped rule: the batch is refused before any generation, and that suite's cross-engine quality cells are listed as refused with the render spike as their reason; (b) run Ollama on a new suite version declaring `allowed` and publish the cross-engine cells as observations; (c) keep the bullet and change what `thinking_policy` means, from the suite's declaration to a per-row report.
 - Recommended default: (a). It applies a rule already `done` and keeps `thinking_policy` meaning one thing. Cost: if the live render fails, no cross-engine quality cell exists for that suite; the Ollama spike's desk finding (`think` exists and changes the render) suggests the branch is unlikely.
 - Blocks: order 7, and orders 8 and 12 through it.
+- Owner answer: (a), the recommended default (2026-10-03).
 
 ### Q118. What `max_output_tokens` does the WMT24++ publication suite declare?
 
@@ -186,6 +204,7 @@ Spike: `aidd_docs/backlog/spikes/which-llmlingua-2-class-compressor-fits-the-ref
 - Options: (a) a cap derived from the drawn references, for example at least twice the longest reference's token count, recorded with its reason in the suite definition; (b) keep 128 and let long segments fail as cap truncations; (c) exclude the long-segment domain from the pool so 128 suffices.
 - Recommended default: (a). Methodology 9 makes the cap a suite-level choice that must be defensible; 128 would score long items 0 for a reason that is not translation quality, and (c) narrows the construct. Cost: longer generations on the bench.
 - Blocks: order 8, hence order 9 and the bundle epic's order 7.
+- Owner answer: (a), the recommended default (2026-10-03).
 
 ### Q119. Is the WMT24++ draw stratified by domain as well as by language?
 
@@ -194,6 +213,7 @@ Spike: `aidd_docs/backlog/spikes/which-llmlingua-2-class-compressor-fits-the-ref
 - Options: (a) language only, sampler `"1"` unchanged, the draw's per-domain counts recorded in the results README; (b) language and domain, which needs sampler version `"2"` with a new rule shape and its own tests; (c) language only, with the pool restricted to chosen domains by the loader.
 - Recommended default: (a). It needs no sampler change, keeps the replay contract, and discloses the domain mix rather than controlling it. Cost: a draw may skew by domain, visible in the counts.
 - Blocks: order 8.
+- Owner answer: (a), the recommended default (2026-10-03).
 
 ### Q120. Where does the threshold review's n=20 comparison point come from?
 
@@ -202,6 +222,7 @@ Spike: `aidd_docs/backlog/spikes/which-llmlingua-2-class-compressor-fits-the-ref
 - Options: (a) orders 7 and 8 each also publish one development-level batch of the hand-written suite, same subject, same bench session, so both sizes carry `score_interval` in the bundle; (b) the review recomputes the n=20 side from committed rows where they exist (classification) and states the translation side absent; (c) wait for the bundle regeneration in `the-laptop-proves-both-modes-and-republishes-the-bundle-once.md` (`ready`), which re-runs only what the bundle already holds (classification).
 - Recommended default: (a). One extra 20-item run per suite gives a same-subject, same-build comparison, which is what the bullet needs. Cost: two more local batches; (a) adds one acceptance line to orders 7 and 8.
 - Blocks: order 9.
+- Owner answer: (a), the recommended default (2026-10-03).
 
 ## Stale wording in done stories
 
@@ -214,6 +235,7 @@ From the 2026-10-01 implementation run log, "Code against the backlog". Its othe
 - Options: (a) amend the bullet to "a provider that reports reasoning tokens neither directly nor derivably from its usage totals yields an explicit null with the reason; a derived count names its derivation on the row", matching the code; (b) keep the bullet and change the code to publish null for Google; (c) leave both, since order 10 retires Google as a judge.
 - Recommended default: (a). The derived count is exact arithmetic on the provider's own totals and is labelled as derived, so a reader loses nothing and gains a number. Cost: one owner edit to a `done` story.
 - Blocks: nothing.
+- Owner answer: (a), the recommended default (2026-10-03).
 
 ### Q122. The licence story's "today" list of item-literal modules is stale: will the owner update it?
 
@@ -222,4 +244,5 @@ From the 2026-10-01 implementation run log, "Code against the backlog". Its othe
 - Options: (a) the owner replaces the parenthesis with "(`judge_probe.py` since the suites moved to `suite_data/`)"; (b) leave it as history.
 - Recommended default: (a). Wording only; no acceptance meaning changes.
 - Blocks: nothing.
+- Owner answer: (a), the recommended default (2026-10-03).
 
