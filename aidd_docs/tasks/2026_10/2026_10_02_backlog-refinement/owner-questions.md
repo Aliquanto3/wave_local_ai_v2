@@ -149,3 +149,37 @@ Spike: `aidd_docs/backlog/spikes/which-llmlingua-2-class-compressor-fits-the-ref
 - Recommended default: (a). It reuses `agreement.agreement_for_rubric` unchanged, works for both rubric kinds, and lets the shared-bias reading the PRD asks of calibration come straight from published numbers. Cost: "its own figure" becomes two figures per suite and language group, a wording change to order 11, order 6's calibration bullet and the epic (an owner edit, since the epic is `ready`).
 - Blocks: order 11. Order 6's calibration bullet takes the same wording but order 6 does not wait on order 11.
 
+## Raised while refining proposed stories
+
+### Q117. What does an Ollama quality batch do when its thinking switch is absent or cannot be verified?
+
+- Artifact: `aidd_docs/backlog/stories/ollama-quality-rows-pass-a-prompt-parity-gate-or-publish-as-observations.md` (engine epic order 7), acceptance bullet 5; through it orders 8 and 12.
+- Question: the bullet says that, without a verifiable switch, "its rows declare `thinking_policy: allowed`". The code publishes the suite's declared policy on every row (both suites declare `disabled`), and `local_client.thinking_kwargs` and `check_engine_carries` refuse a `disabled` batch an engine cannot carry, as the `done` engine-row story specifies. The bullet and the shipped rule disagree.
+- Options: (a) follow the shipped rule: the batch is refused before any generation, and that suite's cross-engine quality cells are listed as refused with the render spike as their reason; (b) run Ollama on a new suite version declaring `allowed` and publish the cross-engine cells as observations; (c) keep the bullet and change what `thinking_policy` means, from the suite's declaration to a per-row report.
+- Recommended default: (a). It applies a rule already `done` and keeps `thinking_policy` meaning one thing. Cost: if the live render fails, no cross-engine quality cell exists for that suite; the Ollama spike's desk finding (`think` exists and changes the render) suggests the branch is unlikely.
+- Blocks: order 7, and orders 8 and 12 through it.
+
+### Q118. What `max_output_tokens` does the WMT24++ publication suite declare?
+
+- Artifact: `aidd_docs/backlog/stories/a-publication-level-translation-suite-stands-beside-the-hand-written-one.md` (interval epic order 8).
+- Question: the hand-written translation suite declares 128 output tokens; WMT24++ segments run to paragraphs (around 150 words), so a cap of 128 truncates them and Methodology 9 scores a suite-cap truncation 0. What cap does the publication suite declare?
+- Options: (a) a cap derived from the drawn references, for example at least twice the longest reference's token count, recorded with its reason in the suite definition; (b) keep 128 and let long segments fail as cap truncations; (c) exclude the long-segment domain from the pool so 128 suffices.
+- Recommended default: (a). Methodology 9 makes the cap a suite-level choice that must be defensible; 128 would score long items 0 for a reason that is not translation quality, and (c) narrows the construct. Cost: longer generations on the bench.
+- Blocks: order 8, hence order 9 and the bundle epic's order 7.
+
+### Q119. Is the WMT24++ draw stratified by domain as well as by language?
+
+- Artifact: the same story, and `src/wave_local_ai_v2/subset_sampler.py` (sampler version `"1"` accepts only `['language']` on a translation rule).
+- Question: WMT24++ mixes four domains (news, social, speech, literary). Is the 300-item draw stratified by domain too?
+- Options: (a) language only, sampler `"1"` unchanged, the draw's per-domain counts recorded in the results README; (b) language and domain, which needs sampler version `"2"` with a new rule shape and its own tests; (c) language only, with the pool restricted to chosen domains by the loader.
+- Recommended default: (a). It needs no sampler change, keeps the replay contract, and discloses the domain mix rather than controlling it. Cost: a draw may skew by domain, visible in the counts.
+- Blocks: order 8.
+
+### Q120. Where does the threshold review's n=20 comparison point come from?
+
+- Artifact: `aidd_docs/backlog/stories/the-threshold-review-is-written-from-the-first-publication-run.md` (interval epic order 9), first acceptance bullet ("the interval widths at n=100 ... against those at n=20 for the same use case", "from the published rows").
+- Question: no committed row carries `score_interval` (the bundle is schema `"7"`), and the bundle holds no translation row at all; the n=20 classification widths exist only as an analysis in `aidd_docs/results/README.md`. No `depends_on` story publishes a development-level batch carrying an interval.
+- Options: (a) orders 7 and 8 each also publish one development-level batch of the hand-written suite, same subject, same bench session, so both sizes carry `score_interval` in the bundle; (b) the review recomputes the n=20 side from committed rows where they exist (classification) and states the translation side absent; (c) wait for the bundle regeneration in `the-laptop-proves-both-modes-and-republishes-the-bundle-once.md` (`ready`), which re-runs only what the bundle already holds (classification).
+- Recommended default: (a). One extra 20-item run per suite gives a same-subject, same-build comparison, which is what the bullet needs. Cost: two more local batches; (a) adds one acceptance line to orders 7 and 8.
+- Blocks: order 9.
+

@@ -19,7 +19,17 @@ Maps to: PRD AC "Given a campaign, every row records its engine (with build iden
 
 Needs: a real local model run on the reference machine with a pinned Ollama build installed beside llama.cpp (an operator installs it once). No API key.
 
-Blocked: spike `aidd_docs/backlog/spikes/can-a-pinned-ollama-build-serve-the-roster-gguf-under-the-runtime-protocol.md` (whether the roster GGUF loads with a matchable checksum, how the version, effective context, loaded models and keep-alive are read, whether concurrent clients are observable).
+Blocked: spike `aidd_docs/backlog/spikes/can-a-pinned-ollama-build-serve-the-roster-gguf-under-the-runtime-protocol.md` (`blocked`; desk research done, only its live session on Ollama v0.35.1 remains: the captured model-layer digest against the roster entry's `sha256`, `/api/ps` across a warm-up and five counted repetitions without reload, the over-long prompt's response, a second client's visibility). Its `depends_on` are `done` (`every-row-names-the-engine-that-produced-it-and-the-fiche-hashes-it.md`) and `ready` (`a-campaign-is-declared-as-data-and-an-empty-cell-fails-it.md`).
+
+Current state (verified on `main` at `c68b23e`, 2026-10-03):
+
+- `aidd_docs/roster/engines.json` registers one engine, `llama.cpp` (`reference: true`, `lifecycle: spawned`, `default_port` 8080, `thinking_switch.request_field` `chat_template_kwargs`); there is no `ollama` entry.
+- `engines.LIFECYCLES` accepts `attached` at load, but nothing serves it: `server.start_server` refuses any engine not `spawned`, and its port guard (`server._port_is_open`) is the spawned rule only. No pre-run attachment, keep-alive or context check exists.
+- `engines.REQUIRED_FIELDS` requires `config_normalisation.model_path_flag` and `location_flags`, and `engines.normalise_config` raises when the launch flags carry no model path flag: the configuration hash is defined over a launch flag list only. An attached engine has none, so the Ollama entry needs the epic's comparator normalisation ("its model definition plus the resolved options the server reports").
+- Fiche projection `"2"` (`hardware.FICHE_PROJECTIONS`, `CURRENT_FICHE_PROJECTION`) hashes `engine_id`, `engine_build` and `engine_config_hash`, and `verdict._RUNTIME_BLOCKING_FIELDS` is `("engine_id", "engine_build", "quant", "gpu_name", "flags")`: two engines already hash and verdict apart once a second entry exists.
+- `row_contract.SCHEMA_VERSION` is `"22"`; no row carries `artifact_parity` or an attachment-check record. `ttft_source` takes `timings.TTFT_SOURCE_SERVER_REPORTED` or `TTFT_SOURCE_CLIENT_MEASURED`.
+- `comparison.DIMENSIONS` holds `model` and `prompt_variant` only; no comparison runs along an engine axis.
+- Spike desk findings the entry can be drafted from, unverified until the live session: version probe `GET /api/version`, health `GET /`, chat `POST /api/chat`, default port 11434; `same_gguf` reachable by `FROM <roster file>` (the model layer digest is the file's SHA-256); `/api/ps` `context_length` is the engine-reported effective context; concurrent clients are not observable through any endpoint; keep-alive pinned per request with `keep_alive: -1`; `prompt_eval_duration` is a server-reported TTFT on the llama.cpp rows' definition; Ollama v0.35.1 runs a bundled, patched llama-server `b11232`, not the reference's `b10537`.
 
 ## Acceptance
 
@@ -35,6 +45,7 @@ Blocked: spike `aidd_docs/backlog/spikes/can-a-pinned-ollama-build-serve-the-ros
 ## Code it changes
 
 - The `ollama` registry entry; an attached-engine lifecycle beside `server.running_server`; an Ollama chat and timing client beside `local_client`; the pre-run attachment, keep-alive and context checks.
+- `engines.py`: a configuration normalisation for an attached engine, which has no launch flag list; `comparison.py`: an engine axis that reads `artifact_parity`.
 - `row_contract.py`: `artifact_parity` and its detail, the attachment-check record, `SCHEMA_VERSION` bumped; `docs/setup.md`: installing the pinned Ollama build.
 
 ## Tests it needs
