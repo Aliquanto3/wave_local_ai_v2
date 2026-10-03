@@ -61,7 +61,7 @@ Desk research only (no model run, no install, no download). All reads 2026-10-02
 - Result: settled by desk evidence, with the measurements still to take.
   - Compressor: the reference is `microsoft/llmlingua-2-xlm-roberta-large-meetingbank` @ `ebaba9b0e874dadd3003ffcff828e4397e568089` (MIT, `model.safetensors` sha256 `a33a153b...0ae2`), driven by `llmlingua==0.2.2` (tag `v0.2.2`, `a411a3fa`). The one alternative is `microsoft/llmlingua-2-bert-base-multilingual-cased-meetingbank` @ `5f0c82792b7ea14c6484e015b6a072009496b7f2` (Apache-2.0, sha256 `22b9ecde...8324`), measured in the same run. Both licences allow client commercial use.
   - GPU co-residence is excluded. The reference checkpoint's fp32 weights alone (2132 MiB) exceed the device headroom beside every roster entry (1617 MiB at most, beside `qwen3-0.6b-q8`; 1595 beside the flagship; 29 beside `qwen3-4b-q4km`). fp16 (about 1066 MiB plus a CUDA context) would not fit beside the 1.7B or the 4B and would change the published fp32 numerics. On Windows an overflow spills to system memory silently instead of failing, so it would displace the subject's declared profile without an error.
-  - Placement left: CPU in the same phase, or the GPU in a separate phase before the subject loads. Both fit the hardware. The evidence favours CPU. It needs only the plain PyPI torch wheel, which is a 124 MB CPU build on Windows and lockable under Q23 (a) with no extra index. It cannot touch VRAM, because the wheel has no CUDA. It counts "before" and "after" with the subject model's own tokenizer at compression time, since the subject server is up. The separate GPU phase needs the CUDA build from the PyTorch index (2.60 GB `cu126` wheel, the only 2.14 Windows build under the driver's CUDA 12.8 ceiling) and a second token-count pass. In exchange, its compressor energy is measured through NVML and its per-item duration is lower. CPU's compressor energy is mostly the `estimated_tdp` CPU channel. This is a trade-off, not a fit question, so it is framed as an owner question. The recommended default is CPU.
+  - Placement left: CPU in the same phase, or the GPU in a separate phase before the subject loads. Both fit the hardware. The evidence favours CPU. It needs only the plain PyPI torch wheel, which is a 124 MB CPU build on Windows and lockable under Q23 (a) with no extra index. It cannot touch VRAM, because the wheel has no CUDA. It counts "before" and "after" with the subject model's own tokenizer at compression time, since the subject server is up. The separate GPU phase needs the CUDA build from the PyTorch index (2.60 GB `cu126` wheel, the only 2.14 Windows build under the driver's CUDA 12.8 ceiling) and a second token-count pass. In exchange, its compressor energy is measured through NVML and its per-item duration is lower. CPU's compressor energy is mostly the `estimated_tdp` CPU channel. This is a trade-off, not a fit question, so it was framed as an owner question, and the owner chose CPU in the same phase (owner answer Q115 (a), 2026-10-03).
   - Token counter: the subject model's tokenizer through llama-server `POST /tokenize` (`local_client.count_tokens`), recorded under the row's tokenizer. LLMLingua's own `origin_tokens`/`compressed_tokens` use the `gpt-3.5-turbo` tiktoken encoding, which is neither the subject's nor the compressor's tokenizer, so they are not the row's counts.
   - Languages: apply to EN, FR and DE. Both encoders cover `fr` and `de`, but the compressor was trained on English only and no FR or DE result is published. Whether meaning-bearing tokens survive in FR and DE is left to the run's examples.
   - Dependency set for the Q23 group: `llmlingua==0.2.2`, `torch==2.14.1` (PyPI, CPU on Windows), `transformers==4.57.6`, `accelerate==1.15.0`, `tiktoken==0.14.0`, `nltk==3.10.3` (imported by llmlingua, unused on the LLMLingua-2 path), with their transitive pins. Two runtime fetches must be pinned: the weights (revision and sha256), and the `cl100k_base` tiktoken file that `PromptCompressor.__init__` loads (hash-checked, cached under `TIKTOKEN_CACHE_DIR`). Load from the verified local directory with `HF_HUB_OFFLINE=1`, `device_map="cpu"` and `model_config={"trust_remote_code": False}`.
@@ -72,28 +72,36 @@ Desk research only (no model run, no install, no download). All reads 2026-10-02
   - Per-language before/after counts and ratios, the items left unchanged, and one EN, one FR and one DE example.
   - The installed size of the optional group.
   - Whether `llmlingua 0.2.2` loads under `transformers 4.57.6` and `torch 2.14.1`.
-  - The owner's choice of placement.
   - Which segment is compressed: compressing the whole rendered prompt at `rate=0.6` can drop the classification label words from the instruction. The run measures the whole prompt and the payload alone, so order 9's compression setting is chosen on evidence. The epic's per-suite applicability declaration already covers a "not meaningful" outcome.
 
 ## Follow-up
 
-Parent `aidd_docs/backlog/stories/the-input-compression-variant-records-its-compressor-as-a-step-of-its-own.md` (order 9) stays blocked. Its `Blocked:` line should now say: "Blocked: the live CPU measurement in the Follow-up of spike `which-llmlingua-2-class-compressor-fits-the-reference-machine-and-in-which-placement` (per-item duration, RSS, per-language ratios, EN/FR/DE examples), and the owner's answer on the compressor's placement (CPU recommended; GPU co-residence excluded by evidence)." Its acceptance needs no change: "CPU, or a separate phase before generation" already excludes co-residence.
+Parent `aidd_docs/backlog/stories/the-input-compression-variant-records-its-compressor-as-a-step-of-its-own.md` (order 9) stays blocked. Its `Blocked:` line should now say: "Blocked: the live CPU measurement in the Follow-up of spike `which-llmlingua-2-class-compressor-fits-the-reference-machine-and-in-which-placement` (per-item duration, RSS, per-language ratios, EN/FR/DE examples)." Its acceptance needs no change: "CPU, or a separate phase before generation" already excludes co-residence.
 
-Owner question, filed as Q115 in `aidd_docs/tasks/2026_10/2026_10_02_backlog-refinement/owner-questions.md`: which placement `input_compressed` declares on the laptop (CPU in the same phase recommended; a separate GPU phase is the alternative; co-residence is excluded by the measured headroom).
+Owner question, filed as Q115 in `aidd_docs/tasks/2026_10/2026_10_02_backlog-refinement/owner-questions.md`: which placement `input_compressed` declares on the laptop. Answered: CPU in the same phase, per item just before the request, with the plain PyPI torch wheel in the optional group (owner answer Q115 (a), 2026-10-03).
 
-Live measurement, to run on the laptop in PowerShell from the main repo root `C:\Users\Anael\dev\wave_local_ai_v2`, with the GPU free of other sessions. It covers placement (a) only. If the owner picks (b), the same script is rerun with `torch==2.14.1+cu126` from `https://download.pytorch.org/whl/cu126`, `device_map="cuda"`, and no subject server, with token counts taken afterwards.
+Live measurement, to run on the laptop in PowerShell from the main repo root `C:\Users\Anael\dev\wave_local_ai_v2`, with the GPU free of other sessions. It covers placement (a), the placement the owner chose (owner answer Q115 (a), 2026-10-03).
+
+- Execution tag: `install + local run`.
+- Disk: about 7 GB free. Weights 2.96 GB on `D:` (2,252,919,420 B for the XLM-R repo and 713,310,011 B for the mBERT repo at the pinned revisions, HF API listings read 2026-10-03), plus the environment under `%TEMP%`, whose installed size is not published (step 1 records it; the CPU torch wheel alone is 124 MB compressed), budgeted at 3 GB, plus the 1.7 MB `cl100k_base` cache. The subjects' GGUFs are already on disk.
+- GPU: free of every other session (no Ollama, no other `llama-server`): the only GPU process is the subject's server, so "VRAM unchanged" is attributable to the compressor.
+- Time: about 45 to 75 minutes. Environment build 5 to 10 min; weight downloads 5 to 15 min (network bound); per subject, server load 1 to 2 min (flagship) and two script runs of 82 compressions each (41 items x 2 segments), estimated 1 to 4 min for XLM-R large and under 1 min for mBERT from the per-item assumption above; recording 15 min.
+- Cost: electricity only; no paid provider, no account (both checkpoints are public, `hf download` needs no login).
+- Package sources, read 2026-10-03: the `hf` command is the console script `hf=huggingface_hub.cli.hf:main` of `huggingface-hub` (`https://github.com/huggingface/huggingface_hub/blob/v0.36.2/setup.py` line 138), whose `download` takes `--revision` and `--local-dir` (`src/huggingface_hub/cli/download.py` lines 69-90 at the same tag). `transformers==4.57.6` already pulls it (`huggingface-hub<1.0,>=0.34.0`, `https://pypi.org/pypi/transformers/4.57.6/json`); step 1 pins it explicitly at `huggingface-hub==0.36.2`, the latest 0.x release (2026-02-06, `https://pypi.org/pypi/huggingface-hub/json`), so the CLI version is fixed rather than resolved. `psutil==7.2.2` exists on PyPI (uploaded 2026-01-28, with a `cp37-abi3-win_amd64` wheel, `https://pypi.org/pypi/psutil/7.2.2/json`). `requests` is pinned at `2.34.2`, its latest release (2026-05-14, requires Python >= 3.10, `https://pypi.org/pypi/requests/2.34.2/json`).
 
 1. Build the isolated environment, record its pins and installed size, and fetch both checkpoints by revision:
 
 ```powershell
 uv venv $env:TEMP\llmlingua-env --python 3.12
-uv pip install --python $env:TEMP\llmlingua-env\Scripts\python.exe llmlingua==0.2.2 torch==2.14.1 transformers==4.57.6 accelerate==1.15.0 tiktoken==0.14.0 nltk==3.10.3 psutil==7.2.2 requests
+uv pip install --python $env:TEMP\llmlingua-env\Scripts\python.exe llmlingua==0.2.2 torch==2.14.1 transformers==4.57.6 accelerate==1.15.0 tiktoken==0.14.0 nltk==3.10.3 psutil==7.2.2 requests==2.34.2 huggingface-hub==0.36.2
 uv pip freeze --python $env:TEMP\llmlingua-env\Scripts\python.exe
 "{0:N0} MB" -f ((Get-ChildItem -Recurse -File $env:TEMP\llmlingua-env | Measure-Object Length -Sum).Sum / 1MB)
 & $env:TEMP\llmlingua-env\Scripts\hf.exe download microsoft/llmlingua-2-xlm-roberta-large-meetingbank --revision ebaba9b0e874dadd3003ffcff828e4397e568089 --local-dir D:\ia\models\llmlingua-2-xlm-roberta-large-meetingbank
 & $env:TEMP\llmlingua-env\Scripts\hf.exe download microsoft/llmlingua-2-bert-base-multilingual-cased-meetingbank --revision 5f0c82792b7ea14c6484e015b6a072009496b7f2 --local-dir D:\ia\models\llmlingua-2-bert-base-multilingual-cased-meetingbank
 (Get-FileHash D:\ia\models\llmlingua-2-xlm-roberta-large-meetingbank\model.safetensors -Algorithm SHA256).Hash   # expect A33A153B2493BFF6BE06AF6921E69DE9C0D0BB6FF06FE5BBB68670BA8D980AE2
 (Get-FileHash D:\ia\models\llmlingua-2-bert-base-multilingual-cased-meetingbank\model.safetensors -Algorithm SHA256).Hash   # expect 22B9ECDE52FEC5C97E8C54A293BE768727DF95A81C6C8DCCB03F262A50C58324
+(Get-FileHash D:\ia\models\llmlingua-2-xlm-roberta-large-meetingbank\tokenizer.json -Algorithm SHA256).Hash   # expect F59925FCB90C92B894CB93E51BB9B4A6105C5C249FE54CE1C704420AC39B81AF
+git hash-object --no-filters D:\ia\models\llmlingua-2-bert-base-multilingual-cased-meetingbank\tokenizer.json   # expect 21f54a4b56685f29358f3a8de1f5b8d827357d07 (a plain git blob, not LFS: the hub records its git object id, not a sha256)
 ```
 
 2. Save this script as `$env:TEMP\measure_compressor.py`, outside the repo:
@@ -218,6 +226,18 @@ print(
 ```
 
 Then `qwen3-0.6b-q8`: the same command with `-m "D:\ia\models\Qwen3-0.6B\Qwen3-0.6B-Q8_0.gguf"`, no `--n-cpu-moe`, and `--load-mode auto`.
+
+In the first terminal, wait until the server reports ready. llama.cpp b10537's `GET /health` answers 503 while the model loads and 200 `{"status":"ok"}` once it is ready (`https://github.com/ggml-org/llama.cpp/blob/b10537/tools/server/README.md` lines 463-475, read 2026-10-03):
+
+```powershell
+do { Start-Sleep 2 } until ((curl.exe -s -o NUL -w '%{http_code}' http://127.0.0.1:8080/health) -eq '200')
+```
+
+After step 4 for a subject, stop its server (Ctrl+C in the second terminal, or the line below) before starting the next one:
+
+```powershell
+Get-Process llama-server -ErrorAction SilentlyContinue | Stop-Process -Force
+```
 
 4. With the server up, run both checkpoints. The first run fetches `cl100k_base` once into the cache:
 
