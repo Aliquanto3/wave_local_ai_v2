@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
@@ -14,9 +14,22 @@ import { overviewRuntimeFixture } from './views/overview/fixtures/overviewRuntim
 // whichever component's fetch happens to run next, not necessarily the one
 // the test intends -- a real race the previous version of this test hit
 // intermittently under the full suite's parallel load.
-function mockEveryRoute() {
+function mockEveryRoute({ demoMode = false }: { demoMode?: boolean } = {}) {
   vi.spyOn(client, 'apiFetch').mockImplementation((path: unknown) => {
     const url = String(path)
+    if (url.includes('/api/console/options')) {
+      return demoMode
+        ? Promise.resolve({
+            kinds: ['runtime', 'quality'],
+            suites: ['classification'],
+            roster_entries: ['entry-a'],
+            machine_id: 'laptop',
+            machine_absence: null,
+            profiles: {},
+            holder: null,
+          })
+        : Promise.reject(new client.ApiError(403, '{"detail": "SERVICE_DEMO_MODE"}'))
+    }
     if (url.includes('/api/overview/runtime')) {
       return Promise.resolve(overviewRuntimeFixture)
     }
@@ -50,5 +63,30 @@ describe('App', () => {
 
     expect(await screen.findByText('runtime-run-1')).toBeInTheDocument()
     expect(screen.queryByText('classification')).not.toBeInTheDocument()
+  })
+
+  it('shows no console entry when demo mode is off', async () => {
+    mockEveryRoute()
+
+    render(<App />)
+
+    await screen.findByText(/no-use-case-is-silently-absent/)
+    // Settled, not merely not-yet-answered: the refusal has been handled.
+    await waitFor(() =>
+      expect(client.apiFetch).toHaveBeenCalledWith('/api/console/options'),
+    )
+    await act(async () => {})
+    expect(screen.queryByText('Console →')).not.toBeInTheDocument()
+  })
+
+  it('shows the console entry when demo mode is on, routing to the panel', async () => {
+    mockEveryRoute({ demoMode: true })
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    await user.click(await screen.findByText('Console →'))
+
+    expect(await screen.findByRole('button', { name: 'Start run' })).toBeInTheDocument()
   })
 })

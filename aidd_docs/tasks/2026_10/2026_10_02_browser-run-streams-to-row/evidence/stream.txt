@@ -1,0 +1,10 @@
+Arrival time of each streamed event after the stream opened (live check, 2026-10-03).
+  0.250s  977f49d30dfa4abcb2e5b54d9f437512
+  0.328s  pre-flight: vram_gb not checked under gpu: roster entry 'qwen3-0.6b-q8' declares no minimum yet (awaits a per-process VRAM peak: the published vram_used_mib is NVML's device-wide used memory (4527 MiB for the 0.6B, whose weights are 0.64 GB), not this model's own need)
+  1.313s  [codecarbon INFO @ 19:18:16] offline tracker init
+  1.313s  [codecarbon WARNING @ 19:18:16] Multiple instances of codecarbon are allowed to run at the same time.
+  7.235s  thinking switch verified: engine=llama.cpp field=chat_template_kwargs renders_differ=True with=912d49fca08298321cd9ad43f2026f43be90f47e3e5058d456b3f42cc341cf4e without=7386842aa9866d3e4066a76a95af34b57adc9d705ec93732a099c4503a5b09c8
+  9.016s  model=Qwen3-0.6B provider=local accuracy=0.45
+  9.016s  mistral skipped: not enabled in QUALITY_PROVIDERS
+  9.016s  google skipped: not enabled in QUALITY_PROVIDERS
+  9.953s  final: ok=True kind=quality profile_id=qwen3-0.6b-q8@laptop-mobile-gpu/gpu run_id=977f49d30dfa4abcb2e5b54d9f437512 exit_code=0 error_line=None missing=None view_entries=20

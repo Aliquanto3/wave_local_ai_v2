@@ -1,6 +1,8 @@
-import { useState } from 'react'
-import { KeyGate } from './components/KeyGate'
+import { useEffect, useState } from 'react'
+import { apiFetch, UnauthorizedError } from './api/client'
+import { KeyGate, useKeyGate } from './components/KeyGate'
 import { ComparisonView } from './views/comparison/ComparisonView'
+import { ConsolePanel } from './views/console/ConsolePanel'
 import { EnergyView } from './views/energy/EnergyView'
 import { OverviewView } from './views/overview/OverviewView'
 import { QualityView } from './views/quality/QualityView'
@@ -15,6 +17,7 @@ type Selection =
   | { status: 'runs' }
   | { status: 'selected'; runId: string; kind: RunKind; screen: Screen }
   | { status: 'comparison' }
+  | { status: 'console' }
 
 // A quality run_id and a runtime run_id are minted by two separate CLIs over
 // two separate stores (see read_model.runs_view's own docstring) -- there is
@@ -66,6 +69,42 @@ function TabStrip({
   )
 }
 
+/**
+ * "Console →", shown only when this machine's service answers the console's
+ * options route: demo mode off (403), or any other refusal, shows nothing.
+ */
+function ConsoleEntry({ onOpen }: { onOpen: () => void }) {
+  const { reportUnauthorized } = useKeyGate()
+  const [available, setAvailable] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    apiFetch('/api/console/options')
+      .then(() => {
+        if (!cancelled) {
+          setAvailable(true)
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled && error instanceof UnauthorizedError) {
+          reportUnauthorized()
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [reportUnauthorized])
+
+  if (!available) {
+    return null
+  }
+  return (
+    <button type="button" onClick={onOpen}>
+      Console →
+    </button>
+  )
+}
+
 function App() {
   const [selection, setSelection] = useState<Selection>({ status: 'overview' })
 
@@ -80,6 +119,7 @@ function App() {
             <button type="button" onClick={() => setSelection({ status: 'runs' })}>
               Runs →
             </button>
+            <ConsoleEntry onOpen={() => setSelection({ status: 'console' })} />
           </nav>
           <OverviewView />
         </>
@@ -109,6 +149,16 @@ function App() {
             </button>
           </nav>
           <ComparisonView />
+        </>
+      )}
+      {selection.status === 'console' && (
+        <>
+          <nav className="top-nav">
+            <button type="button" onClick={() => setSelection({ status: 'overview' })}>
+              ← Overview
+            </button>
+          </nav>
+          <ConsolePanel />
         </>
       )}
       {selection.status === 'selected' && (

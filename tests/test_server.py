@@ -1,5 +1,6 @@
 import dataclasses
 import json
+import signal
 import subprocess
 import sys
 import tempfile
@@ -366,6 +367,43 @@ def test_start_server_returns_once_health_reports_ready() -> None:
         result = server.start_server(Path("llama-server.exe"), [])
 
     assert result is fake_process
+
+
+def test_a_stop_during_the_readiness_wait_stops_the_half_started_server() -> None:
+    # A large model loads for tens of seconds; a stop landing then happens
+    # before `running_server`'s own teardown covers the process.
+    fake_process = MagicMock()
+    fake_process.poll.return_value = None
+
+    with (
+        patch("wave_local_ai_v2.server._port_is_open", return_value=False),
+        patch("wave_local_ai_v2.server.subprocess.Popen", return_value=fake_process),
+        patch(
+            "wave_local_ai_v2.server.requests.get",
+            return_value=MagicMock(status_code=503),
+        ),
+        patch(
+            "wave_local_ai_v2.server.time.sleep",
+            side_effect=server.StopRequested("run stopped by signal 21"),
+        ),
+        patch("wave_local_ai_v2.server.stop_server") as mock_stop,
+        pytest.raises(server.StopRequested),
+    ):
+        server.start_server(Path("llama-server.exe"), [])
+
+    mock_stop.assert_called_once_with(fake_process)
+
+
+def test_the_graceful_stop_signal_raises_stop_requested() -> None:
+    # The conftest fixture restores the previous handler after this test.
+    stop_signal = signal.SIGBREAK if sys.platform == "win32" else signal.SIGTERM
+
+    server.install_graceful_stop()
+    handler = signal.getsignal(stop_signal)
+
+    assert callable(handler)
+    with pytest.raises(server.StopRequested, match="stopped by signal"):
+        handler(stop_signal, None)
 
 
 def test_start_server_raises_immediately_when_process_dies() -> None:

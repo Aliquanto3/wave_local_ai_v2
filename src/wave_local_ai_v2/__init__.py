@@ -206,9 +206,11 @@ def _is_exceed_context_refusal(response: requests.Response) -> bool:
 
 
 def main() -> None:
+    server.install_graceful_stop()
     try:
         _run()
     except (
+        server.StopRequested,
         SettingsError,
         roster.RosterError,
         # A run outside its campaign's declaration, or a declaration that
@@ -234,6 +236,9 @@ def _run() -> None:
     # launched: a missing or undeclared one refuses here.
     run_profile = require_run_profile(settings)
     run_id = new_run_id()
+    # The first stdout line, flushed: a piped launcher (the demo console)
+    # reads it to find this run's row once the run lands.
+    print(run_id, flush=True)
     fiche = capture_fiche()
     provenance_fields = provenance.capture_provenance()
     # Loaded once per run, not once per row: `roster.load_roster` raises on

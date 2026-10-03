@@ -1186,8 +1186,10 @@ def test_run_surfaces_a_deprecation_notice_and_still_writes_every_row(
     captured = capsys.readouterr()
     assert notice in captured.err
     # Positively, not just "the notice is absent": stdout is what the operator
-    # parses, so any line added to it beyond the two accuracy lines must fail here.
-    accuracy_lines = captured.out.splitlines()
+    # parses, so any line added to it beyond the announced run_id and the two
+    # accuracy lines must fail here.
+    run_id_line, *accuracy_lines = captured.out.splitlines()
+    assert run_id_line == read_rows(quality_results_path)[0]["run_id"]
     assert len(accuracy_lines) == 2
     assert all(line.startswith("model=") for line in accuracy_lines)
     assert len(read_rows(quality_results_path)) == 2 * len(CLASSIFICATION_TASK_SUITE)
@@ -3524,3 +3526,25 @@ def test_a_baseline_and_constrained_pair_names_the_variant_and_the_mechanism(
         "constraint_mechanism",
         "prompt_variant_id",
     ]
+
+
+def test_main_installs_the_graceful_stop_and_exits_one_when_stopped(
+    monkeypatch, capsys
+) -> None:
+    monkeypatch.setattr("sys.argv", ["wave-local-ai-v2-quality"])
+    installed: list[bool] = []
+    monkeypatch.setattr(
+        quality_cli.server, "install_graceful_stop", lambda: installed.append(True)
+    )
+
+    def stopped(**_kwargs: object) -> None:
+        raise quality_cli.server.StopRequested("run stopped by signal 15")
+
+    monkeypatch.setattr(quality_cli, "_run", stopped)
+
+    with pytest.raises(SystemExit) as exc_info:
+        quality_cli.main()
+
+    assert installed == [True]
+    assert exc_info.value.code == 1
+    assert "error: run stopped by signal 15" in capsys.readouterr().err

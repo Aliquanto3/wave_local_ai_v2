@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A run started from the browser streams until its row lands** -- the
+  service gains a demo console, off unless `SERVICE_DEMO_MODE=true` and keyed
+  on every route from loopback too: the options route lists the kinds, the
+  registered suites, the roster entries and the service machine's declared
+  run profiles (`MACHINE_ID`); a run request carries identifiers only, is
+  checked against those sets before anything spawns (another machine's
+  profile is refused), takes the one in-process lock (a second request is
+  refused naming the holder), and launches the unchanged runtime or quality
+  CLI without a shell, the profile's machine and mode in its environment and
+  the service key blanked out of it. Its merged output streams as NDJSON over
+  `fetch`, never a URL-borne key, and ends with the row read back through the
+  existing view route or the exit status and the CLI's own `error:` line.
+  Both CLIs announce their `run_id` as their first stdout line and tear their
+  llama-server down on a graceful stop signal. The dashboard shows a
+  "Console" entry with select-only controls when demo mode is on.
 - **The constrained-output variant runs under a llama.cpp grammar and names
   its mechanism (schema "28")** -- the prompt variant registry gains
   `constrained_output` v1: per task family it applies to, the output format,

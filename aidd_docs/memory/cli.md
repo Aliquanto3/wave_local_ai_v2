@@ -357,6 +357,29 @@ The command-line interface for running benchmarks.
     code change.
   - Plain HTTP. TLS and the browser's own side of the key are a later story in
     this epic — this is not the finished posture.
+  - The demo console (`demo_console.py`), the one non-`GET` surface: off
+    unless `SERVICE_DEMO_MODE=true` (only `true`/`false` parse; anything else
+    refuses start). Every `/api/console/*` route requires `X-API-Key` **from
+    loopback too**, checked before demo mode (off = `403` naming the
+    variable). `GET /api/console/options` lists the kinds, the suite
+    registry's ids, the roster entries and, per entry, the declared run
+    profiles of the service's own machine (`MACHINE_ID`; unset or undeclared
+    = no profile, the absence named). `POST /api/console/runs` takes
+    identifiers only (`kind`, `suite`, `roster_entry_id`, `machine_id`,
+    `compute_mode`), refuses any other field, value, path or shell character
+    and any other machine with no process started, holds one in-process lock
+    (`409` naming the holder), and launches `python -u -m wave_local_ai_v2`
+    or `... .quality_cli --suite <id>` without a shell, with
+    `ROSTER_ENTRY_ID`/`MACHINE_ID`/`COMPUTE_MODE` set from the validated ids
+    and `SERVICE_API_KEY` blanked. `GET /api/console/runs/{launch_id}/stream`
+    is NDJSON (`{"line"}` per merged output line, then one `{"final"}`: the
+    existing view route's payload for the announced `run_id`, or the exit
+    status and the CLI's last `error:` line). Both CLIs print their `run_id`
+    as their first stdout line and unwind through `running_server`'s teardown
+    on `SIGBREAK`/`SIGTERM`; service shutdown stops a running child
+    gracefully (killed after 25 s) before uvicorn drains open connections, so
+    an open stream cannot hold the service up, and a forced exit still stops
+    it.
 
 Both benchmark commands stamp every row they write with a `run_id` and a UTC `captured_at`, so the
 rows of one invocation are selectable back out of the append-only store. The two

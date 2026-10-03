@@ -1,4 +1,5 @@
 import json
+import runpy
 from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -10,7 +11,7 @@ from conftest import mark_prompt
 from store_fixtures import ROSTER_REQUIREMENTS, single_refusal, write_raised_roster
 
 import wave_local_ai_v2
-from wave_local_ai_v2 import FIXED_MAX_TOKENS, FIXED_PROMPT, _run, engines, main
+from wave_local_ai_v2 import FIXED_MAX_TOKENS, FIXED_PROMPT, _run, engines, main, server
 from wave_local_ai_v2.aggregation import AGGREGATION_LABELS
 from wave_local_ai_v2.fiche_registry import read_fiche
 from wave_local_ai_v2.results import read_rows
@@ -1223,3 +1224,41 @@ def test_a_run_below_its_declared_minimum_refuses_before_the_weights_and_any_spa
     assert record["requirement"] == "ram_gb"
     assert record["profile_id"] == f"{DEFAULT_ROSTER_ENTRY_ID}@laptop-mobile-gpu/gpu"
     assert not results_path.exists()
+
+
+def test_run_announces_its_run_id_as_the_first_stdout_line(stubbed_run, capsys) -> None:
+    results_path, _ = stubbed_run
+
+    _run()
+
+    first_line = capsys.readouterr().out.splitlines()[0]
+    assert first_line == read_rows(results_path)[0]["run_id"]
+
+
+def test_main_installs_the_graceful_stop_and_exits_one_when_stopped(
+    monkeypatch, capsys
+) -> None:
+    installed: list[bool] = []
+    monkeypatch.setattr(server, "install_graceful_stop", lambda: installed.append(True))
+
+    def stopped() -> None:
+        raise server.StopRequested("run stopped by signal 21")
+
+    monkeypatch.setattr("wave_local_ai_v2._run", stopped)
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+
+    assert installed == [True]
+    assert exc_info.value.code == 1
+    assert "error: run stopped by signal 21" in capsys.readouterr().err
+
+
+def test_python_dash_m_runs_the_runtime_cli(monkeypatch) -> None:
+    # The entry point the demo console launches (`python -m wave_local_ai_v2`).
+    called: list[bool] = []
+    monkeypatch.setattr(wave_local_ai_v2, "main", lambda: called.append(True))
+
+    runpy.run_module("wave_local_ai_v2", run_name="__main__")
+
+    assert called == [True]

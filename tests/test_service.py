@@ -7,13 +7,22 @@ non-loopback paths are both exercised without monkeypatching anything.
 
 from __future__ import annotations
 
+import ast
 import hashlib
+import json
 import sys
+import textwrap
+import threading
+import time
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
+import httpx
 import pytest
+import uvicorn
+from fastapi import FastAPI
 from starlette.testclient import TestClient
 from store_fixtures import ROSTER_ENTRY_ID, RUN_ID, make_row, write_store
 
@@ -21,7 +30,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 from generate_dev_cert import generate_cert
 
-from wave_local_ai_v2 import read_model, results, roster, row_contract, service
+from wave_local_ai_v2 import (
+    demo_console,
+    read_model,
+    results,
+    roster,
+    row_contract,
+    service,
+    suite_registry,
+)
 from wave_local_ai_v2.settings import ServiceSettings, SettingsError
 
 API_KEY = "a-service-key"  # pragma: allowlist secret
@@ -508,7 +525,7 @@ def test_the_key_appears_in_no_logged_or_printed_record(
     # literal key value is searched for, not inferred from reading the
     # middleware.
     monkeypatch.setattr(service, "load_service_settings", lambda: settings)
-    monkeypatch.setattr(service.uvicorn, "run", lambda *a, **k: None)
+    monkeypatch.setattr(service, "_serve", lambda *a, **k: None)
     caplog.set_level("DEBUG")
 
     assert service.main() == 0
@@ -534,7 +551,7 @@ def test_the_serve_entry_refuses_to_start_without_a_key(
 
     bound: list[Any] = []
     monkeypatch.setattr(service, "load_service_settings", refuse)
-    monkeypatch.setattr(service.uvicorn, "run", lambda *a, **k: bound.append(a))
+    monkeypatch.setattr(service, "_serve", lambda *a, **k: bound.append(a))
 
     exit_code = service.main()
 
@@ -561,7 +578,7 @@ def test_the_serve_entry_refuses_an_unloadable_tls_pair_before_announcing(
         broken = settings
     bound: list[Any] = []
     monkeypatch.setattr(service, "load_service_settings", lambda: broken)
-    monkeypatch.setattr(service.uvicorn, "run", lambda *a, **k: bound.append(a))
+    monkeypatch.setattr(service, "_serve", lambda *a, **k: bound.append(a))
 
     exit_code = service.main()
 
@@ -578,9 +595,7 @@ def test_the_serve_entry_prints_the_address_and_floor_and_never_the_key(
 ) -> None:
     served: list[dict[str, Any]] = []
     monkeypatch.setattr(service, "load_service_settings", lambda: settings)
-    monkeypatch.setattr(
-        service.uvicorn, "run", lambda app, **kwargs: served.append(kwargs)
-    )
+    monkeypatch.setattr(service, "_serve", lambda app, **kwargs: served.append(kwargs))
 
     assert service.main() == 0
 
@@ -612,9 +627,7 @@ def test_the_serve_entry_disables_uvicorns_proxy_header_middleware(
     # be handed the keyless path.
     served: list[dict[str, Any]] = []
     monkeypatch.setattr(service, "load_service_settings", lambda: settings)
-    monkeypatch.setattr(
-        service.uvicorn, "run", lambda app, **kwargs: served.append(kwargs)
-    )
+    monkeypatch.setattr(service, "_serve", lambda app, **kwargs: served.append(kwargs))
 
     service.main()
 
@@ -720,3 +733,556 @@ def test_every_route_still_answers_with_append_row_made_to_raise(
 
     with TestClient(service.create_app(settings), client=LOOPBACK) as client:
         assert client.get(route).status_code == 200
+
+
+# --------------------------------------------------------------------------
+# The demo console
+# --------------------------------------------------------------------------
+
+CONSOLE_OPTIONS = "/api/console/options"
+CONSOLE_MACHINE = "laptop-mobile-gpu"
+QUALITY_SUITE = "classification-support-routing"
+RUNTIME_BODY: dict[str, Any] = {
+    "kind": "runtime",
+    "roster_entry_id": ROSTER_ENTRY_ID,
+    "machine_id": CONSOLE_MACHINE,
+    "compute_mode": "gpu",
+}
+
+
+def demo(settings: ServiceSettings) -> ServiceSettings:
+    """`settings` with demo mode on, on a declared machine."""
+    return replace(settings, demo_mode=True, machine_id=CONSOLE_MACHINE)
+
+
+@pytest.fixture
+def demo_local(settings: ServiceSettings):  # type: ignore[no-untyped-def]
+    demo_console.release()
+    app = service.create_app(demo(settings))
+    with TestClient(app, client=LOOPBACK) as client:
+        yield client
+    demo_console.release()
+
+
+def test_the_console_refuses_a_keyless_loopback_client(demo_local: TestClient) -> None:
+    # Unlike the read routes, loopback is no bypass here.
+    response = demo_local.get(CONSOLE_OPTIONS)
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "missing or invalid X-API-Key"}
+
+
+def test_the_console_refuses_a_wrong_key_from_loopback(demo_local: TestClient) -> None:
+    response = demo_local.get(CONSOLE_OPTIONS, headers={"X-API-Key": "wrong"})
+
+    assert response.status_code == 401
+
+
+def test_the_console_is_a_403_naming_the_variable_when_demo_mode_is_off(
+    local: TestClient,
+) -> None:
+    response = local.get(CONSOLE_OPTIONS, headers={"X-API-Key": API_KEY})
+
+    assert response.status_code == 403
+    assert "SERVICE_DEMO_MODE" in response.json()["detail"]
+
+
+def test_a_keyless_request_is_a_401_even_when_demo_mode_is_off(
+    local: TestClient,
+) -> None:
+    # The key gate runs first: demo mode's state is not observable keyless.
+    assert local.get(CONSOLE_OPTIONS).status_code == 401
+
+
+def test_the_console_options_answer_the_declared_sets(demo_local: TestClient) -> None:
+    response = demo_local.get(CONSOLE_OPTIONS, headers={"X-API-Key": API_KEY})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["kinds"] == ["runtime", "quality"]
+    assert body["suites"] == suite_registry.registered_ids()
+    assert body["roster_entries"] == [ROSTER_ENTRY_ID]
+    assert body["machine_id"] == CONSOLE_MACHINE
+    assert {p["compute_mode"] for p in body["profiles"][ROSTER_ENTRY_ID]} == {
+        "gpu",
+        "cpu_only",
+    }
+    assert body["holder"] is None
+
+
+def test_the_console_options_name_the_current_holder(demo_local: TestClient) -> None:
+    demo_console.try_acquire(
+        demo_console.RunHolder(
+            kind="runtime",
+            suite=None,
+            roster_entry_id=ROSTER_ENTRY_ID,
+            profile_id="p",
+            started_at="2026-09-24T10:00:00+00:00",
+        )
+    )
+
+    body = demo_local.get(CONSOLE_OPTIONS, headers={"X-API-Key": API_KEY}).json()
+
+    assert body["holder"]["kind"] == "runtime"
+    assert body["holder"]["roster_entry_id"] == ROSTER_ENTRY_ID
+
+
+def test_an_unreadable_roster_is_a_named_503_not_a_crash(
+    settings: ServiceSettings, tmp_path: Path
+) -> None:
+    broken = replace(demo(settings), roster_path=tmp_path / "missing-roster.json")
+    with TestClient(service.create_app(broken), client=LOOPBACK) as client:
+        response = client.get(CONSOLE_OPTIONS, headers={"X-API-Key": API_KEY})
+
+    assert response.status_code == 503
+    assert "missing-roster.json" in response.json()["detail"]
+
+
+CONSOLE_RUNS = "/api/console/runs"
+KEYED = {"X-API-Key": API_KEY}
+STUB_RUN_ID = "0123456789abcdef0123456789abcdef"
+
+
+def stub_cli(monkeypatch, code: str) -> None:
+    """Make the console launch `python -c code` in place of the real CLI."""
+    monkeypatch.setattr(
+        demo_console,
+        "command_for",
+        lambda _request: ([sys.executable, "-u", "-c", textwrap.dedent(code)], {}),
+    )
+
+
+def ndjson(text: str) -> list[dict[str, Any]]:
+    return [json.loads(line) for line in text.splitlines()]
+
+
+def test_a_console_run_streams_its_lines_then_its_exit(
+    demo_local: TestClient, monkeypatch
+) -> None:
+    stub_cli(monkeypatch, f'print("{STUB_RUN_ID}"); print("working")')
+
+    started = demo_local.post(
+        CONSOLE_RUNS,
+        json=RUNTIME_BODY,
+        headers=KEYED,
+    )
+    assert started.status_code == 200
+    launch_id = started.json()["launch_id"]
+
+    events = ndjson(
+        demo_local.get(f"{CONSOLE_RUNS}/{launch_id}/stream", headers=KEYED).text
+    )
+
+    assert events[:2] == [{"line": STUB_RUN_ID}, {"line": "working"}]
+    assert events[-1]["final"]["exit_code"] == 0
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {**RUNTIME_BODY, "shell": "yes"},
+        {**RUNTIME_BODY, "kind": "quality", "suite": "bogus"},
+        {**RUNTIME_BODY, "roster_entry_id": "a|b"},
+        {**RUNTIME_BODY, "machine_id": "tower-desktop-gpu"},
+        {**RUNTIME_BODY, "compute_mode": "gpu; calc"},
+        "runtime",
+    ],
+)
+def test_a_console_request_outside_the_declared_sets_is_a_422_with_no_spawn(
+    demo_local: TestClient, monkeypatch, body: object
+) -> None:
+    spawned: list[object] = []
+    monkeypatch.setattr(
+        demo_console.subprocess, "Popen", lambda *a, **k: spawned.append(a)
+    )
+
+    response = demo_local.post(CONSOLE_RUNS, json=body, headers=KEYED)
+
+    assert response.status_code == 422
+    assert spawned == []
+    assert demo_console.current_holder() is None
+
+
+def test_a_second_run_is_refused_naming_the_first_and_spawns_nothing(
+    demo_local: TestClient, monkeypatch
+) -> None:
+    holder = demo_console.RunHolder(
+        kind="quality",
+        suite=QUALITY_SUITE,
+        roster_entry_id=ROSTER_ENTRY_ID,
+        profile_id=f"{ROSTER_ENTRY_ID}@{CONSOLE_MACHINE}/gpu",
+        started_at="2026-09-24T10:00:00+00:00",
+    )
+    demo_console.try_acquire(holder)
+    demo_console.record_run_id(STUB_RUN_ID)
+    spawned: list[object] = []
+    monkeypatch.setattr(
+        demo_console.subprocess, "Popen", lambda *a, **k: spawned.append(a)
+    )
+
+    response = demo_local.post(
+        CONSOLE_RUNS,
+        json=RUNTIME_BODY,
+        headers=KEYED,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["holder"] == {
+        "kind": "quality",
+        "suite": QUALITY_SUITE,
+        "roster_entry_id": ROSTER_ENTRY_ID,
+        "profile_id": f"{ROSTER_ENTRY_ID}@{CONSOLE_MACHINE}/gpu",
+        "started_at": "2026-09-24T10:00:00+00:00",
+        "run_id": STUB_RUN_ID,
+    }
+    assert spawned == []
+
+
+def test_a_launch_failure_frees_the_console_and_names_the_cause(
+    demo_local: TestClient, monkeypatch
+) -> None:
+    def cannot_start(*_args: object, **_kwargs: object) -> None:
+        raise FileNotFoundError("no such interpreter")
+
+    monkeypatch.setattr(demo_console.subprocess, "Popen", cannot_start)
+
+    response = demo_local.post(
+        CONSOLE_RUNS,
+        json=RUNTIME_BODY,
+        headers=KEYED,
+    )
+
+    assert response.status_code == 500
+    assert "no such interpreter" in response.json()["detail"]
+    assert demo_console.current_holder() is None
+
+
+def test_an_unknown_launch_id_is_a_404(demo_local: TestClient) -> None:
+    response = demo_local.get(f"{CONSOLE_RUNS}/nope/stream", headers=KEYED)
+
+    assert response.status_code == 404
+
+
+def test_the_run_routes_are_keyed_and_demo_gated_too(
+    local: TestClient, demo_local: TestClient
+) -> None:
+    body = RUNTIME_BODY
+
+    assert demo_local.post(CONSOLE_RUNS, json=body).status_code == 401
+    assert demo_local.get(f"{CONSOLE_RUNS}/x/stream").status_code == 401
+    assert local.post(CONSOLE_RUNS, json=body, headers=KEYED).status_code == 403
+
+
+def test_shutting_the_service_down_stops_a_running_child(
+    settings: ServiceSettings, monkeypatch
+) -> None:
+    demo_console.release()
+    stub_cli(monkeypatch, "import time; print('up'); time.sleep(60)")
+    stopped: list[int] = []
+    real_stop_child = demo_console.stop_child
+
+    def spy(process: Any) -> None:
+        stopped.append(process.pid)
+        real_stop_child(process)
+
+    monkeypatch.setattr(demo_console, "stop_child", spy)
+
+    app = service.create_app(demo(settings))
+    with TestClient(app, client=LOOPBACK) as client:
+        response = client.post(
+            CONSOLE_RUNS,
+            json=RUNTIME_BODY,
+            headers=KEYED,
+        )
+        assert response.status_code == 200
+
+    assert len(stopped) == 1
+    demo_console.release()
+
+
+def test_the_stream_reaches_a_real_http_client_line_by_line(
+    settings: ServiceSettings, monkeypatch
+) -> None:
+    # A real uvicorn over a real socket: `TestClient` collects the whole body
+    # before returning it, so it cannot tell a streamed response from a
+    # buffered one.
+    demo_console.release()
+    stub_cli(
+        monkeypatch,
+        f"""
+        import time
+        print("{STUB_RUN_ID}")
+        time.sleep(1.5)
+        print("after the pause")
+        """,
+    )
+    config = uvicorn.Config(
+        service.create_app(demo(settings)),
+        host="127.0.0.1",
+        port=0,
+        log_level="warning",
+    )
+    server = uvicorn.Server(config)
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    try:
+        deadline = time.monotonic() + 10
+        while not server.started and time.monotonic() < deadline:
+            time.sleep(0.05)
+        port = server.servers[0].sockets[0].getsockname()[1]
+        base = f"http://127.0.0.1:{port}"
+        with httpx.Client(base_url=base, headers=KEYED) as client:
+            launch_id = client.post(
+                CONSOLE_RUNS,
+                json=RUNTIME_BODY,
+            ).json()["launch_id"]
+            arrivals: list[tuple[dict[str, Any], float]] = []
+            with client.stream("GET", f"{CONSOLE_RUNS}/{launch_id}/stream") as stream:
+                for line in stream.iter_lines():
+                    arrivals.append((json.loads(line), time.monotonic()))
+    finally:
+        server.should_exit = True
+        thread.join(timeout=10)
+        demo_console.release()
+
+    assert [event for event, _ in arrivals][:2] == [
+        {"line": STUB_RUN_ID},
+        {"line": "after the pause"},
+    ]
+    assert arrivals[1][1] - arrivals[0][1] > 1.0
+
+
+def run_to_final(client: TestClient, body: dict[str, Any]) -> dict[str, Any]:
+    launch_id = client.post(CONSOLE_RUNS, json=body, headers=KEYED).json()["launch_id"]
+    events = ndjson(
+        client.get(f"{CONSOLE_RUNS}/{launch_id}/stream", headers=KEYED).text
+    )
+    final: dict[str, Any] = events[-1]["final"]
+    return final
+
+
+@pytest.mark.parametrize("kind", ["runtime", "quality"])
+def test_a_landed_rows_final_event_is_the_existing_view_route_payload(
+    demo_local: TestClient, settings: ServiceSettings, monkeypatch, kind: str
+) -> None:
+    store = (
+        settings.runtime_results_path
+        if kind == "runtime"
+        else settings.quality_results_path
+    )
+    write_store(store, [make_row(kind), make_row(kind, run_id=STUB_RUN_ID)])
+    stub_cli(monkeypatch, f'print("{STUB_RUN_ID}")')
+    body: dict[str, Any] = {**RUNTIME_BODY, "kind": kind}
+    if kind == "quality":
+        body["suite"] = QUALITY_SUITE
+
+    final = run_to_final(demo_local, body)
+
+    route_payload = demo_local.get(f"/api/runs/{STUB_RUN_ID}/{kind}").json()
+    assert final["ok"] is True
+    assert final["run_id"] == STUB_RUN_ID
+    assert json.dumps(final["view"]) == json.dumps(route_payload)
+
+
+def test_exit_zero_without_a_landed_row_surfaces_the_routes_404_detail(
+    demo_local: TestClient, monkeypatch
+) -> None:
+    stub_cli(monkeypatch, f'print("{STUB_RUN_ID}")')
+
+    final = run_to_final(demo_local, RUNTIME_BODY)
+
+    route = demo_local.get(f"/api/runs/{STUB_RUN_ID}/runtime")
+    assert route.status_code == 404
+    assert final["ok"] is False
+    assert final["view"] is None
+    assert final["missing"] == route.json()["detail"]
+
+
+def test_a_failed_runs_final_event_carries_its_exit_code_and_error_line(
+    demo_local: TestClient, monkeypatch
+) -> None:
+    stub_cli(
+        monkeypatch,
+        f"""
+        import sys
+        print("{STUB_RUN_ID}")
+        print("error: disk full", file=sys.stderr)
+        sys.exit(3)
+        """,
+    )
+
+    final = run_to_final(demo_local, RUNTIME_BODY)
+
+    assert final["exit_code"] == 3
+    assert final["error_line"] == "error: disk full"
+    assert final["view"] is None
+
+
+# Write-mode markers for `open()`/`Path.open()`: any of these in a mode string.
+WRITE_MODE_CHARS = set("wax+")
+WRITE_METHODS = {"write_text", "write_bytes"}
+WRITERS = {"append_row", "write_fiche"}
+
+
+def write_paths_in(module_path: Path) -> list[str]:
+    """Every writer reference or write-mode open in one module's source."""
+    found: list[str] = []
+    for node in ast.walk(ast.parse(module_path.read_text(encoding="utf-8"))):
+        if isinstance(node, ast.Name) and node.id in WRITERS:
+            found.append(f"name {node.id}")
+        elif isinstance(node, ast.Attribute) and node.attr in WRITERS | WRITE_METHODS:
+            found.append(f"attribute {node.attr}")
+        elif (
+            isinstance(node, ast.ImportFrom)
+            and node.module == "wave_local_ai_v2.results"
+        ):
+            found.append(f"import from results: {[a.name for a in node.names]}")
+        elif isinstance(node, ast.alias) and node.name in WRITERS:
+            found.append(f"import {node.name}")
+        elif isinstance(node, ast.Call):
+            func = node.func
+            name = (
+                func.id if isinstance(func, ast.Name) else getattr(func, "attr", None)
+            )
+            if name != "open":
+                continue
+            modes = [
+                arg.value
+                for arg in [
+                    *node.args[1:],
+                    *(k.value for k in node.keywords if k.arg == "mode"),
+                ]
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, str)
+            ]
+            if any(WRITE_MODE_CHARS & set(mode) for mode in modes):
+                found.append(f"open in mode {modes}")
+    return found
+
+
+def test_no_console_module_reaches_a_writer_or_opens_a_file_for_writing() -> None:
+    package = Path(service.__file__).parent
+
+    for module in ("demo_console.py", "service.py"):
+        assert write_paths_in(package / module) == [], module
+
+
+def test_the_structural_scan_would_catch_a_writer(tmp_path: Path) -> None:
+    # The scan itself must bite, or the test above proves nothing.
+    source = (
+        "from wave_local_ai_v2.results import append_row\n"
+        "open(path, 'a')\n"
+        "path.write_text('x')\n"
+    )
+    probe = tmp_path / "probe.py"
+    probe.write_text(source, encoding="utf-8")
+
+    found = write_paths_in(probe)
+
+    assert len(found) == 4
+
+
+@pytest.mark.parametrize("method", ["get", "post"])
+def test_an_unreadable_machine_registry_is_a_named_503_with_no_spawn(
+    settings: ServiceSettings, tmp_path: Path, monkeypatch, method: str
+) -> None:
+    spawned: list[object] = []
+    monkeypatch.setattr(
+        demo_console.subprocess, "Popen", lambda *a, **k: spawned.append(a)
+    )
+    broken = replace(demo(settings), machine_registry_path=tmp_path / "gone.json")
+    with TestClient(service.create_app(broken), client=LOOPBACK) as client:
+        if method == "get":
+            response = client.get(CONSOLE_OPTIONS, headers=KEYED)
+        else:
+            response = client.post(CONSOLE_RUNS, json=RUNTIME_BODY, headers=KEYED)
+
+    assert response.status_code == 503
+    assert "gone.json" in response.json()["detail"]
+    assert spawned == []
+
+
+def test_stopping_the_service_with_a_stream_open_stops_the_child_first(
+    settings: ServiceSettings, monkeypatch
+) -> None:
+    # A real uvicorn: its own `shutdown` drains open connections before the
+    # lifespan event, so a stream held open by a browser would otherwise keep
+    # the service, and the child, alive for the whole run.
+    demo_console.release()
+    stub_cli(monkeypatch, "import time; print('up', flush=True); time.sleep(60)")
+    app = service.create_app(demo(settings))
+    server = service._ConsoleStoppingServer(
+        uvicorn.Config(app, host="127.0.0.1", port=0, log_level="warning"), app
+    )
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    streamed: list[str] = []
+    try:
+        deadline = time.monotonic() + 10
+        while not server.started and time.monotonic() < deadline:
+            time.sleep(0.05)
+        port = server.servers[0].sockets[0].getsockname()[1]
+        with httpx.Client(
+            base_url=f"http://127.0.0.1:{port}", headers=KEYED, timeout=30
+        ) as client:
+            launch_id = client.post(CONSOLE_RUNS, json=RUNTIME_BODY).json()["launch_id"]
+            [run] = app.state.console_runs.values()
+            with client.stream("GET", f"{CONSOLE_RUNS}/{launch_id}/stream") as stream:
+                lines = stream.iter_lines()
+                streamed.append(next(lines))
+                stopped_at = time.monotonic()
+                server.should_exit = True
+                streamed.extend(lines)
+            thread.join(timeout=20)
+            elapsed = time.monotonic() - stopped_at
+    finally:
+        server.should_exit = True
+        thread.join(timeout=20)
+        demo_console.release()
+
+    assert json.loads(streamed[0]) == {"line": "up"}
+    assert run.process.poll() is not None
+    assert json.loads(streamed[-1])["final"]["exit_code"] != 0
+    assert not thread.is_alive()
+    assert elapsed < 20
+
+
+class _FakeProcess:
+    pid = 0
+
+
+def _app_with_a_run(monkeypatch) -> tuple[FastAPI, list[object]]:
+    app = FastAPI()
+    run = SimpleNamespace(process=_FakeProcess())
+    app.state.console_runs = {"L1": run}
+    stopped: list[object] = []
+    monkeypatch.setattr(demo_console, "stop_child", stopped.append)
+    return app, stopped
+
+
+def test_the_serve_entry_stops_a_child_on_a_forced_exit_too(monkeypatch) -> None:
+    # A second Ctrl+C sets `force_exit`, which skips the lifespan event; the
+    # serve entry's `finally` still stops the child.
+    app, stopped = _app_with_a_run(monkeypatch)
+
+    def forced(self: uvicorn.Server, sockets: object = None) -> None:
+        self.started = True
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(service._ConsoleStoppingServer, "run", forced)
+
+    service._serve(app, host="127.0.0.1", port=0)
+
+    assert stopped == [app.state.console_runs["L1"].process]
+
+
+def test_the_serve_entry_exits_with_uvicorns_startup_failure_code(
+    monkeypatch,
+) -> None:
+    app, stopped = _app_with_a_run(monkeypatch)
+    monkeypatch.setattr(service._ConsoleStoppingServer, "run", lambda self: None)
+
+    with pytest.raises(SystemExit) as exc_info:
+        service._serve(app, host="127.0.0.1", port=0)
+
+    assert exc_info.value.code == 3
+    assert len(stopped) == 1

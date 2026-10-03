@@ -715,6 +715,8 @@ SERVICE_ENV_VARS = (
     "DASHBOARD_ORIGIN",
     "SERVICE_TLS_CERTFILE",
     "SERVICE_TLS_KEYFILE",
+    "SERVICE_DEMO_MODE",
+    "MACHINE_ID",
 )
 
 
@@ -894,6 +896,51 @@ def test_load_service_settings_refuses_a_non_integer_schema_floor(
 
     with pytest.raises(SettingsError, match="SERVICE_SCHEMA_FLOOR"):
         load_service_settings()
+
+
+def test_load_service_settings_leaves_demo_mode_off_when_unset(
+    monkeypatch, _clean_service_env: None, _tls_env: tuple[Path, Path]
+) -> None:
+    monkeypatch.setenv("SERVICE_API_KEY", "a-key")  # pragma: allowlist secret
+
+    settings = load_service_settings()
+
+    assert settings.demo_mode is False
+    assert settings.machine_id is None
+
+
+@pytest.mark.parametrize(("value", "expected"), [("true", True), ("false", False)])
+def test_load_service_settings_reads_the_two_demo_mode_literals(
+    monkeypatch,
+    _clean_service_env: None,
+    _tls_env: tuple[Path, Path],
+    value: str,
+    expected: bool,
+) -> None:
+    monkeypatch.setenv("SERVICE_API_KEY", "a-key")  # pragma: allowlist secret
+    monkeypatch.setenv("SERVICE_DEMO_MODE", value)
+
+    assert load_service_settings().demo_mode is expected
+
+
+@pytest.mark.parametrize("value", ["maybe", "True", "1", "yes", ""])
+def test_load_service_settings_refuses_any_other_demo_mode_value(
+    monkeypatch, _clean_service_env: None, _tls_env: tuple[Path, Path], value: str
+) -> None:
+    monkeypatch.setenv("SERVICE_API_KEY", "a-key")  # pragma: allowlist secret
+    monkeypatch.setenv("SERVICE_DEMO_MODE", value)
+
+    with pytest.raises(SettingsError, match="SERVICE_DEMO_MODE"):
+        load_service_settings()
+
+
+def test_load_service_settings_reads_the_service_machine_raw(
+    monkeypatch, _clean_service_env: None, _tls_env: tuple[Path, Path]
+) -> None:
+    monkeypatch.setenv("SERVICE_API_KEY", "a-key")  # pragma: allowlist secret
+    monkeypatch.setenv("MACHINE_ID", "laptop-mobile-gpu")
+
+    assert load_service_settings().machine_id == "laptop-mobile-gpu"
 
 
 def test_service_settings_repr_omits_the_api_key(tmp_path: Path) -> None:

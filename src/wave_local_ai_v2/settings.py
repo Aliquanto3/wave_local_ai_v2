@@ -140,6 +140,14 @@ DEFAULT_DASHBOARD_BUNDLE_DIR = "frontend/dist"
 # dashboard's own origin and the service's bound address are the same fact
 # and must not be able to drift apart.
 
+# The demo run console (`/api/console/*`) is off unless explicitly, exactly
+# turned on: it is the one surface through which a browser can start a CLI
+# run on this machine. Only these two literals are read; anything else
+# (`True`, `1`, `yes`, an empty value) is a SettingsError naming the
+# variable, never a guess in either direction.
+DEFAULT_SERVICE_DEMO_MODE = False
+_DEMO_MODE_VALUES = {"true": True, "false": False}
+
 
 class SettingsError(RuntimeError):
     """Raised when required configuration is missing or invalid."""
@@ -264,6 +272,12 @@ class ServiceSettings:
     # The declared machine registry a runtime row's `machine_id` resolves
     # against: the tracked file, the same one the run CLIs check rows against.
     machine_registry_path: Path = Path(machines.DEFAULT_REGISTRY_PATH)
+    demo_mode: bool = DEFAULT_SERVICE_DEMO_MODE
+    # The machine this service runs on, as `MACHINE_ID` names it, or `None`.
+    # Read raw and never required: the read routes need no machine. The demo
+    # console offers only this machine's run profiles and checks it against
+    # the registry itself, so a run is never launched under another machine.
+    machine_id: str | None = None
 
 
 def load_service_settings() -> ServiceSettings:
@@ -334,7 +348,25 @@ def load_service_settings() -> ServiceSettings:
         dashboard_origin=os.environ.get("DASHBOARD_ORIGIN", f"https://{host}:{port}"),
         tls_certfile=_require_existing_path("SERVICE_TLS_CERTFILE"),
         tls_keyfile=_require_existing_path("SERVICE_TLS_KEYFILE"),
+        demo_mode=_parse_demo_mode(os.environ.get("SERVICE_DEMO_MODE")),
+        machine_id=os.environ.get("MACHINE_ID") or None,
     )
+
+
+def _parse_demo_mode(raw: str | None) -> bool:
+    """Read `SERVICE_DEMO_MODE`: unset is off, and only `true`/`false` parse.
+
+    Case-sensitive on purpose: a strict parser accepting one spelling cannot
+    read a typo as either state.
+    """
+    if raw is None:
+        return DEFAULT_SERVICE_DEMO_MODE
+    if raw not in _DEMO_MODE_VALUES:
+        raise SettingsError(
+            f"SERVICE_DEMO_MODE={raw!r} is not recognised: must be exactly "
+            "'true' or 'false', or unset (off)"
+        )
+    return _DEMO_MODE_VALUES[raw]
 
 
 def fiche_registry_dir_from_env() -> Path:

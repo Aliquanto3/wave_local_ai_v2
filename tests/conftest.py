@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import signal
+import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -12,6 +15,19 @@ from store_fixtures import build_bundle
 def bundle(tmp_path: Path) -> dict[str, Path]:
     """A self-contained store + fiche registry + roster + suite dir on disk."""
     return build_bundle(tmp_path)
+
+
+@pytest.fixture(autouse=True)
+def _restore_graceful_stop_handler() -> Iterator[None]:
+    """Undo a CLI `main()`'s `server.install_graceful_stop()` after each test.
+
+    Without this, one test calling a real `main()` would leave the pytest
+    process itself turning SIGTERM/SIGBREAK into `StopRequested`.
+    """
+    stop_signal = signal.SIGBREAK if sys.platform == "win32" else signal.SIGTERM
+    previous = signal.getsignal(stop_signal)
+    yield
+    signal.signal(stop_signal, previous)
 
 
 MARKING_VARIANT_ID = "test_marking"

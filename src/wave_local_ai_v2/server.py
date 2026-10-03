@@ -220,7 +220,20 @@ def _spawn_and_wait_ready(
     process = subprocess.Popen(  # type: ignore[call-overload]
         [str(server_path), *flags], **popen_kwargs
     )
+    # `running_server`'s teardown only covers a process `start_server` has
+    # returned. A stop signal (`StopRequested`, a Ctrl+C) landing during this
+    # readiness wait -- a large model loads for tens of seconds -- would
+    # otherwise orphan the child still holding the port.
+    try:
+        return _wait_ready(process, stderr_file, health_url)
+    except BaseException:
+        stop_server(process)
+        raise
 
+
+def _wait_ready(
+    process: subprocess.Popen[bytes], stderr_file: IO[bytes], health_url: str
+) -> subprocess.Popen[bytes]:
     deadline = time.monotonic() + READY_TIMEOUT_S
     while time.monotonic() < deadline:
         if process.poll() is not None:
@@ -236,11 +249,38 @@ def _spawn_and_wait_ready(
             pass
         time.sleep(READY_POLL_INTERVAL_S)
 
-    stop_server(process)
     raise ServerStartupError(
         f"llama-server did not become ready within {READY_TIMEOUT_S}s: "
         f"{_read_stderr_tail(stderr_file)}"
     )
+
+
+class StopRequested(BaseException):
+    """Raised in a CLI when its launcher asks it to stop gracefully.
+
+    A `BaseException`, like `KeyboardInterrupt`: an operator (or the demo
+    console) ending the run is not the server failing, so `running_server`'s
+    `except Exception` diagnostics do not fire, while its `finally` still
+    stops llama-server.
+    """
+
+
+def install_graceful_stop() -> None:
+    """Turn the platform's graceful stop signal into `StopRequested`.
+
+    `SIGBREAK` on Windows (what `CTRL_BREAK_EVENT` delivers, the signal
+    `stop_server` itself sends) and `SIGTERM` elsewhere. Without a handler a
+    Windows child receiving `CTRL_BREAK_EVENT` is terminated outright, no
+    `finally` runs, and its llama-server is orphaned. With it the run unwinds
+    through `running_server`'s teardown -- once the current blocking call (a
+    cooldown `time.sleep`, an HTTP request) returns, not at delivery time.
+    """
+    stop_signal = signal.SIGBREAK if sys.platform == "win32" else signal.SIGTERM
+
+    def _raise(signum: int, _frame: object) -> None:
+        raise StopRequested(f"run stopped by signal {signum}")
+
+    signal.signal(stop_signal, _raise)
 
 
 def stop_server(process: subprocess.Popen[bytes]) -> None:

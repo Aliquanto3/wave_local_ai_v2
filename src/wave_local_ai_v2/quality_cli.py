@@ -241,6 +241,7 @@ def _prompt_variant_ref(value: str) -> tuple[str, str | None]:
 
 def main() -> None:
     args = _parse_args()
+    server.install_graceful_stop()
     try:
         _run(
             resume_run_id=args.resume,
@@ -248,6 +249,7 @@ def main() -> None:
             prompt_variant_ref=args.prompt_variant,
         )
     except (
+        server.StopRequested,
         SettingsError,
         server.ServerStartupError,
         # requests.RequestException subclasses OSError, so every HTTP failure is
@@ -299,6 +301,9 @@ def _run(
     # invocation's id instead of minting a fresh one, so a provider's rows
     # from that earlier invocation are recognizable as the same run.
     run_id = resume_run_id or new_run_id()
+    # The first stdout line, flushed: a piped launcher (the demo console)
+    # reads it to find this run's rows once the run lands.
+    print(run_id, flush=True)
     is_resume = resume_run_id is not None
     provenance_fields = provenance.capture_provenance()
     # Loaded once per run, not once per row: raises before any HTTP call is made.
@@ -1513,3 +1518,7 @@ def _headline(batch_score_fields: dict[str, Any]) -> str:
     if accuracy is not None:
         return f"accuracy={accuracy:.2f}"
     return f"suite_score={batch_score_fields['suite_score']:.2f}"
+
+
+if __name__ == "__main__":  # pragma: no cover
+    main()
