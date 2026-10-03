@@ -37,12 +37,14 @@ def test_snapshot_carries_the_registered_suites_identity() -> None:
 def test_snapshot_publishes_exactly_the_keys_it_always_published() -> None:
     # The scoring-rule name and task_suite are definition fields, never
     # snapshot fields: exporting them would rewrite every committed file.
-    # `level` joined with the version bump that declared it.
+    # `level` joined with the version bump that declared it, and
+    # `divergence_tolerance` with the next one.
     for snapshot in all_snapshots():
         assert set(snapshot) == {
             "suite_id",
             "suite_version",
             "level",
+            "divergence_tolerance",
             "prompt_set_hash",
             "max_output_tokens",
             "stop_sequences",

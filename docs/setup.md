@@ -582,6 +582,20 @@ neither, so it never matches a current run.
 Point `RUNTIME_REFERENCE_PATH` at an empty or absent file to opt out: that
 is `not_comparable`, not a failure.
 
+A quality batch is decided per item against the matching reference batch.
+A `local` subject must reproduce every item's `predicted_label` (or
+`item_score`) exactly. A cloud subject (`mistral`, `google`) is decided under
+its suite's declared `divergence_tolerance` (`suite_data/<suite_id>.json`:
+value, unit `fraction_of_items`, and the reason for the value): `reproduced`
+while the share of diverging items stays within it, `not_reproduced` beyond
+it, and the block's `differing_fields` names the diverging items either way.
+From row schema "29" the block also names `subject_rule` (`identical` or
+`within_tolerance`), the `tolerance` with the `suite_id`/`suite_version` that
+declared it, the observed `divergence`, and `single_run_indicative`: a cloud
+batch sent with no seed is marked `no_seed` and is `not_comparable`, never
+`not_reproduced`; a cloud model whose dated id is no longer served is named
+`model_not_served` on stderr when its pre-flight is refused.
+
 **4.3 — second run, set `MISTRAL_API_KEY` and `GOOGLE_API_KEY` first:**
 
 ```sh

@@ -281,6 +281,20 @@ SUITE_VERSION = "1"
 # two published `prompt_set_hash` values are comparable because one function
 # produced both.
 PROMPT_SET_HASH = suite_registry.prompt_set_hash(JUDGE_PROBE_ITEMS)
+# Every quality suite declares the divergence tolerance its cloud subjects'
+# re-runs are decided under, the probe included, and the gate checks it. No
+# probe re-run is ever decided under it: every probe verdict is
+# not_comparable, since the probe publishes no label and no score.
+DIVERGENCE_TOLERANCE = suite_gate.gate_divergence_tolerance(
+    {
+        "value": 0.0,
+        "unit": suite_gate.TOLERANCE_UNIT_FRACTION_OF_ITEMS,
+        "reason": "Never applied: the probe publishes no label and no score, so "
+        "every probe verdict is not_comparable and no re-run of it is decided "
+        "under a tolerance. Declared at the strictest value because every "
+        "quality suite declares one.",
+    }
+)
 # Open-ended prose, not a one-word label: 32 tokens (the classification
 # suite's cap) would truncate every single answer.
 MAX_OUTPUT_TOKENS = 256
@@ -1027,6 +1041,17 @@ def _build_row(
             "reference_run_id": None,
             "differing_fields": [],
             "reason": _VERDICT_NOT_COMPARABLE_REASON,
+            **verdict.subject_rule_fields(
+                provider,
+                verdict.DecidingTolerance(
+                    value=DIVERGENCE_TOLERANCE["value"],
+                    unit=DIVERGENCE_TOLERANCE["unit"],
+                    suite_id=SUITE_ID,
+                    suite_version=SUITE_VERSION,
+                ),
+            ),
+            "divergence": None,
+            "single_run_indicative": None,
         },
         **judge_block,
         "subject_output": subject_output,

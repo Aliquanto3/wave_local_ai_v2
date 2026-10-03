@@ -93,6 +93,11 @@ def drawn_definition(seed: int = 7) -> tuple[dict[str, Any], list[dict[str, Any]
         "context_length": 2048,
         "thinking_policy": "disabled",
         "level": "publication",
+        "divergence_tolerance": {
+            "value": 0.1,
+            "unit": "fraction_of_items",
+            "reason": "Fixture tolerance.",
+        },
         "size_target": 100,
         "size_target_reason": SIZE_TARGET_REASON,
         "selection_rule": rule,

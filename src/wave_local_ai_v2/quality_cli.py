@@ -621,6 +621,17 @@ def _google_batch(
 # item (the pre-flight) one skips the provider; mid-batch it stops the batch
 # at the item it failed on, and the items already answered are written as a
 # partial batch -- never discarded, never aborting the run.
+# The names a seed travels under in a request's sampling: `seed` (llama.cpp,
+# Google), `random_seed` (Mistral).
+_SEED_KEYS = ("seed", "random_seed")
+
+# The pre-flight refusals that mean the subject's dated model id is no longer
+# served: its published batches can never be re-run (Methodology 8).
+_MODEL_NOT_SERVED: tuple[type[Exception], ...] = (
+    mistral_client.ModelUnavailableError,
+    google_client.ModelUnavailableError,
+)
+
 _PROVIDER_FAILURES: tuple[type[Exception], ...] = (
     MistralRequestError,
     google_client.GoogleRequestError,
@@ -820,6 +831,15 @@ def _try_run_cloud_provider(
     except _PROVIDER_FAILURES as exc:
         # The pre-flight: nothing was answered, nothing is written.
         print(f"{provider} skipped: {exc}", file=sys.stderr)
+        if isinstance(exc, _MODEL_NOT_SERVED):
+            # No row exists to carry the mark, so it is stated here: a
+            # published batch of this model can no longer be re-run.
+            print(
+                f"{provider}: a published batch of this model is single-run "
+                f"indicative ({verdict.RERUN_MODEL_NOT_SERVED}): it cannot be "
+                "re-run, so it is never not_reproduced",
+                file=sys.stderr,
+            )
         return
 
     failure = batch["failure"]
@@ -1493,7 +1513,20 @@ def _score_and_write(
         for row in results.read_rows(settings.quality_reference_path)
         if row.get("model_id") == model_id
     ]
-    batch_verdict = verdict.quality_verdict(prior_rows + rows, reference_rows)
+    # A local subject is held to identical output; a cloud one is decided
+    # under the suite's declared tolerance, and a cloud batch sent with no
+    # seed is single-run indicative: no re-run of it can be deterministic.
+    batch_verdict = verdict.quality_verdict(
+        prior_rows + rows,
+        reference_rows,
+        provider=provider,
+        tolerance=_deciding_tolerance(spec),
+        rerun_blocker=(
+            verdict.RERUN_NO_SEED
+            if provider != verdict.LOCAL_PROVIDER and not _carries_seed(sampling)
+            else None
+        ),
+    )
     # Before anything is appended: the interval qualifies the score over the
     # same items, on every row of the batch that publishes one. Rows a
     # partial run wrote before this resume carry no block and stay as written.
@@ -1504,6 +1537,21 @@ def _score_and_write(
 
     if partial_failure is None:
         print(f"model={model_id} provider={provider} {_headline(batch_score_fields)}")
+
+
+def _deciding_tolerance(spec: SuiteDefinition) -> verdict.DecidingTolerance:
+    """The suite's declared tolerance, named with the version that declared it."""
+    return verdict.DecidingTolerance(
+        value=spec.divergence_tolerance["value"],
+        unit=spec.divergence_tolerance["unit"],
+        suite_id=spec.suite_id,
+        suite_version=spec.suite_version,
+    )
+
+
+def _carries_seed(sampling: Mapping[str, Any]) -> bool:
+    """Whether the request carried a seed, under either provider's name."""
+    return any(sampling.get(key) is not None for key in _SEED_KEYS)
 
 
 def _headline(batch_score_fields: dict[str, Any]) -> str:

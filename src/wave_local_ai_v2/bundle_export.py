@@ -301,6 +301,48 @@ _COMMON_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     ("verdict", "compared_field"): FieldDoc(
         "Row field the quality verdict compared item by item.", _ID
     ),
+    ("verdict", "subject_rule"): FieldDoc(
+        "Rule the quality verdict was decided under: identical (local subject) "
+        "or within_tolerance (cloud subject).",
+        _ID,
+    ),
+    ("verdict", "tolerance"): FieldDoc(
+        "Divergence tolerance a cloud quality verdict was decided under.",
+        _JSON_OBJECT,
+        "A local subject, decided on identical output under no tolerance.",
+    ),
+    ("verdict", "tolerance", "value"): FieldDoc(
+        "Largest share of diverging items a cloud re-run may show and still reproduce.",
+        _RATIO,
+        "A local subject, decided on identical output under no tolerance.",
+    ),
+    ("verdict", "tolerance", "unit"): FieldDoc(
+        "Unit of the tolerance value.",
+        _ID,
+        "A local subject, decided on identical output under no tolerance.",
+    ),
+    ("verdict", "tolerance", "suite_id"): FieldDoc(
+        "Suite that declared the tolerance.",
+        _ID,
+        "A local subject, decided on identical output under no tolerance.",
+    ),
+    ("verdict", "tolerance", "suite_version"): FieldDoc(
+        "Suite version that declared the tolerance.",
+        _ID,
+        "A local subject, decided on identical output under no tolerance.",
+    ),
+    ("verdict", "divergence"): FieldDoc(
+        "Observed share of the batch's items whose compared value differed "
+        "from the reference.",
+        _RATIO,
+        "Nothing was compared (verdict not_comparable).",
+    ),
+    ("verdict", "single_run_indicative"): FieldDoc(
+        "Why a cloud batch cannot be re-run deterministically: "
+        "model_not_served or no_seed.",
+        _ID,
+        "The batch can be re-run.",
+    ),
     ("verdict", "gen_tok_per_s_delta"): FieldDoc(
         "Relative difference of gen_tok_per_s from the reference run.", "ratio"
     ),

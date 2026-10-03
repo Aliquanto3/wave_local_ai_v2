@@ -29,6 +29,11 @@ each item's optional `licence`, `source` and `source_revision`. A declared
 `subset_sampler`, which owns what they mean: a rule it could not replay, or
 items that disagree with it, never load.
 
+The `divergence_tolerance` a cloud subject's re-run is decided under is a
+required declaration, checked by `suite_gate.gate_divergence_tolerance` at
+load and held on the definition; it stays in `extra` too, so the snapshot of
+the suite version that declared it publishes it.
+
 `prompt_set_hash` is never declared in the data: it is computed from the
 items at load, so a hand-edited prompt always moves it.
 """
@@ -46,7 +51,7 @@ from types import MappingProxyType
 from typing import Any
 
 from wave_local_ai_v2 import row_contract, scoring_rules, subset_sampler, suite_gate
-from wave_local_ai_v2.suite_gate import SuiteGateResult
+from wave_local_ai_v2.suite_gate import DivergenceTolerance, SuiteGateResult
 
 SUITE_DATA_DIRNAME = "suite_data"
 
@@ -95,6 +100,9 @@ class SuiteDefinition:
     items: tuple[Mapping[str, Any], ...]
     prompt_set_hash: str
     gate: SuiteGateResult
+    # The per-item divergence a cloud subject's re-run is decided under
+    # (`verdict.quality_verdict`), as the gate checked it.
+    divergence_tolerance: DivergenceTolerance
     extra: Mapping[str, Any] = field(default_factory=lambda: MappingProxyType({}))
 
     def score_batch(
@@ -230,6 +238,9 @@ def _definition_from_data(data: dict[str, Any], *, origin: str) -> SuiteDefiniti
         size_target=data.get("size_target"),
         size_target_reason=data.get("size_target_reason"),
     )
+    divergence_tolerance = suite_gate.gate_divergence_tolerance(
+        data.get(suite_gate.DIVERGENCE_TOLERANCE_KEY)
+    )
 
     return SuiteDefinition(
         suite_id=data["suite_id"],
@@ -244,6 +255,7 @@ def _definition_from_data(data: dict[str, Any], *, origin: str) -> SuiteDefiniti
         items=items,
         prompt_set_hash=prompt_set_hash(items),
         gate=gate,
+        divergence_tolerance=divergence_tolerance,
         extra=MappingProxyType(
             {key: value for key, value in data.items() if key not in _CORE_KEYS}
         ),

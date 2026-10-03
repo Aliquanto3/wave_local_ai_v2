@@ -376,6 +376,70 @@ def test_one_verdict_shared_across_every_row_of_one_batch(stubbed_run) -> None:
     assert len(mistral_verdicts) == 1
 
 
+def test_each_batch_verdict_names_its_subject_rule_and_the_suites_tolerance(
+    stubbed_run,
+) -> None:
+    quality_results_path, _ = stubbed_run
+    suite = suite_registry.resolve("classification-support-routing")
+
+    quality_cli._run()
+
+    blocks = {
+        row["provider"]: row["verdict"] for row in read_rows(quality_results_path)
+    }
+    assert blocks["local"]["subject_rule"] == "identical"
+    assert blocks["local"]["tolerance"] is None
+    assert blocks["mistral"]["subject_rule"] == "within_tolerance"
+    assert blocks["mistral"]["tolerance"] == {
+        "value": suite.divergence_tolerance["value"],
+        "unit": suite.divergence_tolerance["unit"],
+        "suite_id": suite.suite_id,
+        "suite_version": suite.suite_version,
+    }
+    assert blocks["mistral"]["single_run_indicative"] is None
+
+
+def test_a_cloud_batch_sent_with_no_seed_is_single_run_indicative(
+    stubbed_run, monkeypatch
+) -> None:
+    quality_results_path, _ = stubbed_run
+    monkeypatch.setattr(quality_cli, "_carries_seed", lambda sampling: False)
+
+    quality_cli._run()
+
+    blocks = {
+        row["provider"]: row["verdict"] for row in read_rows(quality_results_path)
+    }
+    assert blocks["mistral"]["single_run_indicative"] == "no_seed"
+    assert blocks["mistral"]["verdict"] == "not_comparable"
+    # A local subject is never marked: its own seed is not what is asked.
+    assert blocks["local"]["single_run_indicative"] is None
+
+
+@pytest.mark.parametrize(
+    ("sampling", "carries"),
+    [
+        ({"seed": 7}, True),
+        ({"random_seed": 7}, True),
+        ({"temperature": 0}, False),
+        ({"seed": None}, False),
+    ],
+)
+def test_a_seed_is_found_under_either_providers_name(sampling, carries) -> None:
+    assert quality_cli._carries_seed(sampling) is carries
+
+
+def test_a_cloud_model_no_longer_served_is_named_single_run_indicative(
+    stubbed_run, capsys
+) -> None:
+    _, started = stubbed_run
+    started["check_model"].side_effect = ModelUnavailableError("gone")
+
+    quality_cli._run()
+
+    assert "single-run indicative (model_not_served)" in capsys.readouterr().err
+
+
 def test_local_rows_carry_scope_2_energy_emissions_and_a_kwh_derived_cost(
     stubbed_run,
 ) -> None:
@@ -1490,7 +1554,7 @@ def test_every_row_names_its_subjects_family_and_size_class(stubbed_run) -> None
         ("mistral", "mistral", None),
         ("google", "google", None),
     }
-    assert {row["schema_version"] for row in rows} == {"28"}
+    assert {row["schema_version"] for row in rows} == {"29"}
 
 
 def test_every_row_names_direct_its_version_and_its_measured_overhead(
@@ -2169,6 +2233,11 @@ _PUBLICATION_SIZE_DEFINITION = {
     "context_length": 4096,
     "thinking_policy": "disabled",
     "level": "development",
+    "divergence_tolerance": {
+        "value": 0.1,
+        "unit": "fraction_of_items",
+        "reason": "Fixture tolerance.",
+    },
     "items": [
         {
             "item_id": f"hundred-{number:03d}",
@@ -2409,6 +2478,11 @@ _FIXTURE_DEFINITION = {
     "context_length": 4096,
     "thinking_policy": "disabled",
     "level": "development",
+    "divergence_tolerance": {
+        "value": 0.1,
+        "unit": "fraction_of_items",
+        "reason": "Fixture tolerance.",
+    },
     "items": [
         {
             "item_id": f"fixture-{language}",

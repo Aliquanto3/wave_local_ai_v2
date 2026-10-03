@@ -220,7 +220,15 @@ COMPLETE_QUALITY_ROW = {
     "list_price_per_million_tokens": None,
     "list_price_currency": None,
     "list_price_retrieved_at": None,
-    "verdict": {"verdict": "not_comparable", "reference_run_id": None},
+    # A local subject's block: decided on identical output, under no tolerance.
+    "verdict": {
+        "verdict": "not_comparable",
+        "reference_run_id": None,
+        "subject_rule": "identical",
+        "tolerance": None,
+        "divergence": None,
+        "single_run_indicative": None,
+    },
     "task_suite": "classification",
     "item_id": "billing-01",
     "prompt": "hello",
@@ -1120,14 +1128,14 @@ def test_the_schema_version_moved_once_for_the_thinking_policy() -> None:
     # `thinking_policy` is required on every quality row, because a score
     # produced with the subject allowed to reason and one produced without it
     # are not the same measurement and a row has to say which it is.
-    assert SCHEMA_VERSION == "28"
+    assert SCHEMA_VERSION == "29"
 
 
 def test_the_schema_version_moved_for_the_runtime_energy_window() -> None:
     # "12" fixes audit finding C3: the runtime row's energy figures used to
     # span the whole counted-repetition window, cooldowns included. Required
     # only on runtime rows -- quality rows carry no energy window at all.
-    assert SCHEMA_VERSION == "28"
+    assert SCHEMA_VERSION == "29"
     assert {"active_window_s", "idle_window_s", "energy_window_method"} <= (
         REQUIRED_FIELDS["runtime"]
     )
@@ -1140,7 +1148,7 @@ def test_the_schema_version_moved_for_the_judge_call_record_extension() -> None:
     # "13" adds five fields inside each judge call record. Additive inside the
     # conditional judge block: neither row kind's required set moves, so a
     # deterministic quality row validates unchanged.
-    assert SCHEMA_VERSION == "28"
+    assert SCHEMA_VERSION == "29"
     assert set(NEW_JUDGE_RECORD_FIELDS).isdisjoint(REQUIRED_FIELDS["quality"])
     assert set(NEW_JUDGE_RECORD_FIELDS).isdisjoint(JUDGED_FIELDS)
     validate_row("quality", COMPLETE_QUALITY_ROW)
@@ -1150,7 +1158,7 @@ def test_the_schema_version_moved_for_the_prompt_variant() -> None:
     # "14" makes both row kinds name the variant they ran under and carry the
     # prompt as the variant left it. Not conditional: every row ran under some
     # variant, and a row below "14" is never back-filled with `baseline`.
-    assert SCHEMA_VERSION == "28"
+    assert SCHEMA_VERSION == "29"
     for kind in ("runtime", "quality"):
         assert set(PROMPT_VARIANT_FIELDS) <= REQUIRED_FIELDS[kind]
 
@@ -1158,7 +1166,7 @@ def test_the_schema_version_moved_for_the_prompt_variant() -> None:
 def test_the_schema_version_moved_for_the_engine() -> None:
     # "22" makes every row name the engine that produced it and its build,
     # and moves the cited fiche to the projection carrying the engine fields.
-    assert SCHEMA_VERSION == "28"
+    assert SCHEMA_VERSION == "29"
     assert ENGINE_FICHE_SCHEMA_VERSION == "22"
     for kind in ("runtime", "quality"):
         assert {"engine_id", "engine_build"} <= REQUIRED_FIELDS[kind]
@@ -1217,9 +1225,27 @@ _NO_ENGINE = {
 }
 
 
+def _cloud_verdict(row: dict, **changes: object) -> dict:
+    """A cloud subject's verdict block, decided under the row's own suite."""
+    return {
+        "verdict": "reproduced",
+        "reference_run_id": "run-0",
+        "subject_rule": "within_tolerance",
+        "tolerance": {
+            "value": 0.1,
+            "unit": "fraction_of_items",
+            "suite_id": row["suite_id"],
+            "suite_version": row["suite_version"],
+        },
+        "divergence": 0.05,
+        "single_run_indicative": None,
+        **changes,
+    }
+
+
 def _cloud_row(provider: str, **changes: object) -> dict:
     """A complete quality row for a `provider` subject, before `changes`."""
-    return {
+    row = {
         **COMPLETE_QUALITY_ROW,
         "provider": provider,
         "subject_egress": provider,
@@ -1229,6 +1255,9 @@ def _cloud_row(provider: str, **changes: object) -> dict:
         **_NO_ENGINE,
         **changes,
     }
+    if "verdict" not in changes:
+        row["verdict"] = _cloud_verdict(row)
+    return row
 
 
 def test_a_cloud_row_states_the_engine_does_not_apply() -> None:
@@ -1287,7 +1316,7 @@ def test_an_unreadable_engine_registry_refuses_the_row(monkeypatch) -> None:
 def test_the_schema_version_moved_for_the_machine_and_mode() -> None:
     # "23" makes every row name the declared machine and the compute mode,
     # and moves the cited fiche to the projection carrying both.
-    assert SCHEMA_VERSION == "28"
+    assert SCHEMA_VERSION == "29"
     assert MACHINE_FICHE_SCHEMA_VERSION == "23"
     for kind in ("runtime", "quality"):
         assert {"machine_id", "compute_mode"} <= REQUIRED_FIELDS[kind]
@@ -1392,7 +1421,7 @@ def test_the_schema_version_moved_for_the_suite_level() -> None:
     # and its item's licence, source and source revision. Not conditional:
     # every suite is certified at some level. Quality rows only -- a runtime
     # row runs no suite.
-    assert SCHEMA_VERSION == "28"
+    assert SCHEMA_VERSION == "29"
     assert set(SUITE_LEVEL_FIELDS) <= REQUIRED_FIELDS["quality"]
     assert set(SUITE_LEVEL_FIELDS).isdisjoint(REQUIRED_FIELDS["runtime"])
 
@@ -1726,7 +1755,7 @@ def test_a_quality_row_below_28_owes_no_constraint_field() -> None:
 def test_the_schema_version_moved_for_the_subject_egress() -> None:
     # "16" makes every row of either kind state where its subject prompt went.
     # Not conditional: every row was produced by sending a prompt somewhere.
-    assert SCHEMA_VERSION == "28"
+    assert SCHEMA_VERSION == "29"
     for kind in ("runtime", "quality"):
         assert "subject_egress" in REQUIRED_FIELDS[kind]
     # The subject field is not a member of the judge block, and the judge
@@ -1807,6 +1836,7 @@ def test_a_cloud_quality_row_recording_its_provider_validates(provider: str) -> 
             "retry_budget": {provider: 4},
             "family": provider,
             "size_class": None,
+            "verdict": _cloud_verdict(COMPLETE_QUALITY_ROW),
             **_NO_ENGINE,
         },
     )
@@ -1865,7 +1895,7 @@ def test_the_schema_version_moved_for_the_retry_budget_and_partial_batches() -> 
     # "17" makes every quality row name the retry budget its batch ran under
     # and whether that batch was left partial. The runtime row makes no cloud
     # call and has no resume, so it is untouched.
-    assert SCHEMA_VERSION == "28"
+    assert SCHEMA_VERSION == "29"
     for field in ("retry_budget", "partial_failure"):
         assert field in REQUIRED_FIELDS["quality"]
         assert field not in REQUIRED_FIELDS["runtime"]
@@ -1896,6 +1926,7 @@ def test_a_cloud_row_that_does_not_name_its_own_providers_budget_is_refused() ->
         "provider": "mistral",
         "subject_egress": "mistral",
         "retry_budget": {"google": 4},
+        "verdict": _cloud_verdict(COMPLETE_QUALITY_ROW),
         **_NO_ENGINE,
     }
 
@@ -1910,6 +1941,7 @@ def test_a_row_whose_retries_exceed_its_providers_budget_is_refused() -> None:
         "subject_egress": "google",
         "retry_budget": {"google": 2},
         "retries": 3,
+        "verdict": _cloud_verdict(COMPLETE_QUALITY_ROW),
         **_NO_ENGINE,
     }
 
@@ -2008,7 +2040,7 @@ def test_the_schema_version_moved_for_the_per_item_measurement() -> None:
     # "18" puts each item's own tokens, engine-reported TTFT and cached prompt
     # tokens on every quality row (Q24 (a)); the runtime row keeps its
     # Methodology 6 aggregate and is untouched.
-    assert SCHEMA_VERSION == "28"
+    assert SCHEMA_VERSION == "29"
     assert ITEM_MEASUREMENT_FIELDS <= REQUIRED_FIELDS["quality"]
     assert ITEM_MEASUREMENT_FIELDS.isdisjoint(REQUIRED_FIELDS["runtime"])
 
@@ -2186,6 +2218,7 @@ def test_a_cloud_row_with_a_size_class_is_refused() -> None:
         "model_id": "mistral-small-2603",
         "family": "mistral",
         "retry_budget": {"mistral": 4},
+        "verdict": _cloud_verdict(COMPLETE_QUALITY_ROW),
         **_NO_ENGINE,
     }
 
@@ -2237,7 +2270,7 @@ def test_the_writers_block_names_a_cloud_subject_by_its_own_family() -> None:
 def test_the_schema_version_moved_for_the_harness_fields() -> None:
     # "20" puts the harness id, its installed version and its per-call prompt
     # overhead on every quality row; the runtime row is untouched.
-    assert SCHEMA_VERSION == "28"
+    assert SCHEMA_VERSION == "29"
     assert HARNESS_SCHEMA_VERSION == "20"
     assert HARNESS_FIELDS == {
         "harness_id",
@@ -2598,7 +2631,7 @@ def _cpu_only_runtime_row() -> dict:
 
 
 def test_the_schema_version_moved_for_vram_not_applicable() -> None:
-    assert SCHEMA_VERSION == "28"
+    assert SCHEMA_VERSION == "29"
     assert VRAM_NOT_APPLICABLE_SCHEMA_VERSION == "25"
     assert VRAM_NOT_APPLICABLE == "not_applicable"
 
@@ -2671,7 +2704,7 @@ def test_a_repetition_without_vram_is_refused_by_the_vram_check() -> None:
 
 
 def test_the_schema_version_moved_for_the_run_profile() -> None:
-    assert SCHEMA_VERSION == "28"
+    assert SCHEMA_VERSION == "29"
     assert PROFILE_SCHEMA_VERSION == "26"
     for kind in ("runtime", "quality"):
         assert PROFILE_FIELDS <= REQUIRED_FIELDS[kind]
@@ -2745,3 +2778,112 @@ def test_a_cloud_row_states_no_profile_applies(changes: dict) -> None:
     validate_row("quality", _cloud_row("mistral"))
     with pytest.raises(RowContractError, match="produced by no local model"):
         validate_row("quality", _cloud_row("mistral", **changes))
+
+
+# --- the verdict's subject rule (schema "29") -------------------------------
+
+_SUBJECT_RULE_KEYS = (
+    "subject_rule",
+    "tolerance",
+    "divergence",
+    "single_run_indicative",
+)
+
+
+def test_a_deterministic_local_row_validates_under_the_identical_rule() -> None:
+    assert SCHEMA_VERSION == "29"
+    validate_row("quality", COMPLETE_QUALITY_ROW)
+
+
+@pytest.mark.parametrize("field", _SUBJECT_RULE_KEYS)
+def test_a_quality_row_missing_a_verdict_rule_field_is_refused(field) -> None:
+    verdict_block = {
+        k: v for k, v in COMPLETE_QUALITY_ROW["verdict"].items() if k != field
+    }
+
+    with pytest.raises(RowContractError, match=f"missing field.*{field}"):
+        validate_row("quality", {**COMPLETE_QUALITY_ROW, "verdict": verdict_block})
+
+
+def test_a_row_below_29_validates_without_the_verdict_rule_fields() -> None:
+    old = {
+        **COMPLETE_QUALITY_ROW,
+        "schema_version": "28",
+        "verdict": {"verdict": "not_comparable", "reference_run_id": None},
+    }
+
+    validate_row("quality", old)
+
+
+def test_a_cloud_row_decided_under_its_suites_tolerance_validates() -> None:
+    validate_row("quality", _cloud_row("mistral"))
+
+
+@pytest.mark.parametrize(
+    ("verdict_changes", "match"),
+    [
+        ({"subject_rule": "identical"}, "expected 'within_tolerance'"),
+        ({"tolerance": None}, "does not name"),
+        ({"single_run_indicative": "rate_limited"}, "is not one of"),
+        ({"single_run_indicative": "no_seed"}, "never 'reproduced'"),
+        ({"divergence": 1.5}, "divergence 1.5"),
+    ],
+)
+def test_a_malformed_cloud_verdict_rule_is_refused(verdict_changes, match) -> None:
+    row = _cloud_row("mistral")
+    row["verdict"] = _cloud_verdict(row, **verdict_changes)
+
+    with pytest.raises(RowContractError, match=match):
+        validate_row("quality", row)
+
+
+@pytest.mark.parametrize(
+    ("tolerance_changes", "match"),
+    [
+        ({"suite_version": "0"}, "not by the row's own suite"),
+        ({"unit": "items"}, "not a declared unit"),
+        ({"value": True}, "not a number in"),
+    ],
+)
+def test_a_cloud_verdict_tolerance_naming_the_wrong_suite_or_value_is_refused(
+    tolerance_changes, match
+) -> None:
+    row = _cloud_row("mistral")
+    block = _cloud_verdict(row)
+    block["tolerance"] = {**block["tolerance"], **tolerance_changes}
+    row["verdict"] = block
+
+    with pytest.raises(RowContractError, match=match):
+        validate_row("quality", row)
+
+
+def test_a_single_run_indicative_cloud_row_is_not_comparable() -> None:
+    row = _cloud_row("google")
+    row["verdict"] = _cloud_verdict(
+        row,
+        verdict="not_comparable",
+        divergence=None,
+        single_run_indicative="model_not_served",
+    )
+
+    validate_row("quality", row)
+
+
+@pytest.mark.parametrize(
+    "verdict_changes",
+    [
+        {"subject_rule": "within_tolerance"},
+        {"tolerance": {"value": 0.1}},
+        {"single_run_indicative": "no_seed"},
+    ],
+)
+def test_a_local_row_is_never_decided_under_a_tolerance(verdict_changes) -> None:
+    block = {**COMPLETE_QUALITY_ROW["verdict"], **verdict_changes}
+
+    with pytest.raises(RowContractError):
+        validate_row("quality", {**COMPLETE_QUALITY_ROW, "verdict": block})
+
+
+def test_a_verdict_that_is_not_a_block_is_refused() -> None:
+    with pytest.raises(RowContractError, match="is not a block"):
+        validate_row("quality", {**COMPLETE_QUALITY_ROW, "verdict": "reproduced"})

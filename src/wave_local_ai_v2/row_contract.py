@@ -247,7 +247,19 @@ from wave_local_ai_v2 import (
 # run one fixed prompt of no task family and carry neither. Owed only from
 # "28": a row below "28" still validates without them and is never
 # back-filled.
-SCHEMA_VERSION = "28"
+# "29": a quality row's `verdict` block names the subject rule it was decided
+# under (Story: a cloud subject re-run is decided per item under its suite's
+# declared tolerance; Methodology 8): `subject_rule` (`identical` for a local
+# subject, `within_tolerance` for a cloud one), `tolerance` (null for a local
+# subject; for a cloud one the value and unit it was decided under with the
+# `suite_id`/`suite_version` that declared it), `divergence` (the observed
+# share of diverging items, null when nothing was compared) and
+# `single_run_indicative` (null, or why a cloud batch cannot be re-run
+# deterministically: `model_not_served` or `no_seed`, never with
+# `not_reproduced`). Additive: no field is renamed or removed, runtime rows
+# are unchanged, and a quality row below "29" still validates without them
+# and is never back-filled.
+SCHEMA_VERSION = "29"
 
 # The two subject-composition fields "19" added, and the version from which a
 # quality row owes them.
@@ -349,6 +361,11 @@ CONSTRAINT_SCHEMA_VERSION = "28"
 CONSTRAINT_FIELDS: frozenset[str] = frozenset(
     {"constraint_mechanism", "constraint_grammar_hash"}
 )
+
+# The schema version from which a quality row's verdict block names its
+# subject rule, tolerance, divergence and single-run-indicative mark.
+VERDICT_RULE_SCHEMA_VERSION = "29"
+_DECIDING_TOLERANCE_KEYS = frozenset({"value", "unit", "suite_id", "suite_version"})
 
 # What a row run under no campaign says in `campaign_id`: it belongs to none,
 # stated rather than left null. Reserved: no campaign may take it as its id.
@@ -902,6 +919,8 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
 
     _validate_prompt_variant(kind, row)
     _validate_subject_egress(kind, row)
+    if kind == "quality" and not _predates(row, VERDICT_RULE_SCHEMA_VERSION):
+        _validate_quality_verdict_rule(row)
     if not _predates(row, ENGINE_FICHE_SCHEMA_VERSION):
         _validate_engine(kind, row)
     if not _predates(row, MACHINE_FICHE_SCHEMA_VERSION):
@@ -1646,6 +1665,99 @@ def _validate_prompt_variant(kind: RowKind, row: dict[str, Any]) -> None:
             f"{variant_id!r} row carries what the variant made of the authored "
             "prompt"
         )
+
+
+def _validate_quality_verdict_rule(row: dict[str, Any]) -> None:
+    """Refuse a "29" quality verdict block that does not name its subject rule.
+
+    Imported here rather than at module level, for the reason
+    `_authored_prompt` gives.
+    """
+    from wave_local_ai_v2 import suite_gate, verdict
+
+    block = row["verdict"]
+    if not isinstance(block, dict):
+        raise RowContractError(f"quality row's verdict {block!r} is not a block")
+    missing = sorted(set(verdict.QUALITY_SUBJECT_RULE_KEYS) - block.keys())
+    if missing:
+        raise RowContractError(
+            f"quality row's verdict block is missing field(s): {', '.join(missing)}"
+        )
+
+    is_local = row.get("provider") == verdict.LOCAL_PROVIDER
+    expected_rule = (
+        verdict.SUBJECT_RULE_IDENTICAL
+        if is_local
+        else verdict.SUBJECT_RULE_WITHIN_TOLERANCE
+    )
+    if block["subject_rule"] != expected_rule:
+        raise RowContractError(
+            f"quality row of provider {row.get('provider')!r} has verdict "
+            f"subject_rule {block['subject_rule']!r}, expected {expected_rule!r}"
+        )
+
+    tolerance = block["tolerance"]
+    marked = block["single_run_indicative"]
+    if is_local:
+        if tolerance is not None or marked is not None:
+            raise RowContractError(
+                "a local quality row's verdict is decided on identical output: "
+                "its tolerance and single_run_indicative are null"
+            )
+    else:
+        _validate_deciding_tolerance(row, tolerance, suite_gate.TOLERANCE_UNITS)
+        if marked is not None and marked not in verdict.RERUN_BLOCKERS:
+            raise RowContractError(
+                f"quality row's verdict single_run_indicative {marked!r} is not "
+                f"one of {', '.join(sorted(verdict.RERUN_BLOCKERS))}"
+            )
+        if marked is not None and block["verdict"] != verdict.VERDICT_NOT_COMPARABLE:
+            raise RowContractError(
+                f"a single-run indicative quality row ({marked}) is "
+                f"not_comparable, never {block['verdict']!r}"
+            )
+
+    divergence = block["divergence"]
+    if divergence is not None and not _is_share(divergence):
+        raise RowContractError(
+            f"quality row's verdict divergence {divergence!r} is not a number in [0, 1]"
+        )
+
+
+def _validate_deciding_tolerance(
+    row: dict[str, Any], tolerance: object, units: frozenset[str]
+) -> None:
+    """A cloud verdict's tolerance names its value, unit and declaring suite."""
+    if not isinstance(tolerance, dict) or set(tolerance) != _DECIDING_TOLERANCE_KEYS:
+        raise RowContractError(
+            f"a cloud quality row's verdict tolerance {tolerance!r} does not "
+            f"name {', '.join(sorted(_DECIDING_TOLERANCE_KEYS))}"
+        )
+    declared_by = (tolerance["suite_id"], tolerance["suite_version"])
+    own_suite = (row.get("suite_id"), row.get("suite_version"))
+    if declared_by != own_suite:
+        raise RowContractError(
+            f"a cloud quality row's verdict tolerance is declared by "
+            f"{declared_by!r}, not by the row's own suite {own_suite!r}"
+        )
+    if tolerance["unit"] not in units:
+        raise RowContractError(
+            f"a cloud quality row's verdict tolerance unit {tolerance['unit']!r} "
+            "is not a declared unit"
+        )
+    if not _is_share(tolerance["value"]):
+        raise RowContractError(
+            f"a cloud quality row's verdict tolerance value {tolerance['value']!r} "
+            "is not a number in [0, 1]"
+        )
+
+
+def _is_share(value: object) -> bool:
+    return (
+        isinstance(value, int | float)
+        and not isinstance(value, bool)
+        and (0 <= value <= 1)
+    )
 
 
 def _authored_prompt(kind: RowKind, row: dict[str, Any]) -> tuple[str | None, str]:

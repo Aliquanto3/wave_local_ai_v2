@@ -5,6 +5,7 @@ from wave_local_ai_v2.suite_gate import (
     LEVEL_DEVELOPMENT,
     LEVEL_PUBLICATION,
     SuiteGateError,
+    gate_divergence_tolerance,
     gate_suite,
 )
 
@@ -264,3 +265,43 @@ def test_a_malformed_item_declaration_is_refused_at_any_level(key, value) -> Non
 
     with pytest.raises(SuiteGateError, match=f"en-0.*malformed {key}"):
         gate_suite(suite)
+
+
+# --- divergence tolerance ---------------------------------------------------
+
+_TOLERANCE = {"value": 0.1, "unit": "fraction_of_items", "reason": "Observed."}
+
+
+def test_a_suite_declaring_no_tolerance_is_refused() -> None:
+    with pytest.raises(SuiteGateError, match="declares no divergence_tolerance"):
+        gate_divergence_tolerance(None)
+
+
+@pytest.mark.parametrize(
+    ("change", "match"),
+    [
+        ({"value": 1.5}, "not a number in"),
+        ({"value": -0.1}, "not a number in"),
+        ({"value": True}, "not a number in"),
+        ({"value": "0.1"}, "not a number in"),
+        ({"unit": "items"}, "unit 'items' is not one of"),
+        ({"reason": "  "}, "reason is missing"),
+        ({"reason": None}, "reason is missing"),
+    ],
+)
+def test_a_malformed_tolerance_is_refused_naming_the_key(change, match) -> None:
+    with pytest.raises(SuiteGateError, match=match):
+        gate_divergence_tolerance({**_TOLERANCE, **change})
+
+
+def test_a_tolerance_that_is_not_an_object_is_refused() -> None:
+    with pytest.raises(SuiteGateError, match="malformed divergence_tolerance"):
+        gate_divergence_tolerance(0.1)
+
+
+def test_a_well_formed_tolerance_is_returned_checked() -> None:
+    assert gate_divergence_tolerance({**_TOLERANCE, "value": 0}) == {
+        "value": 0.0,
+        "unit": "fraction_of_items",
+        "reason": "Observed.",
+    }

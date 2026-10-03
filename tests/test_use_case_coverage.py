@@ -23,6 +23,11 @@ def _suite(suite_id: str, task_suite: str) -> dict:
         "context_length": 2048,
         "thinking_policy": "disabled",
         "level": "development",
+        "divergence_tolerance": {
+            "value": 0.1,
+            "unit": "fraction_of_items",
+            "reason": "Fixture tolerance.",
+        },
         "items": [
             {
                 "item_id": f"item-{language}",

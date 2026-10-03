@@ -10,14 +10,16 @@ from wave_local_ai_v2.suite_gate import SuiteGateError
 from wave_local_ai_v2.suite_registry import SuiteRegistryError
 
 # Today's identities, pinned as literals: the migration onto data must move
-# neither the version nor the prompt-set hash of either shipped suite.
+# neither the version nor the prompt-set hash of either shipped suite. The
+# versions moved once since, when each suite declared its divergence
+# tolerance; the items, and so the hashes, did not.
 _SHIPPED = {
     "classification-support-routing": (
-        "4",
+        "5",
         "d41a2134274cf1c8036022d2b68396d04bfd14ff263d2f8699dbefd7a2e4596a",  # pragma: allowlist secret
     ),
     "translation-business-short-form": (
-        "3",
+        "4",
         "16150e4406042a8940093740640627b7ce4ce9e80ae64bc080b7b4d80f6f7574",  # pragma: allowlist secret
     ),
 }
@@ -32,6 +34,11 @@ _VALID = {
     "context_length": 2048,
     "thinking_policy": "disabled",
     "level": "development",
+    "divergence_tolerance": {
+        "value": 0.1,
+        "unit": "fraction_of_items",
+        "reason": "Fixture tolerance.",
+    },
     "items": [
         {
             "item_id": f"item-{language}",
@@ -192,6 +199,27 @@ def test_an_item_missing_its_tag_is_refused_by_the_gate_at_load(
         suite_registry.load_definition(path)
 
 
+def test_a_definition_declaring_no_divergence_tolerance_is_refused_at_load(
+    tmp_path,
+) -> None:
+    data = _variant()
+    del data["divergence_tolerance"]
+
+    with pytest.raises(SuiteGateError, match="declares no divergence_tolerance"):
+        suite_registry.load_definition(_write(tmp_path, data))
+
+
+@pytest.mark.parametrize("suite_id", sorted(_SHIPPED))
+def test_a_shipped_suite_declares_its_tolerance_with_unit_and_reason(
+    suite_id,
+) -> None:
+    tolerance = suite_registry.resolve(suite_id).divergence_tolerance
+
+    assert tolerance["unit"] == "fraction_of_items"
+    assert 0 <= tolerance["value"] <= 1
+    assert tolerance["reason"].strip()
+
+
 def test_a_definition_the_gate_refuses_is_never_registered(
     tmp_path, registered
 ) -> None:
@@ -333,7 +361,9 @@ def test_the_interval_epics_fields_are_additions_to_the_one_shape(
     registered.append(definition.suite_id)
 
     assert definition.level == "development"
-    assert dict(definition.extra) == {}
+    assert dict(definition.extra) == {
+        "divergence_tolerance": _VALID["divergence_tolerance"]
+    }
     assert all(item["licence"] == "CC-BY-4.0" for item in definition.items)
     snapshot = suite_snapshot.build_snapshot(definition)
     assert snapshot["level"] == "development"
