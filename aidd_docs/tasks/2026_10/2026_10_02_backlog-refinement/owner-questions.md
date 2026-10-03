@@ -1,0 +1,32 @@
+# Owner questions: backlog refinement run (2026-10-02)
+
+Questions this unattended run could not decide under its bounded authority. Each entry names the artifact, the question, the options, the recommended default with its reason, and what it blocks. Numbering starts at Q100 to stay clear of `aidd_docs/tasks/2026_10/2026_10_01_autonomous-slicing/owner-questions.md`.
+
+## Judge providers
+
+Spikes: `aidd_docs/backlog/spikes/is-deepseek-callable-as-a-pinned-judge-and-on-what-data-terms.md`, `aidd_docs/backlog/spikes/is-z-ai-glm-callable-as-a-pinned-judge-and-on-what-data-terms.md`, `aidd_docs/backlog/spikes/which-endpoint-serves-gpt-5-6-luna-as-a-pinned-calibration-judge-and-on-what-terms.md`. All three stay `blocked`: their Bounds require captured live calls, which this run may not make. Desk research found the same gap in all three, asked once here.
+
+### Q102. How does Methodology 12 pin a judge whose provider publishes no dated model id?
+
+- Artifact: PRD Methodology 12 ("A cloud row records the provider's dated model id, never a floating alias, and the API version; a run refuses to start when that id is absent from the provider's live model list"); `aidd_docs/backlog/stories/a-glm-judge-answers-through-z-ai-under-the-pinning-discipline.md` (order 8), `aidd_docs/backlog/stories/a-deepseek-judge-answers-through-deepseek-under-the-pinning-discipline.md` (order 9), `aidd_docs/backlog/stories/a-calibration-judge-scores-one-judged-item-in-ten-and-never-moves-a-score.md` (order 11).
+- Question: none of the three judge providers documents a dated id for the candidate model. DeepSeek lists only names it repoints in place (`deepseek-v4-pro` received new weights on 2026-08-13 with "Model names remain unchanged"). Z.ai publishes release ids (`glm-5.2`) with no snapshot policy and documents no model-list endpoint at all. OpenAI lists `gpt-5.6-luna` as the model's only snapshot, undated. Read literally, Methodology 12 makes all three a no-go. The Google subject already runs on a release id plus the catalog's read-only `version` string (`aidd_docs/memory/external/google-ai-studio-api.md`), which is the closest precedent. How is Methodology 12 read for a judge?
+- Options: (a) extend the Google precedent to judges: pin the provider's release or snapshot id; the pre-flight reads the live model list where one exists, and where none exists sends a one-token probe to the pinned id, recorded on the row as a probe; every row records each build marker the provider returns (listing `version`, `name` or `created`, response `system_fingerprint`), and a run refuses to start when a recorded marker differs from the pinned one; Methodology 12's text is amended to say so; (b) literal reading: every provider without a dated id is a no-go, the judge pair and the calibration judge are reopened, and new spikes look for families that publish dated ids; (c) decide per provider after the live calls, keeping the literal rule as the default.
+- Recommended default: (a). It is the reading the project already applies to its Google subject, it keeps the pair and the calibration model the PRD names, and the live calls the spikes list still capture whatever marker each provider actually returns. Cost: a silent weight change under an unchanged name and marker (DeepSeek's 2026-08-13 update is one) is not detected; judged scores are then reproducible only within a dated window, and the inter-judge agreement and the calibration figure are the only drift signals. Only the owner can amend PRD text.
+- Blocks: orders 8, 9 and 11 of `any-open-ended-output-carries-two-judges-or-an-honest-flag`, and through orders 8 and 9 every story that needs a judged score (order 10, the judged probe, the rewriting suite, document comparison, RAG, web research, and the judged re-run verdict).
+
+### Q103. Is DeepSeek's training opt-out requested before the first paid call?
+
+- Artifact: `aidd_docs/backlog/stories/a-deepseek-judge-answers-through-deepseek-under-the-pinning-discipline.md` (its egress acceptance bullet), and the results README's egress statement.
+- Question: DeepSeek's Privacy Policy (last updated 2026-02-10) lets it use API inputs for training unless the user opts out by email to privacy@deepseek.com; inputs are processed and stored in the PRC with no fixed retention. This is compatible with the PRD egress non-goal (only the repo's own suite items and outputs derived from them leave the machine), but the suite items would then risk entering a training set. Is the opt-out requested?
+- Options: (a) request it from the account owner's address before the first paid call, keep the reply, and state the opt-out and its date in the README; (b) do not opt out, and state in the README that suite items and local outputs sent to DeepSeek may be used for training; (c) send the request, and state in the README that it was sent and whether DeepSeek confirmed it.
+- Recommended default: (c). One email lowers the contamination risk for the publication suites, and the policy promises no confirmation, so the README claims only what was sent and received. Cost: one owner email.
+- Blocks: the wording of order 9's egress statement only, not its code.
+
+### Q104. Does the calibration judge stay GPT-5.6 Luna now that GPT-6 Luna exists?
+
+- Artifact: PRD Methodology 11 (names GPT-5.6 Luna) and `aidd_docs/backlog/stories/a-calibration-judge-scores-one-judged-item-in-ten-and-never-moves-a-score.md` (order 11).
+- Question: OpenAI released `gpt-6-luna` on 2026-09-22 at about half the price of `gpt-5.6-luna` ($0.10 / $0.50 against $0.20 / $1.20 per 1M input / output tokens). GPT-5.6 Luna is not deprecated, and neither has a dated id. Which model calibrates?
+- Options: (a) keep `gpt-5.6-luna`, as the PRD names it; (b) switch to `gpt-6-luna` and amend Methodology 11; (c) keep `gpt-5.6-luna` and switch only when OpenAI publishes a deprecation notice.
+- Recommended default: (a). The PRD names it, it is not deprecated, the saving is about a dollar per large campaign (the spike's projection puts calibration well under the ten-dollar estimate either way), and switching changes nothing for Q102. Cost: a calibration judge one generation behind OpenAI's current Luna.
+- Blocks: nothing; order 11 is written against the PRD's model.
+
