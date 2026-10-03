@@ -17,7 +17,14 @@ Maps to: Methodology 11 ("The judge pair is Z.ai's GLM and DeepSeek, each called
 
 Needs: a paid API key (Z.ai), for the spike and for this story's one live judge call.
 
-Blocked: by the spike `aidd_docs/backlog/spikes/is-z-ai-glm-callable-as-a-pinned-judge-and-on-what-data-terms.md`. The epic requires the spike before the client is written.
+Blocked: by the spike `aidd_docs/backlog/spikes/is-z-ai-glm-callable-as-a-pinned-judge-and-on-what-data-terms.md` (`blocked`; desk research done 2026-10-02), which needs its eight live calls with a paid Z.ai key: the `/models` listing, `glm-5.2` with thinking disabled and enabled (usage and reasoning tokens), determinism under `do_sample`, the seed, the caller's cap, an unavailable id, and one captured 429. And by owner question Q102 (Methodology 12 for a judge provider that publishes no dated id: Z.ai publishes the release id `glm-5.2` and documents no model listing). The epic requires the spike before the client is written.
+
+Current state (verified on `main` at `c68b23e`, 2026-10-03):
+- No Z.ai client and no `glm` family: `roster.KNOWN_FAMILIES` holds `qwen`, `mistral`, `google`, `ibm`, `liquid`, `microsoft`; `roster.MODEL_FAMILIES` holds the three subject ids; `cost.PRICE_TABLES` and `cost.REASONING_TOKEN_BILLING` key only `mistral` and `google`; `settings.Settings` reads only `mistral_api_key` and `google_api_key` among cloud provider keys.
+- `judge_backends.py` binds `mistral_judge_backend` and `google_judge_backend`, both recording `judge.REASONING_EFFORT_NOT_SENT`, and is the only judge-path module that imports a provider client.
+- Order 7's fields are in place: `judge.JudgeCallRecord` carries `answering_provider`, `answering_provider_source`, `reasoning_effort`, and `reasoning_tokens` with `reasoning_tokens_source` or `reasoning_tokens_null_reason`; `cost.judge_cost_fields` refuses a judge provider with no `REASONING_TOKEN_BILLING` basis.
+- `JudgeCallRecord` has no API-version, build-marker, sampling or seed field: subject rows carry `model_version` and `api_version` (`quality_cli.py`), judge records do not.
+- Precedents to mirror: `mistral_client.check_model_available` (absent id raises `ModelUnavailableError`, a deprecated one returns a notice), `mistral_client.RetryableRequestError` with its retry hint, and `retry.Pacer`, `retry.RetryBudget`, `retry.call_with_retry`.
 
 ## Acceptance
 
@@ -30,13 +37,14 @@ Blocked: by the spike `aidd_docs/backlog/spikes/is-z-ai-glm-callable-as-a-pinned
 - The dated id is declared as family `glm`, and `glm` enters `roster.KNOWN_FAMILIES` additively: no subject family is removed, and the local families the roster epic adds are untouched.
 - The client is bound as a judge backend in `judge_backends.py` and imported by no other judge-path module.
 - The API key is read from one named environment variable, is absent from the repo, from logs and from any `Settings` repr, and a run needing this judge with no key configured says so before any paid call is made, naming the variable.
-- Egress: a judged row that used this judge names Z.ai among the providers the item and the subject output reached, and the README's egress sentence names Z.ai and the data-use and retention terms the spike recorded.
+- Egress: a judged row that used this judge names Z.ai among the providers the item and the subject output reached, and the README's egress sentence names Z.ai and the data-use and retention terms the spike recorded (Z.ai international, Singapore; Terms of Use of April 14, 2026 and Data Processing Addendum for API Services of September 29, 2025: API content is not used to develop or improve its services without opt-in, and is processed in real time without being saved).
 
 ## Code it changes
 
-- `src/wave_local_ai_v2/` (new Z.ai client module): `requests` only, no SDK, no streaming, mirroring `mistral_client.py` and `google_client.py` so the three are reviewable side by side; its module docstring cites the spike's decision file.
+- `src/wave_local_ai_v2/` (new Z.ai client module): `requests` only, no SDK, no streaming, mirroring `mistral_client.py` and `google_client.py` so the three are reviewable side by side; it calls Z.ai international (`https://api.z.ai/api/paas/v4`), never `open.bigmodel.cn`, whose data terms differ; its module docstring cites the spike's decision file.
 - `src/wave_local_ai_v2/judge_backends.py`: the GLM backend, paced and retried per batch like the existing two.
-- `src/wave_local_ai_v2/cost.py`: the Z.ai price table in `PRICE_TABLES` with its import-time guard.
+- `src/wave_local_ai_v2/judge.py`, `src/wave_local_ai_v2/row_contract.py`: the API version on the judge record, with its `SCHEMA_VERSION` bump, unless order 9 lands it first.
+- `src/wave_local_ai_v2/cost.py`: the Z.ai price table in `PRICE_TABLES` with its import-time guard, and Z.ai's basis in `REASONING_TOKEN_BILLING`.
 - `src/wave_local_ai_v2/roster.py`: the `glm` family and the dated id's entry in `MODEL_FAMILIES`.
 - `src/wave_local_ai_v2/settings.py`, `.env.example`: the key, `repr=False`, not required at load time.
 - `README.md`: the egress sentence.

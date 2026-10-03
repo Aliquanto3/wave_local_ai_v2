@@ -17,7 +17,14 @@ Maps to: Methodology 11 ("The judge pair is Z.ai's GLM and DeepSeek, each called
 
 Needs: a paid API key (DeepSeek), for the spike and for this story's one live judge call.
 
-Blocked: by the spike `aidd_docs/backlog/spikes/is-deepseek-callable-as-a-pinned-judge-and-on-what-data-terms.md`. The epic requires the spike before the client is written.
+Blocked: by the spike `aidd_docs/backlog/spikes/is-deepseek-callable-as-a-pinned-judge-and-on-what-data-terms.md` (`blocked`; desk research done 2026-10-02 found the catalog documents only floating names, repointed in place), which needs its live calls with a paid DeepSeek key: the `/models` ids, a dated-id probe, the version path, a non-thinking judge call's usage, the seed, `reasoning_effort: "none"`, the caller's cap, the context-limit error, one captured 429, and the terms revision saved on the day. By owner question Q102 (pinning a DeepSeek alias under Methodology 12). By owner question Q103 (whether the training opt-out is requested before the first paid call), which fixes the egress sentence's wording only. The epic requires the spike before the client is written.
+
+Current state (verified on `main` at `c68b23e`, 2026-10-03):
+- No DeepSeek client and no `deepseek` family: `roster.KNOWN_FAMILIES` holds `qwen`, `mistral`, `google`, `ibm`, `liquid`, `microsoft`; `roster.MODEL_FAMILIES` holds the three subject ids; `cost.PRICE_TABLES` and `cost.REASONING_TOKEN_BILLING` key only `mistral` and `google`; `settings.Settings` reads only `mistral_api_key` and `google_api_key` among cloud provider keys.
+- `judge_backends.py` binds `mistral_judge_backend` and `google_judge_backend`, both recording `judge.REASONING_EFFORT_NOT_SENT`, and is the only judge-path module that imports a provider client.
+- Order 7's fields are in place: `judge.JudgeCallRecord` carries `answering_provider`, `answering_provider_source`, `reasoning_effort`, and `reasoning_tokens` with `reasoning_tokens_source` or `reasoning_tokens_null_reason`; `cost.judge_cost_fields` refuses a judge provider with no `REASONING_TOKEN_BILLING` basis.
+- `JudgeCallRecord` has no API-version, build-marker, sampling or seed field: subject rows carry `model_version` and `api_version` (`quality_cli.py`), judge records do not.
+- Precedents to mirror: `mistral_client.check_model_available` (absent id raises `ModelUnavailableError`, a deprecated one returns a notice), `mistral_client.RetryableRequestError` with its retry hint, and `retry.Pacer`, `retry.RetryBudget`, `retry.call_with_retry`.
 
 ## Acceptance
 
@@ -30,13 +37,14 @@ Blocked: by the spike `aidd_docs/backlog/spikes/is-deepseek-callable-as-a-pinned
 - The dated id is declared as family `deepseek`, and `deepseek` enters `roster.KNOWN_FAMILIES` additively: no subject family is removed, and the local families the roster epic adds are untouched.
 - The client is bound as a judge backend in `judge_backends.py` and imported by no other judge-path module.
 - The API key is read from one named environment variable, is absent from the repo, from logs and from any `Settings` repr, and a run needing this judge with no key configured says so before any paid call is made, naming the variable.
-- Egress: a judged row that used this judge names DeepSeek among the providers the item and the subject output reached, and the README's egress sentence names DeepSeek and the data-use and retention terms the spike recorded.
+- Egress: a judged row that used this judge names DeepSeek among the providers the item and the subject output reached, and the README's egress sentence names DeepSeek and the data-use and retention terms the spike recorded (Privacy Policy of 2026-02-10, Open Platform Terms effective 2026-04-29: API inputs may be used for training unless opted out, are processed and stored in the PRC, and are retained "as long as necessary" with no fixed period), stating the opt-out as Q103 decides.
 
 ## Code it changes
 
 - `src/wave_local_ai_v2/` (new DeepSeek client module): `requests` only, no SDK, no streaming, mirroring `mistral_client.py` and `google_client.py`; its module docstring cites the spike's decision file.
 - `src/wave_local_ai_v2/judge_backends.py`: the DeepSeek backend, paced and retried per batch like the existing two.
-- `src/wave_local_ai_v2/cost.py`: the DeepSeek price table in `PRICE_TABLES` with its import-time guard.
+- `src/wave_local_ai_v2/judge.py`, `src/wave_local_ai_v2/row_contract.py`: the API version on the judge record, with its `SCHEMA_VERSION` bump, unless order 8 lands it first.
+- `src/wave_local_ai_v2/cost.py`: the DeepSeek price table in `PRICE_TABLES` with its import-time guard, and DeepSeek's basis in `REASONING_TOKEN_BILLING`.
 - `src/wave_local_ai_v2/roster.py`: the `deepseek` family and the dated id's entry in `MODEL_FAMILIES`.
 - `src/wave_local_ai_v2/settings.py`, `.env.example`: the key, `repr=False`, not required at load time.
 - `README.md`: the egress sentence.

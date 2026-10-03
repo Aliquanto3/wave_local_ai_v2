@@ -139,3 +139,13 @@ Spike: `aidd_docs/backlog/spikes/which-llmlingua-2-class-compressor-fits-the-ref
 - Recommended default: (a). It keeps the optional group on plain PyPI, cannot touch the subject's VRAM profile, and counts tokens with the subject's own tokenizer while its server is up. Cost: the compressor's energy is mostly the estimated CPU channel rather than a measured GPU one, and each item takes longer (about 1 to 2 s per item, estimated, not measured).
 - Blocks: order 9's declared placement and where its torch comes from; the live CPU measurement the spike lists can proceed under (a).
 
+## Calibration agreement
+
+### Q116. What is the calibration judge's agreement "with the pair" computed against?
+
+- Artifact: `aidd_docs/backlog/stories/a-calibration-judge-scores-one-judged-item-in-ten-and-never-moves-a-score.md` (order 11, its acceptance bullet "The calibration judge's agreement with the pair is published as its own figure per suite, under the statistic Methodology 10 names for the rubric kind" and its `tests/test_agreement.py` value); the same wording in `the-judged-probe-runs-both-paths-in-three-languages.md` (order 6, calibration bullet) and in the epic `any-open-ended-output-carries-two-judges-or-an-honest-flag.md` (`ready`).
+- Question: Methodology 10's statistics, as `agreement.py` implements them (quadratic-weighted and unweighted Cohen's kappa, exact-match and within-one rates), are defined between two raters; the pair is two raters already. Against what is the third judge's agreement computed?
+- Options: (a) two two-rater figures, calibration against GLM and calibration against DeepSeek, each under the rubric kind's statistic, with n and the EN versus FR and DE split, published beside the pair's own figure; a shared bias then shows as the pair agreeing with each other more than either agrees with the calibrator; (b) one figure against the pair's per-item consensus (for example the rounded mean), undefined for a categorical rubric and sensitive to rounding half-points; (c) one three-rater statistic over all three judges (Fleiss' kappa or Krippendorff's alpha), a statistic Methodology 10 does not name and `agreement.py` does not have.
+- Recommended default: (a). It reuses `agreement.agreement_for_rubric` unchanged, works for both rubric kinds, and lets the shared-bias reading the PRD asks of calibration come straight from published numbers. Cost: "its own figure" becomes two figures per suite and language group, a wording change to order 11, order 6's calibration bullet and the epic (an owner edit, since the epic is `ready`).
+- Blocks: order 11. Order 6's calibration bullet takes the same wording but order 6 does not wait on order 11.
+

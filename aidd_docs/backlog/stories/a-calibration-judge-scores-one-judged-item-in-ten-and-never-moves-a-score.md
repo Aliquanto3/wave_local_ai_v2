@@ -17,7 +17,13 @@ Maps to: PRD AC "given the calibration subsample, its agreement with the judge p
 
 Needs: a paid API key for the calibration judge's provider (OpenAI, called through its own direct API), for the spike and for the first published calibration figure.
 
-Blocked: by the spike `aidd_docs/backlog/spikes/which-endpoint-serves-gpt-5-6-luna-as-a-pinned-calibration-judge-and-on-what-terms.md`, and through `depends_on` on order 10.
+Blocked: by the spike `aidd_docs/backlog/spikes/which-endpoint-serves-gpt-5-6-luna-as-a-pinned-calibration-judge-and-on-what-terms.md` (`blocked`; desk research done 2026-10-02 found `gpt-5.6-luna` on OpenAI's direct API, undated), which needs its live calls with a paid OpenAI key: the `/v1/models` listing, a pinned Chat Completions call at `reasoning_effort: "none"` with temperature and seed, seed repeats, the `minimal` and `low` efforts, the Responses API equivalent, the caller's cap, one captured 429, an unavailable id, and the Services Agreement read at a named revision. By owner question Q102 (Methodology 12's dated id for `gpt-5.6-luna`). By owner question Q116 (what the calibration judge's agreement "with the pair" is computed against), since Methodology 10's statistics are two-rater. And through `depends_on` on `aidd_docs/backlog/stories/glm-and-deepseek-are-the-only-judges-and-mistral-and-google-never-judge-again.md` (order 10, `proposed`), blocked in turn through orders 8 and 9 on their spikes and Q102. Owner question Q104 (GPT-5.6 Luna or GPT-6 Luna) is open and blocks nothing: this story is written against the PRD's model.
+
+Current state (verified on `main` at `c68b23e`, 2026-10-03):
+- No OpenAI client, no calibration backend and no calibration family: `roster.KNOWN_FAMILIES` holds `qwen`, `mistral`, `google`, `ibm`, `liquid`, `microsoft`; `cost.PRICE_TABLES` and `cost.REASONING_TOKEN_BILLING` key only `mistral` and `google`; `settings.Settings` reads no OpenAI key.
+- `agreement.agreement_for_rubric` computes one two-rater figure over `(judge_a, judge_b)` pairs (`cohens_kappa_quadratic_weighted` or `cohens_kappa_unweighted` by rubric kind, with exact-match and within-one rates and `KAPPA_NULL_*` reasons); there is no calibration figure and no per-language split.
+- `row_contract.SCHEMA_VERSION` is `"22"`; `JUDGED_FIELDS` holds no calibration block; `judge_egress` (`JUDGE_EGRESS_FIELDS`) counts `judge_call_count` with no separate calibration count; `judge_cost.per_provider` already holds one entry per provider (`JUDGE_COST_PROVIDER_FIELDS`), so a calibration provider entry fits it.
+- No calibration draw exists. `subset_sampler.draw` is the publication-suite sampler and splits a fixed size equally across the three languages; it is not this story's 10%-per-language rule.
 
 ## Acceptance
 
@@ -36,7 +42,7 @@ Blocked: by the spike `aidd_docs/backlog/spikes/which-endpoint-serves-gpt-5-6-lu
 - `src/wave_local_ai_v2/judge_backends.py`: the calibration backend, bound at the same seam as the pair.
 - `src/wave_local_ai_v2/agreement.py`: the calibration-versus-pair figure and its EN and FR/DE split.
 - `src/wave_local_ai_v2/row_contract.py`: the calibration record as a conditional block with its `SCHEMA_VERSION` bump; the egress count it implies.
-- `src/wave_local_ai_v2/cost.py`, `src/wave_local_ai_v2/roster.py`, `src/wave_local_ai_v2/settings.py`, `.env.example`, `README.md`: the price entry, the family, the key and the egress sentence.
+- `src/wave_local_ai_v2/cost.py`, `src/wave_local_ai_v2/roster.py`, `src/wave_local_ai_v2/settings.py`, `.env.example`, `README.md`: the price entry and its `REASONING_TOKEN_BILLING` basis, the family, the key and the egress sentence.
 
 ## Tests it needs
 

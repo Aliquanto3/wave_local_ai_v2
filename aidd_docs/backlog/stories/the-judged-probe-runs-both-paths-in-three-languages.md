@@ -18,9 +18,13 @@ Maps to: PRD AC "Given an open-ended task result from a subject independent of b
 
 Needs: a real local model run of one roster entry on the development laptop, and paid API keys for Z.ai, DeepSeek and the calibration judge's provider (OpenAI, per Q7 (a)), plus the Google key for the probe's one cloud-subject item.
 
-Blocked: through `depends_on` on order 10, which waits on orders 8 and 9 and their open spikes (`aidd_docs/backlog/spikes/is-z-ai-glm-callable-as-a-pinned-judge-and-on-what-data-terms.md`, `aidd_docs/backlog/spikes/is-deepseek-callable-as-a-pinned-judge-and-on-what-data-terms.md`). It does not wait on order 11: the calibration subsample joins the probe when order 11 is done (owner decision, 2026-10-01, resolving the Q6 and Q54 conflict).
+Blocked: only through `depends_on` on `aidd_docs/backlog/stories/glm-and-deepseek-are-the-only-judges-and-mistral-and-google-never-judge-again.md` (order 10, `proposed`), which waits on orders 8 and 9 (`proposed`), themselves blocked by their `blocked` spikes' live calls (`aidd_docs/backlog/spikes/is-z-ai-glm-callable-as-a-pinned-judge-and-on-what-data-terms.md`, `aidd_docs/backlog/spikes/is-deepseek-callable-as-a-pinned-judge-and-on-what-data-terms.md`) and by owner question Q102 (order 9 also by Q103). It does not wait on order 11: the calibration subsample joins the probe when order 11 is done (owner decision, 2026-10-01, resolving the Q6 and Q54 conflict).
 
-Current state: `judge_probe.py`, its ten items, `settings.DEFAULT_JUDGE_PROBE_REFERENCE_PATH` and `tests/test_judge_probe.py` exist; the runner binds the retired Mistral and Google judges and judges its one Google-generated item with Mistral alone. `aidd_docs/results/` holds no `judge-probe-reference.jsonl`. Order 10 rebinds the runner to the pair; this story runs it and publishes.
+Current state (verified on `main` at `c68b23e`, 2026-10-03):
+- `judge_probe.py` holds `JUDGE_PROBE_ITEMS`, ten hand-written items (four EN, three FR, three DE), each tagged with `language` and `provenance`; `settings.DEFAULT_JUDGE_PROBE_REFERENCE_PATH` and `tests/test_judge_probe.py` exist; the runner has `--resume`.
+- The runner binds the retired Mistral and Google judges and judges its one Google-generated item (`CLOUD_SUBJECT_ITEM_ID`) with Mistral alone, flagged `judge.SINGLE_JUDGE_REASON_CLOUD_SUBJECT`. Order 10 rebinds it to the pair; this story runs it and publishes.
+- Judged rows are written under `row_contract.SCHEMA_VERSION` `"22"` with `JUDGED_FIELDS`; each judge record already carries the answering provider, reasoning effort and reasoning tokens (order 7, `done`). The judge prompt each side received is identified on the row by `judge_prompt_id`, `judge_prompt_template_hash` and `judge_prompt_language` (`judge.judge_item`), rendered from `judge_protocol`'s EN, FR and DE templates; the rendered prompt text is not stored.
+- `aidd_docs/results/` holds no `judge-probe-reference.jsonl`.
 
 ## Acceptance
 
