@@ -721,6 +721,13 @@ SERVICE_ENV_VARS = (
     "SLM_MODELS_DIR",
     "PLAYGROUND_MAX_PROMPT_CHARS",
     "PLAYGROUND_MAX_TOKENS",
+    "PLAYGROUND_CLOUD_SUBJECT",
+    "MISTRAL_API_KEY",
+    "GOOGLE_API_KEY",
+    "MISTRAL_REQUEST_PACING_S",
+    "GOOGLE_REQUEST_PACING_S",
+    "CLOUD_RETRY_MIN_RETRIES",
+    "CLOUD_RETRY_RETRIES_PER_ITEM",
 )
 
 
@@ -1121,4 +1128,68 @@ def test_load_service_settings_refuses_a_playground_cap_below_one(
     monkeypatch.setenv(env_var, value)
 
     with pytest.raises(SettingsError, match=env_var):
+        load_service_settings()
+
+
+def test_holding_a_benchmark_key_enables_no_playground_cloud_subject(
+    monkeypatch, _clean_service_env: None, _tls_env: tuple[Path, Path]
+) -> None:
+    monkeypatch.setenv("SERVICE_API_KEY", "a-key")  # pragma: allowlist secret
+    monkeypatch.setenv("MISTRAL_API_KEY", "m-key")  # pragma: allowlist secret
+    monkeypatch.setenv("GOOGLE_API_KEY", "g-key")  # pragma: allowlist secret
+
+    assert load_service_settings().playground_cloud is None
+
+
+@pytest.mark.parametrize(
+    ("raw", "key_var", "pacing"),
+    [
+        ("mistral:mistral-small-2603", "MISTRAL_API_KEY", 1.1),
+        ("google:gemini-3.5-flash-lite", "GOOGLE_API_KEY", 4.1),
+    ],
+)
+def test_the_playground_cloud_subject_names_provider_model_and_the_benchmark_rules(
+    monkeypatch,
+    _clean_service_env: None,
+    _tls_env: tuple[Path, Path],
+    raw: str,
+    key_var: str,
+    pacing: float,
+) -> None:
+    monkeypatch.setenv("SERVICE_API_KEY", "a-key")  # pragma: allowlist secret
+    monkeypatch.setenv("PLAYGROUND_CLOUD_SUBJECT", raw)
+    monkeypatch.setenv(key_var, "p-key")  # pragma: allowlist secret
+
+    cloud = load_service_settings().playground_cloud
+
+    assert cloud is not None
+    assert (cloud.provider, cloud.model) == tuple(raw.split(":"))
+    assert cloud.api_key == "p-key"  # pragma: allowlist secret
+    assert cloud.pacing_s == pacing
+    # A one-item batch's budget under the default CLOUD_RETRY_* settings.
+    assert cloud.max_retries == 4
+    assert "p-key" not in repr(cloud)
+
+
+@pytest.mark.parametrize(
+    ("raw", "match"),
+    [
+        ("openai:gpt", "names no known provider"),
+        ("mistral", "pinned to 'mistral-small-2603'"),
+        ("mistral:mistral-small-latest", "pinned to 'mistral-small-2603'"),
+        ("google:gemini-3.5-flash-lite", "GOOGLE_API_KEY is not set"),
+    ],
+)
+def test_a_misconfigured_playground_cloud_subject_refuses_service_start(
+    monkeypatch,
+    _clean_service_env: None,
+    _tls_env: tuple[Path, Path],
+    raw: str,
+    match: str,
+) -> None:
+    monkeypatch.setenv("SERVICE_API_KEY", "a-key")  # pragma: allowlist secret
+    monkeypatch.setenv("MISTRAL_API_KEY", "m-key")  # pragma: allowlist secret
+    monkeypatch.setenv("PLAYGROUND_CLOUD_SUBJECT", raw)
+
+    with pytest.raises(SettingsError, match=match):
         load_service_settings()

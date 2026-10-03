@@ -34,6 +34,7 @@ function mockEveryRoute({ demoMode = false }: { demoMode?: boolean } = {}) {
       return demoMode
         ? Promise.resolve({
             roster_entries: ['entry-a'],
+            cloud_subject: null,
             thinking_policies: ['allowed', 'disabled'],
             max_prompt_chars: 4000,
             max_tokens: 512,

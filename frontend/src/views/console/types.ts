@@ -21,8 +21,16 @@ export interface PlaygroundHolder {
   started_at: string
 }
 
-/** The one llama-server owner: a console run or the playground. */
-export type Holder = RunHolder | PlaygroundHolder
+/** Who holds the console: the playground, with its cloud subject selected. */
+export interface CloudPlaygroundHolder {
+  session: 'playground'
+  provider: string
+  model: string
+  started_at: string
+}
+
+/** The one occupancy owner: a console run or the playground. */
+export type Holder = RunHolder | PlaygroundHolder | CloudPlaygroundHolder
 
 export interface ConsoleOptions {
   kinds: ConsoleKind[]

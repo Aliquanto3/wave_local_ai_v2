@@ -9,7 +9,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from wave_local_ai_v2 import machines
+from wave_local_ai_v2 import google_client, machines, mistral_client, retry
 
 DEFAULT_RESULTS_PATH = "aidd_docs/results/runtime.jsonl"
 DEFAULT_QUALITY_RESULTS_PATH = "aidd_docs/results/quality.jsonl"
@@ -154,9 +154,48 @@ _DEMO_MODE_VALUES = {"true": True, "false": False}
 DEFAULT_PLAYGROUND_MAX_PROMPT_CHARS = 4000
 DEFAULT_PLAYGROUND_MAX_TOKENS = 512
 
+# The playground's one cloud subject, `<provider>:<model>`, unset by default.
+# Its own setting on purpose: a `MISTRAL_API_KEY`/`GOOGLE_API_KEY` held to
+# send the repo's own suite items is not consent to send text a client typed,
+# so holding a key enables nothing. The model must be the one the provider's
+# client is pinned to: both clients send one dated model id and take no other.
+PLAYGROUND_CLOUD_SUBJECT_VAR = "PLAYGROUND_CLOUD_SUBJECT"
+# provider -> (pinned model, key variable, pacing variable, default pacing)
+_PLAYGROUND_CLOUD_PROVIDERS: dict[str, tuple[str, str, str, float]] = {
+    "mistral": (
+        mistral_client.MODEL,
+        "MISTRAL_API_KEY",
+        "MISTRAL_REQUEST_PACING_S",
+        DEFAULT_MISTRAL_REQUEST_PACING_S,
+    ),
+    "google": (
+        google_client.MODEL,
+        "GOOGLE_API_KEY",
+        "GOOGLE_REQUEST_PACING_S",
+        DEFAULT_GOOGLE_REQUEST_PACING_S,
+    ),
+}
+
 
 class SettingsError(RuntimeError):
     """Raised when required configuration is missing or invalid."""
+
+
+@dataclass(frozen=True)
+class PlaygroundCloudSubject:
+    """The configured playground cloud subject and what its calls run under.
+
+    `pacing_s` and `max_retries` are the provider's benchmark pacing interval
+    and the retry budget a one-item batch gets, so a playground send obeys the
+    same rules as a quality batch's call.
+    """
+
+    provider: str
+    model: str
+    # repr=False: a traceback or a logged settings object must not carry it.
+    api_key: str = field(repr=False)
+    pacing_s: float
+    max_retries: int
 
 
 @dataclass(frozen=True)
@@ -290,6 +329,9 @@ class ServiceSettings:
     slm_models_dir: Path | None = None
     playground_max_prompt_chars: int = DEFAULT_PLAYGROUND_MAX_PROMPT_CHARS
     playground_max_tokens: int = DEFAULT_PLAYGROUND_MAX_TOKENS
+    # `None` unless `PLAYGROUND_CLOUD_SUBJECT` names one: the playground's one
+    # path off the machine, opt-in only.
+    playground_cloud: PlaygroundCloudSubject | None = None
 
 
 def load_service_settings() -> ServiceSettings:
@@ -377,6 +419,54 @@ def load_service_settings() -> ServiceSettings:
             int,
             minimum=1,
             minimum_reason="a playground answer needs at least one token",
+        ),
+        playground_cloud=_playground_cloud_subject(),
+    )
+
+
+def _playground_cloud_subject() -> PlaygroundCloudSubject | None:
+    """Read `PLAYGROUND_CLOUD_SUBJECT`; its provider's key only when it is set.
+
+    Unset or empty is `None`, whatever keys the environment holds. Set, it
+    must be `<provider>:<model>` with the model the provider's client is
+    pinned to, and the provider's key must be present: a misconfigured cloud
+    subject refuses service start rather than failing on the pitch screen.
+    """
+    raw = os.environ.get(PLAYGROUND_CLOUD_SUBJECT_VAR)
+    if not raw:
+        return None
+    provider, _, model = raw.partition(":")
+    if provider not in _PLAYGROUND_CLOUD_PROVIDERS:
+        raise SettingsError(
+            f"{PLAYGROUND_CLOUD_SUBJECT_VAR}={raw!r} names no known provider: "
+            f"must be '<provider>:<model>' with provider one of "
+            f"{sorted(_PLAYGROUND_CLOUD_PROVIDERS)}"
+        )
+    pinned, key_var, pacing_var, default_pacing = _PLAYGROUND_CLOUD_PROVIDERS[provider]
+    min_retries, per_item = _cloud_retry_settings()
+    if model != pinned:
+        raise SettingsError(
+            f"{PLAYGROUND_CLOUD_SUBJECT_VAR}={raw!r}: the {provider} client is "
+            f"pinned to {pinned!r}; the playground sends to no other model"
+        )
+    api_key = os.environ.get(key_var, "")
+    if not api_key:
+        raise SettingsError(
+            f"{PLAYGROUND_CLOUD_SUBJECT_VAR} names {provider} but {key_var} is not set"
+        )
+    return PlaygroundCloudSubject(
+        provider=provider,
+        model=model,
+        api_key=api_key,
+        pacing_s=_require_numeric(
+            pacing_var,
+            default_pacing,
+            float,
+            minimum=0.0,
+            minimum_reason="a pacing interval cannot be negative",
+        ),
+        max_retries=retry.derived_retry_budget(
+            1, per_item=per_item, minimum=min_retries
         ),
     )
 
@@ -583,27 +673,7 @@ def load_settings() -> Settings:
         minimum=0.0,
         minimum_reason="a pacing interval cannot be negative",
     )
-    cloud_retry_min_retries = _require_numeric(
-        "CLOUD_RETRY_MIN_RETRIES",
-        DEFAULT_CLOUD_RETRY_MIN_RETRIES,
-        int,
-        # Zero would let a small batch refuse every retry: not "no retry
-        # configuration" but a batch that gives up on its first 429.
-        minimum=1,
-        minimum_reason="every batch must be allowed at least one retry",
-    )
-    cloud_retry_retries_per_item = _require_numeric(
-        "CLOUD_RETRY_RETRIES_PER_ITEM",
-        DEFAULT_CLOUD_RETRY_RETRIES_PER_ITEM,
-        float,
-        minimum=0.0,
-        minimum_reason="a per-item retry rate cannot be negative",
-    )
-    if not math.isfinite(cloud_retry_retries_per_item):
-        raise SettingsError(
-            f"CLOUD_RETRY_RETRIES_PER_ITEM={cloud_retry_retries_per_item!r} is "
-            "not finite: a retry budget is a whole number of retries"
-        )
+    cloud_retry_min_retries, cloud_retry_retries_per_item = _cloud_retry_settings()
     contested_ordinal_max_delta = _require_numeric(
         "CONTESTED_ORDINAL_MAX_DELTA",
         DEFAULT_CONTESTED_ORDINAL_MAX_DELTA,
@@ -731,6 +801,32 @@ def _require_existing_path(env_var: str) -> Path:
     if not path.exists():
         raise SettingsError(f"{env_var}={raw} does not exist on disk")
     return path
+
+
+def _cloud_retry_settings() -> tuple[int, float]:
+    """`CLOUD_RETRY_MIN_RETRIES` and `CLOUD_RETRY_RETRIES_PER_ITEM`, validated."""
+    min_retries = _require_numeric(
+        "CLOUD_RETRY_MIN_RETRIES",
+        DEFAULT_CLOUD_RETRY_MIN_RETRIES,
+        int,
+        # Zero would let a small batch refuse every retry: not "no retry
+        # configuration" but a batch that gives up on its first 429.
+        minimum=1,
+        minimum_reason="every batch must be allowed at least one retry",
+    )
+    per_item = _require_numeric(
+        "CLOUD_RETRY_RETRIES_PER_ITEM",
+        DEFAULT_CLOUD_RETRY_RETRIES_PER_ITEM,
+        float,
+        minimum=0.0,
+        minimum_reason="a per-item retry rate cannot be negative",
+    )
+    if not math.isfinite(per_item):
+        raise SettingsError(
+            f"CLOUD_RETRY_RETRIES_PER_ITEM={per_item!r} is "
+            "not finite: a retry budget is a whole number of retries"
+        )
+    return min_retries, per_item
 
 
 def _require_numeric[T: (int, float)](

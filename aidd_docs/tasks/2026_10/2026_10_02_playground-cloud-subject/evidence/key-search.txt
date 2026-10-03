@@ -1,0 +1,22 @@
+# Key search over a stubbed playground cloud exchange (no real provider contacted)
+# `.env` loading disabled (settings.load_dotenv patched to a no-op): only the fake key is in scope
+# fake provider received 3 request(s): [{'path': '/v1/chat/completions', 'authorization_is_bearer_key': 'True', 'content': 'evidence prompt: what moves the tides?'}, {'path': '/v1/chat/completions', 'authorization_is_bearer_key': 'True', 'content': 'evidence prompt: what moves the tides?'}, {'path': '/v1/chat/completions', 'authorization_is_bearer_key': 'True', 'content': 'evidence prompt: what moves the tides?'}]
+
+## Responses
+GET /api/playground/options -> 200
+{"roster_entries":["qwen3.6-35b-a3b-ud-iq4xs","qwen3-0.6b-q8","qwen3-1.7b-q8","qwen3-4b-q4km"],"cloud_subject":{"provider":"mistral","label":"Mistral","model":"mistral-small-2603"},"thinking_policies":["allowed","disabled"],"max_prompt_chars":4000,"max_tokens":512,"loaded":null,"holder":null}
+POST /api/playground/session -> 200
+{"provider":"mistral","model":"mistral-small-2603"}
+POST /api/playground/chat -> 200
+{"delta": "The moon's pull."}
+{"final": {"thinking_policy": "not_sent", "finish_reason": "stop", "error": null}}
+
+POST /api/playground/chat -> 200
+{"final": {"thinking_policy": "not_sent", "finish_reason": null, "error": "refused by Mistral: it answered 429 (rate limit or provider failure) through 1 retry"}}
+
+DELETE /api/playground/session -> 200
+{"stopped":true}
+
+## Service log lines captured: 32
+
+## Search for the provider key's value in responses + log: 0 hit(s)

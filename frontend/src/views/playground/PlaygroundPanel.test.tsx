@@ -15,6 +15,7 @@ const SPEED_FIGURE = /\d\s*(tok|tokens?\/s|t\/s|ms\b|s\b)|per second|latency/i
 function options(overrides: Partial<PlaygroundOptions> = {}): PlaygroundOptions {
   return {
     roster_entries: ['qwen3-0.6b-q8', 'qwen3-1.7b-q8'],
+    cloud_subject: null,
     thinking_policies: ['allowed', 'disabled'],
     max_prompt_chars: 4000,
     max_tokens: 512,
@@ -210,5 +211,171 @@ describe('PlaygroundPanel', () => {
     await waitFor(() => expect(stop).toHaveBeenCalledWith('/api/playground/session'))
     expect(screen.queryByText(/Loaded:/)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Start' })).toBeInTheDocument()
+  })
+})
+
+describe('PlaygroundPanel cloud subject', () => {
+  const MISTRAL = { provider: 'mistral', label: 'Mistral', model: 'mistral-small-2603' }
+  const CLOUD_SEND = 'Send to Mistral: the text leaves this machine'
+  const answered: PlaygroundEvent[] = [
+    { delta: 'Tides follow the moon.' },
+    { final: { thinking_policy: 'not_sent', finish_reason: 'stop', error: null } },
+  ]
+
+  beforeEach(() => {
+    sessionStorage.clear()
+    localStorage.clear()
+    setKey('a-key')
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('is absent from the selector while unconfigured', async () => {
+    vi.spyOn(client, 'apiFetch').mockResolvedValue(options())
+
+    renderPanel()
+
+    await screen.findByRole('button', { name: 'Start' })
+    expect(screen.queryByRole('option', { name: /cloud/ })).not.toBeInTheDocument()
+    expect(screen.queryByText(/leaves this machine/)).not.toBeInTheDocument()
+  })
+
+  it('sits in the same selector under the same label, and starts by provider', async () => {
+    vi.spyOn(client, 'apiFetch').mockResolvedValue(options({ cloud_subject: MISTRAL }))
+    const start = vi
+      .spyOn(client, 'postJson')
+      .mockResolvedValue({ provider: 'mistral', model: 'mistral-small-2603' })
+    const user = userEvent.setup()
+
+    renderPanel()
+    await user.selectOptions(
+      await screen.findByLabelText(/Model/),
+      'Mistral mistral-small-2603 (cloud)',
+    )
+    await user.click(screen.getByRole('button', { name: 'Start' }))
+
+    expect(start).toHaveBeenCalledWith('/api/playground/session', {
+      cloud_subject: 'mistral',
+    })
+    expect(
+      await screen.findByText(/Selected: Mistral mistral-small-2603 \(cloud\)/),
+    ).toBeInTheDocument()
+    expect(label()).toBeInTheDocument()
+  })
+
+  it('names the provider on the send control before every send', async () => {
+    vi.spyOn(client, 'apiFetch').mockResolvedValue(
+      options({
+        cloud_subject: MISTRAL,
+        loaded: { provider: 'mistral', model: 'mistral-small-2603' },
+      }),
+    )
+    const chat = vi
+      .spyOn(client, 'streamPlaygroundChat')
+      .mockImplementation(async (_body, onEvent) => {
+        answered.forEach((event) => (onEvent as (e: PlaygroundEvent) => void)(event))
+      })
+    const user = userEvent.setup()
+
+    renderPanel()
+    for (const sent of [1, 2]) {
+      await user.type(await screen.findByLabelText('Prompt'), `${PROMPT} ${sent}`)
+      const send = await screen.findByRole('button', { name: CLOUD_SEND })
+      expect(send).toBeEnabled()
+      await user.click(send)
+      await waitFor(() => expect(chat).toHaveBeenCalledTimes(sent))
+    }
+
+    expect(await screen.findAllByText(/Tides follow the moon\./)).toHaveLength(2)
+    expect(screen.getByRole('button', { name: CLOUD_SEND })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Send' })).not.toBeInTheDocument()
+  })
+
+  it('carries no statement on the send control for a local subject', async () => {
+    vi.spyOn(client, 'apiFetch').mockResolvedValue(
+      options({
+        cloud_subject: MISTRAL,
+        loaded: {
+          roster_entry_id: 'qwen3-0.6b-q8',
+          profile_id: 'qwen3-0.6b-q8@laptop-mobile-gpu/gpu',
+        },
+      }),
+    )
+
+    renderPanel()
+
+    expect(await screen.findByRole('button', { name: 'Send' })).toBeInTheDocument()
+    expect(screen.queryByText(/leaves this machine/)).not.toBeInTheDocument()
+    expect(screen.getByLabelText(/Thinking/)).toBeEnabled()
+  })
+
+  it('disables the thinking policy while the cloud subject is selected', async () => {
+    vi.spyOn(client, 'apiFetch').mockResolvedValue(
+      options({
+        cloud_subject: MISTRAL,
+        loaded: { provider: 'mistral', model: 'mistral-small-2603' },
+      }),
+    )
+
+    renderPanel()
+
+    await screen.findByRole('button', { name: CLOUD_SEND })
+    expect(screen.getByLabelText(/Thinking/)).toBeDisabled()
+    expect(screen.getByText(/no thinking control/)).toBeInTheDocument()
+  })
+
+  it('shows a provider refusal as an error, never as an empty answer', async () => {
+    vi.spyOn(client, 'apiFetch').mockResolvedValue(
+      options({
+        cloud_subject: MISTRAL,
+        loaded: { provider: 'mistral', model: 'mistral-small-2603' },
+      }),
+    )
+    const refusal =
+      'refused by Mistral: it answered 429 (rate limit or provider failure) through 4 retries'
+    vi.spyOn(client, 'streamPlaygroundChat').mockImplementation(
+      async (_body, onEvent) => {
+        ;(onEvent as (e: PlaygroundEvent) => void)({
+          final: { thinking_policy: 'not_sent', finish_reason: null, error: refusal },
+        })
+      },
+    )
+    const user = userEvent.setup()
+
+    renderPanel()
+    await user.type(await screen.findByLabelText('Prompt'), PROMPT)
+    await user.click(screen.getByRole('button', { name: CLOUD_SEND }))
+
+    expect(await screen.findByText(refusal)).toBeInTheDocument()
+  })
+
+  it('names a cloud holder in a refusal', async () => {
+    vi.spyOn(client, 'apiFetch').mockResolvedValue(options())
+    vi.spyOn(client, 'postJson').mockRejectedValue(
+      new client.ApiError(
+        409,
+        JSON.stringify({
+          detail: {
+            message: 'the playground holds its mistral cloud subject',
+            holder: {
+              session: 'playground',
+              provider: 'mistral',
+              model: 'mistral-small-2603',
+              started_at: '2026-10-02T22:00:00+00:00',
+            },
+          },
+        }),
+      ),
+    )
+    const user = userEvent.setup()
+
+    renderPanel()
+    await user.click(await screen.findByRole('button', { name: 'Start' }))
+
+    expect(
+      await screen.findByText(/the mistral cloud subject mistral-small-2603/),
+    ).toBeInTheDocument()
   })
 })

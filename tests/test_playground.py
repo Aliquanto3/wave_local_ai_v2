@@ -16,15 +16,18 @@ import pytest
 import requests
 from starlette.testclient import TestClient
 
+import wave_local_ai_v2.settings as settings_module
 from wave_local_ai_v2 import (
     demo_console,
+    google_client,
+    mistral_client,
     playground,
     preflight,
     roster,
     server,
     service,
 )
-from wave_local_ai_v2.settings import ServiceSettings
+from wave_local_ai_v2.settings import PlaygroundCloudSubject, ServiceSettings
 
 API_KEY = "a-playground-key"  # pragma: allowlist secret
 KEYED = {"X-API-Key": API_KEY}
@@ -717,3 +720,439 @@ def test_a_chat_refused_while_a_run_holds_the_lock_names_the_run(
     assert detail["message"] == "a run is in progress"
     assert detail["holder"]["session"] == "run"
     assert llama == []
+
+
+# --------------------------------------------------------------------------
+# The cloud subject: opt-in, through the existing provider client
+# --------------------------------------------------------------------------
+
+CLOUD_KEY = "provider-key-7f3c9e"  # pragma: allowlist secret
+CLOUD_ANSWER = "Tides follow the moon."
+
+
+def cloud_settings(
+    settings: ServiceSettings, provider: str = "mistral", pacing_s: float = 0.0
+) -> ServiceSettings:
+    model = {"mistral": mistral_client.MODEL, "google": google_client.MODEL}
+    return replace(
+        settings,
+        playground_cloud=PlaygroundCloudSubject(
+            provider=provider,
+            model=model[provider],
+            api_key=CLOUD_KEY,
+            pacing_s=pacing_s,
+            max_retries=4,
+        ),
+    )
+
+
+@pytest.fixture
+def cloud_calls(monkeypatch) -> dict[str, list[dict[str, Any]]]:  # type: ignore[no-untyped-def]
+    """Stub both providers' clients at their own boundary; record every call."""
+    calls: dict[str, list[dict[str, Any]]] = {"mistral": [], "google": []}
+
+    def fake(provider: str) -> Any:
+        def complete_prompt(prompt: str, api_key: str, **kwargs: Any) -> Any:
+            calls[provider].append({"prompt": prompt, "api_key": api_key, **kwargs})
+            return {"content": CLOUD_ANSWER, "finish_reason": "stop"}
+
+        return complete_prompt
+
+    monkeypatch.setattr(mistral_client, "complete_prompt", fake("mistral"))
+    monkeypatch.setattr(google_client, "complete_prompt", fake("google"))
+    return calls
+
+
+@pytest.fixture
+def sleeps(monkeypatch) -> list[float]:  # type: ignore[no-untyped-def]
+    """Record every pacing and backoff sleep instead of waiting."""
+    slept: list[float] = []
+    monkeypatch.setattr(playground.time, "sleep", slept.append)
+    return slept
+
+
+@pytest.fixture
+def cloud_client(settings: ServiceSettings, servers: dict[str, list[Any]], sleeps):  # type: ignore[no-untyped-def]
+    demo_console.release()
+    with client_for(cloud_settings(settings)) as test_client:
+        yield test_client
+    demo_console.release()
+
+
+CLOUD_START = {"cloud_subject": "mistral"}
+DISABLED_CHAT = {"prompt": PROMPT, "thinking_policy": "disabled"}
+
+
+def test_unconfigured_the_cloud_subject_is_absent_refused_and_never_called(
+    client: TestClient,
+    cloud_calls: dict[str, list[dict[str, Any]]],
+    monkeypatch,
+) -> None:
+    # The benchmark keys are present; they alone enable nothing.
+    monkeypatch.setenv("MISTRAL_API_KEY", CLOUD_KEY)
+    monkeypatch.setenv("GOOGLE_API_KEY", CLOUD_KEY)
+    monkeypatch.delenv("PLAYGROUND_CLOUD_SUBJECT", raising=False)
+    assert settings_module._playground_cloud_subject() is None
+
+    options = client.get(OPTIONS, headers=KEYED).json()
+    started = client.post(SESSION, json=CLOUD_START, headers=KEYED)
+    chat = client.post(CHAT, json=DISABLED_CHAT, headers=KEYED)
+
+    assert options["cloud_subject"] is None
+    assert started.status_code == 422
+    assert "PLAYGROUND_CLOUD_SUBJECT is unset" in started.json()["detail"]
+    assert chat.status_code == 409
+    assert cloud_calls == {"mistral": [], "google": []}
+    assert demo_console.current_holder() is None
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"cloud_subject": "google"},
+        {"cloud_subject": "mistral", "roster_entry_id": ENTRY},
+        {},
+    ],
+)
+def test_a_start_naming_another_or_two_subjects_is_refused(
+    cloud_client: TestClient, body: dict[str, str]
+) -> None:
+    assert cloud_client.post(SESSION, json=body, headers=KEYED).status_code == 422
+    assert demo_console.current_holder() is None
+
+
+def test_configured_the_options_name_the_subject_and_never_the_key(
+    cloud_client: TestClient,
+) -> None:
+    response = cloud_client.get(OPTIONS, headers=KEYED)
+
+    assert response.json()["cloud_subject"] == {
+        "provider": "mistral",
+        "label": "Mistral",
+        "model": mistral_client.MODEL,
+    }
+    assert CLOUD_KEY not in response.text
+
+
+def test_a_cloud_exchange_goes_through_the_provider_client_and_holds_the_lock(
+    cloud_client: TestClient, cloud_calls: dict[str, list[dict[str, Any]]]
+) -> None:
+    started = cloud_client.post(SESSION, json=CLOUD_START, headers=KEYED)
+    options = cloud_client.get(OPTIONS, headers=KEYED).json()
+    events = chat_events(cloud_client, DISABLED_CHAT)
+
+    assert started.json() == {"provider": "mistral", "model": mistral_client.MODEL}
+    assert options["loaded"] == started.json()
+    assert options["holder"]["session"] == "playground"
+    assert options["holder"]["provider"] == "mistral"
+    assert events == [
+        {"delta": CLOUD_ANSWER},
+        {
+            "final": {
+                "thinking_policy": playground.CLOUD_THINKING_POLICY,
+                "finish_reason": "stop",
+                "error": None,
+            }
+        },
+    ]
+    (call,) = cloud_calls["mistral"]
+    assert call["prompt"] == PROMPT
+    assert call["api_key"] == CLOUD_KEY
+    assert call["max_tokens"] == 64
+    assert cloud_calls["google"] == []
+
+
+def test_the_cloud_samplers_are_the_quality_clis_own() -> None:
+    from wave_local_ai_v2 import quality_cli
+
+    assert playground.MISTRAL_SAMPLING == quality_cli.CLOUD_SAMPLING
+    assert playground.GOOGLE_SAMPLING == quality_cli.GOOGLE_SAMPLING
+    assert playground.RETRY_BASE_DELAY_S == quality_cli._RETRY_BASE_DELAY_S
+
+
+def test_a_google_subject_goes_through_the_google_client(
+    settings: ServiceSettings,
+    servers: dict[str, list[Any]],
+    cloud_calls: dict[str, list[dict[str, Any]]],
+    sleeps: list[float],
+) -> None:
+    demo_console.release()
+    with client_for(cloud_settings(settings, "google")) as test_client:
+        test_client.post(SESSION, json={"cloud_subject": "google"}, headers=KEYED)
+        events = chat_events(test_client, DISABLED_CHAT)
+    demo_console.release()
+
+    assert events[0] == {"delta": CLOUD_ANSWER}
+    (call,) = cloud_calls["google"]
+    assert call["seed"] == playground.GOOGLE_SAMPLING["seed"]
+    assert cloud_calls["mistral"] == []
+
+
+def test_a_local_exchange_never_reaches_a_cloud_client(
+    cloud_client: TestClient,
+    cloud_calls: dict[str, list[dict[str, Any]]],
+    llama: list[dict[str, Any]],
+) -> None:
+    cloud_client.post(SESSION, json={"roster_entry_id": ENTRY}, headers=KEYED)
+    events = chat_events(cloud_client, DISABLED_CHAT)
+
+    assert events[-1]["final"]["error"] is None
+    assert cloud_calls == {"mistral": [], "google": []}
+    (call,) = llama
+    assert call["url"].startswith("http://127.0.0.1:")
+
+
+def test_selecting_the_cloud_subject_stops_the_local_model(
+    cloud_client: TestClient, servers: dict[str, list[Any]]
+) -> None:
+    cloud_client.post(SESSION, json={"roster_entry_id": ENTRY}, headers=KEYED)
+    cloud_client.post(SESSION, json=CLOUD_START, headers=KEYED)
+
+    assert servers["stopped"] == servers["started"]
+    assert isinstance(demo_console.current_holder(), demo_console.CloudPlaygroundHolder)
+    stopped = cloud_client.delete(SESSION, headers=KEYED).json()
+    assert stopped == {"stopped": True}
+    assert demo_console.current_holder() is None
+
+
+def test_the_cloud_subject_is_refused_while_a_run_holds_the_lock(
+    cloud_client: TestClient, cloud_calls: dict[str, list[dict[str, Any]]]
+) -> None:
+    demo_console.try_acquire(RUN_HOLDER)
+
+    response = cloud_client.post(SESSION, json=CLOUD_START, headers=KEYED)
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["holder"]["session"] == "run"
+    assert cloud_calls == {"mistral": [], "google": []}
+
+
+def test_a_send_is_refused_if_a_run_took_the_lock_after_the_selection(
+    cloud_client: TestClient, cloud_calls: dict[str, list[dict[str, Any]]]
+) -> None:
+    cloud_client.post(SESSION, json=CLOUD_START, headers=KEYED)
+    # The console pump's unconditional release, then a run taking the lock.
+    demo_console.release()
+    demo_console.try_acquire(RUN_HOLDER)
+
+    response = cloud_client.post(CHAT, json=DISABLED_CHAT, headers=KEYED)
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["message"] == "a run is in progress"
+    assert cloud_calls == {"mistral": [], "google": []}
+
+
+def test_a_send_is_refused_if_the_lock_was_freed_under_the_selection(
+    cloud_client: TestClient, cloud_calls: dict[str, list[dict[str, Any]]]
+) -> None:
+    cloud_client.post(SESSION, json=CLOUD_START, headers=KEYED)
+    demo_console.release()
+
+    response = cloud_client.post(CHAT, json=DISABLED_CHAT, headers=KEYED)
+
+    assert response.status_code == 409
+    assert "no longer holds" in response.json()["detail"]["message"]
+    assert cloud_calls == {"mistral": [], "google": []}
+
+
+def test_a_run_is_refused_naming_the_cloud_subject_while_it_is_selected(
+    cloud_client: TestClient, monkeypatch
+) -> None:
+    cloud_client.post(SESSION, json=CLOUD_START, headers=KEYED)
+    spawned: list[object] = []
+    monkeypatch.setattr(
+        demo_console.subprocess, "Popen", lambda *a, **k: spawned.append(a)
+    )
+
+    response = cloud_client.post(
+        CONSOLE_RUNS,
+        json={
+            "kind": "runtime",
+            "roster_entry_id": ENTRY,
+            "machine_id": MACHINE,
+            "compute_mode": "gpu",
+        },
+        headers=KEYED,
+    )
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["message"] == "the playground holds its mistral cloud subject"
+    assert detail["holder"]["provider"] == "mistral"
+    assert spawned == []
+
+
+def _raising(exc: Exception, calls: list[int]) -> Any:
+    def complete_prompt(*args: Any, **kwargs: Any) -> Any:
+        calls.append(1)
+        raise exc
+
+    return complete_prompt
+
+
+def test_a_rate_limit_is_retried_then_shown_as_a_refusal_naming_the_provider(
+    cloud_client: TestClient, monkeypatch, sleeps: list[float]
+) -> None:
+    calls: list[int] = []
+    limited = mistral_client.RetryableRequestError(
+        f"Mistral request failed with status 429: echo {CLOUD_KEY}",
+        status_code=429,
+        retry_after_s=2.0,
+    )
+    monkeypatch.setattr(mistral_client, "complete_prompt", _raising(limited, calls))
+    cloud_client.post(SESSION, json=CLOUD_START, headers=KEYED)
+
+    response = cloud_client.post(CHAT, json=DISABLED_CHAT, headers=KEYED)
+    events = [json.loads(line) for line in response.text.splitlines()]
+
+    # The first attempt and the four retries of a one-item budget, each
+    # waiting the provider's own hint.
+    assert len(calls) == 5
+    assert sleeps == [2.0] * 4
+    assert events == [
+        {
+            "final": {
+                "thinking_policy": playground.CLOUD_THINKING_POLICY,
+                "finish_reason": None,
+                "error": "refused by Mistral: it answered 429 (rate limit or "
+                "provider failure) through 4 retries",
+            }
+        }
+    ]
+    assert CLOUD_KEY not in response.text
+
+
+@pytest.mark.parametrize(
+    ("exc", "error"),
+    [
+        (
+            mistral_client.MistralRequestError(f"status 400: {CLOUD_KEY}"),
+            "refused by Mistral: MistralRequestError",
+        ),
+        (
+            requests.ConnectionError(f"https://api.mistral.ai {CLOUD_KEY}"),
+            "Mistral could not be reached (ConnectionError)",
+        ),
+    ],
+)
+def test_a_provider_failure_names_the_provider_and_never_the_clients_message(
+    cloud_client: TestClient, monkeypatch, exc: Exception, error: str
+) -> None:
+    monkeypatch.setattr(mistral_client, "complete_prompt", _raising(exc, []))
+    cloud_client.post(SESSION, json=CLOUD_START, headers=KEYED)
+
+    response = cloud_client.post(CHAT, json=DISABLED_CHAT, headers=KEYED)
+
+    assert json.loads(response.text.splitlines()[-1])["final"]["error"] == error
+    assert CLOUD_KEY not in response.text
+
+
+def test_an_empty_cloud_answer_is_a_refusal_not_an_empty_answer(
+    cloud_client: TestClient, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        mistral_client,
+        "complete_prompt",
+        lambda *a, **k: {"content": "", "finish_reason": "stop"},
+    )
+    cloud_client.post(SESSION, json=CLOUD_START, headers=KEYED)
+
+    events = chat_events(cloud_client, DISABLED_CHAT)
+
+    assert events == [
+        {
+            "final": {
+                "thinking_policy": playground.CLOUD_THINKING_POLICY,
+                "finish_reason": "stop",
+                "error": "refused by Mistral: it returned no text",
+            }
+        }
+    ]
+
+
+def test_consecutive_cloud_sends_are_paced_at_the_providers_interval(
+    settings: ServiceSettings,
+    servers: dict[str, list[Any]],
+    cloud_calls: dict[str, list[dict[str, Any]]],
+    sleeps: list[float],
+) -> None:
+    demo_console.release()
+    with client_for(cloud_settings(settings, pacing_s=30.0)) as test_client:
+        test_client.post(SESSION, json=CLOUD_START, headers=KEYED)
+        chat_events(test_client, DISABLED_CHAT)
+        chat_events(test_client, DISABLED_CHAT)
+    demo_console.release()
+
+    assert len(cloud_calls["mistral"]) == 2
+    (slept,) = sleeps
+    assert 29.0 < slept <= 30.0
+
+
+def test_no_response_body_or_log_line_carries_the_provider_key(
+    cloud_client: TestClient,
+    cloud_calls: dict[str, list[dict[str, Any]]],
+    caplog: pytest.LogCaptureFixture,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    bodies = [
+        cloud_client.get(OPTIONS, headers=KEYED).text,
+        cloud_client.post(SESSION, json=CLOUD_START, headers=KEYED).text,
+        cloud_client.get(OPTIONS, headers=KEYED).text,
+        cloud_client.post(CHAT, json=DISABLED_CHAT, headers=KEYED).text,
+        cloud_client.post(SESSION, json=CLOUD_START, headers=KEYED).text,
+        cloud_client.delete(SESSION, headers=KEYED).text,
+    ]
+
+    assert len(cloud_calls["mistral"]) == 1
+    captured = capfd.readouterr()
+    for text in (*bodies, caplog.text, captured.out, captured.err):
+        assert CLOUD_KEY not in text
+        assert PROMPT not in text
+
+
+def test_a_retry_wait_over_the_playground_cap_is_refused_without_waiting(
+    cloud_client: TestClient, monkeypatch, sleeps: list[float]
+) -> None:
+    calls: list[int] = []
+    limited = mistral_client.RetryableRequestError(
+        "Mistral request failed with status 429",
+        status_code=429,
+        retry_after_s=playground.PLAYGROUND_MAX_RETRY_WAIT_S + 50,
+    )
+    monkeypatch.setattr(mistral_client, "complete_prompt", _raising(limited, calls))
+    cloud_client.post(SESSION, json=CLOUD_START, headers=KEYED)
+
+    events = chat_events(cloud_client, DISABLED_CHAT)
+
+    assert calls == [1]
+    assert sleeps == []
+    error = events[-1]["final"]["error"]
+    assert error.startswith(
+        "refused by Mistral: it answered 429 and asked to wait 60.0 s"
+    )
+    assert f"{playground.PLAYGROUND_MAX_RETRY_WAIT_S} s cap" in error
+
+
+def test_an_unexpected_failure_still_ends_with_a_final_event_naming_the_provider(
+    cloud_client: TestClient, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        mistral_client,
+        "complete_prompt",
+        _raising(KeyError(f"choices {CLOUD_KEY}"), []),
+    )
+    cloud_client.post(SESSION, json=CLOUD_START, headers=KEYED)
+
+    response = cloud_client.post(CHAT, json=DISABLED_CHAT, headers=KEYED)
+
+    assert [json.loads(line) for line in response.text.splitlines()] == [
+        {
+            "final": {
+                "thinking_policy": playground.CLOUD_THINKING_POLICY,
+                "finish_reason": None,
+                "error": "refused by Mistral: KeyError",
+            }
+        }
+    ]
+    assert CLOUD_KEY not in response.text

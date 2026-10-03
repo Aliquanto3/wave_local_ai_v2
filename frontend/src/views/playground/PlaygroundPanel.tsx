@@ -11,7 +11,8 @@ import { useKeyGate } from '../../components/KeyGate'
 import { PlaygroundLabel } from '../../labels/PlaygroundLabel'
 import { describeHolder } from '../console/holder'
 import type {
-  LoadedModel,
+  CloudSubjectOption,
+  LoadedSubject,
   PlaygroundEvent,
   PlaygroundOccupied,
   PlaygroundOptions,
@@ -28,6 +29,35 @@ type LoadState =
  */
 const SINGLE_TURN_NOTE =
   'Each prompt is answered on its own: the model does not see earlier exchanges.'
+
+/** The selector value of the cloud subject; roster ids never carry a colon. */
+const CLOUD_PREFIX = 'cloud:'
+
+/**
+ * The send control's own text. With the cloud subject selected it states,
+ * before every send, that the text leaves this machine for that provider.
+ */
+function sendControlText(cloud: CloudSubjectOption | null): string {
+  return cloud === null
+    ? 'Send'
+    : `Send to ${cloud.label}: the text leaves this machine`
+}
+
+function subjectValue(loaded: LoadedSubject): string {
+  return 'provider' in loaded
+    ? `${CLOUD_PREFIX}${loaded.provider}`
+    : loaded.roster_entry_id
+}
+
+function describeLoaded(
+  loaded: LoadedSubject,
+  cloud: CloudSubjectOption | null,
+): string {
+  if ('provider' in loaded) {
+    return `Selected: ${cloud?.label ?? loaded.provider} ${loaded.model} (cloud)`
+  }
+  return `Loaded: ${loaded.roster_entry_id} under ${loaded.profile_id}`
+}
 
 interface Exchange {
   id: number
@@ -89,7 +119,7 @@ export function PlaygroundPanel() {
   const [load, setLoad] = useState<LoadState>({ status: 'loading' })
   const [rosterEntry, setRosterEntry] = useState('')
   const [policy, setPolicy] = useState('')
-  const [loaded, setLoaded] = useState<LoadedModel | null>(null)
+  const [loaded, setLoaded] = useState<LoadedSubject | null>(null)
   const [busy, setBusy] = useState(false)
   const [refusal, setRefusal] = useState<string | null>(null)
   const [prompt, setPrompt] = useState('')
@@ -104,7 +134,9 @@ export function PlaygroundPanel() {
         }
         setLoad({ status: 'loaded', options })
         setRosterEntry(
-          options.loaded?.roster_entry_id ?? options.roster_entries[0] ?? '',
+          options.loaded === null
+            ? (options.roster_entries[0] ?? '')
+            : subjectValue(options.loaded),
         )
         setPolicy(options.thinking_policies[0] ?? '')
         setLoaded(options.loaded)
@@ -136,11 +168,10 @@ export function PlaygroundPanel() {
     setBusy(true)
     setRefusal(null)
     try {
-      setLoaded(
-        await postJson<LoadedModel>('/api/playground/session', {
-          roster_entry_id: rosterEntry,
-        }),
-      )
+      const body = rosterEntry.startsWith(CLOUD_PREFIX)
+        ? { cloud_subject: rosterEntry.slice(CLOUD_PREFIX.length) }
+        : { roster_entry_id: rosterEntry }
+      setLoaded(await postJson<LoadedSubject>('/api/playground/session', body))
     } catch (error: unknown) {
       handleFailure(error)
     } finally {
@@ -223,6 +254,8 @@ export function PlaygroundPanel() {
   } else {
     const { options } = load
     const streaming = exchanges.some((each) => each.status === 'streaming')
+    const cloud = options.cloud_subject
+    const sendingToCloud = loaded !== null && 'provider' in loaded
     body = (
       <>
         <div className="playground-model">
@@ -237,6 +270,11 @@ export function PlaygroundPanel() {
                   {entry}
                 </option>
               ))}
+              {cloud !== null && (
+                <option value={`${CLOUD_PREFIX}${cloud.provider}`}>
+                  {cloud.label} {cloud.model} (cloud)
+                </option>
+              )}
             </select>
           </label>
           <button
@@ -251,22 +289,29 @@ export function PlaygroundPanel() {
           </button>
           {busy && <span> Loading the model…</span>}
           {loaded !== null && (
-            <span className="playground-loaded">
-              {' '}
-              Loaded: {loaded.roster_entry_id} under {loaded.profile_id}
-            </span>
+            <span className="playground-loaded"> {describeLoaded(loaded, cloud)}</span>
           )}
         </div>
         {refusal !== null && <p className="console-error">Refused: {refusal}</p>}
         <label>
           Thinking{' '}
-          <select value={policy} onChange={(change) => setPolicy(change.target.value)}>
+          <select
+            value={policy}
+            disabled={sendingToCloud}
+            onChange={(change) => setPolicy(change.target.value)}
+          >
             {options.thinking_policies.map((each) => (
               <option key={each} value={each}>
                 {each}
               </option>
             ))}
           </select>
+          {sendingToCloud && (
+            <span className="playground-policy">
+              {' '}
+              not sent: the cloud client sends no thinking control
+            </span>
+          )}
         </label>
         <ul className="playground-exchanges" aria-label="Exchanges">
           {exchanges.map((exchange) => (
@@ -285,7 +330,7 @@ export function PlaygroundPanel() {
             type="submit"
             disabled={loaded === null || streaming || prompt.trim() === ''}
           >
-            Send
+            {sendControlText(sendingToCloud ? cloud : null)}
           </button>
         </form>
       </>

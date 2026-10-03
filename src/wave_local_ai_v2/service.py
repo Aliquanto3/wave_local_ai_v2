@@ -7,11 +7,12 @@ exporter are not reachable from a request at all. Nothing here opens a file
 for writing. The non-`GET` routes exist only with demo mode on and write
 nothing themselves: `POST /api/console/runs` starts the unchanged CLI as a
 child process (`demo_console`), and the row that run produces is the one the
-CLI appends; the `/api/playground/*` routes load one roster model and proxy
-a typed prompt to it (`playground`), recording nothing at all.
+CLI appends; the `/api/playground/*` routes load one roster model (or select the
+operator-configured cloud subject) and proxy a typed prompt to it
+(`playground`), recording nothing at all.
 
-Nothing here logs the API key, the `X-API-Key` header, or the settings object
-that carries the key.
+Nothing here logs the API key, the `X-API-Key` header, the cloud subject's
+provider key, or the settings object that carries them.
 """
 
 from __future__ import annotations
@@ -500,10 +501,12 @@ def _playground_router(
     def post_playground_session(
         payload: Annotated[Any, Body()] = None,
     ) -> dict[str, str]:
-        """Load the named roster model, replacing the playground's own one."""
+        """Load the named roster model, or select the configured cloud subject."""
         try:
-            entry_id = playground.validate_entry(payload, settings)
-            return session.start(entry_id)
+            subject = playground.validate_start(payload, settings)
+            if isinstance(subject, str):
+                return session.start(subject)
+            return session.start_cloud(subject)
         except playground.PlaygroundRequestError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except playground.PlaygroundBusy as exc:

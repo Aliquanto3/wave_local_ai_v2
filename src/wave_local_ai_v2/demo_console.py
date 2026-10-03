@@ -109,11 +109,25 @@ class PlaygroundHolder:
     started_at: str
 
 
+@dataclass(frozen=True)
+class CloudPlaygroundHolder:
+    """Who holds the console: the playground, with its cloud subject selected.
+
+    It holds the same lock as a local model: a quality run spending the same
+    provider's quota could otherwise be pushed into a partial run by a
+    playground call, and a playground call made during a run would be one.
+    """
+
+    provider: str
+    model: str
+    started_at: str
+
+
 # One llama-server, one owner: a benchmark run and the playground both launch
 # llama-server on the engine's one loopback port, and a runtime figure
 # measured beside a loaded playground model would describe another machine
 # state than its fiche records. So both take this one lock.
-Holder = RunHolder | PlaygroundHolder
+Holder = RunHolder | PlaygroundHolder | CloudPlaygroundHolder
 SESSION_RUN = "run"
 SESSION_PLAYGROUND = "playground"
 
@@ -134,6 +148,8 @@ def busy_message(holder: Holder) -> str:
     """The one-line reason a request is refused while `holder` holds the lock."""
     if isinstance(holder, RunHolder):
         return "a run is in progress"
+    if isinstance(holder, CloudPlaygroundHolder):
+        return f"the playground holds its {holder.provider} cloud subject"
     return "the playground holds a local model"
 
 

@@ -400,6 +400,28 @@ The command-line interface for running benchmarks.
     run share the one occupancy lock: each `409` carries
     `holder.session` (`run`/`playground`). Service shutdown stops the
     playground model. Nothing is written or logged.
+  - The playground's one cloud subject, opt-in: `PLAYGROUND_CLOUD_SUBJECT`
+    (`<provider>:<model>`, `mistral` or `google`, the model the provider
+    client is pinned to; unset by default, and a `MISTRAL_API_KEY`/
+    `GOOGLE_API_KEY` alone never enables it; set with no key, a wrong model
+    or an unknown provider refuses service start). Set, the options carry
+    `cloud_subject` (`provider`, `label`, `model`, never the key) and
+    `POST /api/playground/session` takes `{"cloud_subject": "<provider>"}`
+    in place of a roster id: it stops the playground's local model and takes
+    the same occupancy lock (`holder.provider`), so it is refused during a
+    run and a run is refused while it is selected. Each send goes through
+    `mistral_client`/`google_client` under the provider's
+    `*_REQUEST_PACING_S` and a one-item `CLOUD_RETRY_*` budget, with the
+    quality CLI's sampler, each retry wait capped at
+    `playground.PLAYGROUND_MAX_RETRY_WAIT_S` (10 s; a longer `Retry-After`
+    is a refusal naming the provider); the answer arrives as one `delta`, `final`
+    reports `thinking_policy: "not_sent"`, and a rate limit, provider
+    error, transport error or empty text ends with `final.error` naming the
+    provider (never the client's message, which quotes the response body).
+    The send button reads `Send to <Provider>: the text leaves this
+    machine` on every send, and the thinking selector is disabled. Every
+    failure, an unexpected one included, ends with a `final` event. Nothing
+    is written or logged.
 
 Both benchmark commands stamp every row they write with a `run_id` and a UTC `captured_at`, so the
 rows of one invocation are selectable back out of the append-only store. The two
