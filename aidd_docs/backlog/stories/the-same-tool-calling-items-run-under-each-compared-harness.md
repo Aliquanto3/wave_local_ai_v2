@@ -19,7 +19,9 @@ Maps to: PRD Goals "the benchmark answers which inference engine, which agentic 
 
 Needs: a real local model run.
 
-Blocked: the open spike `aidd_docs/backlog/spikes/does-each-roster-model-emit-parseable-tool-calls-through-llama-server-and-can-each-candidate-harness-drive-it.md`, whose harness half decides which frameworks are comparable; if none beyond `direct` is, this story is not built and the harness comparison is published out of scope with `direct` as the lone reference.
+Blocked: by the spike `aidd_docs/backlog/spikes/does-each-roster-model-emit-parseable-tool-calls-through-llama-server-and-can-each-candidate-harness-drive-it.md` (`blocked`): its harness half (Follow-up run 4: lockfile resolution, captured call sequence and overhead readability per framework, P1 and P4 on `qwen3-0.6b-q8` and the MoE) is not yet run; desk research gives no framework an "unable" verdict. By Q109 (adapters keep each framework's request defaults or align them with `direct`) and Q110 (how a row names the client package `langgraph` and `llamaindex` reach the engine through). And through `depends_on` on `a-tool-calling-item-is-scored-from-its-transcript-never-from-a-judge.md` (`proposed`), blocked by the same spike's runs 1-3. If no framework beyond `direct` proves comparable, this story is not built and the harness comparison is published out of scope with `direct` as the lone reference.
+
+Current state (verified on `main` at `c68b23e`, 2026-10-03): `harness.py` closes the set at five and implements only `direct`; none of the four framework packages is a dependency in `pyproject.toml`. `HARNESS_DISTRIBUTIONS` reads `smolagents`, `langgraph`, `pydantic-ai` and `llama-index-core`; the spike's lockfile probe installs `pydantic-ai-slim[openai]`, under which a `pydantic-ai` version read raises `HarnessError`. `comparison.py` already excludes `harness_version` from the configuration difference only when every row is `direct`. No campaign declaration exists in code (`a-campaign-is-declared-as-data-and-an-empty-cell-fails-it.md` is `ready`, unbuilt), so there is no harness list and no three-harness cap refusal.
 
 ## Acceptance
 

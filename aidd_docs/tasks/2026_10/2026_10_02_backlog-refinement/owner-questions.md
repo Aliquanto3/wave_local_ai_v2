@@ -80,7 +80,7 @@ Spike: `aidd_docs/backlog/spikes/does-each-roster-model-emit-parseable-tool-call
 - Question: the frameworks send different requests for the same item by default: smolagents sends `tool_choice: required`, always adds a `final_answer` tool and its own system prompt of about 10 KB; LlamaIndex streams and sends `parallel_tool_calls: true`; pydantic-ai forces the tool choice only for structured output. Two open llama.cpp issues meet exactly these defaults: #27767 (a forced tool choice with thinking off yields prose, and every roster entry runs with thinking off) and #24807 (streamed Qwen3.6 tool calls dropped or misplaced). Does an adapter keep the defaults or align them?
 - Options: (a) keep each framework's defaults, record on the row the `tool_choice`, `parallel_tool_calls` and `stream` actually sent (read from the captured request), and publish an engine-defect failure as a harness-by-engine finding; (b) align every adapter to `direct`'s settings and record the override; (c) run and publish both.
 - Recommended default: (a). It measures each framework as a user runs it, and the captured request keeps the difference readable on the row. Cost: smolagents rows may measure llama.cpp #27767 rather than smolagents; the spike's attribution run shows whether it reproduces at b10537.
-- Blocks: order 7's adapters and order 8's reuse of them.
+- Blocks: order 7's adapters and order 8's reuse of them, and the `llamaindex` adapter of `a-rag-answer-is-scored-over-a-local-corpus-under-a-named-harness.md` (order 5), since LlamaIndex streams by default (llama.cpp #24807).
 
 ### Q110. How does a row name the client package a framework reaches the engine through?
 
@@ -88,7 +88,7 @@ Spike: `aidd_docs/backlog/spikes/does-each-roster-model-emit-parseable-tool-call
 - Question: `harness_version` reads one installed distribution, but `langgraph` reaches the engine only through `langchain-openai`, and `llamaindex` only through `llama-index-llms-openai-like` (the task already flagged `llama-index-core` as the distribution to confirm). The package that builds the request is then not on the row. How is it named?
 - Options: (a) keep the one field and rely on the published lockfile hash; (b) make `harness_version` a composite string naming both packages; (c) add a `harness_client_version` field, null for `direct`, `smolagents` and `pydantic-ai`.
 - Recommended default: (c). It keeps the existing field's meaning and shows on the row which package built the request. Cost: one more row field and a schema bump, which a new story under order 7 (or order 7 itself) carries; the done task is not reopened.
-- Blocks: order 7 rows for `langgraph` and `llamaindex`.
+- Blocks: order 7 rows for `langgraph` and `llamaindex`, and order 5's `llamaindex` rows. Related, for delivery: `harness.HARNESS_DISTRIBUTIONS` reads `pydantic-ai` while the slim install the spike probes is `pydantic-ai-slim`, which the order 7 adapter must reconcile.
 
 ## Model-output redistribution
 
