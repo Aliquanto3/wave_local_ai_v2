@@ -1,7 +1,7 @@
 """The release archive, built over the committed bundle at the checked-out commit.
 
-`scripts/assemble_release_archive.py` is what the `release` job in `ci.yml`
-runs on a `v*` tag; these tests build it into `tmp_path` and tamper with
+`scripts/assemble_release_archive.py` is what the `release-build` job in `ci.yml`
+runs on a `v*` tag (and on demand); these tests build it into `tmp_path` and tamper with
 copies of it, so every refusal the job relies on is exercised here.
 """
 
@@ -36,7 +36,7 @@ def commit() -> str:
 
 @pytest.fixture(scope="module")
 def archive(commit: str, tmp_path_factory: pytest.TempPathFactory) -> Path:
-    return release.build(TAG, commit, tmp_path_factory.mktemp("dist"))
+    return release.build(TAG, commit, tmp_path_factory.mktemp("dist"))[0]
 
 
 @pytest.fixture(scope="module")
@@ -104,7 +104,7 @@ def test_the_archive_holds_every_listed_file(files: dict[str, bytes]) -> None:
 def test_two_builds_of_one_commit_are_byte_identical(
     archive: Path, commit: str, tmp_path: Path
 ) -> None:
-    again = release.build(TAG, commit, tmp_path)
+    again, _ = release.build(TAG, commit, tmp_path)
     assert again.read_bytes() == archive.read_bytes()
 
 

@@ -20,10 +20,15 @@ export regenerated from the repository (a hand-edited table), a version or
 commit that disagrees with the tag, and a file naming a repository path the
 archive does not hold. `build` runs `verify` on what it wrote.
 
+With `--parquet` (the `release-build` job always passes it; it needs the `release`
+dependency group's `pyarrow`), the archive also holds one typed Parquet copy
+per table, and `verify` reads each back and fails unless it equals its CSV
+cell by cell under the column dictionary's types (`release_parquet.py`).
+
     uv run python scripts/assemble_release_archive.py build \\
-        --tag v0.2.0 --commit <sha> --output-dir dist
+        --tag v0.2.0 --commit <sha> --output-dir dist [--parquet]
     uv run python scripts/assemble_release_archive.py verify \\
-        --tag v0.2.0 --commit <sha> dist/wave-local-ai-v2-0.2.0.zip
+        --tag v0.2.0 --commit <sha> [--parquet] dist/wave-local-ai-v2-0.2.0.zip
 """
 
 from __future__ import annotations
@@ -40,6 +45,8 @@ import zipfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import NamedTuple
+
+import release_parquet
 
 from wave_local_ai_v2 import build_info, bundle_export
 
@@ -402,9 +409,16 @@ def build_readme(
     attribution: str,
     exports: Mapping[str, bytes],
     bundle: Sequence[str],
+    parquet: Sequence[str] = (),
+    pyarrow_version: str | None = None,
 ) -> str:
     versions = manifest_versions(exports[bundle_export.MANIFEST_FILE])
     rows = [f"| `{name}` | {TABLE_DESCRIPTIONS[name]} |" for name in sorted(exports)]
+    rows += [
+        f"| `{name}` | Typed Parquet copy of `{name.removesuffix('.parquet')}.csv`; "
+        "the CSV is right wherever the two could disagree. |"
+        for name in parquet
+    ]
     rows += [f"| `{path}` | {_bundle_part_description(path)} |" for path in bundle]
     rows += [
         f"| `{CITATION_FILE}` | How to cite this release, with its commit. |",
@@ -444,6 +458,7 @@ def build_readme(
         "| ---- | ---------- |",
         *rows,
         "",
+        *_parquet_section(parquet, pyarrow_version),
         "## How to cite this release",
         "",
         f"{attribution} Commit {commit}.",
@@ -473,14 +488,35 @@ def build_readme(
 # --------------------------------------------------------------------------
 
 
-def expected_files(tag: str, commit: str, repo_root: Path) -> dict[str, bytes]:
-    """Every archive entry, relative to its top folder, and its bytes."""
+def _parquet_section(parquet: Sequence[str], pyarrow_version: str | None) -> list[str]:
+    if not parquet:
+        return []
+    return [
+        "## Parquet copies",
+        "",
+        "Each table also ships as a Parquet file of the same name, typed from",
+        "the unit `column_dictionary.csv` gives each column; an empty CSV cell",
+        "is a Parquet null. The release build reads every copy back and fails",
+        "unless it equals its CSV cell by cell under those types. The CSV is",
+        "the contract: wherever the two could disagree, the CSV is right.",
+        f"The copies were written with pyarrow {pyarrow_version}.",
+        "",
+    ]
+
+
+def expected_files(
+    tag: str, commit: str, repo_root: Path, *, parquet: bool = False
+) -> dict[str, bytes]:
+    """Every archive entry, relative to its top folder, and its bytes; with
+    `parquet`, one typed Parquet copy per table too."""
     version = release_version(tag, commit, repo_root)
     citation = (repo_root / CITATION_FILE).read_text(encoding="utf-8")
     readme = (repo_root / README_FILE).read_text(encoding="utf-8")
     exports = export_files(repo_root)
     bundle = bundle_files(repo_root)
     files: dict[str, bytes] = dict(exports)
+    copies = release_parquet.build_copies(exports) if parquet else {}
+    files.update(copies)
     files.update({path: (repo_root / path).read_bytes() for path in bundle})
     files.update({name: (repo_root / name).read_bytes() for name in LICENCE_FILES})
     files[CITATION_FILE] = stamp_citation(citation, commit).encode("utf-8")
@@ -492,6 +528,8 @@ def expected_files(tag: str, commit: str, repo_root: Path) -> dict[str, bytes]:
         attribution=readme_attribution(readme),
         exports=exports,
         bundle=bundle,
+        parquet=sorted(copies),
+        pyarrow_version=release_parquet.pyarrow_version() if parquet else None,
     ).encode("utf-8")
     return files
 
@@ -528,10 +566,13 @@ def _resolves(reference: str, names: frozenset[str]) -> bool:
 
 def clone_only_references(files: Mapping[str, bytes]) -> list[str]:
     """Each `file: path` where a file names a repository path the archive
-    does not hold, outside the reviewed `PATHS_NOT_SHIPPED`."""
+    does not hold, outside the reviewed `PATHS_NOT_SHIPPED`. Parquet copies
+    are binary and proven equal to their CSV, which is read here instead."""
     names = frozenset(files)
     found = []
     for name in sorted(files):
+        if name.endswith(".parquet"):
+            continue
         text = files[name].decode("utf-8", errors="replace")
         for match in REPOSITORY_PATH_RE.finditer(text):
             reference = match.group(0).rstrip(".")
@@ -565,10 +606,18 @@ def _identity_problems(files: Mapping[str, bytes], tag: str, commit: str) -> lis
     return problems
 
 
-def verify(archive: Path, tag: str, commit: str, repo_root: Path = REPO_ROOT) -> None:
+def verify(
+    archive: Path,
+    tag: str,
+    commit: str,
+    repo_root: Path = REPO_ROOT,
+    *,
+    parquet: bool = False,
+) -> list[str]:
     """Raise `ArchiveError` naming every way `archive` is not the release
-    archive this checkout derives for `tag` at `commit`."""
-    expected = expected_files(tag, commit, repo_root)
+    archive this checkout derives for `tag` at `commit`; return one line per
+    Parquet copy compared with its CSV and found equal."""
+    expected = expected_files(tag, commit, repo_root, parquet=parquet)
     actual = read_zip(archive, archive_name(tag[1:]))
     problems = []
     missing = sorted(set(expected) - set(actual))
@@ -588,19 +637,31 @@ def verify(archive: Path, tag: str, commit: str, repo_root: Path = REPO_ROOT) ->
         f"names a path only a clone holds: {ref}"
         for ref in clone_only_references(actual)
     ]
+    compared: list[str] = []
+    if parquet:
+        found, compared = release_parquet.compare_copies(actual)
+        problems += found
     if problems:
         raise ArchiveError("; ".join(problems))
+    return compared
 
 
-def build(tag: str, commit: str, output_dir: Path, repo_root: Path = REPO_ROOT) -> Path:
-    """Write the archive into `output_dir`, verify it, return its path."""
-    files = expected_files(tag, commit, repo_root)
+def build(
+    tag: str,
+    commit: str,
+    output_dir: Path,
+    repo_root: Path = REPO_ROOT,
+    *,
+    parquet: bool = False,
+) -> tuple[Path, list[str]]:
+    """Write the archive into `output_dir` and verify it; return its path and
+    `verify`'s Parquet comparison lines."""
+    files = expected_files(tag, commit, repo_root, parquet=parquet)
     top = archive_name(tag[1:])
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / f"{top}.zip"
     write_zip(path, top, files)
-    verify(path, tag, commit, repo_root)
-    return path
+    return path, verify(path, tag, commit, repo_root, parquet=parquet)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -612,6 +673,11 @@ def _parser() -> argparse.ArgumentParser:
         command = commands.add_parser(name)
         command.add_argument("--tag", required=True)
         command.add_argument("--commit", required=True)
+        command.add_argument(
+            "--parquet",
+            action="store_true",
+            help="also ship (build) or check (verify) one Parquet copy per table",
+        )
         if name == "build":
             command.add_argument("--output-dir", type=Path, required=True)
         else:
@@ -623,14 +689,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
         if args.command == "build":
-            path = build(args.tag, args.commit, args.output_dir)
-            print(f"built and verified {path.as_posix()}")
+            path, compared = build(
+                args.tag, args.commit, args.output_dir, parquet=args.parquet
+            )
+            done = f"built and verified {path.as_posix()}"
         else:
-            verify(args.archive, args.tag, args.commit)
-            print(f"verified {args.archive.as_posix()}")
-    except ArchiveError as error:
+            compared = verify(args.archive, args.tag, args.commit, parquet=args.parquet)
+            done = f"verified {args.archive.as_posix()}"
+    except (ArchiveError, release_parquet.ParquetError) as error:
         print(f"release archive refused: {error}", file=sys.stderr)
         return 1
+    for line in compared:
+        print(line)
+    print(done)
     return 0
 
 

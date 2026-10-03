@@ -22,6 +22,12 @@ dependencies = [
 module = "pynvml"
 ignore_missing_imports = true
 
+# Installed only by the release-build job (the `release` group), so absent from
+# the default environment mypy runs in.
+[[tool.mypy.overrides]]
+module = ["pyarrow", "pyarrow.*"]
+ignore_missing_imports = true
+
 # --cov-fail-under is coverage.py's only floor; it combines statements and
 # branches into one percentage (no separate branch-only gate exists), so the
 # floor must sit near the measured combined total (95.66%) or branch misses
@@ -65,4 +71,9 @@ dev = [
     "types-psutil>=7.2.2.20260518",
     "types-pyyaml>=6.0.12.20260815",
     "types-requests>=2.33.0.20260712",
+]
+# Installed by the release-build job alone (`uv sync --locked --group release`):
+# not a runtime dependency, not in the default `uv sync`, not in the image.
+release = [
+    "pyarrow==25.0.1",
 ]

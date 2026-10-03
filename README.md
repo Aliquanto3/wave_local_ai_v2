@@ -233,7 +233,9 @@ carries one asset, `wave-local-ai-v2-<version>.zip`. It opens with no tool to
 install and holds the five result tables and their column dictionary (the
 `wave-local-ai-v2-export` CSV files), the reference bundle they were derived
 from (the runtime and quality rows, fiches, roster and suite definitions,
-plus the comparison and leader-set records), `LICENSE`, `LICENSE-DATA`,
+plus the comparison and leader-set records), a typed Parquet copy of each
+table (the CSV is normative; the build fails if a copy differs from its CSV in
+any cell), `LICENSE`, `LICENSE-DATA`,
 `CITATION.cff` stamped with the release's commit, and a README naming the
 release, the commit, the bundle schema version and what each file is. The
 release build regenerates the tables from the bundle at the tagged commit

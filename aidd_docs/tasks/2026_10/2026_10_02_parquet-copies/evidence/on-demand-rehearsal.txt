@@ -1,0 +1,48 @@
+# Local rehearsal of the on-demand (workflow_dispatch) path: ci.yml release-build job
+# Same commands in the same order; GitHub runner not used, so actions/checkout,
+# setup-uv and upload-artifact are not run (the zip stays in a temp dir).
+# HEAD aa3b104cc7eb61b138eca88a1cb742da831fe886 (working tree: this story's changes, uncommitted; bundle files unchanged)
+# GITHUB_EVENT_NAME=workflow_dispatch GITHUB_REF_NAME=feat/night-run-2026-10-02
+
+$ uv sync --locked --group release
+Resolved 93 packages in 1ms
+Checked 93 packages in 7ms
+
+$ (Name the release)
+RELEASE_TAG=v0.2.0
+
+$ uv run --group release pytest tests/test_release_parquet.py --no-cov
+============================= 28 passed in 2.08s ==============================
+
+$ uv run --group release python scripts/assemble_release_archive.py build --tag "$RELEASE_TAG" --commit "$GITHUB_SHA" --output-dir dist --parquet
+quality_items.parquet: 80 rows x 111 columns compared with quality_items.csv cell by cell under the dictionary's types: equal
+runtime_aggregates.parquet: 2 rows x 117 columns compared with runtime_aggregates.csv cell by cell under the dictionary's types: equal
+fiches.parquet: 5 rows x 13 columns compared with fiches.csv cell by cell under the dictionary's types: equal
+roster.parquet: 4 rows x 51 columns compared with roster.csv cell by cell under the dictionary's types: equal
+comparison_records.parquet: 14 rows x 96 columns compared with comparison_records.csv cell by cell under the dictionary's types: equal
+built and verified <tmp>/dist/wave-local-ai-v2-0.2.0.zip
+exit=0
+
+$ (Record the archive digest)
+archive sha256: d824276f8d3817e976da9950535bd7b1fe36ae3886502651f8ba715af49e63b6
+
+# (Upload the release archive) not run locally: actions/upload-artifact needs the runner.
+# release-publish: skipped on workflow_dispatch (if: github.event_name == push && v* tag).
+# Its digest check, simulated on a copy of the archive:
+downloaded/wave-local-ai-v2-0.2.0.zip: OK
+
+# Determinism: a second build of the same commit into another directory
+d824276f8d3817e976da9950535bd7b1fe36ae3886502651f8ba715af49e63b6 *dist/wave-local-ai-v2-0.2.0.zip
+d824276f8d3817e976da9950535bd7b1fe36ae3886502651f8ba715af49e63b6 *dist2/wave-local-ai-v2-0.2.0.zip
+
+# Parquet entries in the archive
+wave-local-ai-v2-0.2.0/comparison_records.parquet 53672
+wave-local-ai-v2-0.2.0/fiches.parquet 6918
+wave-local-ai-v2-0.2.0/quality_items.parquet 43975
+wave-local-ai-v2-0.2.0/roster.parquet 23553
+wave-local-ai-v2-0.2.0/runtime_aggregates.parquet 46430
+
+# Image / runtime set: uv export --locked --no-dev (what the Dockerfile installs), lines naming pyarrow:
+0
+# The release group export:
+pyarrow==25.0.1
