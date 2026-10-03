@@ -18,7 +18,13 @@ Maps to: Methodology 6, 15, 20, 22; epic Boundaries "the defaults side-run, on o
 
 Needs: a real local model run on the reference machine with Ollama installed (operator), and a network download of the model from the Ollama library. No API key.
 
-Blocked: spike `aidd_docs/backlog/spikes/can-a-pinned-ollama-build-serve-the-roster-gguf-under-the-runtime-protocol.md` (what a default install chooses and reports), through order 6.
+Blocked: by the spike `aidd_docs/backlog/spikes/can-a-pinned-ollama-build-serve-the-roster-gguf-under-the-runtime-protocol.md` (`blocked`; its live session on Ollama v0.35.1 remains, here its defaults part: `pull qwen3:0.6b` into a fresh model store, then the quant `/api/show` reports and the `context_length` `/api/ps` reports). And through `depends_on` on `aidd_docs/backlog/stories/ollama-runtime-rows-stand-beside-llama-cpp-rows-on-the-same-artifact.md` (order 6, `proposed`), blocked in turn by the same spike's live session.
+
+Current state (verified on `main` at `c68b23e`, 2026-10-03):
+
+- No side-run marker exists on the runtime path or in the row contract (`row_contract.SCHEMA_VERSION` `"22"`), and no row carries `artifact_parity`.
+- `comparison.DIMENSIONS` holds `model` and `prompt_variant` only, with no engine axis and no side-run refusal; no campaign completeness check exists yet (order 3 is `ready`).
+- Spike desk findings, unverified until the live pull: `qwen3:0.6b` resolves to `Q4_K_M`, not the roster's `Q8_0`, so the figure compares a different quant by construction, which acceptance bullet 1 already requires it to state; a default install's context is set by VRAM (4096 under 24 GiB); no library tag holds the roster's `Q8_0` file or the MoE flagship's `UD-IQ4_XS` quant, so Q21's conditional second side-run on the flagship has no matching tag.
 
 ## Acceptance
 

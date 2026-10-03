@@ -17,9 +17,14 @@ Maps to: PRD AC "Given the model roster, for each in-scope use case it includes 
 
 Needs: a real local model run of every local roster entry on the development laptop, and paid API keys for Z.ai and DeepSeek (the judge pair). The cloud columns reuse order 2's Mistral and Google rows where they match, and otherwise need those subjects' keys.
 
-Blocked: through `depends_on` on `aidd_docs/backlog/stories/judge-scoring-with-inter-judge-agreement-proves-judged-machinery.md` (order 2, `proposed`), which waits on the GLM and DeepSeek judge stories and their open spikes and on the judged probe and its calibration-judge spike.
+Blocked: only through `depends_on` on `aidd_docs/backlog/stories/judge-scoring-with-inter-judge-agreement-proves-judged-machinery.md` (order 2, `proposed`), which waits on the judge pair's retirement story (judge epic order 10) and the judged probe, both `proposed`, and through them on the GLM and DeepSeek spikes' outstanding live calls (`aidd_docs/backlog/spikes/is-z-ai-glm-callable-as-a-pinned-judge-and-on-what-data-terms.md`, `aidd_docs/backlog/spikes/is-deepseek-callable-as-a-pinned-judge-and-on-what-data-terms.md`, both `blocked`). It does not wait on the calibration judge.
 
-Current state: the roster (`aidd_docs/roster/models.json`, `roster_version` 2) holds one MoE entry (`Qwen3.6-35B-A3B`) and a dense ladder (`Qwen3-0.6B`, `Qwen3-1.7B`, `Qwen3-4B`). `tiny-dense-models-compared-alongside-moe` is `done` for classification and translation only. The comparison surface of `dense-and-moe-stand-side-by-side-on-the-same-items` (`done`) builds one column per roster entry for any suite in the store, so a rewriting batch reaches it without a change to that surface. Order 2 scores the rewriting suite against one local subject and one cloud subject.
+Current state (verified on `main` at `c68b23e`, 2026-10-03):
+
+- The roster (`aidd_docs/roster/models.json`, `roster_version` 4) holds one MoE entry (`qwen3.6-35b-a3b-ud-iq4xs`, `UD-IQ4_XS`) and a dense ladder (`qwen3-0.6b-q8`, `qwen3-1.7b-q8`, `qwen3-4b-q4km`). `tiny-dense-models-compared-alongside-moe` is `done` for classification and translation only.
+- `read_model.comparison_view` (from `dense-and-moe-stand-side-by-side-on-the-same-items`, `done`) builds one entry per `suite_id` in the quality store and one column per model (`COMPARISON_COLUMN_KEY`: roster entry, provider, model id, fiche hash; plus the `architecture` dimension), so a rewriting batch reaches it without a change to its grouping. Its cells keep only `read_model.COMPARISON_CELL_FIELDS`, which holds no judge field: the judge block `_quality_entry` resolves (`agreement`, `single_judge`, `contested`, `judged_headline_score`, `judged_headline_excluded_n`) is dropped from a comparison cell today.
+- `comparison.scoring_kind` recognises only a graded row (`metric_id`) and a binary row (`correct`), so a judged row carrying neither gets no paired test.
+- Order 2 scores the rewriting suite against one local subject and one cloud subject; `rewriting-business-email` is not registered yet.
 
 ## Acceptance
 
@@ -27,7 +32,7 @@ Current state: the roster (`aidd_docs/roster/models.json`, `roster_version` 2) h
 - An entry that cannot run is present as its refusal or its failure reason, never absent: a model below its declared minimum appears as that refusal, and a failed generation scores 0 and names its reason (Methodology 9).
 - Each local row is judged by the same judge pair, under the same rubric version and the same judge prompt ids, as order 2's cloud-subject rows. Each carries both judges' scores and their agreement figure, or the single-judge flag where a family collides; on the current roster every row is a two-judge row.
 - Contested items stay visible with both judges' scores, are excluded from each column's headline score, and the excluded count is stated beside that headline.
-- At least one MoE column and at least one dense column stand over the same rewriting items on the comparison surface, each naming its architecture and quant, with no change to that surface's code.
+- At least one MoE column and at least one dense column stand over the same rewriting items on the comparison surface, each naming its architecture and quant, with no change to that surface's column grouping; its cells carry each item's judge block, so no judged score stands there without its agreement figure or single-judge flag.
 - A cloud subject's rewriting rows from order 2 are cited rather than re-run when they share the suite version and `prompt_set_hash`; otherwise the cloud subject is re-run on this batch, and the comparison never shows two suite versions as one.
 - `aidd_docs/results/README.md` gains a rewriting side-by-side table: per column the headline judged score, the agreement figure, the contested count and the per-language breakdown with its n and indicative marks (Methodology 4), plus whether the dense ladder ranks by size on rewriting, the question the classification ladder answered "no".
 - No difference between two columns is stated as a result unless a paired test backs it (Methodology 24); until that machinery covers judged scores, the README states the ordering as an observation.
@@ -35,7 +40,7 @@ Current state: the roster (`aidd_docs/roster/models.json`, `roster_version` 2) h
 
 ## Code it changes
 
-- None expected. The rewriting suite and its rubric come from order 2, the judge pair from the judge epic, and the comparison surface from the pitch epic; this story runs them over the full roster. A change the run proves necessary is recorded as a divergence on this story.
+- `src/wave_local_ai_v2/read_model.py`: `COMPARISON_CELL_FIELDS` gains the judge block, which a comparison cell drops today. Nothing else is expected: the rewriting suite and its rubric come from order 2, the judge pair from the judge epic, and the comparison surface from the pitch epic; this story runs them over the full roster. A change the run proves necessary is recorded as a divergence on this story.
 - `aidd_docs/results/README.md`: the rewriting side-by-side section.
 
 ## Tests it needs

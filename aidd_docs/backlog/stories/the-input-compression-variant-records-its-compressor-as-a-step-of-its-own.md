@@ -18,12 +18,20 @@ Maps to: PRD Open Question "Whether prompt compression helps or hurts a small mo
 
 Needs: a real local model run on the reference machine (the compressor model and a llama.cpp subject). No API key.
 
-Blocked: spike `aidd_docs/backlog/spikes/which-llmlingua-2-class-compressor-fits-the-reference-machine-and-in-which-placement.md`, which settles which compressor, at which setting and in which placement.
+Blocked: by the spike `aidd_docs/backlog/spikes/which-llmlingua-2-class-compressor-fits-the-reference-machine-and-in-which-placement.md` (`blocked`; desk research done, only its live CPU measurement remains: per-item duration, peak RSS and unchanged VRAM beside the flagship and `qwen3-0.6b-q8`, per-language ratios and unchanged counts for the whole prompt and for the payload alone, one EN, one FR and one DE example, the optional group's installed size, and whether `llmlingua 0.2.2` loads under `transformers 4.57.6` and `torch 2.14.1`). Its `depends_on`, `the-terse-output-variant-runs-every-item-and-meets-baseline-in-a-paired-test.md` (order 4), is `ready`.
+
+Current state (verified on `main` at `c68b23e`, 2026-10-03):
+
+- `prompt_variants.REGISTERED_VARIANTS` holds `baseline` only; the module docstring names `input_compressed` as added by its own story.
+- `pyproject.toml` declares one dependency group, `dev`, and no optional group or extra; no compressor runtime (`llmlingua`, `torch`, `transformers`) is a dependency.
+- `scripts/audit_dependencies.py` exports `uv.lock` through `uv export --format pylock.toml` with no group or extra named, so an optional group stays outside the audited set until that call names it.
+- `local_client.count_tokens` counts through llama-server `/tokenize` (`LOCAL_TOKENIZE_ENDPOINT`), the subject's own tokenizer the spike names for the before and after counts.
+- `row_contract.SCHEMA_VERSION` is `"22"`: quality rows carry `item_tokens_in`, `item_tokens_out` and a per-item TTFT under `item_ttft_source`; no compressor field exists. `docs/setup.md` names no compressor install.
 
 ## Acceptance
 
-- The variant registry gains `input_compressed`, version 1, naming its compressor by id, version, repo, revision and checksum, its compression setting, its declared placement (CPU, or a separate phase before generation), and the task families and languages it applies to, each versioned and hashed under order 2's rule. The compressor's weights are fetched by revision with a checksum verification, like a roster entry.
-- The compressor's runtime dependencies enter the project as one optional, pinned dependency group used only by `input_compressed`, as Q23 in `aidd_docs/tasks/2026_10/2026_10_01_autonomous-slicing/owner-questions.md` settles: locked in `uv.lock`, excluded from the default install and from the published container image, never a required dependency. Every other variant, and the package itself, imports and runs without the group installed; selecting `input_compressed` without it refuses the run naming the missing group.
+- The variant registry gains `input_compressed`, version 1, naming its compressor by id, version, repo, revision and checksum, its compression setting, its declared placement (CPU, in the same phase, per item just before the request, per owner answer Q115 (a), 2026-10-03), and the task families and languages it applies to, each versioned and hashed under order 2's rule. The compressor's weights are fetched by revision with a checksum verification, like a roster entry, and so is every file the compressor package fetches when it loads (the `cl100k_base` encoding file, per the spike), each loaded from its verified local copy.
+- The compressor's runtime dependencies enter the project as one optional, pinned dependency group used only by `input_compressed`, as Q23 in `aidd_docs/tasks/2026_10/2026_10_01_autonomous-slicing/owner-questions.md` settles: locked in `uv.lock`, excluded from the default install and from the published container image, never a required dependency. Its torch is the plain PyPI wheel (a CPU-only build on Windows), so the group needs no extra package index (owner answer Q115 (a), 2026-10-03). Every other variant, and the package itself, imports and runs without the group installed; selecting `input_compressed` without it refuses the run naming the missing group.
 - The dependency audit (`scripts/audit_dependencies.py`) covers the optional group's packages, and `docs/setup.md` documents the one extra install step a reproduction of the `input_compressed` cells needs.
 - The compressor runs per item, inside the measured path, and the row records the compressor's identity, its placement, the token count before and after with the tokenizer that counted them, the resulting ratio, and the compressor's wall-clock duration and energy as fields of their own, never merged into the generation's.
 - TTFT stays the engine's own figure under its `ttft_source` label; the compressor's duration is published beside it and never added to it.
@@ -39,7 +47,7 @@ Blocked: spike `aidd_docs/backlog/spikes/which-llmlingua-2-class-compressor-fits
 
 - Compressor fields present and separate from generation fields; TTFT unchanged by the compressor duration.
 - A no-op item kept with its record; item ids equal across variants.
-- A checksum mismatch on the compressor weights refuses the run.
+- A checksum mismatch on the compressor weights or on the encoding file refuses the run.
 - With the optional group absent, the other variants run and `input_compressed` is refused naming the group; the audit's exported dependency set includes the group's packages.
 
 ## Evidence it publishes

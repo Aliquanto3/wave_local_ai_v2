@@ -1,6 +1,6 @@
 ---
 type: epic
-status: proposed
+status: ready
 source: aidd_docs/tasks/2026_08/2026_08_21-wave-local-ai-v2-benchmark-suite-prd.md
 goal: aidd_docs/product/wave-local-ai-v2.md
 related_to:

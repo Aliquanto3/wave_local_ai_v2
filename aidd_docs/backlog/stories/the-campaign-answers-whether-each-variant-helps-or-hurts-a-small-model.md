@@ -22,7 +22,15 @@ Maps to: PRD AC "Given a campaign, every row records its engine ... and its prom
 
 Needs: real local model runs on the reference machine with both engines and the compressor installed, and an operator for the quiet thermal window. No API key.
 
-Blocked: through orders 8 and 9, the three Ollama spikes and the compressor spike.
+Blocked: only through `depends_on`; nothing blocks this story of its own. Not `done` among them: `aidd_docs/backlog/stories/the-constrained-variant-on-the-comparator-names-its-mechanism-or-is-dropped-with-its-reason.md` (order 8, `proposed`), blocked by the live generations of spike `which-constrained-decoding-mechanism-does-ollama-expose.md` and, through order 7, by the live session of spike `does-ollama-expose-the-prompt-it-finally-rendered.md`, and through order 6 by the live session of spike `can-a-pinned-ollama-build-serve-the-roster-gguf-under-the-runtime-protocol.md`; and `aidd_docs/backlog/stories/the-input-compression-variant-records-its-compressor-as-a-step-of-its-own.md` (order 9, `proposed`), blocked by the live CPU measurement of spike `which-llmlingua-2-class-compressor-fits-the-reference-machine-and-in-which-placement.md`. Its three other `depends_on` are `done`. The `ready` stories it reaches through them (`a-campaign-is-declared-as-data-and-an-empty-cell-fails-it.md` through orders 6 and 9, `the-terse-output-variant-runs-every-item-and-meets-baseline-in-a-paired-test.md` through order 9, `the-constrained-output-variant-runs-under-a-llama-cpp-grammar-and-names-its-mechanism.md` through order 8) block no refinement, but must be `done` before the campaign runs.
+
+Current state (verified on `main` at `c68b23e`, 2026-10-03):
+
+- No campaign declaration exists: `quality_cli.PROMPT_VARIANT_ID` and `wave_local_ai_v2.PROMPT_VARIANT_ID` are fixed to `baseline`, each comment naming the declaration as a later story; `prompt_variants.REGISTERED_VARIANTS` holds `baseline` only; `aidd_docs/roster/engines.json` holds `llama.cpp` only.
+- The suites that exist are `suite_data/classification-support-routing.json` and `suite_data/translation-business-short-form.json`, both declaring `thinking_policy: disabled`.
+- `comparison.py` produces paired tests, observations and refusals inside Holm-adjusted comparison families, along `model` and `prompt_variant` only (`comparison.DIMENSIONS`).
+- The published bundle's rows are schema `"7"` (`tests/test_reference_bundle.py` `PUBLISHED_BUNDLE_SCHEMA_VERSION`) against code `"22"`; earlier files are kept as `runtime-reference.schema-1.jsonl` and `quality-reference.schema-1.jsonl` in `aidd_docs/results/`.
+- Spike desk finding (`can-a-pinned-ollama-build-serve-the-roster-gguf-under-the-runtime-protocol.md`, launch arguments read in source): Ollama passes `-ngl` from `num_gpu` and no `--n-cpu-moe`, so the flagship's declared offload (`validated_host.n_cpu_moe` 37 in `aidd_docs/roster/models.json`) has no Ollama option; its Ollama cells are run, refused or dropped under acceptance bullet 3 with that recorded.
 
 ## Acceptance
 

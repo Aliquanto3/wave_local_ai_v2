@@ -27,7 +27,7 @@ Split, per the owner's answer to Q2 (`aidd_docs/tasks/2026_10/2026_10_01_autonom
 - A refused comparison, a member listed as refused in a family, and a named null reason are visible rows and cells, never a missing row and never a number in place of a reason.
 - A superseded family record stays a row, with the id of the record that supersedes it readable from the table, so a reader can tell the current family from an older one.
 - The export computes nothing: every value in the table is a value a record in the bundle already carries, and no p-value, adjustment or leader set is derived during the export.
-- Every column is in the dictionary and every dictionary column is in a table, as order 3 already enforces for the other four tables. Record kinds the bundle read does not hold yet (today all three; leader-set records until `each-suite-and-machine-publishes-the-local-models-not-distinguishable-from-the-best.md` lands) are named in the dictionary as not carried by that bundle, with the epic that owns them, and the table is written with its header and no rows rather than omitted.
+- Every column is in the dictionary and every dictionary column is in a table, as order 3 already enforces for the other four tables. Record kinds a bundle read does not hold (all three when this story was written; the committed bundle now holds all three) are named in the dictionary as not carried by that bundle, with the epic that owns them, and the table is written with its header and no rows rather than omitted.
 - The CSV format pinning, the standard-library-only rule and the byte-identical rerun of order 3 hold for this table too.
 
 ## Code it changes
