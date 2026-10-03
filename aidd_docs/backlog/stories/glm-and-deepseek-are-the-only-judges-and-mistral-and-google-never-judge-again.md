@@ -19,7 +19,7 @@ Maps to: PRD Goal "Judged (open-ended) scores carry inter-judge agreement betwee
 
 Needs: none. The binding change and the forced collision are proven with stubbed backends; the live calls belong to orders 8 and 9.
 
-Blocked: only through `depends_on` on `aidd_docs/backlog/stories/a-glm-judge-answers-through-z-ai-under-the-pinning-discipline.md` (order 8, `proposed`) and `aidd_docs/backlog/stories/a-deepseek-judge-answers-through-deepseek-under-the-pinning-discipline.md` (order 9, `proposed`). Each waits on its `blocked` spike's live calls (`aidd_docs/backlog/spikes/is-z-ai-glm-callable-as-a-pinned-judge-and-on-what-data-terms.md`, `aidd_docs/backlog/spikes/is-deepseek-callable-as-a-pinned-judge-and-on-what-data-terms.md`) and on owner question Q102; order 9 also on Q103.
+Blocked: only through `depends_on` on `aidd_docs/backlog/stories/a-glm-judge-answers-through-z-ai-under-the-pinning-discipline.md` (order 8, `proposed`) and `aidd_docs/backlog/stories/a-deepseek-judge-answers-through-deepseek-under-the-pinning-discipline.md` (order 9, `proposed`). Each waits on its `blocked` spike's live calls with a paid key (`aidd_docs/backlog/spikes/is-z-ai-glm-callable-as-a-pinned-judge-and-on-what-data-terms.md`, `aidd_docs/backlog/spikes/is-deepseek-callable-as-a-pinned-judge-and-on-what-data-terms.md`).
 
 Current state (verified on `main` at `c68b23e`, 2026-10-03):
 - `judge_backends.py` holds `mistral_judge_backend` and `google_judge_backend` (`PROVIDER_MISTRAL`, `PROVIDER_GOOGLE`); `judge_probe.py`, `tests/test_judge.py` and `tests/test_judge_probe.py` are the only modules that import `judge_backends`.

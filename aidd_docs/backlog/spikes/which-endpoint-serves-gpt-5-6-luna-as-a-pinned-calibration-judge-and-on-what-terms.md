@@ -14,12 +14,12 @@ Through which endpoint can GPT-5.6 Luna be called as a calibration judge pinned 
 
 ## Decision
 
-The calibration client's build inputs (order 11): the serving endpoint the owner's answer to Q7 selects, its pinned dated id, the sampling set and seed availability, the reasoning control and the effort value it sends, the finish-reason mapping, the rate-limit status and retry-hint shape, the list-price entry, the family the model is declared under, and the data-use sentence the README's egress statement carries. It also returns the projected cost of calibrating 10% of a full judged campaign at the found rate, which the owner weighs against the budget question Q9.
+The calibration client's build inputs (order 11): the serving endpoint the owner's answer to Q7 selects, its pinned id and its build markers (Methodology 12 as amended by owner answer Q102 (a), 2026-10-03), the sampling set and seed availability, the reasoning control and the effort value it sends, the finish-reason mapping, the rate-limit status and retry-hint shape, the list-price entry, the family the model is declared under, and the data-use sentence the README's egress statement carries. It also returns the projected cost of calibrating 10% of a full judged campaign at the found rate, which the owner weighs against the budget question Q9.
 
 ## Bounds
 
 - Evidence needed: captured live requests and responses, never a documentation page alone, against the vendor's direct API, and against a router only if Q7 is answered that way (then also: whether the provider order can be fixed, fallbacks disabled, and the answering provider read off the response): live catalog endpoint and auth; whether a dated non-floating id for GPT-5.6 Luna is listed and addressable; sampling parameter names, ranges and defaults, and whether temperature is accepted at all at the chosen reasoning setting; whether a per-request seed exists and is honoured; where the content, finish reason and usage counts live, the full finish-reason enum with its block or safety values, and whether reasoning tokens are reported apart from output tokens; the lowest reasoning effort the model accepts and what is billed at it; the paid tier's rate limits, the status and body of a limit response and any retry-after hint; the API version a row records; catalogue input, output and reasoning rates with source URL and retrieval date; the endpoint's data-use and retention terms for API traffic at a named revision.
-- Stop when: one dated id on one endpoint is named as pin candidate with every build input above answered from a captured call and the terms stated from their text, or no endpoint is shown able to meet Methodology 12's pre-flight or the egress non-goal, which is recorded as a no-go for the calibration judge as specified.
+- Stop when: one pin candidate on one endpoint is named under Methodology 12 as amended by owner answer Q102 (a), 2026-10-03: the snapshot id OpenAI serves (`gpt-5.6-luna`, which has no dated id) read from the live `/v1/models` list, plus every build marker the live calls capture (the listing's `created`, the response's `model` and `system_fingerprint`), with every build input above answered from a captured call and the terms stated from their text; or no endpoint is shown able to meet that pre-flight or the egress non-goal, which is recorded as a no-go for the calibration judge as specified.
 
 ## Investigation
 
@@ -58,6 +58,8 @@ Desk research only, 2026-10-02. No provider call was made: the Bounds require ca
 - Endpoint is OpenAI's direct API, never a router (owner answer Q7 (a), 2026-10-01; story Acceptance line 1).
 - Subsample rule: per suite and batch, seeded, stratified by language, rounded up, at least one per language (Q8 (a)).
 - No spend cap; cost is reported and compared after the first campaign (Q9 (a)).
+- Pinning: owner answer Q102 (a), 2026-10-03, amended Methodology 12: the undated snapshot id `gpt-5.6-luna` is pinned from the live list with every build marker the provider returns, and a run refuses when a marker differs from the pinned one.
+- Calibration model: owner answer Q104 (a), 2026-10-03: `gpt-5.6-luna` stays the calibration judge, as the PRD names it; `gpt-6-luna` is not adopted. No target change for this spike.
 
 ### Assumptions
 
@@ -70,11 +72,12 @@ Desk research only, 2026-10-02. No provider call was made: the Bounds require ca
 
 - Result: GPT-5.6 Luna exists on OpenAI's direct API as `gpt-5.6-luna`, not deprecated, $0.20 / $0.02 / $1.20 per 1M input / cached / output tokens (Standard, retrieved 2026-10-02), reasoning disableable with effort `none`, reasoning tokens reported apart, data not used for training by default with 30-day abuse-monitoring retention. Not settled: (1) OpenAI lists no dated id for the model, so Methodology 12's dated-id pin needs an owner ruling or a live observation that the response echoes a dated id; (2) every build input still needs a captured live call, which the Bounds require and this run may not make; (3) the Services Agreement text was not readable (HTTP 403), so the terms are stated from the developer data-controls page, not the contract at a named revision. GPT-6 Luna (`gpt-6-luna`, released 2026-09-22, half the price) now heads OpenAI's Luna line; the PRD still names GPT-5.6 Luna.
 - Confidence: medium on the documented surface (official developer pages plus SDK types generated from the OpenAPI spec at a pinned tag, consistent with each other); low on sampling behaviour at effort `none` for GPT-5.6, on seed honouring, and on the contract text, none of which was observed.
-- Remaining uncertainty: dated-id question; whether `temperature` and `seed` are accepted with `reasoning_effort: "none"` on `gpt-5.6-luna`; what `response.model` echoes; the API version a row records (OpenAI has no dated version header in the docs read; `/v1` path plus `system_fingerprint` are the candidates); a real 429 body and headers; the paid tier the key lands on; the Services Agreement revision.
+- Since the desk research: owner answer Q102 (a), 2026-10-03, settles not-settled point (1) (the snapshot id is pinned with its build markers), and owner answer Q104 (a), 2026-10-03, keeps GPT-5.6 Luna over GPT-6 Luna.
+- Remaining uncertainty: which build markers the live calls actually return and whether they stay stable across calls; whether `temperature` and `seed` are accepted with `reasoning_effort: "none"` on `gpt-5.6-luna`; what `response.model` echoes; the API version a row records (OpenAI has no dated version header in the docs read; `/v1` path plus `system_fingerprint` are the candidates); a real 429 body and headers; the paid tier the key lands on; the Services Agreement revision.
 
 ## Follow-up
 
-Parent `aidd_docs/backlog/stories/a-calibration-judge-scores-one-judged-item-in-ten-and-never-moves-a-score.md` (order 11): still blocked by this spike. Its `Blocked:` line should read: by this spike's live calls (listed below) and owner question Q102 (Methodology 12's dated id for `gpt-5.6-luna`), and through `depends_on` on order 10.
+Parent `aidd_docs/backlog/stories/a-calibration-judge-scores-one-judged-item-in-ten-and-never-moves-a-score.md` (order 11): still blocked by this spike. Its `Blocked:` line should read: by this spike's live calls (listed below), and through `depends_on` on order 10.
 
 Live calls remaining (with a paid OpenAI key in `OPENAI_API_KEY`; capture full request, status, headers and body for each):
 
@@ -88,4 +91,6 @@ Live calls remaining (with a paid OpenAI key in `OPENAI_API_KEY`; capture full r
 8. Unavailable model: `GET /v1/models/gpt-5.6-luna-2099-01-01` and a chat call with that id, capturing the 404 body.
 9. Terms: open https://openai.com/policies/services-agreement/ in a browser and record its effective date and the data-use and retention clauses verbatim.
 
-Owner questions, filed in `aidd_docs/tasks/2026_10/2026_10_02_backlog-refinement/owner-questions.md`: Q102 (Methodology 12 for a judge provider that publishes no dated id: `gpt-5.6-luna` is an undated snapshot id) and Q104 (GPT-5.6 Luna or the newer GPT-6 Luna as the calibration model).
+Owner questions, filed in `aidd_docs/tasks/2026_10/2026_10_02_backlog-refinement/owner-questions.md`, both answered: Q102 (Methodology 12 for a judge provider that publishes no dated id: `gpt-5.6-luna` is an undated snapshot id), owner answer Q102 (a), 2026-10-03; Q104 (GPT-5.6 Luna or the newer GPT-6 Luna as the calibration model), owner answer Q104 (a), 2026-10-03.
+
+Execution vehicle: `aidd_docs/backlog/spikes/does-one-paid-key-session-capture-what-the-three-judge-provider-spikes-need.md` runs the live calls above in one paid-key session with the other two judge providers, adding the one-token probe, marker-stability repeats, capped bursts and dated terms saves they lack.
