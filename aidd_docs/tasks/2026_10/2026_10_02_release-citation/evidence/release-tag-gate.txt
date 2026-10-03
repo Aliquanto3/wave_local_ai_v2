@@ -1,0 +1,3 @@
+$ GITHUB_REF=refs/tags/v0.2.0 uv run pytest tests/test_citation.py --no-cov -k release_names
+E           Failed: refs/tags/v0.2.0 cannot publish with unresolved PLACEHOLDER-OWNER-AFFILIATION, PLACEHOLDER-OWNER-FAMILY-NAMES, PLACEHOLDER-OWNER-GIVEN-NAMES, PLACEHOLDER-OWNER-ORCID
+1 failed, 12 deselected in 0.21s

@@ -1,0 +1,34 @@
+# How to cite this work. The README's "Licence" section states the
+# attribution string derived from this file; CC-BY 4.0 (LICENSE-DATA) asks a
+# reuser to reproduce it, and tests/test_citation.py fails when the two
+# disagree or when `version` differs from the packaged version.
+#
+# This repository copy names no commit: a committed file cannot name the
+# commit that contains it. The copy shipped in the release archive, once the
+# release job builds one, will have the release's commit stamped into it.
+#
+# `date-released` is the date of this version's CHANGELOG.md heading;
+# tests/test_citation.py fails when the two disagree.
+#
+# Unresolved: every PLACEHOLDER- value awaits the owner's chosen
+# identity (pseudonym or real name, ORCID, affiliation). A build on a release
+# tag fails while any of them remains.
+cff-version: 1.2.0
+message: >-
+  If you use these results or this software, please cite them as below.
+  The same form is the attribution CC-BY 4.0 requires for the data.
+type: software
+title: wave-local-ai-v2
+version: 0.2.0
+date-released: 2026-09-22
+authors:
+  - given-names: PLACEHOLDER-OWNER-GIVEN-NAMES
+    family-names: PLACEHOLDER-OWNER-FAMILY-NAMES
+    affiliation: PLACEHOLDER-OWNER-AFFILIATION
+    # orcid: PLACEHOLDER-OWNER-ORCID (https://orcid.org/NNNN-NNNN-NNNN-NNNN, or delete this line)
+repository-code: https://github.com/Aliquanto3/wave_local_ai_v2
+# MIT covers the code (LICENSE); CC-BY 4.0 covers the data parts LICENSE-DATA
+# names. Neither licence covers what LICENSE-DATA says it does not grant.
+license:
+  - MIT
+  - CC-BY-4.0

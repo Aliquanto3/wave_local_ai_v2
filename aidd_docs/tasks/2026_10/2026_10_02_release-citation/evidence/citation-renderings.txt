@@ -1,0 +1,11 @@
+$ uvx --from cffconvert==2.0.0 cffconvert -f apalike -i CITATION.cff
+PLACEHOLDER-OWNER-FAMILY-NAMES P. (2026). wave-local-ai-v2 (version 0.2.0). URL: https://github.com/Aliquanto3/wave_local_ai_v2
+
+$ uvx --from cffconvert==2.0.0 cffconvert -f bibtex -i CITATION.cff
+@misc{YourReferenceHere,
+author = {PLACEHOLDER-OWNER-FAMILY-NAMES, PLACEHOLDER-OWNER-GIVEN-NAMES},
+month = {9},
+title = {wave-local-ai-v2},
+url = {https://github.com/Aliquanto3/wave_local_ai_v2},
+year = {2026}
+}

@@ -112,11 +112,13 @@ facts. They are disclosed here so that a reuser can weigh them.
 ## 4. Attribution
 
 CC-BY 4.0 requires attribution (Section 3(a) of the legal text below). The
-attribution string a reuser reproduces will be stated in the "Licence"
-section of README.md, together with a CITATION.cff file. Until it is,
-attribute the covered parts as Section 3(a) requires: name the licensor
-(Aliquanto3) and the work (wave-local-ai-v2), state the licence (CC-BY 4.0)
-with a link to it, link to this repository, and indicate any changes made.
+attribution string a reuser reproduces is stated in the "Licence" section of
+README.md and derived from CITATION.cff, which is also the citation: copy
+that one string, for the release you used, and indicate any changes made.
+While the author fields in CITATION.cff are placeholders, attribute as
+Section 3(a) requires: name the licensor (Aliquanto3), the work
+(wave-local-ai-v2), the licence (CC-BY 4.0) with a link to it, this
+repository, and any changes made.
 
 
 ## 5. CC-BY 4.0 legal text

@@ -255,9 +255,30 @@ The untracked per-machine `runtime.jsonl` and `quality.jsonl` are not
 published and not covered. No item is drawn from a public benchmark today; one
 that is will carry its source's licence, recorded per item, not CC-BY 4.0.
 
-The attribution string a reuser reproduces will be stated in this section,
-together with a `CITATION.cff` file. Until then, attribute as `LICENSE-DATA`
-section 4 describes.
+### Attribution and citation
+
+Cite this work, and attribute the data as CC-BY 4.0 requires, with this one
+string. It is derived from [`CITATION.cff`](CITATION.cff) (work, author, year,
+version, link, licences), and a test fails when the two disagree:
+
+<!-- attribution:start -->
+PLACEHOLDER-OWNER-FAMILY-NAMES, PLACEHOLDER-OWNER-GIVEN-NAMES (2026). wave-local-ai-v2, version 0.2.0. https://github.com/Aliquanto3/wave_local_ai_v2. Licences: code: MIT; data: CC-BY 4.0 (https://creativecommons.org/licenses/by/4.0/).
+<!-- attribution:end -->
+
+The string above names the release this branch is at. To cite another
+release, take its `version` and the year of its `date-released` from that
+release's `CITATION.cff` (at its tag), and keep the rest. A tag older than
+`CITATION.cff` has none: cite it with the tag name as the version and the
+year of its `CHANGELOG.md` heading. Once releases ship an archive, its copy
+will also name the release's commit; this repository's copy cannot, since a
+committed file cannot name the commit that contains it. If you changed the
+data, say so after the string.
+
+The author fields are placeholders until the owner states the identity to
+cite; a build on a release tag fails while any `PLACEHOLDER-` value remains.
+Until then, attribute the data as `LICENSE-DATA` section 4 states: name the
+licensor (Aliquanto3), the work, the licence and its link, this repository,
+and any changes made.
 
 ## Project status
 
