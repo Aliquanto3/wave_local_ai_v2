@@ -1,8 +1,9 @@
 # Licence notice
 
-The data files in this directory, the reference bundle's `*-reference.jsonl` rows and
-any record a project command publishes here, are licensed under the Creative Commons
-Attribution 4.0 International licence (CC-BY 4.0). The repository's code is MIT.
+The data files in this directory, the reference bundle's `*-reference.jsonl` rows, the
+client-session record `client-sessions.jsonl` and any record a project command publishes
+here, are licensed under the Creative Commons Attribution 4.0 International licence
+(CC-BY 4.0). The repository's code is MIT.
 
 Not covered by CC-BY 4.0 here:
 

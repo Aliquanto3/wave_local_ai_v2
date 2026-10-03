@@ -137,6 +137,12 @@ PATHS_NOT_SHIPPED: Mapping[str, NotShipped] = {
         _LICENCE,
         "superseded quality rows, retained in the repository; no table reads them",
     ),
+    "aidd_docs/results/client-sessions.jsonl": NotShipped(
+        _LICENCE,
+        "the client-session reception record, appended by hand after a release "
+        "ships; its copy at this commit is already stale, so read the current "
+        "version on the repository's main branch",
+    ),
     "src/wave_local_ai_v2/suite_data/": NotShipped(
         _LICENCE,
         "the hand-written suite items as stored in the source tree; their "

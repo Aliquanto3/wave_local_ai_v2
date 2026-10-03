@@ -32,6 +32,7 @@ them is MIT, and the module's header says so.
 - `aidd_docs/results/quality-reference.jsonl`: the reference bundle's current quality rows, including the hand-written suite items they carry in their item fields (`item_id`, `prompt`, `expected_label`, and `reference_output` on graded rows); the model-output fields excepted, see 1.3.
 - `aidd_docs/results/runtime-reference.schema-1.jsonl`: superseded runtime rows, retained beside the current ones.
 - `aidd_docs/results/quality-reference.schema-1.jsonl`: superseded quality rows, retained beside the current ones, item fields included; the model-output fields excepted, see 1.3.
+- `aidd_docs/results/client-sessions.jsonl`: the client-session reception record, one hand-written record per session in which a benchmark result was shown to a client or their engineer, carrying pseudonymous ids only.
 - `aidd_docs/results/fiches/`: the hardware fiches the rows cite by `fiche_hash`.
 - `aidd_docs/results/suite-definitions/`: the published suite-definition snapshots the rows cite by `suite_id` and `suite_version`, including the hand-written suite items as published.
 - `aidd_docs/results/comparisons/`: the paired-comparison family records computed over the published rows.

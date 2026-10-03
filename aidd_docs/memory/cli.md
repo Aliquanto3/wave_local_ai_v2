@@ -345,6 +345,25 @@ The command-line interface for running benchmarks.
   declaration or a rows file does not load. Runtime rows name no suite and
   fill no cell. A later dimension (the harness list) extends this one
   declaration and its cell product.
+- `wave-local-ai-v2-client-sessions [--sessions <jsonl>] [--changelog
+  <CHANGELOG.md>]` — the client-session reception record's check
+  (`client_sessions.py`) over `aidd_docs/results/client-sessions.jsonl`, the
+  tracked, append-only, hand-written record of each client showing (procedure:
+  `docs/client-session-record.md`). Prints each record read back with its
+  markings (backfilled, unreleased at a commit, corrects / corrected by), then
+  the incomplete content fields (`role`, `criterion`, `evidence_offered`
+  absent or stated empty: reported, exit `0`), then the refusals by line and
+  field (exit `1`): unparsable line, absent identity field, value outside its
+  set, unknown key, id not `session-`/`client-` + 12 hex, duplicate session
+  id, `corrects` naming no earlier record or an already-corrected one, a
+  release neither a dated `CHANGELOG.md` heading nor `unreleased` with an
+  existing 40-hex `release_commit` (`git cat-file -e` in the changelog's
+  repository), a session before its release date, a log before its session,
+  and an outcome that disagrees with its challenge list. Exit `2` when a file
+  cannot be read. `tests/test_client_sessions.py` also walks the file's
+  committed versions along `git log --first-parent` and fails on any edited
+  or removed line (a shallow clone fails under `CI`; the `test` job checks out
+  with `fetch-depth: 0`).
 - `wave-local-ai-v2-serve` — read-only results service: four `GET` routes over
   the two stores, answering the views a pitch screen needs without a terminal.
   Writes nothing: every store file is opened for reading, and every non-`GET`

@@ -142,6 +142,7 @@ def test_the_scope_names_what_the_story_requires() -> None:
         "aidd_docs/results/quality-reference.jsonl",
         "aidd_docs/results/runtime-reference.schema-1.jsonl",
         "aidd_docs/results/quality-reference.schema-1.jsonl",
+        "aidd_docs/results/client-sessions.jsonl",
         "src/wave_local_ai_v2/suite_data/",
         "src/wave_local_ai_v2/judge_probe.py",
     } <= set(covered)

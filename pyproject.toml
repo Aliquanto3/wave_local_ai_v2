@@ -51,6 +51,7 @@ wave-local-ai-v2-composition-check = "wave_local_ai_v2.composition_check:main"
 wave-local-ai-v2-campaign-completeness = "wave_local_ai_v2.campaigns:main"
 wave-local-ai-v2-promote = "wave_local_ai_v2.machine_results:main"
 wave-local-ai-v2-merge-bundle = "wave_local_ai_v2.bundle_merge:main"
+wave-local-ai-v2-client-sessions = "wave_local_ai_v2.client_sessions:main"
 
 [build-system]
 requires = ["uv_build>=0.11.7,<0.12.0"]

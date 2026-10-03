@@ -38,6 +38,20 @@ per-machine output and stay untracked (`.gitignore`). Tracking them instead woul
 the working tree on every run and would ship rows that do not belong to any acceptance
 criterion.
 
+## The client-session record (`client-sessions.jsonl`)
+
+`client-sessions.jsonl` is not part of the bundle: it records how the results were
+received. Each line is one session in which a benchmark result was shown to a client or
+their engineer, appended by hand the same day: the release shown, whether the audience
+was outside the consultant's own firm, the outcome, and per challenge the challenger's
+role, the criterion disputed, the claims it bears on and the evidence that resolved it,
+under a pseudonymous client id only. The file is tracked, append-only (a test walks its
+committed history), and holds no real session yet; it ships empty.
+`wave-local-ai-v2-client-sessions` checks it, refusing a malformed record by line and
+field and reporting an incomplete one. The procedure that takes a consultant from the
+end of a session to a committed record, with a worked example, is
+[`docs/client-session-record.md`](../../docs/client-session-record.md).
+
 ## The published bundle is one schema behind the code
 
 The bundle's rows carry `schema_version` `"7"`; `row_contract.SCHEMA_VERSION` is `"8"`
