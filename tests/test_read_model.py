@@ -680,11 +680,6 @@ def two_entry_roster_path(tmp_path: Path) -> Path:
                             "active_params_b": 3.0,
                         },
                         "server_flags": server_flags(),
-                        "validated_host": {
-                            "n_cpu_moe": 37,
-                            "threads": 8,
-                            "fiche_summary": "a laptop",
-                        },
                     },
                     SECOND_ROSTER_ENTRY_ID: {
                         "repo": "unsloth/Qwen3-4B-GGUF",
@@ -699,11 +694,6 @@ def two_entry_roster_path(tmp_path: Path) -> Path:
                             "active_params_b": 4.0,
                         },
                         "server_flags": server_flags(),
-                        "validated_host": {
-                            "n_cpu_moe": None,
-                            "threads": 8,
-                            "fiche_summary": "a laptop",
-                        },
                     },
                 },
             }

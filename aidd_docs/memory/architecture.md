@@ -101,8 +101,11 @@ flowchart LR
   checksum, architecture) and its full launch flag set. `server.py`,
   `__init__.py` and `quality_cli.py` no longer hardcode these as source
   constants — they resolve everything through `roster.resolve_entry` plus
-  two host-fitted settings (`SERVER_N_CPU_MOE`, `SERVER_THREADS` — see
-  `cli.md`) that are not roster data. The engine is data too: the engine
+  the run profile of the (entry x machine x mode) triple
+  (`aidd_docs/roster/profiles.json`, `profiles.py`: `-ngl` override,
+  `--n-cpu-moe`, `-t`), with `SERVER_N_CPU_MOE` / `SERVER_THREADS` as
+  operator overrides applied last (see `cli.md`). The profile id is on every
+  row and, outside the hashed projection, on every fiche. The engine is data too: the engine
   registry (`aidd_docs/roster/engines.json`, parsed by `engines.py`) holds
   one entry per engine (`llama.cpp`, the reference) with its live build
   probe, endpoints, lifecycle, host and port, thinking-switch field, the
@@ -118,11 +121,12 @@ flowchart LR
   `roster.validate_host_fit` *refuses* a dense entry handed any offload
   value rather than dropping the flag quietly. So the seam that lets a dense
   entry launch is a resolution change, not a `kind == "dense"` branch in
-  `server.build_flags`: `host_n_cpu_moe` of `None` (the unset state) is
-  resolved from the entry's own `validated_host.n_cpu_moe` *before*
-  `validate_host_fit` runs, so the check always sees the value that will
-  reach the command line. `0` is an explicit instruction to offload no
-  experts and still refuses; `None` is the absence of an instruction. The
+  `server.build_flags`: the run profile (`profiles.py`) resolves no
+  `n_cpu_moe` for a dense entry, and `validate_host_fit` runs on the resolved
+  profile, operator override included, so the check always sees the value
+  that will reach the command line. `0` is an explicit instruction to
+  offload no experts and still refuses; `None` is the absence of an
+  instruction. The
   committed fiche for each run records the launched flag list, so "this row
   carried no MoE offload" is checkable after the fact and not just at launch.
 - `detect-secrets` opens files with the locale default encoding and silently skips any it cannot decode ("we flat out ignore binary files"), so on Windows (cp1252) a doc containing `✏️`, `‌` or `←` is never scanned at all — always invoke it in UTF-8 mode (`python -X utf8 -m detect_secrets...`), on every OS.

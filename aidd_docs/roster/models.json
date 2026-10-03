@@ -1,5 +1,5 @@
 {
-  "roster_version": 4,
+  "roster_version": 5,
   "size_classes": {
     "~0.5B": {
       "single_family_ladder": false,
@@ -72,11 +72,6 @@
           "min_p": 0,
           "presence_penalty": 1.5
         }
-      },
-      "validated_host": {
-        "n_cpu_moe": 37,
-        "threads": 8,
-        "fiche_summary": "Consumer NVIDIA laptop GPU, ~6 GB VRAM, Windows"
       }
     },
     "qwen3-0.6b-q8": {
@@ -126,11 +121,6 @@
           "min_p": 0,
           "presence_penalty": 1.5
         }
-      },
-      "validated_host": {
-        "n_cpu_moe": null,
-        "threads": 8,
-        "fiche_summary": "Consumer NVIDIA laptop GPU, ~6 GB VRAM, Windows"
       }
     },
     "qwen3-1.7b-q8": {
@@ -180,11 +170,6 @@
           "min_p": 0,
           "presence_penalty": 1.5
         }
-      },
-      "validated_host": {
-        "n_cpu_moe": null,
-        "threads": 8,
-        "fiche_summary": "Consumer NVIDIA laptop GPU, ~6 GB VRAM, Windows"
       }
     },
     "qwen3-4b-q4km": {
@@ -234,11 +219,6 @@
           "min_p": 0,
           "presence_penalty": 1.5
         }
-      },
-      "validated_host": {
-        "n_cpu_moe": null,
-        "threads": 8,
-        "fiche_summary": "Consumer NVIDIA laptop GPU, ~6 GB VRAM, Windows"
       }
     }
   }

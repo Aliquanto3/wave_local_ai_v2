@@ -54,6 +54,7 @@ from wave_local_ai_v2 import (
     judge_protocol,
     local_client,
     mistral_client,
+    profiles,
     prompt_provenance,
     prompt_variants,
     provenance,
@@ -388,7 +389,7 @@ class _RunContext:
     # it: its id and live-probed build. A cloud subject's rows state that no
     # engine applies.
     engine: engines.EngineEntry
-    local_producer_fields: dict[str, str | None]
+    local_producer_fields: dict[str, Any]
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -467,6 +468,15 @@ def _run(resume_run_id: str | None = None) -> None:
     }
     loaded_roster = roster.load_roster(settings.roster_path)
     roster_entry = roster.resolve_entry(loaded_roster, settings.roster_entry_id)
+    # The (entry x machine x mode) run profile, with any operator override:
+    # a triple with no declared profile refuses here, before any spawn.
+    launch_profile = profiles.resolve_for_run(
+        roster_entry,
+        run_profile.machine_id,
+        run_profile.compute_mode,
+        operator_n_cpu_moe=settings.host_n_cpu_moe,
+        operator_threads=settings.host_threads,
+    )
     model_path = _local_model_path(settings, roster_entry)
     # Expected to come back indicative, naming the sub-20 item count. Not
     # suppressed: the probe sits below the gate deliberately and every row
@@ -475,14 +485,7 @@ def _run(resume_run_id: str | None = None) -> None:
     # hand-written set.
     gate_result = suite_gate.gate_suite(JUDGE_PROBE_ITEMS)
     engine = engines.tracked_reference_engine()
-    flags = server.build_flags(
-        roster_entry,
-        settings.host_n_cpu_moe,
-        settings.host_threads,
-        model_path,
-        engine=engine,
-        compute_mode=run_profile.compute_mode,
-    )
+    flags = server.build_flags(roster_entry, launch_profile, model_path, engine=engine)
     engine_fields = engines.fiche_fields(
         engine, settings.llama_server_path, flags, roster_entry.entry_id
     )
@@ -490,6 +493,7 @@ def _run(resume_run_id: str | None = None) -> None:
         engine_fields,
         machine_id=run_profile.machine_id,
         compute_mode=run_profile.compute_mode,
+        profile=launch_profile,
     )
     # After the build probe (the engine and its build are part of the
     # configuration), before the fiche, any spawn or any row is written.
@@ -502,6 +506,7 @@ def _run(resume_run_id: str | None = None) -> None:
         **engine_fields,
         machine_id=run_profile.machine_id,
         compute_mode=run_profile.compute_mode,
+        profile_id=launch_profile.profile_id,
         roster_entry_id=roster_entry.entry_id,
         model_sha256=roster_entry.sha256,
         quant=roster_entry.quant,
@@ -623,7 +628,7 @@ def _refuse_a_resume_under_another_configuration(
     settings: Settings,
     run_id: str,
     roster_entry: roster.RosterEntry,
-    local_producer_fields: Mapping[str, str | None],
+    local_producer_fields: Mapping[str, Any],
 ) -> None:
     """Raise `ResumeConfigurationError` unless every row this run already
     wrote was produced, and judged, the way this invocation would.

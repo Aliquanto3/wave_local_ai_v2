@@ -1,11 +1,11 @@
 """llama-server process lifecycle: flag builder, launch, readiness wait, shutdown.
 
 Reproduces the validated baseline command from `context_input/baseline_qwen36.md`
-verbatim, but sources every model-intrinsic flag from a roster entry
-(`roster.py`) and the two host-fitted flags (`--n-cpu-moe`, `-t`) from host
-settings, instead of from module constants. `--n-cpu-moe` falls back to the
-entry's own `validated_host` value when the host sets none, which is how a
-dense entry launches without the flag at all.
+verbatim under the MoE flagship's laptop `gpu` run profile, sourcing every
+model-intrinsic flag from a roster entry (`roster.py`) and the host-fitted
+values (`-ngl` override, `--n-cpu-moe`, `-t`) from the resolved run profile
+(`profiles.py`), instead of from module constants. A profile that resolves no
+`--n-cpu-moe` is how a dense entry launches without the flag at all.
 
 Where the server listens, which path answers its health check and whether
 this harness may spawn it at all come from the engine registry entry
@@ -28,7 +28,7 @@ from typing import IO
 
 import requests
 
-from wave_local_ai_v2 import engines, roster
+from wave_local_ai_v2 import engines, profiles, roster
 
 PORT_PROBE_TIMEOUT_S = 0.5
 READY_POLL_INTERVAL_S = 1.0
@@ -52,52 +52,46 @@ class ServerStartupError(RuntimeError):
 
 def build_flags(
     entry: roster.RosterEntry,
-    host_n_cpu_moe: int | None,
-    host_threads: int,
+    profile: profiles.ResolvedProfile,
     model_path: Path,
     *,
     engine: engines.EngineEntry | None = None,
-    compute_mode: str | None = None,
 ) -> list[str]:
-    """Build the full launch flag list for `entry` on this host.
+    """Build the full launch flag list for `entry` under its resolved run profile.
 
-    `compute_mode` `cpu_only` overrides the entry's `-ngl` with
-    `CPU_ONLY_N_GPU_LAYERS` followed by `CPU_ONLY_DEVICE_FLAGS`, and resolves
-    no `--n-cpu-moe` from the entry (its `validated_host` value is a `gpu`
-    profile's); an operator value under `cpu_only` is refused by
-    `roster.validate_host_fit`. `gpu`, or `None` (no profile override), is the
-    entry's own flag set as written -- the MoE flagship's validated command,
-    byte for byte. Every row-writing CLI passes its run's declared mode.
+    The one flag builder. `profile` is required: the host-fitted values come
+    from the (entry x machine x mode) profile `profiles.resolve` returned
+    (entry default, then profile, then operator override), never from a
+    default that would silently reuse another machine's values.
 
-    Model-intrinsic flags (`-ngl`, `-c`, `-fa`, `--jinja`, `-np`,
+    `-ngl` is the profile's (the roster's model-intrinsic default unless the
+    profile overrides it; `cpu_only` profiles declare 0), followed under
+    `cpu_only` by `CPU_ONLY_DEVICE_FLAGS`. `--n-cpu-moe` is emitted only when
+    the profile resolves a value, and `-t` is the profile's thread count. The
+    remaining model-intrinsic flags (`-c`, `-fa`, `--jinja`, `-np`,
     `--load-mode`, the sampler flags) come from `entry.server_flags`;
-    `--n-cpu-moe` and `-t` come from the host parameters; `--host`/`--port`
-    come from the engine entry (`engine`, default the tracked reference
-    engine), and stay outside the fiche's hashed projection: the engine
-    configuration hash drops them (`engines.normalise_config`). This is the
-    one call site for
-    `roster.validate_host_fit`: it runs before any flag is built, so a
-    mismatched flag set refuses before `running_server` ever spawns a
-    process.
+    `--host`/`--port` come from the engine entry (`engine`, default the
+    tracked reference engine), and stay outside the fiche's hashed
+    projection: the engine configuration hash drops them
+    (`engines.normalise_config`).
 
-    `host_n_cpu_moe` of `None` means the operator set nothing, so the entry's
-    own `validated_host["n_cpu_moe"]` is used -- 37 on the MoE flagship,
-    `null` on a dense entry, which emits no `--n-cpu-moe` at all. The
-    resolution happens *before* `validate_host_fit`, so the check runs on the
-    value that will actually reach the command line. A dense entry handed an
-    explicit value still refuses there: this is a resolution change, not a
-    `kind == "dense"` special case that would quietly drop a flag the
-    operator asked for.
+    This is the one call site for `roster.validate_host_fit`: it runs on the
+    resolved value before any flag is built, so a mismatched flag set refuses
+    before `running_server` ever spawns a process.
     """
-    cpu_only = compute_mode == "cpu_only"
-    if host_n_cpu_moe is not None:
-        resolved_n_cpu_moe: int | None = host_n_cpu_moe
-    elif cpu_only:
-        resolved_n_cpu_moe = None
-    else:
-        resolved_n_cpu_moe = entry.validated_host["n_cpu_moe"]
-    roster.validate_host_fit(entry, resolved_n_cpu_moe, compute_mode=compute_mode)
+    if profile.entry_id != entry.entry_id:
+        raise roster.RosterError(
+            f"run profile {profile.profile_id!r} was resolved for roster entry "
+            f"{profile.entry_id!r}, not {entry.entry_id!r}"
+        )
+    roster.validate_host_fit(entry, profile)
     engine = engine or engines.tracked_reference_engine()
+    cpu_only = profile.cpu_only
+    if cpu_only and profile.n_gpu_layers != CPU_ONLY_N_GPU_LAYERS:
+        raise roster.RosterError(
+            f"run profile {profile.profile_id!r} is cpu_only but resolves "
+            f"n_gpu_layers={profile.n_gpu_layers}"
+        )
 
     flags = entry.server_flags
     sampler = flags["sampler"]
@@ -105,19 +99,19 @@ def build_flags(
         "-m",
         str(model_path),
         "-ngl",
-        str(CPU_ONLY_N_GPU_LAYERS if cpu_only else flags["n_gpu_layers"]),
+        str(profile.n_gpu_layers),
     ]
     if cpu_only:
         result += CPU_ONLY_DEVICE_FLAGS
-    if resolved_n_cpu_moe is not None:
-        result += ["--n-cpu-moe", str(resolved_n_cpu_moe)]
+    if profile.n_cpu_moe is not None:
+        result += ["--n-cpu-moe", str(profile.n_cpu_moe)]
     result += [
         "-c",
         str(flags["context_size"]),
         "-fa",
         str(flags["flash_attention"]),
         "-t",
-        str(host_threads),
+        str(profile.threads),
     ]
     if flags["jinja"]:
         result.append("--jinja")

@@ -204,6 +204,7 @@ def test_build_fiche_merges_machine_capture_with_run_specific_fields() -> None:
         engine_config_hash="e" * 64,
         machine_id="laptop-mobile-gpu",
         compute_mode="cpu_only",
+        profile_id="fake-entry@laptop-mobile-gpu/cpu_only",
         roster_entry_id="fake-entry",
         model_sha256="0" * 64,
         quant="UD-IQ4_XS",
@@ -211,6 +212,7 @@ def test_build_fiche_merges_machine_capture_with_run_specific_fields() -> None:
     )
 
     assert fiche["cpu"] == "x"
+    assert fiche["profile_id"] == "fake-entry@laptop-mobile-gpu/cpu_only"
     assert fiche["engine_id"] == "llama.cpp"
     assert fiche["engine_build"] == "b10537"
     assert fiche["engine_config_hash"] == "e" * 64
@@ -220,3 +222,40 @@ def test_build_fiche_merges_machine_capture_with_run_specific_fields() -> None:
     assert fiche["model_sha256"] == "0" * 64
     assert fiche["quant"] == "UD-IQ4_XS"
     assert fiche["flags"] == ["-ngl", "99"]
+
+
+def test_renaming_a_profile_does_not_move_the_fiche_hash() -> None:
+    """`profile_id` is evidence like `flags`, outside every projection."""
+    machine = {
+        "cpu": "x",
+        "ram_gb": 32.0,
+        "gpu_name": "y",
+        "gpu_driver_version": "1.2.3",
+        "os": "z",
+        "cuda_ceiling": "12.4",
+    }
+
+    def fiche_named(profile_id: str) -> dict[str, object]:
+        return dict(
+            build_fiche(
+                machine,  # type: ignore[arg-type]
+                engine_id="llama.cpp",
+                engine_build="b10537",
+                engine_config_hash="e" * 64,
+                machine_id="laptop-mobile-gpu",
+                compute_mode="gpu",
+                profile_id=profile_id,
+                roster_entry_id="fake-entry",
+                model_sha256="0" * 64,
+                quant="UD-IQ4_XS",
+                flags=["-ngl", "99"],
+            )
+        )
+
+    original = fiche_named("fake-entry@laptop-mobile-gpu/gpu")
+    renamed = fiche_named("a-renamed-profile")
+
+    assert original["profile_id"] != renamed["profile_id"]
+    for projection in FICHE_PROJECTIONS:
+        assert "profile_id" not in FICHE_PROJECTIONS[projection]
+    assert fiche_hash(original) == fiche_hash(renamed)

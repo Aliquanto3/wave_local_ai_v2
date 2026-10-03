@@ -23,32 +23,43 @@ from typing import Any
 from wave_local_ai_v2 import cost, emissions, harness, roster, row_contract, timings
 from wave_local_ai_v2.energy import ENERGY_METHOD_UNAVAILABLE, EnergyResult
 from wave_local_ai_v2.engines import EngineFicheFields
+from wave_local_ai_v2.profiles import ResolvedProfile
 from wave_local_ai_v2.settings import Settings
 from wave_local_ai_v2.suite_gate import SuiteGateResult
 
-# What a cloud subject's quality row carries for the engine, the machine and
-# the compute mode: no local engine, no declared machine and neither `gpu` nor
-# `cpu_only` produced it, which the row states rather than leaving null.
-NO_LOCAL_PRODUCER_FIELDS: Mapping[str, str | None] = MappingProxyType(
+# What a cloud subject's quality row carries for the engine, the machine, the
+# compute mode and the run profile: no local engine, no declared machine,
+# neither `gpu` nor `cpu_only` and no profile produced it, which the row
+# states rather than leaving null.
+NO_LOCAL_PRODUCER_FIELDS: Mapping[str, Any] = MappingProxyType(
     {
         "engine_id": row_contract.ENGINE_NOT_APPLICABLE,
         "engine_build": None,
         "machine_id": row_contract.MACHINE_NOT_APPLICABLE,
         "compute_mode": row_contract.MACHINE_NOT_APPLICABLE,
+        "profile_id": row_contract.PROFILE_NOT_APPLICABLE,
+        "profile_overrides": row_contract.PROFILE_NOT_APPLICABLE,
     }
 )
 
 
 def local_producer_fields(
-    fiche_fields: EngineFicheFields, *, machine_id: str, compute_mode: str
-) -> dict[str, str | None]:
-    """The four fields a local row carries for what produced it: the engine
-    and build off its own fiche's, and the run's declared machine and mode."""
+    fiche_fields: EngineFicheFields,
+    *,
+    machine_id: str,
+    compute_mode: str,
+    profile: ResolvedProfile,
+) -> dict[str, Any]:
+    """The fields a local row carries for what produced it: the engine and
+    build off its own fiche's, the run's declared machine and mode, and the
+    run profile it launched under with any operator override."""
     return {
         "engine_id": fiche_fields["engine_id"],
         "engine_build": fiche_fields["engine_build"],
         "machine_id": machine_id,
         "compute_mode": compute_mode,
+        "profile_id": profile.profile_id,
+        "profile_overrides": profile.overrides,
     }
 
 

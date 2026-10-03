@@ -107,11 +107,7 @@ def _declaration(**overrides: Any) -> dict[str, Any]:
                 "presence_penalty": 1.5,
             },
         },
-        "validated_host": {
-            "n_cpu_moe": None,
-            "threads": 8,
-            "fiche_summary": "Consumer NVIDIA laptop GPU, ~6 GB VRAM, Windows",
-        },
+        "load_profile": {"n_cpu_moe": None, "threads": 8},
     }
     raw.update(overrides)
     return raw
@@ -278,6 +274,8 @@ def test_a_passing_candidate_carries_every_field_a_roster_entry_requires(
     assert parsed.thinking_control == CONTROL
     assert parsed.licence is not None and parsed.licence.licence_id == "apache-2.0"
     assert parsed.language_claim is not None
+    # The host-fitted values are run profile data: none reaches the entry.
+    assert "validated_host" not in entry and "load_profile" not in entry
     assert entry["sha256"] == hashlib.sha256(GGUF_BYTES).hexdigest()
     assert entry["architecture"] == {
         "kind": "dense",
@@ -520,8 +518,8 @@ def test_a_launch_block_that_does_not_fit_the_file_is_refused_before_a_load(
     tmp_path: Path, local: Server
 ) -> None:
     stubs = Stubs()
-    host = dict(_declaration()["validated_host"], n_cpu_moe=4)
-    record = _run(stubs, tmp_path, validated_host=host)
+    host = dict(_declaration()["load_profile"], n_cpu_moe=4)
+    record = _run(stubs, tmp_path, load_profile=host)
 
     _assert_refused(record, gate.STEP_LOAD, "dense")
     assert stubs.launch_calls == 0
@@ -966,3 +964,35 @@ def test_a_gated_download_mid_run_exits_2_and_records_nothing(
     assert code == 2
     assert not records.exists()
     assert stubs.launch_calls == 0
+
+
+# --- the load profile ---------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "load_profile",
+    [
+        None,
+        {"threads": 8},
+        {"n_cpu_moe": None, "threads": 0},
+        {"n_cpu_moe": -1, "threads": 8},
+        {"n_cpu_moe": None, "threads": True},
+    ],
+)
+def test_a_malformed_load_profile_is_refused(load_profile: Any) -> None:
+    with pytest.raises(gate.CandidateError, match="load_profile"):
+        gate.parse_candidate(_declaration(load_profile=load_profile))
+
+
+def test_the_gate_loads_under_an_explicit_profile_with_any_operator_threads() -> None:
+    candidate = gate.parse_candidate(_declaration())
+    entry = gate._roster_entry(candidate, sha256="0" * 64, kind="dense", expert_count=0)
+
+    declared = gate.gate_profile(candidate, entry, None)
+    assert declared.profile_id == f"{candidate.entry_id}@{gate.GATE_MACHINE}/gpu"
+    assert (declared.threads, declared.n_cpu_moe, declared.overrides) == (8, None, {})
+    assert declared.n_gpu_layers == entry.server_flags["n_gpu_layers"]
+
+    overridden = gate.gate_profile(candidate, entry, 12)
+    assert overridden.threads == 12
+    assert overridden.overrides == {"threads": {"profile": 8, "operator": 12}}

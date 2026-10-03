@@ -59,13 +59,21 @@ from wave_local_ai_v2 import (
     build_probe,
     engines,
     local_client,
+    machines,
+    profiles,
     prompt_provenance,
     roster,
     server,
     settings,
 )
 
-RECORD_VERSION = 1
+# 2: the passed entry block carries no `validated_host` (the roster's
+# host-fitted values moved into the run profile registry); the declaration's
+# `load_profile` is recorded verbatim under `candidate`.
+RECORD_VERSION = 2
+# The machine the gate's one load is named under: it runs on no declared
+# machine and writes no row, so its profile is explicit, never resolved.
+GATE_MACHINE = "candidate-gate"
 DEFAULT_RECORDS_PATH = "aidd_docs/roster/candidate-records.jsonl"
 HUB_URL = "https://huggingface.co"
 HTTP_TIMEOUT_S = 60.0
@@ -130,7 +138,9 @@ _DECLARATION_FIELDS = (
     "client_commercial_use",
     "language_claim",
     "server_flags",
-    "validated_host",
+    # The host values the gate's one load runs with (`n_cpu_moe`, `threads`):
+    # an explicit profile, not roster data, and not copied into the entry.
+    "load_profile",
 )
 
 
@@ -183,7 +193,7 @@ class Candidate:
     client_commercial_use: bool
     language_claim: Any
     server_flags: dict[str, Any]
-    validated_host: dict[str, Any]
+    load_profile: dict[str, Any]
     raw: dict[str, Any]
 
 
@@ -265,6 +275,7 @@ def parse_candidate(raw: Any) -> Candidate:
             "'client_commercial_use' must be a boolean read off the licence, "
             f"got {raw['client_commercial_use']!r}"
         )
+    _check_load_profile(raw["load_profile"])
     candidate = Candidate(
         entry_id=raw["entry_id"],
         repo=raw["repo"],
@@ -279,7 +290,7 @@ def parse_candidate(raw: Any) -> Candidate:
         client_commercial_use=raw["client_commercial_use"],
         language_claim=raw["language_claim"],
         server_flags=raw["server_flags"],
-        validated_host=raw["validated_host"],
+        load_profile=raw["load_profile"],
         raw=raw,
     )
     try:
@@ -287,6 +298,50 @@ def parse_candidate(raw: Any) -> Candidate:
     except roster.RosterError as exc:
         raise CandidateError(str(exc)) from None
     return candidate
+
+
+def _check_load_profile(block: Any) -> None:
+    """The gate's load profile: `n_cpu_moe` (an integer of at least 0, or null
+    for no `--n-cpu-moe`) and `threads` (an integer of at least 1)."""
+    if not isinstance(block, dict) or set(block) != {"n_cpu_moe", "threads"}:
+        raise CandidateError(
+            f"'load_profile' must be an object of n_cpu_moe and threads, got {block!r}"
+        )
+    for name, minimum, nullable in (("n_cpu_moe", 0, True), ("threads", 1, False)):
+        value = block[name]
+        if value is None and nullable:
+            continue
+        if not isinstance(value, int) or isinstance(value, bool) or value < minimum:
+            raise CandidateError(
+                f"'load_profile.{name}' must be an integer of at least {minimum}"
+                f"{' or null' if nullable else ''}, got {value!r}"
+            )
+
+
+def gate_profile(
+    candidate: Candidate, entry: roster.RosterEntry, host_threads: int | None
+) -> profiles.ResolvedProfile:
+    """The explicit `gpu` profile the gate's one load runs under.
+
+    The roster's `-ngl`, the declaration's `load_profile`, and an operator's
+    `SERVER_THREADS` laid over its thread count, as a run would.
+    """
+    declared_threads = candidate.load_profile["threads"]
+    overrides: dict[str, dict[str, Any]] = {}
+    if host_threads is not None:
+        overrides["threads"] = {"profile": declared_threads, "operator": host_threads}
+    return profiles.ResolvedProfile(
+        profile_id=profiles.profile_id_for(
+            candidate.entry_id, GATE_MACHINE, machines.COMPUTE_MODE_GPU
+        ),
+        entry_id=entry.entry_id,
+        machine_id=GATE_MACHINE,
+        compute_mode=machines.COMPUTE_MODE_GPU,
+        n_gpu_layers=entry.server_flags["n_gpu_layers"],
+        n_cpu_moe=candidate.load_profile["n_cpu_moe"],
+        threads=declared_threads if host_threads is None else host_threads,
+        overrides=overrides,
+    )
 
 
 def _entry_block(
@@ -333,7 +388,6 @@ def _entry_block(
     if total_params is not None:
         block["architecture"]["total_params"] = total_params
     block["server_flags"] = candidate.server_flags
-    block["validated_host"] = candidate.validated_host
     return block
 
 
@@ -394,7 +448,7 @@ class _Run:
     candidate: Candidate
     models_dir: Path
     server_path: Path
-    host_threads: int
+    host_threads: int | None
     seams: GateSeams
     today: str
     observed: dict[str, Any]
@@ -525,7 +579,9 @@ def _step_load_and_thinking(
         entry = _roster_entry(
             c, sha256=sha256, kind=kind, expert_count=facts.expert_count
         )
-        flags = server.build_flags(entry, None, run.host_threads, model_path)
+        flags = server.build_flags(
+            entry, gate_profile(c, entry, run.host_threads), model_path
+        )
     except roster.RosterError as exc:
         raise StepRefused(
             STEP_LOAD,
@@ -637,7 +693,7 @@ def run_gate(
     *,
     models_dir: Path,
     server_path: Path,
-    host_threads: int,
+    host_threads: int | None,
     seams: GateSeams,
     now: datetime,
 ) -> dict[str, Any]:

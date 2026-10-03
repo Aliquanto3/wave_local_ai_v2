@@ -57,6 +57,7 @@ from wave_local_ai_v2 import (
     google_client,
     local_client,
     mistral_client,
+    profiles,
     prompt_provenance,
     prompt_variants,
     provenance,
@@ -271,6 +272,16 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
     # Loaded once per run, not once per row: raises before any HTTP call is made.
     loaded_roster = roster.load_roster(settings.roster_path)
     roster_entry = roster.resolve_entry(loaded_roster, settings.roster_entry_id)
+    # The (entry x machine x mode) run profile, with any operator override
+    # laid over it: a triple with no declared profile refuses here, before
+    # the build probe or any spawn.
+    launch_profile = profiles.resolve_for_run(
+        roster_entry,
+        run_profile.machine_id,
+        run_profile.compute_mode,
+        operator_n_cpu_moe=settings.host_n_cpu_moe,
+        operator_threads=settings.host_threads,
+    )
     model_path = _local_model_path(settings, roster_entry)
     # Computed when the definition loaded: a suite the gate refuses never
     # resolves, so it aborts before the multi-minute local run, let alone any
@@ -317,16 +328,8 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
     # Refuses (roster.RosterError) before any process spawns when the
     # resolved n_cpu_moe cannot be applied to roster_entry -- the check lives
     # inside build_flags itself (server.py's one call site), and it runs on
-    # the resolved value: settings.host_n_cpu_moe when set, the entry's own
-    # validated_host value when unset.
-    flags = server.build_flags(
-        roster_entry,
-        settings.host_n_cpu_moe,
-        settings.host_threads,
-        model_path,
-        engine=engine,
-        compute_mode=run_profile.compute_mode,
-    )
+    # the resolved profile's value, operator override included.
+    flags = server.build_flags(roster_entry, launch_profile, model_path, engine=engine)
     # Probing the binary itself doesn't need the server running, so this is
     # done before launch rather than costing readiness-wait time. An
     # unreadable build is an explicit None, never a fallback string.
@@ -337,6 +340,7 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
         engine_fields,
         machine_id=run_profile.machine_id,
         compute_mode=run_profile.compute_mode,
+        profile=launch_profile,
     )
 
     # After the build probe, because the engine and its build are part of the
@@ -363,6 +367,7 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
         **engine_fields,
         machine_id=run_profile.machine_id,
         compute_mode=run_profile.compute_mode,
+        profile_id=launch_profile.profile_id,
         roster_entry_id=roster_entry.entry_id,
         model_sha256=roster_entry.sha256,
         quant=roster_entry.quant,
@@ -615,7 +620,7 @@ def _refuse_a_resume_under_another_configuration(
     run_id: str,
     roster_entry: roster.RosterEntry,
     prompt_variant: prompt_variants.PromptVariant,
-    local_producer_fields: Mapping[str, str | None],
+    local_producer_fields: Mapping[str, Any],
     campaign_id: str,
 ) -> None:
     """Raise `ResumeConfigurationError` unless every row this run already
@@ -1238,7 +1243,7 @@ def _score_and_write(
     prompt_variant: prompt_variants.PromptVariant,
     variant_prompts: list[str],
     fiche_hash: str,
-    producer_row_fields: Mapping[str, str | None],
+    producer_row_fields: Mapping[str, Any],
     batch_fields: dict[str, Any],
     resumed: bool,
     retry_budget: dict[str, int],

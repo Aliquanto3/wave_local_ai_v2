@@ -126,7 +126,7 @@ def _minimal_env(monkeypatch, tmp_path: Path) -> None:
 def test_server_n_cpu_moe_unset_resolves_to_none_not_to_the_flagships_value(
     monkeypatch, tmp_path: Path
 ) -> None:
-    """Unset means "the selected entry decides", which is `None`, not `37`.
+    """Unset means "the run profile decides", which is `None`, not `37`.
 
     `37` here would be the MoE flagship's offload value handed to whatever
     entry is selected, and every dense entry would refuse to launch.
@@ -164,6 +164,36 @@ def test_server_n_cpu_moe_still_refuses_an_invalid_value(
     monkeypatch.setenv("SERVER_N_CPU_MOE", value)
 
     with pytest.raises(SettingsError, match="SERVER_N_CPU_MOE"):
+        load_settings()
+
+
+def test_server_threads_unset_resolves_to_none_so_the_run_profile_decides(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """No default thread count: one would be the laptop's, silently reused."""
+    _minimal_env(monkeypatch, tmp_path)
+    monkeypatch.delenv("SERVER_THREADS", raising=False)
+
+    assert load_settings().host_threads is None
+
+
+def test_server_threads_set_is_an_operator_override(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _minimal_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("SERVER_THREADS", "6")
+
+    assert load_settings().host_threads == 6
+
+
+@pytest.mark.parametrize("value", ["0", "not-a-number"])
+def test_server_threads_refuses_an_invalid_value(
+    monkeypatch, tmp_path: Path, value: str
+) -> None:
+    _minimal_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("SERVER_THREADS", value)
+
+    with pytest.raises(SettingsError, match="SERVER_THREADS"):
         load_settings()
 
 

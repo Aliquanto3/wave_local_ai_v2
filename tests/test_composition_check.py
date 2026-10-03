@@ -64,7 +64,6 @@ def _entry(
                 "presence_penalty": 1.5,
             },
         },
-        "validated_host": {"n_cpu_moe": None, "threads": 8, "fiche_summary": "x"},
     }
     if family is not None:
         entry["family"] = family

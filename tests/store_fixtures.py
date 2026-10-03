@@ -161,11 +161,6 @@ def build_bundle(tmp_path: Path) -> dict[str, Path]:
                                 "presence_penalty": 0.0,
                             },
                         },
-                        "validated_host": {
-                            "n_cpu_moe": 37,
-                            "threads": 8,
-                            "fiche_summary": "a laptop",
-                        },
                     }
                 },
             }

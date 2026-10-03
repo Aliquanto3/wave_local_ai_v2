@@ -317,7 +317,6 @@ def _entry(**declared: Any) -> roster.RosterEntry:
             kind="dense", expert_count=0, active_params_b=0.6
         ),
         server_flags={},
-        validated_host={},
         **declared,
     )
 

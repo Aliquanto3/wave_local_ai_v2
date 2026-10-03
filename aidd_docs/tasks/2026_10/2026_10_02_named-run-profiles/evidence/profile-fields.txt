@@ -1,0 +1,3 @@
+26 gpu qwen3-0.6b-q8@laptop-mobile-gpu/gpu {} 73ec536e0934 qwen3-0.6b-q8@laptop-mobile-gpu/gpu -ngl 99 -t 8 not_comparable
+26 cpu_only qwen3-0.6b-q8@laptop-mobile-gpu/cpu_only {} d85245776b89 qwen3-0.6b-q8@laptop-mobile-gpu/cpu_only -ngl 0 --device none -t 8 not_comparable
+26 cpu_only qwen3-0.6b-q8@laptop-mobile-gpu/cpu_only {"threads": {"profile": 8, "operator": 6}} ea458dc82433 qwen3-0.6b-q8@laptop-mobile-gpu/cpu_only -ngl 0 --device none -t 6 not_comparable

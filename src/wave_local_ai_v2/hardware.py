@@ -35,6 +35,10 @@ class Fiche(HardwareFiche):
     engine_config_hash: str
     machine_id: str
     compute_mode: str
+    # The run profile the launch resolved (`profiles.py`). Evidence like
+    # `flags`, outside every projection: the flags the profile produced are
+    # already here, and a renamed profile must not move a hash.
+    profile_id: str
     roster_entry_id: str
     model_sha256: str
     quant: str
@@ -45,8 +49,8 @@ class FicheProjectionError(ValueError):
     """Raised when a fiche lacks a key of the projection it is hashed under."""
 
 
-# The projections `fiche_hash` is computed over, by version. `flags`, host and
-# port are in none of them: `flags` stays on the stored fiche as raw evidence
+# The projections `fiche_hash` is computed over, by version. `flags`,
+# `profile_id`, host and port are in none of them: `flags` stays on the stored fiche as raw evidence
 # only (Methodology 14; it carries an absolute model path), and host/port never
 # existed on the fiche at all -- stated here so a future field addition doesn't
 # reintroduce them silently. The engine's launch configuration enters "2"
@@ -138,6 +142,7 @@ def build_fiche(
     engine_config_hash: str,
     machine_id: str,
     compute_mode: str,
+    profile_id: str,
     roster_entry_id: str,
     model_sha256: str,
     quant: str,
@@ -155,6 +160,7 @@ def build_fiche(
         engine_config_hash=engine_config_hash,
         machine_id=machine_id,
         compute_mode=compute_mode,
+        profile_id=profile_id,
         roster_entry_id=roster_entry_id,
         model_sha256=model_sha256,
         quant=quant,

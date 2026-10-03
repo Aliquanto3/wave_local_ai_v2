@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from wave_local_ai_v2 import engines, roster, server
+from wave_local_ai_v2 import engines, profiles, roster, server
 from wave_local_ai_v2.roster import RosterError
 
 MOE_ENTRY_ID = "fake-moe-model"
@@ -40,11 +40,6 @@ MOE_ENTRY = {
             "presence_penalty": 1.5,
         },
     },
-    "validated_host": {
-        "n_cpu_moe": 37,
-        "threads": 8,
-        "fiche_summary": "fake fiche",
-    },
 }
 
 DENSE_ENTRY = {
@@ -73,11 +68,6 @@ DENSE_ENTRY = {
             "min_p": 0.05,
             "presence_penalty": 0.0,
         },
-    },
-    "validated_host": {
-        "n_cpu_moe": None,
-        "threads": 8,
-        "fiche_summary": "fake fiche",
     },
 }
 
@@ -118,7 +108,23 @@ def test_resolve_entry_returns_the_entry_whose_fields_match_the_file(
     assert entry.architecture.expert_count == 40
     assert entry.architecture.active_params_b == 3.1
     assert entry.server_flags == MOE_ENTRY["server_flags"]
-    assert entry.validated_host == MOE_ENTRY["validated_host"]
+    # The host-fitted values are run profile data, not roster data.
+    assert not hasattr(entry, "validated_host")
+
+
+def _profile(
+    entry: roster.RosterEntry, n_cpu_moe: int | None, mode: str
+) -> profiles.ResolvedProfile:
+    """A resolved profile carrying `n_cpu_moe` under `mode`, for the host-fit check."""
+    return profiles.ResolvedProfile(
+        profile_id=profiles.profile_id_for(entry.entry_id, "test-machine", mode),
+        entry_id=entry.entry_id,
+        machine_id="test-machine",
+        compute_mode=mode,
+        n_gpu_layers=0 if mode == "cpu_only" else 99,
+        n_cpu_moe=n_cpu_moe,
+        threads=8,
+    )
 
 
 def test_validate_host_fit_passes_at_or_below_the_expert_ceiling(
@@ -128,7 +134,7 @@ def test_validate_host_fit_passes_at_or_below_the_expert_ceiling(
     entry = roster.resolve_entry(loaded, MOE_ENTRY_ID)
 
     # 37 <= expert_count (40)
-    roster.validate_host_fit(entry, n_cpu_moe=37, compute_mode="gpu")
+    roster.validate_host_fit(entry, _profile(entry, 37, "gpu"))
 
 
 def test_validate_host_fit_passes_when_moe_entry_gets_no_n_cpu_moe(
@@ -137,7 +143,7 @@ def test_validate_host_fit_passes_when_moe_entry_gets_no_n_cpu_moe(
     loaded = roster.load_roster(roster_path)
     entry = roster.resolve_entry(loaded, MOE_ENTRY_ID)
 
-    roster.validate_host_fit(entry, n_cpu_moe=None, compute_mode="gpu")
+    roster.validate_host_fit(entry, _profile(entry, None, "gpu"))
 
 
 def test_validate_host_fit_refuses_a_dense_entry_given_any_n_cpu_moe(
@@ -147,7 +153,7 @@ def test_validate_host_fit_refuses_a_dense_entry_given_any_n_cpu_moe(
     entry = roster.resolve_entry(loaded, DENSE_ENTRY_ID)
 
     with pytest.raises(RosterError, match=DENSE_ENTRY_ID):
-        roster.validate_host_fit(entry, n_cpu_moe=1, compute_mode="gpu")
+        roster.validate_host_fit(entry, _profile(entry, 1, "gpu"))
 
 
 def test_validate_host_fit_refuses_an_moe_entry_over_its_expert_ceiling(
@@ -157,7 +163,7 @@ def test_validate_host_fit_refuses_an_moe_entry_over_its_expert_ceiling(
     entry = roster.resolve_entry(loaded, MOE_ENTRY_ID)
 
     with pytest.raises(RosterError, match="40"):
-        roster.validate_host_fit(entry, n_cpu_moe=41, compute_mode="gpu")
+        roster.validate_host_fit(entry, _profile(entry, 41, "gpu"))
 
 
 def test_validate_host_fit_refuses_any_n_cpu_moe_under_cpu_only_naming_the_mode(
@@ -166,10 +172,10 @@ def test_validate_host_fit_refuses_any_n_cpu_moe_under_cpu_only_naming_the_mode(
     loaded = roster.load_roster(roster_path)
     entry = roster.resolve_entry(loaded, MOE_ENTRY_ID)
 
-    roster.validate_host_fit(entry, n_cpu_moe=None, compute_mode="cpu_only")
+    roster.validate_host_fit(entry, _profile(entry, None, "cpu_only"))
     for value in (0, 37):
         with pytest.raises(RosterError, match="cpu_only"):
-            roster.validate_host_fit(entry, n_cpu_moe=value, compute_mode="cpu_only")
+            roster.validate_host_fit(entry, _profile(entry, value, "cpu_only"))
 
 
 def test_resolve_entry_raises_on_an_unknown_id(roster_path: Path) -> None:
@@ -202,7 +208,7 @@ def test_load_roster_refuses_an_entry_missing_any_other_required_field(
     [
         ("architecture", "expert_count", "architecture.expert_count"),
         ("server_flags", "context_size", "server_flags.context_size"),
-        ("validated_host", "threads", "validated_host.threads"),
+        ("server_flags", "sampler", "server_flags.sampler"),
     ],
 )
 def test_load_roster_names_the_dotted_path_of_a_missing_nested_field(
@@ -273,7 +279,7 @@ def test_load_roster_refuses_a_non_integer_roster_version(
         roster.load_roster(path)
 
 
-@pytest.mark.parametrize("block", ["architecture", "server_flags", "validated_host"])
+@pytest.mark.parametrize("block", ["architecture", "server_flags"])
 def test_load_roster_refuses_a_block_that_is_not_an_object(
     tmp_path, block: str
 ) -> None:
@@ -292,15 +298,21 @@ def test_shipped_roster_entry_matches_the_validated_baseline_flags() -> None:
     loaded = roster.load_roster(REAL_ROSTER_PATH)
     entry = roster.resolve_entry(loaded, "qwen3.6-35b-a3b-ud-iq4xs")
 
-    # server.build_flags's validated command, with the flags that are now
-    # host settings rather than roster data stripped out: the model path
-    # (-m), --n-cpu-moe, -t/threads, and --host/--port.
+    # server.build_flags's validated command under the laptop gpu run
+    # profile, with the flags that are run profile or host settings rather
+    # than roster data stripped out: the model path (-m), --n-cpu-moe,
+    # -t/threads, and --host/--port.
     dummy_model_path = Path("dummy.gguf")
-    host_n_cpu_moe = entry.validated_host["n_cpu_moe"]
-    host_threads = entry.validated_host["threads"]
-    full_flags = server.build_flags(
-        entry, host_n_cpu_moe, host_threads, dummy_model_path
+    profile = profiles.resolve_for_run(
+        entry,
+        "laptop-mobile-gpu",
+        "gpu",
+        operator_n_cpu_moe=None,
+        operator_threads=None,
     )
+    host_n_cpu_moe = profile.n_cpu_moe
+    host_threads = profile.threads
+    full_flags = server.build_flags(entry, profile, dummy_model_path)
     host_or_model_flag_pairs = {
         ("-m", str(dummy_model_path)),
         ("--n-cpu-moe", str(host_n_cpu_moe)),
@@ -339,11 +351,7 @@ def test_shipped_roster_entry_matches_docs_setup_step_3() -> None:
     )
     assert entry.architecture.kind == "moe"
     assert entry.architecture.expert_count == 40
-    assert entry.validated_host == {
-        "n_cpu_moe": 37,
-        "threads": 8,
-        "fiche_summary": entry.validated_host["fiche_summary"],
-    }
+    assert not hasattr(entry, "validated_host")
 
 
 def test_family_of_resolves_every_model_this_project_names() -> None:
@@ -432,8 +440,9 @@ def test_the_shipped_moe_entry_still_loads_with_no_family_of_its_own() -> None:
     # language-claim blocks, 4 the size classes and their figures: rows
     # already published carry the version they were produced under and are
     # not back-filled, so the assertion follows the file rather than pinning
-    # a version the file has moved past.
-    assert loaded.roster_version == 4
+    # a version the file has moved past. 5: `validated_host` moved into the
+    # run profile registry.
+    assert loaded.roster_version == 5
     assert entry.family is None
     assert roster.family_of(entry.display_id, entry) == "qwen"
 
@@ -682,7 +691,8 @@ def test_each_shipped_dense_entry_carries_no_moe_offload(entry_id: str) -> None:
 
     assert entry.architecture.kind == "dense"
     assert entry.architecture.expert_count == 0
-    assert entry.validated_host["n_cpu_moe"] is None
+    # No profile declares an expert offload for a dense entry.
+    assert entry.entry_id not in profiles.tracked_registry().entries
     assert entry.server_flags["load_mode"] == "auto"
     # The declared family is what the judged path resolves, so a dense row
     # never falls back to MODEL_FAMILIES for a model id it does not list.

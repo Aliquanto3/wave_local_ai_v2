@@ -120,7 +120,7 @@ EXCLUDED_NOTE = (
 # Nested records kept whole as one JSON cell: their shape is a list of
 # records or a record of records, with no fixed column set.
 _JSON_CELL_ROW_FIELDS: frozenset[str] = frozenset(
-    {"judges", "judge_egress", "judge_cost"}
+    {"judges", "judge_egress", "judge_cost", "profile_overrides"}
 )
 
 
@@ -237,6 +237,20 @@ _COMMON_FIELDS: dict[tuple[str, ...], FieldDoc] = {
         "Compute mode the run was executed under: gpu or cpu_only; "
         "not_applicable on a row no local model produced (a cloud subject).",
         _ID,
+    ),
+    ("profile_id",): FieldDoc(
+        "Run profile the launch resolved (aidd_docs/roster/profiles.json), "
+        "named <roster_entry_id>@<machine_id>/<compute_mode>; not_applicable on "
+        "a row no local model produced (a cloud subject).",
+        _ID,
+        "The row predates the run profile fields (schema below 26).",
+    ),
+    ("profile_overrides",): FieldDoc(
+        "Every launch value the operator overrode, each with the profile's "
+        "value and the operator's; {} when the run is the profile as declared; "
+        "not_applicable on a row no local model produced (a cloud subject).",
+        _JSON_OBJECT,
+        "The row predates the run profile fields (schema below 26).",
     ),
     ("campaign_id",): FieldDoc(
         "Campaign the run belongs to (aidd_docs/campaigns/<campaign_id>.json); "
@@ -998,6 +1012,12 @@ FICHE_FIELDS: dict[tuple[str, ...], FieldDoc] = {
         _ID,
         "The fiche predates the machine fields (projection 1 or 2).",
     ),
+    ("profile_id",): FieldDoc(
+        "Run profile the launch resolved, as evidence outside the hashed "
+        "projection: the first profile stored under this hash.",
+        _ID,
+        "The fiche predates the run profile field (rows below schema 26).",
+    ),
     ("model_sha256",): FieldDoc("Checksum of the model file served.", _SHA),
     ("os",): FieldDoc("Operating system.", _TEXT),
     ("quant",): FieldDoc("Quantization of the model file served.", _ID),
@@ -1109,17 +1129,6 @@ ROSTER_ENTRY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     ),
     ("server_flags", "sampler", "presence_penalty"): FieldDoc(
         "Server default presence penalty.", "number"
-    ),
-    ("validated_host", "n_cpu_moe"): FieldDoc(
-        "Expert layers kept on CPU on the validated host.",
-        _COUNT,
-        "Dense model: no expert offload applies.",
-    ),
-    ("validated_host", "threads"): FieldDoc(
-        "CPU threads on the validated host.", _COUNT
-    ),
-    ("validated_host", "fiche_summary"): FieldDoc(
-        "One-line description of the validated host.", _TEXT
     ),
 }
 

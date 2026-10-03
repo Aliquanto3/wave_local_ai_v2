@@ -320,6 +320,10 @@ DIMENSIONS: dict[str, Dimension] = {
                 "size_class",
                 "roster_entry_id",
                 "roster_version",
+                # The run profile is named after its roster entry (schema
+                # "26"), so it moves with the model axis; a machine or mode
+                # change it also carries is already its own confound.
+                "profile_id",
                 "endpoint",
                 "prompt_template_id",
                 "prompt_template_hash",
@@ -337,15 +341,16 @@ DIMENSIONS: dict[str, Dimension] = {
 }
 DEFAULT_DIMENSION = "model"
 
-# The engine that produced a row and its build (schema "22"), and the
-# declared machine and compute mode it ran under (schema "23"). Along `model`
-# they move with the axis only where they differ by construction: one side's
-# subject was served by a local engine and the other's by a cloud provider,
-# whose rows state that none of the four applies. Between two locally served
-# sides a different engine, build, machine or mode is a confound, not part of
-# what a model comparison compares.
+# The engine that produced a row and its build (schema "22"), the declared
+# machine and compute mode it ran under (schema "23"), and the operator
+# overrides of its run profile (schema "26"). Along `model` they move with the
+# axis only where they differ by construction: one side's subject was served
+# by a local engine and the other's by a cloud provider, whose rows state that
+# none of them applies. Between two locally served sides a different engine,
+# build, machine, mode or override is a confound, not part of what a model
+# comparison compares.
 ENGINE_FIELDS: frozenset[str] = frozenset(
-    {"engine_id", "engine_build", "machine_id", "compute_mode"}
+    {"engine_id", "engine_build", "machine_id", "compute_mode", "profile_overrides"}
 )
 
 

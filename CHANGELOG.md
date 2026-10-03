@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Each model, machine and mode runs under its own named run profile (row
+  schema "26", roster_version 5)** -- the host-fitted launch values of every
+  (roster entry x machine x compute mode) triple are declared in the tracked
+  run profile registry `aidd_docs/roster/profiles.json` (`profiles.py`): one
+  default per (machine, mode) and per-entry overrides only where a model
+  differs, every value `{value, source, read_from}`. The declared set is `gpu`
+  and `cpu_only` on the laptop and the tower and `cpu_only` on the
+  professional PC; the tower's and the professional PC's thread counts and the
+  flagship's tower `--n-cpu-moe` are `not_yet_declared`. One resolution order,
+  roster entry default, then profile, then operator override, and
+  `server.build_flags(entry, profile, model_path)` stays the only flag builder,
+  with the profile a required argument. A triple with no declared profile, or
+  a profile value nobody has declared that the operator did not override,
+  refuses before any server starts, naming the triple and the declared
+  profiles. Every row carries `profile_id` and `profile_overrides` (each
+  overridden value with the profile's and the operator's), `not_applicable`
+  on a cloud subject's row; every fiche carries `profile_id` outside the
+  hashed projection, so a renamed profile never moves a hash. The MoE
+  flagship's laptop `gpu` launch is byte-identical to the validated baseline.
+
 - **Every view names the machine and the mode, and a `cpu_only` row's VRAM
   reads not applicable (row schema "25")** -- a `cpu_only` runtime run no
   longer reads NVML's device-wide VRAM figure: `vram_used_mib` is
@@ -334,6 +354,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   level.
 
 ### Changed
+
+- **`validated_host` leaves the roster** -- its thread count and `--n-cpu-moe`
+  moved into the laptop's run profiles and its `fiche_summary` is replaced by
+  the machine registry entry. `SERVER_N_CPU_MOE` and `SERVER_THREADS` are
+  operator overrides with no default (`DEFAULT_HOST_N_CPU_MOE` and
+  `DEFAULT_HOST_THREADS` are gone). `roster.validate_host_fit` reads the
+  resolved profile. The candidate gate's declaration carries `load_profile`
+  (`n_cpu_moe`, `threads`) in place of `validated_host`, its passed entry
+  block carries neither, and its record version is 2.
 
 - **`wave-local-ai-v2-quality --suite` takes a suite id** —
   `classification-support-routing` (the default) or

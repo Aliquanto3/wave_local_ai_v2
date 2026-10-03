@@ -103,11 +103,6 @@ FAKE_ROSTER = {
                     "presence_penalty": 1.5,
                 },
             },
-            "validated_host": {
-                "n_cpu_moe": 37,
-                "threads": 8,
-                "fiche_summary": "fake fiche",
-            },
         }
     },
 }
@@ -573,6 +568,34 @@ def test_local_rows_name_the_machine_and_mode_and_cloud_rows_state_neither_appli
     assert (stored_fiche["machine_id"], stored_fiche["compute_mode"]) == (
         "laptop-mobile-gpu",
         "gpu",
+    )
+    # The run profile: named on the local rows and the fiche, stated not
+    # applicable on the cloud subject's rows.
+    local_profiles = {row["profile_id"] for row in rows if row["provider"] == "local"}
+    [profile_id] = local_profiles
+    assert profile_id.endswith("@laptop-mobile-gpu/gpu")
+    assert stored_fiche["profile_id"] == profile_id
+    assert {
+        (row["provider"], json.dumps(row["profile_overrides"])) for row in rows
+    } == {("local", "{}"), ("mistral", '"not_applicable"')}
+    assert {row["profile_id"] for row in rows if row["provider"] == "mistral"} == {
+        "not_applicable"
+    }
+
+
+def test_an_overridden_quality_run_names_its_override(stubbed_run) -> None:
+    quality_results_path, started = stubbed_run
+    started["load_settings"].return_value = dataclasses.replace(
+        started["load_settings"].return_value, host_threads=6
+    )
+
+    quality_cli._run()
+
+    local = [r for r in read_rows(quality_results_path) if r["provider"] == "local"]
+    assert local
+    assert all(
+        row["profile_overrides"] == {"threads": {"profile": 8, "operator": 6}}
+        for row in local
     )
 
 
@@ -1462,7 +1485,7 @@ def test_every_row_names_its_subjects_family_and_size_class(stubbed_run) -> None
         ("mistral", "mistral", None),
         ("google", "google", None),
     }
-    assert {row["schema_version"] for row in rows} == {"25"}
+    assert {row["schema_version"] for row in rows} == {"26"}
 
 
 def test_every_row_names_direct_its_version_and_its_measured_overhead(
@@ -2910,7 +2933,11 @@ def _truncate_mistral_half(path: Path, keep: int, **edits: object) -> list[dict]
 
 @pytest.mark.parametrize(
     ("field", "value"),
-    [("compute_mode", "cpu_only"), ("machine_id", "tower-desktop-gpu")],
+    [
+        ("compute_mode", "cpu_only"),
+        ("machine_id", "tower-desktop-gpu"),
+        ("profile_id", "another-entry@laptop-mobile-gpu/gpu"),
+    ],
 )
 def test_a_resume_of_a_local_batch_under_another_machine_or_mode_is_refused(
     stubbed_run, capsys, field: str, value: str

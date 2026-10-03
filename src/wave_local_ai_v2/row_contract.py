@@ -218,7 +218,17 @@ from wave_local_ai_v2 import (
 # names the machine and the mode, and a cpu_only row's VRAM reads not
 # applicable; Methodology 21). `null` keeps meaning a VRAM read that failed.
 # No field is added; a row below "25" is not re-checked and never rewritten.
-SCHEMA_VERSION = "25"
+# "26": `profile_id` and `profile_overrides` became required on both row kinds
+# (Story: each model, machine and mode runs under its own named profile;
+# Methodology 21). A runtime row and a local quality row name the run profile
+# of their (roster entry x machine x compute mode) triple (`profiles.py`) and
+# map every value the operator overrode to `{"profile": ..., "operator": ...}`
+# (`{}` when the run is the profile as declared), so a row never claims a
+# profile it did not run under. A row no local model produced (a cloud
+# subject's quality row) states `PROFILE_NOT_APPLICABLE` for both. Owed only
+# from "26": a row below "26" still validates without them and is never
+# back-filled.
+SCHEMA_VERSION = "26"
 
 # The two subject-composition fields "19" added, and the version from which a
 # quality row owes them.
@@ -303,6 +313,14 @@ CAMPAIGN_SCHEMA_VERSION = "24"
 VRAM_NOT_APPLICABLE_SCHEMA_VERSION = "25"
 VRAM_NOT_APPLICABLE = gpu.VRAM_NOT_APPLICABLE
 
+# The schema version from which a row owes the run profile fields, fixed at
+# "26"; the two fields; what a row no local model produced states in both; and
+# the values an operator may override.
+PROFILE_SCHEMA_VERSION = "26"
+PROFILE_FIELDS: frozenset[str] = frozenset({"profile_id", "profile_overrides"})
+PROFILE_NOT_APPLICABLE = MACHINE_NOT_APPLICABLE
+OVERRIDABLE_PROFILE_VALUES: frozenset[str] = frozenset({"n_cpu_moe", "threads"})
+
 # What a row run under no campaign says in `campaign_id`: it belongs to none,
 # stated rather than left null. Reserved: no campaign may take it as its id.
 NO_CAMPAIGN = "none"
@@ -365,6 +383,11 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             # executed under (schema "23")
             "machine_id",
             "compute_mode",
+            # profiles: the run profile the launch resolved and every value
+            # the operator overrode, or `PROFILE_NOT_APPLICABLE` for both on a
+            # cloud subject's row (schema "26")
+            "profile_id",
+            "profile_overrides",
             # campaigns: the campaign the run belongs to, or `NO_CAMPAIGN`
             # (schema "24")
             "campaign_id",
@@ -485,6 +508,11 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             # subject's row (schema "23")
             "machine_id",
             "compute_mode",
+            # profiles: the run profile the launch resolved and every value
+            # the operator overrode, or `PROFILE_NOT_APPLICABLE` for both on a
+            # cloud subject's row (schema "26")
+            "profile_id",
+            "profile_overrides",
             # campaigns: the campaign the run belongs to, or `NO_CAMPAIGN`
             # (schema "24")
             "campaign_id",
@@ -771,6 +799,8 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
         missing -= MACHINE_FIELDS
     if _predates(row, CAMPAIGN_SCHEMA_VERSION):
         missing -= {"campaign_id"}
+    if _predates(row, PROFILE_SCHEMA_VERSION):
+        missing -= PROFILE_FIELDS
     if missing:
         raise RowContractError(
             f"row of kind {kind!r} is missing required field(s): "
@@ -794,6 +824,8 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
         _validate_machine(kind, row)
     if not _predates(row, CAMPAIGN_SCHEMA_VERSION):
         _validate_campaign(kind, row)
+    if not _predates(row, PROFILE_SCHEMA_VERSION):
+        _validate_profile(kind, row)
 
     cost_total = row["cost_total"]
     # The two bases are the values the cost was actually computed from: a kWh
@@ -1304,6 +1336,51 @@ def _validate_campaign(kind: RowKind, row: dict[str, Any]) -> None:
             f"row of kind {kind!r} from provider {row['provider']!r} names "
             f"campaign {campaign_id!r}: a cloud subject belongs to no campaign "
             f"and states {NO_CAMPAIGN!r}"
+        )
+
+
+def _validate_profile(kind: RowKind, row: dict[str, Any]) -> None:
+    """Refuse a row that does not name its run profile and its overrides.
+
+    A runtime row and a local quality row name a non-empty profile id and map
+    each overridden value (`n_cpu_moe`, `threads`) to exactly `profile` and
+    `operator`. Any other quality row states `PROFILE_NOT_APPLICABLE` for both.
+    """
+    profile_id = row["profile_id"]
+    overrides = row["profile_overrides"]
+    if kind == "runtime" or row["provider"] == SUBJECT_PROVIDER_LOCAL:
+        if (
+            not isinstance(profile_id, str)
+            or not profile_id.strip()
+            or profile_id == PROFILE_NOT_APPLICABLE
+        ):
+            raise RowContractError(
+                f"row of kind {kind!r} has profile_id {profile_id!r}; a locally "
+                "produced row names the run profile it launched under"
+            )
+        if not isinstance(overrides, dict):
+            raise RowContractError(
+                f"row of kind {kind!r} has profile_overrides {overrides!r}; it "
+                "maps each overridden value to its profile and operator values, "
+                "or is {} when nothing was overridden"
+            )
+        for name, record in overrides.items():
+            if name not in OVERRIDABLE_PROFILE_VALUES or not (
+                isinstance(record, dict) and set(record) == {"profile", "operator"}
+            ):
+                raise RowContractError(
+                    f"row of kind {kind!r} has profile_overrides entry "
+                    f"{name!r}: {record!r}; an override names one of "
+                    f"{', '.join(sorted(OVERRIDABLE_PROFILE_VALUES))} with "
+                    "exactly its 'profile' and 'operator' values"
+                )
+        return
+
+    if profile_id != PROFILE_NOT_APPLICABLE or overrides != PROFILE_NOT_APPLICABLE:
+        raise RowContractError(
+            f"row of kind {kind!r} from provider {row['provider']!r} was produced "
+            f"by no local model: it must carry profile_id and profile_overrides "
+            f"{PROFILE_NOT_APPLICABLE!r}, got {profile_id!r} / {overrides!r}"
         )
 
 

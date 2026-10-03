@@ -285,6 +285,12 @@ RUNTIME_VIEW_FIELDS: frozenset[str] = frozenset(
 
 RUNTIME_FIELDS_NOT_RENDERED: frozenset[str] = frozenset(
     {
+        # The run profile the launch resolved and any operator override of it
+        # (schema "26"): the flags it produced are on the cited fiche, which
+        # the view already renders; the profile name is provenance a reader
+        # follows from there, not a column.
+        "profile_id",
+        "profile_overrides",
         # The benchmark prompt's own text. It is on the row so a run can be
         # reproduced, not so it can be read in a table, and one cell holding
         # it would crowd out every measurement beside it.
@@ -376,6 +382,12 @@ QUALITY_EXACT_MATCH_FIELDS: frozenset[str] = frozenset(
 
 QUALITY_FIELDS_NOT_RENDERED: frozenset[str] = frozenset(
     {
+        # The run profile the launch resolved and any operator override of it
+        # (schema "26"): the flags it produced are on the cited fiche, which
+        # the view already renders; the profile name is provenance a reader
+        # follows from there, not a column.
+        "profile_id",
+        "profile_overrides",
         # The item's own prompt text. The suite definition the row cites
         # carries it, and that pointer is resolved beside the entry -- so the
         # text is one hop away rather than duplicated on all 591 rows of a

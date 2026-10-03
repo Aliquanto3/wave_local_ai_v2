@@ -19,6 +19,7 @@ from wave_local_ai_v2 import (
     engines,
     fiche_registry,
     machines,
+    profiles,
     prompt_provenance,
     prompt_variants,
     provenance,
@@ -238,6 +239,16 @@ def _run() -> None:
     # any structurally invalid entry before any HTTP call is made.
     loaded_roster = roster.load_roster(settings.roster_path)
     roster_entry = roster.resolve_entry(loaded_roster, settings.roster_entry_id)
+    # The (entry x machine x mode) run profile, with any operator override
+    # laid over it: a triple with no declared profile refuses here, before
+    # the build probe or any spawn.
+    launch_profile = profiles.resolve_for_run(
+        roster_entry,
+        run_profile.machine_id,
+        run_profile.compute_mode,
+        operator_n_cpu_moe=settings.host_n_cpu_moe,
+        operator_threads=settings.host_threads,
+    )
     # The engine that will produce the row, from the tracked registry: where it
     # listens, how its build is probed, how its launch configuration is hashed.
     engine = engines.tracked_reference_engine()
@@ -266,16 +277,8 @@ def _run() -> None:
     # Refuses (roster.RosterError) before any process spawns when the
     # resolved n_cpu_moe cannot be applied to roster_entry -- the check lives
     # inside build_flags itself (server.py's one call site), and it runs on
-    # the resolved value: settings.host_n_cpu_moe when set, the entry's own
-    # validated_host value when unset.
-    flags = server.build_flags(
-        roster_entry,
-        settings.host_n_cpu_moe,
-        settings.host_threads,
-        model_path,
-        engine=engine,
-        compute_mode=run_profile.compute_mode,
-    )
+    # the resolved profile's value, operator override included.
+    flags = server.build_flags(roster_entry, launch_profile, model_path, engine=engine)
     # The five sampler values already reach the model through `flags`; only
     # `seed` is sent per request, so a request never diverges from what the
     # server was actually launched with.
@@ -295,6 +298,7 @@ def _run() -> None:
         **engine_fields,
         machine_id=run_profile.machine_id,
         compute_mode=run_profile.compute_mode,
+        profile_id=launch_profile.profile_id,
         roster_entry_id=roster_entry.entry_id,
         model_sha256=roster_entry.sha256,
         quant=roster_entry.quant,
@@ -462,6 +466,8 @@ def _run() -> None:
         "engine_build": engine_fields["engine_build"],
         "machine_id": run_profile.machine_id,
         "compute_mode": run_profile.compute_mode,
+        "profile_id": launch_profile.profile_id,
+        "profile_overrides": launch_profile.overrides,
         "campaign_id": campaign_id,
         "fiche_hash": fiche_hash_value,
         "prompt": sent_prompt,

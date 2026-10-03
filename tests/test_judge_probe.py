@@ -78,11 +78,6 @@ FAKE_ROSTER = {
                     "presence_penalty": 1.5,
                 },
             },
-            "validated_host": {
-                "n_cpu_moe": 37,
-                "threads": 8,
-                "fiche_summary": "fake fiche",
-            },
         }
     },
 }
@@ -623,6 +618,13 @@ def test_local_probe_rows_name_the_engine_and_the_cloud_row_states_none(
         ("google", "not_applicable", "not_applicable"),
     }
     assert {row["campaign_id"] for row in rows} == {"none"}
+    assert {
+        (row["provider"], row["profile_id"].endswith("@laptop-mobile-gpu/gpu"))
+        for row in rows
+    } == {("local", True), ("google", False)}
+    assert {row["profile_id"] for row in rows if row["provider"] == "google"} == {
+        "not_applicable"
+    }
 
 
 def test_the_local_probe_row_publishes_the_rendered_prompt_and_the_policy(

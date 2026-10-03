@@ -50,11 +50,6 @@ FAKE_ROSTER = {
                     "presence_penalty": 1.5,
                 },
             },
-            "validated_host": {
-                "n_cpu_moe": 37,
-                "threads": 8,
-                "fiche_summary": "fake fiche",
-            },
         }
     },
 }
@@ -1011,6 +1006,44 @@ def test_a_gpu_and_a_cpu_only_run_store_two_fiches_and_never_reproduce(
     assert "compute_mode" in cpu_row["verdict"]["differing_fields"]
 
 
+def test_every_row_and_fiche_names_its_run_profile(stubbed_run, tmp_path) -> None:
+    results_path, _ = stubbed_run
+
+    _run()
+
+    [row] = read_rows(results_path)
+    profile_id = f"{DEFAULT_ROSTER_ENTRY_ID}@laptop-mobile-gpu/gpu"
+    assert row["profile_id"] == profile_id
+    assert row["profile_overrides"] == {}
+    fiche = read_fiche(row["fiche_hash"], tmp_path / "fiches")
+    assert fiche is not None and fiche["profile_id"] == profile_id
+    # The flagship's laptop gpu profile: its 37 and 8, now profile data.
+    flags = fiche["flags"]
+    assert flags[flags.index("--n-cpu-moe") + 1] == "37"
+    assert flags[flags.index("-t") + 1] == "8"
+
+
+def test_an_overridden_run_names_the_values_it_overrode(stubbed_run, tmp_path) -> None:
+    results_path, started = stubbed_run
+    started["load_settings"].return_value = replace(
+        started["load_settings"].return_value, host_n_cpu_moe=30, host_threads=6
+    )
+
+    _run()
+
+    [row] = read_rows(results_path)
+    assert row["profile_id"] == f"{DEFAULT_ROSTER_ENTRY_ID}@laptop-mobile-gpu/gpu"
+    assert row["profile_overrides"] == {
+        "n_cpu_moe": {"profile": 37, "operator": 30},
+        "threads": {"profile": 8, "operator": 6},
+    }
+    fiche = read_fiche(row["fiche_hash"], tmp_path / "fiches")
+    assert fiche is not None
+    flags = fiche["flags"]
+    assert flags[flags.index("--n-cpu-moe") + 1] == "30"
+    assert flags[flags.index("-t") + 1] == "6"
+
+
 def _vram_values(row: dict) -> list:
     """Every `vram_used_mib` a row holds: the peak, then each repetition."""
     return [
@@ -1033,7 +1066,7 @@ def test_a_cpu_only_run_publishes_no_vram_number_anywhere_on_the_row(
     _run()
 
     [row] = read_rows(results_path)
-    assert row["schema_version"] == "25"
+    assert row["schema_version"] == "26"
     values = _vram_values(row)
     assert len(values) == 1 + row["warmup_count"] + row["repetitions_n"]
     assert set(values) == {"not_applicable"}
@@ -1071,6 +1104,8 @@ def test_a_gpu_run_whose_vram_read_failed_stays_null_not_not_applicable(
         ({"machine_id": "my-box"}, "MACHINE_ID"),
         ({"compute_mode": None}, "COMPUTE_MODE"),
         ({"machine_id": "pro-pc-no-gpu"}, "pro-pc-no-gpu"),
+        # A declared profile whose thread count nobody has read yet.
+        ({"machine_id": "tower-desktop-gpu"}, "SERVER_THREADS"),
     ],
 )
 def test_a_run_without_a_valid_run_profile_refuses_before_any_server_starts(

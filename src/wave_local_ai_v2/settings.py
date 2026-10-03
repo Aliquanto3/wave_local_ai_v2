@@ -15,17 +15,6 @@ DEFAULT_RESULTS_PATH = "aidd_docs/results/runtime.jsonl"
 DEFAULT_QUALITY_RESULTS_PATH = "aidd_docs/results/quality.jsonl"
 DEFAULT_ROSTER_PATH = "aidd_docs/roster/models.json"
 DEFAULT_ROSTER_ENTRY_ID = "qwen3.6-35b-a3b-ud-iq4xs"
-# The MoE flagship's own `validated_host.n_cpu_moe`. Documentation of that
-# entry, not the resolution path: `SERVER_N_CPU_MOE` unset resolves to `None`
-# and `server.build_flags` reads the selected entry's own value, so a dense
-# entry (whose value is `null`) launches with no `--n-cpu-moe` at all while
-# the flagship's launch stays byte-identical. One definition, one meaning --
-# an operator who *does* set `SERVER_N_CPU_MOE` overrides the entry, and a
-# dense entry handed a value still refuses in `roster.validate_host_fit`.
-DEFAULT_HOST_N_CPU_MOE = 37
-# A genuine host value with no per-entry counterpart: every entry runs at the
-# same thread count on a given machine, so this one keeps a plain default.
-DEFAULT_HOST_THREADS = 8
 DEFAULT_FICHE_REGISTRY_DIR = "aidd_docs/results/fiches"
 # Where `suite_snapshot` exports each suite definition a published row cites.
 # A constant here rather than a literal in that module, for the reason
@@ -175,14 +164,14 @@ class Settings:
     runtime_cooldown_s: float = 10.0
     runtime_warmup_count: int = 1
     runtime_spread_threshold: float = 0.10
-    # Host-fitted flags: the only two launch flags that are not roster data.
-    # `None` is `host_n_cpu_moe`'s unset state and means "the selected entry
-    # decides" -- `server.build_flags` resolves it from that entry's own
-    # `validated_host.n_cpu_moe`. It is not "0": 0 is an explicit instruction
-    # to offload no experts, which a dense entry refuses, and `None` is the
-    # absence of an instruction.
+    # The operator's explicit overrides of the run profile (`profiles.py`),
+    # applied last in the resolution order (entry default, profile, operator).
+    # `None` is the unset state and means "the run profile decides"; a set
+    # value is recorded on every row as a deviation from the profile. `0` is
+    # an explicit instruction to offload no experts, which a dense entry and a
+    # `cpu_only` run refuse, never the absence of an instruction.
     host_n_cpu_moe: int | None = None
-    host_threads: int = DEFAULT_HOST_THREADS
+    host_threads: int | None = None
     # The declared machine and the compute mode a run is executed under, as
     # `MACHINE_ID` / `COMPUTE_MODE` named them, or `None` when unset. They are
     # never defaulted: `load_settings` reads them with no fallback, and every
@@ -413,18 +402,14 @@ def load_settings() -> Settings:
         minimum=0.0,
         minimum_reason="a spread threshold cannot be negative",
     )
-    # Absent means `None`, the "read the selected entry" state -- not
-    # `DEFAULT_HOST_N_CPU_MOE`, which would put the flagship's 37 in front of
-    # every dense entry and make each one refuse. Present is validated
-    # exactly as before, so an out-of-range override still names its reason;
-    # the default handed to `_require_numeric` is unreachable on that branch
-    # and is the flagship's value only so the two never disagree.
+    # Absent means `None`: the run profile decides. Present is an operator
+    # override, validated so an out-of-range value names its reason.
     host_n_cpu_moe = (
         None
         if os.environ.get("SERVER_N_CPU_MOE") is None
         else _require_numeric(
             "SERVER_N_CPU_MOE",
-            DEFAULT_HOST_N_CPU_MOE,
+            0,
             int,
             minimum=0,
             minimum_reason="--n-cpu-moe cannot offload a negative number of experts",
@@ -437,12 +422,16 @@ def load_settings() -> Settings:
     compute_mode = os.environ.get("COMPUTE_MODE") or None
     campaign_id = os.environ.get("CAMPAIGN_ID") or None
     campaigns_dir = Path(os.environ.get("CAMPAIGNS_DIR", DEFAULT_CAMPAIGNS_DIR))
-    host_threads = _require_numeric(
-        "SERVER_THREADS",
-        DEFAULT_HOST_THREADS,
-        int,
-        minimum=1,
-        minimum_reason="-t needs at least one thread",
+    host_threads = (
+        None
+        if os.environ.get("SERVER_THREADS") is None
+        else _require_numeric(
+            "SERVER_THREADS",
+            1,
+            int,
+            minimum=1,
+            minimum_reason="-t needs at least one thread",
+        )
     )
     runtime_reproduction_tolerance = _require_numeric(
         "RUNTIME_REPRODUCTION_TOLERANCE",

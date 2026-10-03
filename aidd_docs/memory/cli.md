@@ -377,14 +377,20 @@ turn is a shell loop over the ids, not a runner script: `load_dotenv(override=
 False)` leaves a shell-set value in place, and `.env` does not set the
 variable at all. Each invocation is its own `run_id`.
 
-Two more env vars set the launch flags that are host-fitted rather than
-roster data: `SERVER_THREADS` (default `8`) and `SERVER_N_CPU_MOE`, which has
-two states. **Unset** means the selected entry decides — its own
-`validated_host.n_cpu_moe`, so `37` for the flagship and *no `--n-cpu-moe` at
-all* for a dense entry, whose value is `null`. **Set** overrides the entry,
-and a dense entry given any value (`0` included) refuses with a `RosterError`
-naming it before anything spawns. See `architecture.md`'s Gotchas for why
-these, and not the roster, are the knob to change on different hardware.
+The host-fitted launch values are not roster data: every (roster entry x
+machine x compute mode) triple runs under a named run profile
+(`<entry>@<machine>/<mode>`) from `aidd_docs/roster/profiles.json`
+(`profiles.py`), resolved roster entry default, then profile, then operator
+override. `SERVER_THREADS` and `SERVER_N_CPU_MOE` are the operator overrides:
+**unset** (no default) means the profile decides (on the laptop `-t 8`, and
+`37` for the flagship under `gpu`, no `--n-cpu-moe` for a dense entry);
+**set** replaces the profile's value and every row records it in
+`profile_overrides` (schema "26"). A dense entry or a `cpu_only` run given
+any `SERVER_N_CPU_MOE` (`0` included) refuses with a `RosterError` before
+anything spawns. A triple with no declared profile, or a profile value still
+`not_yet_declared` that the operator did not override (the tower's and the
+professional PC's thread counts), refuses the same way, naming it. See
+`docs/setup.md` section 4.
 
 `MACHINE_ID` (a declared entry of `aidd_docs/roster/machines.json`) and
 `COMPUTE_MODE` (`gpu` or `cpu_only`) are required by the runtime CLI, the

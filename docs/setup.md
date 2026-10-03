@@ -116,9 +116,9 @@ need, instead:
   MoE experts back to CPU RAM under a 6 GB-VRAM ceiling; a GPU deployment
   with more VRAM would lower or drop `SERVER_N_CPU_MOE` to keep more experts
   resident on the GPU. There is no second set of magic numbers documented
-  here — the roster's `validated_host` block and this project's own `.env`
-  are the bare-metal precedent to start from and re-tune per your own VRAM
-  budget.
+  here — the laptop's run profiles in `aidd_docs/roster/profiles.json`
+  (section 4) are the bare-metal precedent to start from and re-tune per your
+  own VRAM budget.
 
 **Untested in CI** — no GitHub-hosted runner carries a GPU, so this path is
 documented, not built or exercised by this repository's CI.
@@ -319,7 +319,8 @@ Declare the candidate as a JSON file:
 | `active_params_b` | the card's figure |
 | `client_commercial_use` | your reading of the licence, a boolean |
 | `language_claim` | `languages` (subset of `en`/`fr`/`de`), `source_url`, optional verbatim `statement` |
-| `server_flags`, `validated_host` | the launch blocks, exactly as a roster entry holds them |
+| `server_flags` | the launch block, exactly as a roster entry holds it |
+| `load_profile` | the host values the gate's one load runs with: `n_cpu_moe` (an integer, or `null` for no `--n-cpu-moe`) and `threads`; not copied into the entry (run profiles hold host values, section 4) |
 
 Then, with `SLM_MODELS_DIR` and `LLAMA_SERVER_PATH` set as for a run and no
 `llama-server` already on port 8080:
@@ -388,24 +389,57 @@ cell the declaration excludes, or when a quality run enables a cloud
 provider. `wave-local-ai-v2-campaign-completeness --campaign <campaign_id>`
 then lists every declared cell and fails naming each one nobody ran.
 
-Two more env vars set the host-fitted launch flags that are not part of the
-roster's model data: `SERVER_N_CPU_MOE` and `SERVER_THREADS` (default `8`),
-matching `--n-cpu-moe` and `-t` on this project's own laptop fiche. They
-exist to be overridden on different hardware; leave them unset to reproduce
-the committed reference evidence on comparable hardware.
+### Run profiles: the host-fitted launch values
 
-`SERVER_N_CPU_MOE` has two states, and the difference matters:
+Every (roster entry x machine x compute mode) triple runs under a named run
+profile, `<roster_entry_id>@<machine_id>/<compute_mode>`, declared in the
+tracked registry `aidd_docs/roster/profiles.json`. The registry holds one
+default per (machine, mode) and, under `entries`, only the values a given
+model needs differently, so a new roster entry needs no profile of its own
+unless it differs. Every value is `{value, source, read_from}`: `declared`
+values were read or fitted on the machine, `not_yet_declared` values await
+that read and are never guessed.
 
-- **Unset** — the selected entry decides. Its own `validated_host.n_cpu_moe`
-  is used: `37` for the MoE flagship (so its launch command is byte-identical
-  to the validated baseline), and `null` for a dense entry, which puts no
-  `--n-cpu-moe` on the command line at all. This is what a reader following
-  this walkthrough wants, whichever entry they select.
-- **Set** — the operator overrides the entry. A value above an MoE entry's
-  `expert_count` is refused, and **any** value on a dense entry is refused,
-  `SERVER_N_CPU_MOE=0` included: `0` says "offload no experts", which a model
-  with no experts cannot honour. Both refusals name the entry and happen
-  before any process is spawned.
+One resolution order, applied by `profiles.resolve`; `server.build_flags`, the only flag
+builder, launches the result:
+
+1. **Roster entry default** — the model-intrinsic `server_flags`
+   (`aidd_docs/roster/models.json`), including the default `-ngl`.
+2. **Run profile** — the (machine, mode) default with the entry's own
+   overrides laid over it: `-ngl` (`cpu_only` profiles declare `0`, and the
+   mode adds `--device none`), `--n-cpu-moe` (absent unless declared, so a
+   dense entry carries none) and `-t`.
+3. **Operator override** — `SERVER_N_CPU_MOE` and `SERVER_THREADS`, applied
+   last. Unset, the profile decides. Set, the value replaces the profile's,
+   and every row records it in `profile_overrides` beside the profile's own
+   value, so a row never claims a profile it did not run under.
+
+The declared profile set:
+
+| Machine | Mode | `-ngl` | `--n-cpu-moe` | `-t` |
+| --- | --- | --- | --- | --- |
+| `laptop-mobile-gpu` | `gpu` | roster default (`99`) | none; `37` for `qwen3.6-35b-a3b-ud-iq4xs` | `8` |
+| `laptop-mobile-gpu` | `cpu_only` | `0` (+ `--device none`) | none | `8` |
+| `tower-desktop-gpu` | `gpu` | roster default | none; not yet declared for `qwen3.6-35b-a3b-ud-iq4xs` | not yet declared |
+| `tower-desktop-gpu` | `cpu_only` | `0` (+ `--device none`) | none | not yet declared |
+| `pro-pc-no-gpu` | `cpu_only` | `0` (+ `--device none`) | none | not yet declared |
+
+A run whose triple has no declared profile (for example `gpu` on the
+professional PC) refuses before any server starts, naming the triple and the
+profiles that exist for that entry. A run under a profile with a value not
+yet declared refuses the same way, naming the value and what it awaits,
+unless the operator overrides it (`SERVER_THREADS=6` on the tower, for
+instance), and that row then records the override.
+
+An operator value is still checked against the model: a `SERVER_N_CPU_MOE`
+above an MoE entry's `expert_count` is refused, **any** value on a dense
+entry is refused (`0` included: it says "offload no experts", which a model
+with no experts cannot honour), and any value under `cpu_only` is refused
+naming the mode. Every refusal happens before any process is spawned.
+
+The profile id is on every fiche and every row. On the fiche it is evidence
+like `flags`, outside the hashed projection: renaming a profile does not move
+a fiche hash.
 
 `ROSTER_PATH` (default `aidd_docs/roster/models.json`) and `ROSTER_ENTRY_ID`
 (default `qwen3.6-35b-a3b-ud-iq4xs`) select which of the roster's four
