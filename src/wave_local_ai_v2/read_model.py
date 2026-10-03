@@ -403,6 +403,10 @@ QUALITY_FIELDS_NOT_RENDERED: frozenset[str] = frozenset(
         # Whether the variant skipped the item's task family (schema "27"):
         # derived from the variant and the suite, read with the variant.
         "prompt_variant_noop",
+        # The decoding constraint and its grammar's hash (schema "28"):
+        # declared by the variant for the suite's family, read with it.
+        "constraint_mechanism",
+        "constraint_grammar_hash",
         # The level the suite was certified at, and the item's licence, source
         # and source revision (schema "15"). On the row so a development
         # score is never mistaken for a publication one; whether the pitch

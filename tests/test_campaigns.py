@@ -105,6 +105,51 @@ def test_five_variants_are_refused_naming_them(tmp_path: Path) -> None:
         _load(tmp_path, prompt_variants=variants)
 
 
+CONSTRAINED = [
+    {"id": "baseline", "version": "1"},
+    {"id": "constrained_output", "version": "1"},
+]
+
+
+def _engines_declaring(tmp_path: Path, mechanisms: dict[str, Any]) -> Path:
+    raw = json.loads(Path(engines.DEFAULT_REGISTRY_PATH).read_text(encoding="utf-8"))
+    raw["engines"]["llama.cpp"]["constraint_mechanisms"] = mechanisms
+    path = tmp_path / "engines.json"
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    return path
+
+
+def test_the_constrained_variant_loads_on_an_engine_declaring_its_mechanism(
+    tmp_path: Path,
+) -> None:
+    declaration = _load(tmp_path, prompt_variants=CONSTRAINED)
+
+    assert ("constrained_output", "1") in declaration.prompt_variants
+
+
+def test_the_constrained_variant_on_an_engine_declaring_none_is_refused(
+    tmp_path: Path,
+) -> None:
+    path = _write(tmp_path / "campaigns", _declaration(prompt_variants=CONSTRAINED))
+
+    with pytest.raises(
+        CampaignError,
+        match="'constrained_output'.*gbnf, but engine 'llama.cpp' declares "
+        "constraint mechanisms: none",
+    ):
+        load_declaration(path, engines_path=_engines_declaring(tmp_path, {}))
+
+
+def test_an_unconstrained_variant_loads_on_an_engine_declaring_none(
+    tmp_path: Path,
+) -> None:
+    path = _write(tmp_path / "campaigns", _declaration())
+
+    declaration = load_declaration(path, engines_path=_engines_declaring(tmp_path, {}))
+
+    assert declaration.prompt_variants == (("baseline", "1"),)
+
+
 @pytest.mark.parametrize(
     ("overrides", "named"),
     [

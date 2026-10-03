@@ -238,7 +238,16 @@ from wave_local_ai_v2 import (
 # `baseline`. Runtime rows run one fixed prompt of no task family and carry
 # no such field. Owed only from "27": a row below "27" still validates
 # without it and is never back-filled.
-SCHEMA_VERSION = "27"
+# "28": `constraint_mechanism` and `constraint_grammar_hash` became required
+# on quality rows (Story: the constrained-output variant runs under a
+# llama.cpp grammar and names its mechanism; Methodology 2, 22). The
+# mechanism the item's answer was decoded under (`gbnf`, or `none`) and the
+# content hash of the grammar sent (null under `none`); the gate checks both
+# against the registry for the row's variant and `task_suite`. Runtime rows
+# run one fixed prompt of no task family and carry neither. Owed only from
+# "28": a row below "28" still validates without them and is never
+# back-filled.
+SCHEMA_VERSION = "28"
 
 # The two subject-composition fields "19" added, and the version from which a
 # quality row owes them.
@@ -334,6 +343,12 @@ OVERRIDABLE_PROFILE_VALUES: frozenset[str] = frozenset({"n_cpu_moe", "threads"})
 # The schema version from which a quality row owes `prompt_variant_noop`.
 VARIANT_NOOP_SCHEMA_VERSION = "27"
 VARIANT_NOOP_FIELD = "prompt_variant_noop"
+
+# The schema version from which a quality row owes the two constraint fields.
+CONSTRAINT_SCHEMA_VERSION = "28"
+CONSTRAINT_FIELDS: frozenset[str] = frozenset(
+    {"constraint_mechanism", "constraint_grammar_hash"}
+)
 
 # What a row run under no campaign says in `campaign_id`: it belongs to none,
 # stated rather than left null. Reserved: no campaign may take it as its id.
@@ -509,6 +524,8 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "prompt_before_template",
             # whether the variant skipped this item's task family (schema "27")
             VARIANT_NOOP_FIELD,
+            # the decoding constraint the answer ran under (schema "28")
+            *CONSTRAINT_FIELDS,
             "model_id",
             "provider",
             # Where the subject prompt went: `none` for a local subject, the
@@ -866,6 +883,8 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
         missing -= PROFILE_FIELDS
     if kind == "quality" and _predates(row, VARIANT_NOOP_SCHEMA_VERSION):
         missing -= {VARIANT_NOOP_FIELD}
+    if kind == "quality" and _predates(row, CONSTRAINT_SCHEMA_VERSION):
+        missing -= CONSTRAINT_FIELDS
     if missing:
         raise RowContractError(
             f"row of kind {kind!r} is missing required field(s): "
@@ -1595,6 +1614,18 @@ def _validate_prompt_variant(kind: RowKind, row: dict[str, Any]) -> None:
                 f"{'does not apply' if expected_noop else 'applies'} to task "
                 f"family {task_family!r}, so it must be {expected_noop!r}"
             )
+
+    if kind == "quality" and not _predates(row, CONSTRAINT_SCHEMA_VERSION):
+        expected_constraint = prompt_variants.constraint_row_fields(
+            variant, task_family
+        )
+        for field, expected_value in sorted(expected_constraint.items()):
+            if row[field] != expected_value:
+                raise RowContractError(
+                    f"row of kind {kind!r} has {field} {row[field]!r}: prompt "
+                    f"variant {variant_id!r} version {version!r} on task family "
+                    f"{task_family!r} sends {expected_value!r}"
+                )
 
     if variant_id != prompt_variants.BASELINE_ID and not owes_noop:
         return

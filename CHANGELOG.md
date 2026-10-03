@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The constrained-output variant runs under a llama.cpp grammar and names
+  its mechanism (schema "28")** -- the prompt variant registry gains
+  `constrained_output` v1: per task family it applies to, the output format,
+  any instruction it adds (none on `classification`, whose authored prompt
+  already states the format) and the GBNF grammar that expresses it, all in
+  the hashed definition; `translation` records a no-op. The local path sends
+  the grammar with each answer through the engine's declared request field
+  (`aidd_docs/roster/engines.json`'s new `constraint_mechanisms`: llama.cpp
+  `gbnf` in `grammar`), and every quality row names `constraint_mechanism`
+  and `constraint_grammar_hash`, checked by the gate. A campaign pairing the
+  variant with an engine declaring none of its mechanisms is refused at
+  declaration, and a run beside an enabled cloud provider is refused before
+  launch. The two fields sit on the comparison's `prompt_variant` axis. A
+  laptop pair (`qwen3-0.6b-q8`, classification) is compared in
+  `aidd_docs/results/README.md`.
 - **The terse-output variant runs every item and meets baseline in a paired
   test (schema "27")** -- the prompt variant registry gains
   `output_compressed` v1, a terse-output instruction appended to the

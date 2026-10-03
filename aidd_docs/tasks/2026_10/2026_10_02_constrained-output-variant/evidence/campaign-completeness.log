@@ -1,0 +1,3 @@
+filled       engine=llama.cpp variant=baseline@1 roster_entry=qwen3-0.6b-q8 suite=classification-support-routing runs=962f939a9d674078844d582dba9e945c
+filled       engine=llama.cpp variant=constrained_output@1 roster_entry=qwen3-0.6b-q8 suite=classification-support-routing runs=6d16257704594d79b427826bcb696455
+campaign 'constrained-output-laptop': 2 declared cell(s), none empty

@@ -1,0 +1,129 @@
+{
+  "declared_format": "Exactly one label of the closed set (account, billing, other, technical), lowercase, with nothing before or after it.",
+  "items": 20,
+  "outside_format": 0,
+  "share_outside_format": 0.0,
+  "outside_items": [],
+  "items_detail": [
+    {
+      "item_id": "billing-01",
+      "raw_output": "technical",
+      "inside_format": true,
+      "baseline_row_predicted_label": "technical"
+    },
+    {
+      "item_id": "billing-02",
+      "raw_output": "technical",
+      "inside_format": true,
+      "baseline_row_predicted_label": "technical"
+    },
+    {
+      "item_id": "technical-01",
+      "raw_output": "technical",
+      "inside_format": true,
+      "baseline_row_predicted_label": "technical"
+    },
+    {
+      "item_id": "technical-02",
+      "raw_output": "technical",
+      "inside_format": true,
+      "baseline_row_predicted_label": "technical"
+    },
+    {
+      "item_id": "account-01",
+      "raw_output": "technical",
+      "inside_format": true,
+      "baseline_row_predicted_label": "technical"
+    },
+    {
+      "item_id": "account-02",
+      "raw_output": "account",
+      "inside_format": true,
+      "baseline_row_predicted_label": "account"
+    },
+    {
+      "item_id": "other-01",
+      "raw_output": "other",
+      "inside_format": true,
+      "baseline_row_predicted_label": "other"
+    },
+    {
+      "item_id": "other-02",
+      "raw_output": "technical",
+      "inside_format": true,
+      "baseline_row_predicted_label": "technical"
+    },
+    {
+      "item_id": "billing-03",
+      "raw_output": "technical",
+      "inside_format": true,
+      "baseline_row_predicted_label": "technical"
+    },
+    {
+      "item_id": "technical-03",
+      "raw_output": "technical",
+      "inside_format": true,
+      "baseline_row_predicted_label": "technical"
+    },
+    {
+      "item_id": "billing-fr-01",
+      "raw_output": "technical",
+      "inside_format": true,
+      "baseline_row_predicted_label": "technical"
+    },
+    {
+      "item_id": "technical-fr-01",
+      "raw_output": "technical",
+      "inside_format": true,
+      "baseline_row_predicted_label": "technical"
+    },
+    {
+      "item_id": "account-fr-01",
+      "raw_output": "technical",
+      "inside_format": true,
+      "baseline_row_predicted_label": "technical"
+    },
+    {
+      "item_id": "other-fr-01",
+      "raw_output": "technical",
+      "inside_format": true,
+      "baseline_row_predicted_label": "technical"
+    },
+    {
+      "item_id": "technical-fr-02",
+      "raw_output": "technical",
+      "inside_format": true,
+      "baseline_row_predicted_label": "technical"
+    },
+    {
+      "item_id": "billing-de-01",
+      "raw_output": "technical",
+      "inside_format": true,
+      "baseline_row_predicted_label": "technical"
+    },
+    {
+      "item_id": "technical-de-01",
+      "raw_output": "technical",
+      "inside_format": true,
+      "baseline_row_predicted_label": "technical"
+    },
+    {
+      "item_id": "account-de-01",
+      "raw_output": "technical",
+      "inside_format": true,
+      "baseline_row_predicted_label": "technical"
+    },
+    {
+      "item_id": "other-de-01",
+      "raw_output": "technical",
+      "inside_format": true,
+      "baseline_row_predicted_label": "technical"
+    },
+    {
+      "item_id": "account-de-02",
+      "raw_output": "account",
+      "inside_format": true,
+      "baseline_row_predicted_label": "account"
+    }
+  ]
+}

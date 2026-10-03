@@ -1,0 +1,17 @@
+{
+  "no_grammar": {
+    "status": 200,
+    "content": "technical",
+    "finish_reason": "stop"
+  },
+  "grammar_four_labels": {
+    "status": 200,
+    "content": "technical",
+    "finish_reason": "stop"
+  },
+  "grammar_forcing_billing": {
+    "status": 200,
+    "content": "billing",
+    "finish_reason": "stop"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "campaign_id": "constrained-output-laptop",
+  "description": "One cell pair on the laptop: one roster entry, the classification suite, baseline and constrained_output (llama.cpp gbnf grammar), compared through the paired test.",
+  "engines": ["llama.cpp"],
+  "prompt_variants": [
+    {"id": "baseline", "version": "1"},
+    {"id": "constrained_output", "version": "1"}
+  ],
+  "roster_entries": ["qwen3-0.6b-q8"],
+  "suites": ["classification-support-routing"],
+  "machine": {"machine_id": "laptop-mobile-gpu", "compute_mode": "gpu"},
+  "exclusions": []
+}

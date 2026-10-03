@@ -42,8 +42,17 @@ The command-line interface for running benchmarks.
     families the authored prompt is sent unchanged and each row states
     `prompt_variant_noop: true` (quality rows, schema "27"). `baseline` v1
     applies everywhere; `output_compressed` v1 appends a terse-output
-    instruction on `classification` and is a no-op on `translation`. Under a
-    campaign the variant must be one it declares.
+    instruction on `classification` and is a no-op on `translation`;
+    `constrained_output` v1 sends a GBNF grammar admitting only the closed
+    label set with each `classification` answer (no instruction added) and
+    is a no-op on `translation`. Each quality row names
+    `constraint_mechanism` (`gbnf` or `none`) and `constraint_grammar_hash`
+    (schema "28"). A constraining variant exits `1` before any process when
+    the engine declares no request field for its mechanism or when a cloud
+    provider is enabled: run it with `QUALITY_PROVIDERS=local`. Under a
+    campaign the variant must be one it declares, and a campaign pairing a
+    constraining variant with an engine declaring none of its mechanisms is
+    refused at load.
     - `classification-support-routing` (`task_suite` `classification`, rule
       `exact_label_match`): 20 support messages routed into one of four labels
       (`en`/`fr`/`de`, each >=25% share), 32 output tokens, scored by exact

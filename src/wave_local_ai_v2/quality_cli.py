@@ -361,6 +361,18 @@ def _run(
     )
     provenance_fields["campaign_id"] = campaign_id
 
+    # The variant's decoding constraint for this suite's family, in the
+    # request field the engine declares for its mechanism; refused before
+    # any spawn when the engine lacks it or a cloud subject would run beside
+    # it unconstrained.
+    constraint = prompt_variants.constraint_for(prompt_variant, spec.task_suite)
+    constraint_body = _constraint_body(
+        prompt_variant,
+        constraint,
+        engine,
+        cloud_providers=settings.quality_providers - {"local"},
+    )
+
     # Resolved once, before any process spawns: an entry that declares no
     # thinking control cannot run a `disabled` suite, and every render and
     # answer of the batch sends exactly these arguments. An entry whose
@@ -447,6 +459,7 @@ def _run(
                 roster_entry=roster_entry,
                 thinking_kwargs=thinking_kwargs,
                 engine=engine,
+                constraint_body=constraint_body,
             ),
             country_iso_code=settings.emission_country_iso_code,
         )
@@ -847,6 +860,40 @@ def _try_run_cloud_provider(
     )
 
 
+def _constraint_body(
+    prompt_variant: prompt_variants.PromptVariant,
+    constraint: prompt_variants.Constraint | None,
+    engine: engines.EngineEntry,
+    *,
+    cloud_providers: frozenset[str],
+) -> dict[str, str]:
+    """The request fields carrying `constraint` to `engine` (`{}` for none).
+
+    Refused when the engine declares no request field for the constraint's
+    mechanism, or when a cloud provider would answer the same items: a cloud
+    subject has no grammar path, so its rows would name a variant whose
+    constraint it never ran under.
+    """
+    if constraint is None:
+        return {}
+    where = (
+        f"prompt variant {prompt_variant.variant_id!r} version "
+        f"{prompt_variant.version!r} constrains output through "
+        f"{constraint.mechanism}"
+    )
+    request_field = engine.constraint_mechanisms.get(constraint.mechanism)
+    if request_field is None:
+        raise prompt_variants.PromptVariantError(
+            f"{where}, which engine {engine.engine_id!r} does not declare"
+        )
+    if cloud_providers:
+        raise prompt_variants.PromptVariantError(
+            f"{where}, which no cloud subject can apply: run it with "
+            f"QUALITY_PROVIDERS=local (enabled: {', '.join(sorted(cloud_providers))})"
+        )
+    return {request_field: constraint.grammar}
+
+
 def _local_call_path(chat_template: str) -> dict[str, Any]:
     """The four call-path fields of the local chat path.
 
@@ -931,6 +978,7 @@ def _run_local_suite(
     roster_entry: roster.RosterEntry,
     thinking_kwargs: dict[str, Any],
     engine: engines.EngineEntry,
+    constraint_body: Mapping[str, str] | None = None,
 ) -> _LocalBatch:
     """Answer every item through the loaded model's own chat template.
 
@@ -951,6 +999,10 @@ def _run_local_suite(
     it is verified against the loaded template before the first item: a
     template that ignores it refuses the batch here, so no row can publish a
     policy the model never applied.
+
+    `constraint_body` is the variant's decoding constraint in the engine's
+    own request field (llama.cpp: `grammar`), sent with every item's answer
+    and with nothing else: the render and the token count are unconstrained.
     """
     completions: list[_Completion] = []
     rendered_prompts: list[str] = []
@@ -986,6 +1038,7 @@ def _run_local_suite(
                 sampling=LOCAL_SAMPLING,
                 thinking_kwargs=thinking_kwargs,
                 timeout=REQUEST_TIMEOUT_S,
+                constraint_body=constraint_body,
             )
             completions.append(
                 _Completion(
@@ -1369,6 +1422,10 @@ def _score_and_write(
             "prompt_variant_noop": not prompt_variants.applies(
                 prompt_variant, spec.task_suite
             ),
+            # The decoding constraint the item's answer ran under (schema
+            # "28"): every provider of a constraining variant is the local
+            # engine, which `_constraint_body` sent it to.
+            **prompt_variants.constraint_row_fields(prompt_variant, spec.task_suite),
             "prompt_before_template": variant_prompts[index],
             # Everything the suite's own scorer decided: the exact-match
             # fields on one suite, the graded block on the other, each

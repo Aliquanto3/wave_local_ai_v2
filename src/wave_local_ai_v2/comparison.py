@@ -340,7 +340,17 @@ DIMENSIONS: dict[str, Dimension] = {
         key_fields=("model_id",),
     ),
     "prompt_variant": Dimension(
-        fields=frozenset({"prompt_variant_id", "prompt_variant_version"}),
+        fields=frozenset(
+            {
+                "prompt_variant_id",
+                "prompt_variant_version",
+                # The decoding constraint (schema "28") is part of the
+                # variant's definition, so it moves with the variant axis and
+                # is named there; on any other axis it stays compared.
+                "constraint_mechanism",
+                "constraint_grammar_hash",
+            }
+        ),
         key_fields=("prompt_variant_id", "prompt_variant_version"),
     ),
 }

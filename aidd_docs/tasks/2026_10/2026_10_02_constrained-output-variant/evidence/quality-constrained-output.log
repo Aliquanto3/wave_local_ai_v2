@@ -1,0 +1,7 @@
+pre-flight: vram_gb not checked under gpu: roster entry 'qwen3-0.6b-q8' declares no minimum yet (awaits a per-process VRAM peak: the published vram_used_mib is NVML's device-wide used memory (4527 MiB for the 0.6B, whose weights are 0.64 GB), not this model's own need)
+[codecarbon INFO @ 18:45:28] offline tracker init
+[codecarbon WARNING @ 18:45:28] Multiple instances of codecarbon are allowed to run at the same time.
+thinking switch verified: engine=llama.cpp field=chat_template_kwargs renders_differ=True with=912d49fca08298321cd9ad43f2026f43be90f47e3e5058d456b3f42cc341cf4e without=7386842aa9866d3e4066a76a95af34b57adc9d705ec93732a099c4503a5b09c8
+mistral skipped: not enabled in QUALITY_PROVIDERS
+google skipped: not enabled in QUALITY_PROVIDERS
+model=Qwen3-0.6B provider=local accuracy=0.45

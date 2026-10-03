@@ -82,6 +82,27 @@ def test_a_well_formed_chat_body_yields_the_five_fields() -> None:
     assert completion["endpoint"] == prompt_provenance.LOCAL_CHAT_ENDPOINT
 
 
+@pytest.mark.parametrize(
+    ("constraint_body", "expected_grammar"),
+    [({"grammar": 'root ::= "a"'}, 'root ::= "a"'), (None, None), ({}, None)],
+)
+def test_a_constraint_body_is_sent_as_is_and_only_when_given(
+    constraint_body: dict[str, str] | None, expected_grammar: str | None
+) -> None:
+    with _post(_CHAT_BODY) as post:
+        local_client.complete_chat(
+            BASE,
+            "hello",
+            max_tokens=32,
+            sampling=SAMPLING,
+            thinking_kwargs={},
+            timeout=TIMEOUT,
+            constraint_body=constraint_body,
+        )
+
+    assert post.call_args.kwargs["json"].get("grammar") == expected_grammar
+
+
 def test_the_completion_carries_the_items_own_engine_measurement() -> None:
     body = {
         **_CHAT_BODY,

@@ -14,6 +14,7 @@ from store_fixtures import ROSTER_REQUIREMENTS, single_refusal, write_raised_ros
 from wave_local_ai_v2 import (
     chrf,
     comparison,
+    engines,
     google_client,
     local_client,
     mistral_client,
@@ -1487,7 +1488,7 @@ def test_every_row_names_its_subjects_family_and_size_class(stubbed_run) -> None
         ("mistral", "mistral", None),
         ("google", "google", None),
     }
-    assert {row["schema_version"] for row in rows} == {"27"}
+    assert {row["schema_version"] for row in rows} == {"28"}
 
 
 def test_every_row_names_direct_its_version_and_its_measured_overhead(
@@ -3343,3 +3344,183 @@ def test_a_baseline_and_variant_pair_differs_only_on_the_variant_fields(
         "prompt_variant_id",
         "prompt_variant_version",
     }
+
+
+# --------------------------------------------------------------------------
+# The constrained-output variant (schema "28"): the grammar goes with each
+# local answer only for a declared family, every row names the mechanism and
+# the grammar's hash, and nothing else moves against `baseline`.
+
+_CONSTRAINED = (prompt_variants.CONSTRAINED_OUTPUT_ID, "1")
+_GRAMMAR = 'root ::= "account" | "billing" | "other" | "technical"'
+
+
+def _local_only(started) -> None:
+    started["load_settings"].return_value = dataclasses.replace(
+        started["load_settings"].return_value, quality_providers=frozenset({"local"})
+    )
+
+
+def _chat_bodies(started) -> list[dict]:
+    return [
+        call.kwargs["json"]
+        for call in started["post"].call_args_list
+        if call.args[0].endswith("/v1/chat/completions")
+    ]
+
+
+def test_the_grammar_is_sent_with_every_classification_answer_and_hashed(
+    stubbed_run,
+) -> None:
+    quality_results_path, started = stubbed_run
+    _local_only(started)
+
+    quality_cli._run(prompt_variant_ref=_CONSTRAINED)
+
+    bodies = _chat_bodies(started)
+    assert len(bodies) == len(CLASSIFICATION_TASK_SUITE)
+    assert all(body["grammar"] == _GRAMMAR for body in bodies)
+    # Only the answer is constrained: the render carries no grammar.
+    renders = [
+        call.kwargs["json"]
+        for call in started["post"].call_args_list
+        if call.args[0].endswith("/apply-template")
+    ]
+    assert renders and all("grammar" not in body for body in renders)
+    rows = _rows_by_variant(quality_results_path)["constrained_output"]
+    assert {row["constraint_mechanism"] for row in rows} == {"gbnf"}
+    assert {row["constraint_grammar_hash"] for row in rows} == {
+        prompt_variants.grammar_hash(_GRAMMAR)
+    }
+    # No instruction is added: the published prompt is the authored one.
+    by_item = {item["item_id"]: item for item in CLASSIFICATION_TASK_SUITE}
+    for row in rows:
+        assert row["prompt_before_template"] == by_item[row["item_id"]]["prompt"]
+        assert row["prompt_variant_noop"] is False
+
+
+@pytest.mark.parametrize(
+    ("suite_id", "variant_ref"),
+    [
+        ("translation-business-short-form", _CONSTRAINED),
+        ("classification-support-routing", (prompt_variants.BASELINE_ID, "1")),
+        ("classification-support-routing", _OUTPUT_COMPRESSED),
+    ],
+)
+def test_no_grammar_is_sent_outside_the_constrained_variant_and_its_families(
+    stubbed_run, suite_id, variant_ref
+) -> None:
+    quality_results_path, started = stubbed_run
+    _local_only(started)
+
+    quality_cli._run(suite=suite_id, prompt_variant_ref=variant_ref)
+
+    assert all("grammar" not in body for body in _chat_bodies(started))
+    for row in read_rows(quality_results_path):
+        assert row["constraint_mechanism"] == "none"
+        assert row["constraint_grammar_hash"] is None
+
+
+def test_the_constrained_variant_beside_a_cloud_provider_exits_1_before_any_process(
+    stubbed_run, monkeypatch, capsys
+) -> None:
+    quality_results_path, started = stubbed_run
+    monkeypatch.setattr(
+        "sys.argv",
+        ["wave-local-ai-v2-quality", "--prompt-variant", "constrained_output"],
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        quality_cli.main()
+
+    assert excinfo.value.code == 1
+    assert (
+        "QUALITY_PROVIDERS=local (enabled: google, mistral)" in capsys.readouterr().err
+    )
+    started["running_server"].assert_not_called()
+    assert not quality_results_path.exists()
+
+
+def test_the_constrained_variant_on_an_engine_without_gbnf_is_refused(
+    stubbed_run, monkeypatch
+) -> None:
+    _, started = stubbed_run
+    _local_only(started)
+    reference = engines.tracked_reference_engine()
+    monkeypatch.setattr(
+        engines,
+        "tracked_reference_engine",
+        lambda: dataclasses.replace(reference, constraint_mechanisms={}),
+    )
+
+    with pytest.raises(prompt_variants.PromptVariantError, match="does not declare"):
+        quality_cli._run(prompt_variant_ref=_CONSTRAINED)
+    started["running_server"].assert_not_called()
+
+
+def test_a_constrained_run_changes_nothing_but_the_variant_on_every_suite(
+    stubbed_run,
+) -> None:
+    quality_results_path, started = stubbed_run
+    _local_only(started)
+    for suite_id in suite_registry.registered_ids():
+        quality_cli._run(suite=suite_id)
+        quality_cli._run(suite=suite_id, prompt_variant_ref=_CONSTRAINED)
+
+    by_variant = _rows_by_variant(quality_results_path)
+    baseline, constrained = by_variant["baseline"], by_variant["constrained_output"]
+    assert [row["item_id"] for row in constrained] == [
+        row["item_id"] for row in baseline
+    ]
+    for base_row, variant_row in zip(baseline, constrained, strict=True):
+        for field in _VARIANT_INVARIANT_FIELDS:
+            assert variant_row.get(field) == base_row.get(field), field
+
+
+def test_a_grammar_admitted_but_truncated_answer_scores_0_with_its_reason(
+    stubbed_run,
+) -> None:
+    quality_results_path, started = stubbed_run
+    _local_only(started)
+    # The cap cut a grammar-admitted label short: a prefix the grammar
+    # admits, which the unchanged parser cannot map onto a label.
+    started["post"].side_effect = local_post_router(
+        content="bill", finish_reason="length"
+    )
+
+    quality_cli._run(prompt_variant_ref=_CONSTRAINED)
+
+    rows = _rows_by_variant(quality_results_path)["constrained_output"]
+    assert len(rows) == len(CLASSIFICATION_TASK_SUITE)
+    for row in rows:
+        assert row["correct"] is False
+        assert row["predicted_label"] is None
+        assert row["failure_reason"] is not None
+        assert row["suite_accuracy"] == 0.0
+
+
+def test_a_baseline_and_constrained_pair_names_the_variant_and_the_mechanism(
+    stubbed_run,
+) -> None:
+    quality_results_path, started = stubbed_run
+    _local_only(started)
+    quality_cli._run()
+    quality_cli._run(prompt_variant_ref=_CONSTRAINED)
+    by_variant = _rows_by_variant(quality_results_path)
+    reference, candidate = by_variant["baseline"], by_variant["constrained_output"]
+
+    member = comparison.compare_sides(
+        reference,
+        candidate,
+        comparison.Side(reference[0]["run_id"], {"provider": "local"}),
+        comparison.Side(candidate[0]["run_id"], {"provider": "local"}),
+        dimension="prompt_variant",
+    )
+
+    assert member["comparison_kind"] == comparison.KIND_TEST
+    assert member["confounds"] == []
+    assert member["differing_fields"] == [
+        "constraint_grammar_hash",
+        "constraint_mechanism",
+        "prompt_variant_id",
+    ]

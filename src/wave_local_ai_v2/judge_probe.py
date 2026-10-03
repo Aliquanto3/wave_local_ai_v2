@@ -986,6 +986,7 @@ def _build_row(
         "prompt_variant_id": prompt_variant.variant_id,
         "prompt_variant_version": prompt_variant.version,
         "prompt_variant_noop": not prompt_variants.applies(prompt_variant, TASK_SUITE),
+        **prompt_variants.constraint_row_fields(prompt_variant, TASK_SUITE),
         "prompt_before_template": prompt_before_template,
         "expected_label": None,
         "predicted_label": None,

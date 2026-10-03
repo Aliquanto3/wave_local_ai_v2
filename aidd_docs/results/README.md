@@ -630,6 +630,41 @@ The first run of this pair also surfaced a defect, fixed in the same change:
 `comparison.py` counted `score_interval` as a configuration field, so any two
 batches that scored differently were published as an observation naming it.
 
+## A grammar-constrained output against baseline: identical answers (2026-10-03)
+
+One campaign cell pair on the laptop (`laptop-mobile-gpu`, `gpu`, pinned
+build `b10537`, `llama.cpp`), campaign `constrained-output-laptop`: roster
+entry `qwen3-0.6b-q8`, suite `classification-support-routing@4`, `baseline`
+v1 (run `962f939a`) against `constrained_output` v1 (run `6d162577`), local
+only, schema "28". Both cells filled, 20 items each. Every
+`constrained_output` row names `constraint_mechanism: gbnf` and
+`constraint_grammar_hash` `302f90eb...` (the grammar
+`root ::= "account" | "billing" | "other" | "technical"`); every `baseline`
+row names `none`. A live request on the same build first showed the
+per-request `grammar` field is applied on `/v1/chat/completions`: a grammar
+admitting only `billing` turned a `technical` answer into `billing`.
+
+| Arm | Accuracy | Mean output tokens per item | Unparseable |
+| --- | --- | --- | --- |
+| `baseline` | 0.45 (9/20) | 2.0 | 0 |
+| `constrained_output` | 0.45 (9/20) | 2.0 | 0 |
+
+**Share of baseline outputs outside the declared format: 0 of 20 (0%).** A
+classification row does not carry the raw answer, so the baseline requests
+were replayed on the same build, model, launch flags and sampling: every
+answer was a bare lowercase label, each equal to its row's
+`predicted_label`. `wave-local-ai-v2-compare --dimension prompt_variant`:
+McNemar exact, 9 both right, 11 both wrong, no discordant item (p null,
+reason `no_discordant_pairs`), **verdict `not distinguishable`**;
+differing fields `constraint_grammar_hash`, `constraint_mechanism` and
+`prompt_variant_id`, no confound. Read it as: this model already answers
+inside the format, so a grammar on this suite has nothing to correct; the
+variant's effect, if any, needs a model or a suite where baseline strays. The
+records, rows, replay and logs are in
+`aidd_docs/tasks/2026_10/2026_10_02_constrained-output-variant/evidence/`;
+the run's fiche is byte-identical to `73ec536e...` already tracked by the
+named-run-profiles evidence. No row here entered a committed store.
+
 ## The use-case coverage record, and why it is not here yet
 
 `use-case-coverage.json` is the published coverage record: one entry for each

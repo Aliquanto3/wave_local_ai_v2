@@ -375,8 +375,13 @@ def complete_chat(
     thinking_kwargs: Mapping[str, Any],
     timeout: float,
     tools: Sequence[Mapping[str, Any]] | None = None,
+    constraint_body: Mapping[str, str] | None = None,
 ) -> LocalCompletion:
-    """Ask the loaded model to answer `prompt` through its own chat template."""
+    """Ask the loaded model to answer `prompt` through its own chat template.
+
+    `constraint_body` is a decoding constraint already spelled in the
+    engine's request field (llama.cpp: `{"grammar": <GBNF>}`), sent as is.
+    """
     payload = _post_json(
         f"{base_url}{prompt_provenance.LOCAL_CHAT_ENDPOINT}",
         {
@@ -385,6 +390,7 @@ def complete_chat(
             "max_tokens": max_tokens,
             **sampling,
             **thinking_kwargs,
+            **(constraint_body or {}),
         },
         timeout,
     )

@@ -155,6 +155,47 @@ def test_a_switch_of_none_loads(tmp_path: Path) -> None:
     assert engine.thinking_switch == engines.THINKING_SWITCH_NONE
 
 
+def test_the_shipped_llama_cpp_entry_carries_gbnf_in_the_grammar_field() -> None:
+    engine = engines.tracked_reference_engine()
+
+    assert engine.constraint_mechanisms == {"gbnf": "grammar"}
+
+
+def test_an_entry_declaring_no_constraint_mechanism_loads_empty(tmp_path: Path) -> None:
+    raw = _raw()
+    _entry(raw)["constraint_mechanisms"] = {}
+
+    engine = engines.reference_engine(engines.load_registry(_write(tmp_path, raw)))
+
+    assert engine.constraint_mechanisms == {}
+
+
+@pytest.mark.parametrize(
+    ("mechanisms", "match"),
+    [
+        (["gbnf"], "'constraint_mechanisms' must be an object"),
+        ({"json_schema": {"request_field": "x", "read_from": "y"}}, "json_schema"),
+        ({"gbnf": {"request_field": "grammar"}}, "constraint_mechanisms.gbnf"),
+        (
+            {"gbnf": {"request_field": "", "read_from": "y"}},
+            "constraint_mechanisms.gbnf.request_field",
+        ),
+        (
+            {"gbnf": {"request_field": "grammar", "read_from": " "}},
+            "constraint_mechanisms.gbnf.read_from",
+        ),
+    ],
+)
+def test_a_malformed_constraint_mechanism_is_refused_naming_it(
+    tmp_path: Path, mechanisms: Any, match: str
+) -> None:
+    raw = _raw()
+    _entry(raw)["constraint_mechanisms"] = mechanisms
+
+    with pytest.raises(engines.EngineRegistryError, match=match):
+        engines.load_registry(_write(tmp_path, raw))
+
+
 def test_a_registry_without_exactly_one_reference_is_refused(tmp_path: Path) -> None:
     raw = _raw()
     second = copy.deepcopy(_entry(raw))

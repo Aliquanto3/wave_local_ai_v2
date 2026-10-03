@@ -263,9 +263,10 @@ def load_declaration(
         )
     for variant_id, version in variants:
         try:
-            prompt_variants.resolve(variant_id, version)
+            variant = prompt_variants.resolve(variant_id, version)
         except prompt_variants.PromptVariantError as exc:
             raise CampaignError(f"{where}: {exc}") from exc
+        _refuse_an_unsupported_constraint(where, variant, engine_ids, engine_registry)
 
     roster_entries = _id_list(raw["roster_entries"], f"{where}: roster_entries")
     try:
@@ -326,6 +327,35 @@ def _id_list(value: object, where: str) -> tuple[str, ...]:
     if duplicates:
         raise CampaignError(f"{where} declares {', '.join(duplicates)} twice")
     return ids
+
+
+def _refuse_an_unsupported_constraint(
+    where: str,
+    variant: prompt_variants.PromptVariant,
+    engine_ids: tuple[str, ...],
+    engine_registry: engines.EngineRegistry,
+) -> None:
+    """Refuse a constraining variant on an engine lacking its mechanism.
+
+    The engine entry declares the mechanisms it supports; one declaring none
+    of the variant's cannot run the cell, which stays undeclarable until the
+    engine's own outcome (a mechanism, or a recorded drop) is settled.
+    """
+    needed = prompt_variants.constraint_mechanisms(variant)
+    if not needed:
+        return
+    for engine_id in engine_ids:
+        supported = set(engine_registry.entries[engine_id].constraint_mechanisms)
+        missing = sorted(needed - supported)
+        if missing:
+            declared = ", ".join(sorted(supported)) or "none"
+            raise CampaignError(
+                f"{where}: prompt variant {variant.variant_id!r} version "
+                f"{variant.version!r} constrains output through "
+                f"{', '.join(sorted(needed))}, but engine {engine_id!r} declares "
+                f"constraint mechanisms: {declared}; the cell cannot run until "
+                "that engine's constraint outcome is recorded"
+            )
 
 
 def _variant_list(value: object, where: str) -> tuple[tuple[str, str], ...]:

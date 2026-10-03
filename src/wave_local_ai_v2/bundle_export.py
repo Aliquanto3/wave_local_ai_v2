@@ -213,6 +213,18 @@ _COMMON_FIELDS: dict[tuple[str, ...], FieldDoc] = {
         "item ran with its authored prompt unchanged (quality rows, schema 27).",
         _BOOL,
     ),
+    ("constraint_mechanism",): FieldDoc(
+        "Decoding constraint mechanism the answer ran under (gbnf: a llama.cpp "
+        "grammar), or none (quality rows, schema 28).",
+        _ID,
+    ),
+    ("constraint_grammar_hash",): FieldDoc(
+        "Content hash of the grammar sent with the item's request, as the "
+        "variant's definition declares it for the task family (quality rows, "
+        "schema 28).",
+        _SHA,
+        "No constraint was applied (constraint_mechanism is none).",
+    ),
     ("subject_egress",): FieldDoc(
         "Where the subject prompt went: 'none' when it was served on the "
         "machine, else the id of the cloud provider that received it. The "
