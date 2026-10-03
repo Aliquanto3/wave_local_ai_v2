@@ -45,7 +45,7 @@ Needs: a real local model run, only for the evidence: the already-downloaded `qw
 
 ## Evidence it publishes
 
-- The pass record for `qwen3-0.6b-q8`, its sha256, bytes and template hash matching the shipped entry, committed as the first line of the candidate record.
+- The pass record for `qwen3-0.6b-q8`, its sha256 matching the shipped entry and its bytes and template hash as the gate recorded them (`models.json` carries neither), committed as the first line of the candidate record.
 
 ## Cancellation
 

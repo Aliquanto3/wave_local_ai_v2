@@ -109,3 +109,16 @@ Decisions taken under this run's authority, each a delivery or interpretation ch
 ## The redistribution task
 
 `aidd_docs/backlog/tasks/the-model-output-fields-cite-the-terms-they-were-checked-against-and-carry-the-ai-generated-notice.md` (bundle epic, created with the redistribution spike's commit) moved `proposed -> ready` after the second-round three-amigos check: it gained `README.md`'s licence section (which carries the same unverified wording), the section 3 assumption count, and a whitespace-collapsed test for the notice. Code-only; Q111 (the epic's assumption row) does not block it.
+
+## Step 4: stale wording in done stories
+
+Wording only; no acceptance meaning changed; the code already follows each story's intent.
+
+| Story | Fix |
+| --- | --- |
+| the-composition-check-names-every-size-class-and-refuses-an-unlabelled-single-family-one | "of the entry it cites" now notes that a cloud row carries its own subject's family and a null size class (`quality_rows.py`) |
+| comparison-family-and-leader-set-records-read-as-a-fifth-table | "(today all three ...)" now says all three kinds were absent when written and the committed bundle now holds all three |
+| every-roster-entry-states-its-family-its-licence-and-its-language-claim | "keeps passing unchanged" now says its family assertions are unchanged while its `roster_version` assertion follows the file, as the story's version bullet states |
+| a-candidate-model-enters-the-roster-only-through-the-verification-gate-or-leaves-a-recorded-refusal | the evidence line no longer says bytes and template hash match the shipped entry (`models.json` carries neither); they are as the gate recorded them |
+
+Not edited: the "Current state" and "Code it changes" sections the log calls stale (history of what each story found; rewriting them is not a wording fix); `the-data-is-cc-by-4-0-the-code-stays-mit-and-each-says-so-where-it-lives` (read-only for this run: Q122); the judge-call story's null rule (acceptance meaning: Q121). The other "Needs an owner edit" items are already settled on `main` (see the Q121 section header).

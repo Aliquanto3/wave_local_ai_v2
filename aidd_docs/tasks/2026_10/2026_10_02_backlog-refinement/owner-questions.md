@@ -203,3 +203,23 @@ Spike: `aidd_docs/backlog/spikes/which-llmlingua-2-class-compressor-fits-the-ref
 - Recommended default: (a). One extra 20-item run per suite gives a same-subject, same-build comparison, which is what the bullet needs. Cost: two more local batches; (a) adds one acceptance line to orders 7 and 8.
 - Blocks: order 9.
 
+## Stale wording in done stories
+
+From the 2026-10-01 implementation run log, "Code against the backlog". Its other "Needs an owner edit" items are already settled on `main`: both PR #54 story copies carry the amended acceptance, the interval epic's Success Evidence names the exact Binomial reference, and the engine epic's thinking-control row says a switchless engine declares `none`.
+
+### Q121. Does the judge-call story's null rule cover a reasoning count derived from usage totals?
+
+- Artifact: `aidd_docs/backlog/stories/every-judge-call-names-who-answered-its-reasoning-effort-and-its-reasoning-tokens.md` (`done`), acceptance bullet "A provider that does not report reasoning tokens yields an explicit null with the reason, never a zero."
+- Question: Google reports no reasoning count of its own; `google_client._reasoning_tokens` derives one as `total - prompt - candidates` and the row says so (`reasoning_tokens_derived`, `reasoning_tokens_source`). Read literally the bullet asks for null. Changing it changes acceptance meaning, which this run may not do.
+- Options: (a) amend the bullet to "a provider that reports reasoning tokens neither directly nor derivably from its usage totals yields an explicit null with the reason; a derived count names its derivation on the row", matching the code; (b) keep the bullet and change the code to publish null for Google; (c) leave both, since order 10 retires Google as a judge.
+- Recommended default: (a). The derived count is exact arithmetic on the provider's own totals and is labelled as derived, so a reader loses nothing and gains a number. Cost: one owner edit to a `done` story.
+- Blocks: nothing.
+
+### Q122. The licence story's "today" list of item-literal modules is stale: will the owner update it?
+
+- Artifact: `aidd_docs/backlog/stories/the-data-is-cc-by-4-0-the-code-stays-mit-and-each-says-so-where-it-lives.md` (`done`; read-only for this run), the bullet "Each module in `src/wave_local_ai_v2/` that holds hand-written item literals (today `classification_suite.py` and `translation_suite.py`) carries a header".
+- Question: since `d66f760` the suite items live in `suite_data/*.json` and only `judge_probe.py` holds item literals; the rule itself (each such module carries the header) still holds and `tests/test_data_licence.py` enforces it through `item_literal_modules`. Only the parenthesis is stale.
+- Options: (a) the owner replaces the parenthesis with "(`judge_probe.py` since the suites moved to `suite_data/`)"; (b) leave it as history.
+- Recommended default: (a). Wording only; no acceptance meaning changes.
+- Blocks: nothing.
+
