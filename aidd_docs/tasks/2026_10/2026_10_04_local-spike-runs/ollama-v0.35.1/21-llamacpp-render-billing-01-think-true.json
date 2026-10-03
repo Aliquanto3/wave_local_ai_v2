@@ -1,0 +1,1 @@
+{"prompt":"<|im_start|>user\nClassify the following support message into exactly one of these categories: account, billing, other, technical. Reply with only the single category word, nothing else.\n\nMessage: I was charged twice for my subscription this month, can you refund one?<|im_end|>\n<|im_start|>assistant\n"}

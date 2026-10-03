@@ -1,0 +1,9 @@
+﻿
+D:\ia\ollama-v0.35.1-captures\90-serve-defaults.log:57:time=2026-10-04T00:22:36.706+02:00 level=INFO 
+source=llama_server.go:436 msg="starting llama-server" cmd="D:\\ia\\ollama-v0.35.1\\lib\\ollama\\llama-server.exe 
+--model 
+D:\\ia\\ollama-v0.35.1-models-defaults\\blobs\\sha256-7f4030143c1c477224c5434f8272c662a8b042079a0a584f0a27a1684fe2e1fa 
+--port 51813 --host 127.0.0.1 --no-webui --offline -c 4096 -np 1 --log-verbosity 4 --no-log-prefix --no-log-timestamps 
+--no-jinja --chat-template chatml --load-mode none --flash-attn auto -b 512 -ub 512 --context-shift --keep 4"
+
+

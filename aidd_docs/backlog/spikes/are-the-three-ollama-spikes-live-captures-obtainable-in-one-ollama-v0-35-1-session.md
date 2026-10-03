@@ -1,6 +1,6 @@
 ---
 type: spike
-status: open
+status: resolved
 source: aidd_docs/backlog/epics/the-engine-and-the-prompt-variant-are-measured-not-assumed.md
 parents:
   - aidd_docs/backlog/stories/ollama-runtime-rows-stand-beside-llama-cpp-rows-on-the-same-artifact.md
@@ -303,3 +303,26 @@ Spike column: `runtime` = `can-a-pinned-ollama-build-serve-the-roster-gguf-under
 | constrained | format after the thinking block | `63-constrained-think-true-billing-01.json` |
 
 Assumptions the run checks rather than relies on: the `--model` and `<|im_start|>` log searches assume the debug log prints the runner's argument list and that a rendered prompt, if logged, carries the template's turn marker (an empty file is itself the finding); `' billing' * 50000` is assumed to exceed 32768 tokens, which `22-over-long-token-count.txt` confirms; the second client's 1024-token generation is assumed to outlast the 500 ms wait, which `42-ps-during-second-client.json` and the two responses' `total_duration` show.
+
+## Investigation
+
+The runbook was run once, unattended by an agent session on the reference laptop, 2026-10-04 00:17:54 to 00:23:24 (Windows PowerShell 5.1). Evidence folder `aidd_docs/tasks/2026_10/2026_10_04_local-spike-runs/ollama-v0.35.1/`, written `E/` below: the files the three spikes cite, copied from the capture folder `D:\ia\ollama-v0.35.1-captures` under their original names, with the operator's notes `E/RUN-NOTES.md`. Not copied: the zip, the model blobs, and the files over about 200 KB (`33-show.json`, the `22-*over-long*` and `70-over-long-prompt.body.json` bodies, `96-library-qwen3.6-tags.html`), of which `33-show.excerpt.json` and `96-library-qwen3.6-tags.excerpt.txt` are labelled excerpts; also left out are `32-create.txt` and `91-pull.txt` (terminal progress output with control sequences, whose results the manifest, the digest match and the server access log carry) and the empty or disk-only step 1 checks, which `E/RUN-NOTES.md` records.
+
+| Attempt | Evidence | Result |
+| ------- | -------- | ------ |
+| Ran runbook steps 1 to 13 in one sitting | `E/RUN-NOTES.md` (Step outcomes, Processes, ports and GPU), `E/00-gpu.txt`, `E/01-unpacked-size.txt` | Every step OK; step 9 returned the expected HTTP 400 (`exceed_context_size_error`). Zip and GGUF hashes matched; VRAM back to 0 MiB after each engine stop; at the end no `ollama`, `llama-server` or `curl` process ran and ports 11500, 8080 and 11434 were closed. The installed Ollama app (v0.34.2), its store and port 11434 were not touched. |
+| Checked the capture map | `E/RUN-NOTES.md` (Capture map coverage) | All 82 files the map names exist and are non-empty; every row has its files. |
+| Checked `http-status.txt` against the Bounds | `E/http-status.txt`, `E/30-serve-roster.out`, `E/90-serve-defaults.out` | 45 lines, POST calls only: the GET captures go through `Get-Capture`, which records no status, so "an HTTP status for every API call" is not met literally. Ollama's own access logs record 200 for every Ollama GET (`/`, `/api/version`, `/api/ps`); the llama.cpp `/health` readiness polls and the `ollama.com` library page have no recorded status. |
+| Searched the logs for a rendered prompt (the Qwen3 turn marker) | `E/80-log-rendered-prompt.txt`, `E/80-request-logs.txt` | No rendered request prompt. The three server-log hits are template text (template detection, the GGUF metadata line, the runner's `example_format` init line). The request-log search cannot match: the logs hold client request bodies with `<` written as `\u003c`. The files exist; their emptiness of a prompt is the render spike's finding. |
+| Recorded the deviations from this runbook | `E/RUN-NOTES.md` (Deviations 1 to 9) | (1) Repo files read from the worktree `wave_local_ai_v2-night`, same suite content. (2) `.env` not read; `$llama` and `$models` set to their literal paths. (3) No single PowerShell window: step 1's variables and helpers in one prelude dot-sourced per step; steps 4 to 10 in one process, each server phase in `try`/`finally { Stop-Engine }`. (4) `Stop-Engine` kills the recorded PID plus processes under the build directory, never a `llama-server` this session did not start. (5) Readiness loops bounded (300 s llama-server, 120 s Ollama); none fired. (6) GPU compute-app and port pre-checks before each GPU step; all passed. (7) Step 11 in a fresh process re-set `OLLAMA_HOST` and `OLLAMA_DEBUG`; the user-level `OLLAMA_MODELS` was overridden in-process by both serves. (8) Step 13 removals with literal paths. (9) The step 2 download added `-sS` and `-w` to log status and size. No command was changed for correctness; no capture was edited by hand. |
+| Other runbook observations | `E/RUN-NOTES.md` (Runbook gaps observed), `E/80-runner-args.txt`, `E/A1-format-check.csv`, `E/A2-runtime-timings.csv` | The runner-argument files are wrapped at the console width (complete, but a one-line grep may miss a flag). `A1-format-check.csv` also lists the GBNF attempt, through its `6*.json` glob. `A2-runtime-timings.csv` and `01-unpacked-size.txt` use French-locale decimal commas. |
+
+## Outcome
+
+- Result: resolved. Yes: one session of this runbook produced every capture the three spikes' Bounds name, and each spike was concluded from it: `can-a-pinned-ollama-build-serve-the-roster-gguf-under-the-runtime-protocol.md`, `does-ollama-expose-the-prompt-it-finally-rendered.md` and `which-constrained-decoding-mechanism-does-ollama-expose.md` are `resolved`. Two runbook gaps, neither blocking: `http-status.txt` covers POST calls only (the Ollama access logs cover the Ollama GETs; llama.cpp `/health` and the library page stay without a status), and the `<|im_start|>` log searches find no rendered prompt, which is a finding rather than a missing capture. Decisive evidence: `aidd_docs/tasks/2026_10/2026_10_04_local-spike-runs/ollama-v0.35.1/RUN-NOTES.md`.
+- Confidence: high: the notes and the copied captures agree, and every deviation is recorded.
+- Remaining uncertainty: none for this spike's question.
+
+## Follow-up
+
+- The three spikes' parents were reassessed: orders 6, 7, 8 and 11 no longer carry a spike in `Blocked:`; orders 7, 8 and 11 stay blocked through `depends_on` on order 6. Order 6's owner reassesses readiness against the runtime spike's remaining uncertainty on prompt-cache reuse. Order 12 stays blocked through order 9 by the compressor spike.
