@@ -1,0 +1,115 @@
+## compressor-mbert-flagship.json
+load_s=0.5 peak_rss_mb=784 vram_mib 4377 -> 4377 n_rows=82
+all items: median_s=0.376 max_s=0.794 min_s=0.335
+whole_prompt  classification en n=10 median_s=0.381 max_s=0.794 ratio median=1.65 min=1.56 max=1.68 tokens_before_sum=492 tokens_after_sum=302 unchanged=0
+whole_prompt  classification fr n= 5 median_s=0.393 max_s=0.409 ratio median=1.70 min=1.54 max=1.75 tokens_before_sum=281 tokens_after_sum=169 unchanged=0
+whole_prompt  classification de n= 5 median_s=0.390 max_s=0.400 ratio median=1.66 min=1.48 max=1.81 tokens_before_sum=266 tokens_after_sum=163 unchanged=0
+whole_prompt  translation-bu en n= 7 median_s=0.378 max_s=0.424 ratio median=1.72 min=1.62 max=1.83 tokens_before_sum=232 tokens_after_sum=134 unchanged=0
+whole_prompt  translation-bu fr n= 7 median_s=0.376 max_s=0.385 ratio median=1.76 min=1.62 max=1.93 tokens_before_sum=231 tokens_after_sum=132 unchanged=0
+whole_prompt  translation-bu de n= 7 median_s=0.380 max_s=0.396 ratio median=1.82 min=1.45 max=2.06 tokens_before_sum=226 tokens_after_sum=128 unchanged=0
+whole_prompt  both           en n=17 median_s=0.378 max_s=0.794 ratio median=1.67 min=1.56 max=1.83 tokens_before_sum=724 tokens_after_sum=436 unchanged=0
+whole_prompt  both           fr n=12 median_s=0.384 max_s=0.409 ratio median=1.72 min=1.54 max=1.93 tokens_before_sum=512 tokens_after_sum=301 unchanged=0
+whole_prompt  both           de n=12 median_s=0.383 max_s=0.400 ratio median=1.70 min=1.45 max=2.06 tokens_before_sum=492 tokens_after_sum=291 unchanged=0
+payload_only  classification en n=10 median_s=0.365 max_s=0.410 ratio median=1.15 min=1.11 max=1.17 tokens_before_sum=492 tokens_after_sum=429 unchanged=0
+payload_only  classification fr n= 5 median_s=0.395 max_s=0.423 ratio median=1.20 min=1.16 max=1.26 tokens_before_sum=281 tokens_after_sum=232 unchanged=0
+payload_only  classification de n= 5 median_s=0.363 max_s=0.388 ratio median=1.17 min=1.13 max=1.23 tokens_before_sum=266 tokens_after_sum=226 unchanged=0
+payload_only  translation-bu en n= 7 median_s=0.352 max_s=0.391 ratio median=1.26 min=1.23 max=1.30 tokens_before_sum=232 tokens_after_sum=184 unchanged=0
+payload_only  translation-bu fr n= 7 median_s=0.365 max_s=0.382 ratio median=1.27 min=1.21 max=1.32 tokens_before_sum=231 tokens_after_sum=181 unchanged=0
+payload_only  translation-bu de n= 7 median_s=0.369 max_s=0.406 ratio median=1.19 min=1.14 max=1.35 tokens_before_sum=226 tokens_after_sum=186 unchanged=0
+payload_only  both           en n=17 median_s=0.359 max_s=0.410 ratio median=1.17 min=1.11 max=1.30 tokens_before_sum=724 tokens_after_sum=613 unchanged=0
+payload_only  both           fr n=12 median_s=0.380 max_s=0.423 ratio median=1.25 min=1.16 max=1.32 tokens_before_sum=512 tokens_after_sum=413 unchanged=0
+payload_only  both           de n=12 median_s=0.366 max_s=0.406 ratio median=1.18 min=1.13 max=1.35 tokens_before_sum=492 tokens_after_sum=412 unchanged=0
+classification whole_prompt: label words missing from compressed instruction (items of 20): {}
+translation example whole_prompt en en-fr-01: 'Translate the following English text into French. Reply with only the translation, nothing else.\n\nText: Could you confirm the delivery date for the order we placed last week?' => 'Translate English text into French. Reply translation, nothing else. \n Text confirm delivery date order last week?'
+translation example whole_prompt fr fr-de-01: 'Translate the following French text into German. Reply with only the translation, nothing else.\n\nText: Le contrat arrive à échéance à la fin du mois et doit être renouvelé.' => 'Translate French text into German. Reply translation, nothing else. \n Text contrat arrive fin mois renouvelé.'
+translation example whole_prompt de de-en-01: 'Translate the following German text into English. Reply with only the translation, nothing else.\n\nText: Die Rechnung für das dritte Quartal wurde gestern versendet.' => 'Translate German text English. Reply translation,. \n Text Rechnung dritte Quartal gestern versendet.'
+translation example payload_only en en-fr-01: 'Translate the following English text into French. Reply with only the translation, nothing else.\n\nText: Could you confirm the delivery date for the order we placed last week?' => 'Translate the following English text into French. Reply with only the translation, nothing else.\n\nText confirm delivery date order placed last week?'
+translation example payload_only fr fr-de-01: 'Translate the following French text into German. Reply with only the translation, nothing else.\n\nText: Le contrat arrive à échéance à la fin du mois et doit être renouvelé.' => 'Translate the following French text into German. Reply with only the translation, nothing else.\n\ncontrat arrive échéance fin mois renouvelé.'
+translation example payload_only de de-en-01: 'Translate the following German text into English. Reply with only the translation, nothing else.\n\nText: Die Rechnung für das dritte Quartal wurde gestern versendet.' => 'Translate the following German text into English. Reply with only the translation, nothing else.\n\nRechnung dritte Quartal gestern versendet.'
+
+## compressor-mbert-qwen3-0.6b-q8.json
+load_s=0.4 peak_rss_mb=784 vram_mib 4377 -> 4377 n_rows=82
+all items: median_s=0.355 max_s=0.424 min_s=0.301
+whole_prompt  classification en n=10 median_s=0.365 max_s=0.414 ratio median=1.61 min=1.53 max=1.64 tokens_before_sum=482 tokens_after_sum=302 unchanged=0
+whole_prompt  classification fr n= 5 median_s=0.349 max_s=0.358 ratio median=1.65 min=1.49 max=1.70 tokens_before_sum=288 tokens_after_sum=178 unchanged=0
+whole_prompt  classification de n= 5 median_s=0.358 max_s=0.377 ratio median=1.57 min=1.48 max=1.67 tokens_before_sum=276 tokens_after_sum=177 unchanged=0
+whole_prompt  translation-bu en n= 7 median_s=0.349 max_s=0.394 ratio median=1.67 min=1.57 max=1.78 tokens_before_sum=225 tokens_after_sum=134 unchanged=0
+whole_prompt  translation-bu fr n= 7 median_s=0.350 max_s=0.396 ratio median=1.62 min=1.52 max=1.78 tokens_before_sum=246 tokens_after_sum=150 unchanged=0
+whole_prompt  translation-bu de n= 7 median_s=0.353 max_s=0.389 ratio median=1.62 min=1.48 max=1.90 tokens_before_sum=243 tokens_after_sum=146 unchanged=0
+whole_prompt  both           en n=17 median_s=0.358 max_s=0.414 ratio median=1.63 min=1.53 max=1.78 tokens_before_sum=707 tokens_after_sum=436 unchanged=0
+whole_prompt  both           fr n=12 median_s=0.350 max_s=0.396 ratio median=1.63 min=1.49 max=1.78 tokens_before_sum=534 tokens_after_sum=328 unchanged=0
+whole_prompt  both           de n=12 median_s=0.355 max_s=0.389 ratio median=1.60 min=1.48 max=1.90 tokens_before_sum=519 tokens_after_sum=323 unchanged=0
+payload_only  classification en n=10 median_s=0.372 max_s=0.424 ratio median=1.15 min=1.11 max=1.18 tokens_before_sum=482 tokens_after_sum=419 unchanged=0
+payload_only  classification fr n= 5 median_s=0.353 max_s=0.385 ratio median=1.22 min=1.16 max=1.26 tokens_before_sum=288 tokens_after_sum=237 unchanged=0
+payload_only  classification de n= 5 median_s=0.337 max_s=0.374 ratio median=1.17 min=1.16 max=1.22 tokens_before_sum=276 tokens_after_sum=234 unchanged=0
+payload_only  translation-bu en n= 7 median_s=0.340 max_s=0.370 ratio median=1.27 min=1.24 max=1.31 tokens_before_sum=225 tokens_after_sum=177 unchanged=0
+payload_only  translation-bu fr n= 7 median_s=0.359 max_s=0.378 ratio median=1.30 min=1.25 max=1.35 tokens_before_sum=246 tokens_after_sum=190 unchanged=0
+payload_only  translation-bu de n= 7 median_s=0.353 max_s=0.374 ratio median=1.29 min=1.15 max=1.38 tokens_before_sum=243 tokens_after_sum=193 unchanged=0
+payload_only  both           en n=17 median_s=0.357 max_s=0.424 ratio median=1.18 min=1.11 max=1.31 tokens_before_sum=707 tokens_after_sum=596 unchanged=0
+payload_only  both           fr n=12 median_s=0.356 max_s=0.385 ratio median=1.26 min=1.16 max=1.35 tokens_before_sum=534 tokens_after_sum=427 unchanged=0
+payload_only  both           de n=12 median_s=0.350 max_s=0.374 ratio median=1.20 min=1.15 max=1.38 tokens_before_sum=519 tokens_after_sum=427 unchanged=0
+classification whole_prompt: label words missing from compressed instruction (items of 20): {}
+translation example whole_prompt en en-fr-01: 'Translate the following English text into French. Reply with only the translation, nothing else.\n\nText: Could you confirm the delivery date for the order we placed last week?' => 'Translate English text into French. Reply translation, nothing else. \n Text confirm delivery date order last week?'
+translation example whole_prompt fr fr-de-01: 'Translate the following French text into German. Reply with only the translation, nothing else.\n\nText: Le contrat arrive à échéance à la fin du mois et doit être renouvelé.' => 'Translate French text into German. Reply translation, nothing else. \n Text contrat arrive fin mois renouvelé.'
+translation example whole_prompt de de-en-01: 'Translate the following German text into English. Reply with only the translation, nothing else.\n\nText: Die Rechnung für das dritte Quartal wurde gestern versendet.' => 'Translate German text English. Reply translation,. \n Text Rechnung dritte Quartal gestern versendet.'
+translation example payload_only en en-fr-01: 'Translate the following English text into French. Reply with only the translation, nothing else.\n\nText: Could you confirm the delivery date for the order we placed last week?' => 'Translate the following English text into French. Reply with only the translation, nothing else.\n\nText confirm delivery date order placed last week?'
+translation example payload_only fr fr-de-01: 'Translate the following French text into German. Reply with only the translation, nothing else.\n\nText: Le contrat arrive à échéance à la fin du mois et doit être renouvelé.' => 'Translate the following French text into German. Reply with only the translation, nothing else.\n\ncontrat arrive échéance fin mois renouvelé.'
+translation example payload_only de de-en-01: 'Translate the following German text into English. Reply with only the translation, nothing else.\n\nText: Die Rechnung für das dritte Quartal wurde gestern versendet.' => 'Translate the following German text into English. Reply with only the translation, nothing else.\n\nRechnung dritte Quartal gestern versendet.'
+
+## compressor-xlmr-flagship.json
+load_s=1.5 peak_rss_mb=1903 vram_mib 4377 -> 4377 n_rows=82
+all items: median_s=1.290 max_s=3.038 min_s=1.191
+whole_prompt  classification en n=10 median_s=1.340 max_s=3.038 ratio median=1.59 min=1.53 max=1.67 tokens_before_sum=492 tokens_after_sum=309 unchanged=0
+whole_prompt  classification fr n= 5 median_s=1.263 max_s=1.358 ratio median=1.61 min=1.51 max=1.65 tokens_before_sum=281 tokens_after_sum=176 unchanged=0
+whole_prompt  classification de n= 5 median_s=1.290 max_s=1.326 ratio median=1.53 min=1.48 max=1.63 tokens_before_sum=266 tokens_after_sum=173 unchanged=0
+whole_prompt  translation-bu en n= 7 median_s=1.271 max_s=1.322 ratio median=1.63 min=1.60 max=1.67 tokens_before_sum=232 tokens_after_sum=142 unchanged=0
+whole_prompt  translation-bu fr n= 7 median_s=1.298 max_s=1.374 ratio median=1.65 min=1.55 max=1.71 tokens_before_sum=231 tokens_after_sum=141 unchanged=0
+whole_prompt  translation-bu de n= 7 median_s=1.374 max_s=1.438 ratio median=1.59 min=1.52 max=1.67 tokens_before_sum=226 tokens_after_sum=142 unchanged=0
+whole_prompt  both           en n=17 median_s=1.300 max_s=3.038 ratio median=1.62 min=1.53 max=1.67 tokens_before_sum=724 tokens_after_sum=451 unchanged=0
+whole_prompt  both           fr n=12 median_s=1.287 max_s=1.374 ratio median=1.63 min=1.51 max=1.71 tokens_before_sum=512 tokens_after_sum=317 unchanged=0
+whole_prompt  both           de n=12 median_s=1.325 max_s=1.438 ratio median=1.56 min=1.48 max=1.67 tokens_before_sum=492 tokens_after_sum=315 unchanged=0
+payload_only  classification en n=10 median_s=1.298 max_s=1.357 ratio median=1.16 min=1.14 max=1.17 tokens_before_sum=492 tokens_after_sum=425 unchanged=0
+payload_only  classification fr n= 5 median_s=1.271 max_s=1.289 ratio median=1.21 min=1.17 max=1.22 tokens_before_sum=281 tokens_after_sum=234 unchanged=0
+payload_only  classification de n= 5 median_s=1.264 max_s=1.284 ratio median=1.14 min=1.12 max=1.17 tokens_before_sum=266 tokens_after_sum=233 unchanged=0
+payload_only  translation-bu en n= 7 median_s=1.301 max_s=1.318 ratio median=1.24 min=1.21 max=1.29 tokens_before_sum=232 tokens_after_sum=186 unchanged=0
+payload_only  translation-bu fr n= 7 median_s=1.280 max_s=1.370 ratio median=1.24 min=1.12 max=1.32 tokens_before_sum=231 tokens_after_sum=187 unchanged=0
+payload_only  translation-bu de n= 7 median_s=1.277 max_s=1.410 ratio median=1.19 min=1.14 max=1.32 tokens_before_sum=226 tokens_after_sum=189 unchanged=0
+payload_only  both           en n=17 median_s=1.301 max_s=1.357 ratio median=1.17 min=1.14 max=1.29 tokens_before_sum=724 tokens_after_sum=611 unchanged=0
+payload_only  both           fr n=12 median_s=1.276 max_s=1.370 ratio median=1.22 min=1.12 max=1.32 tokens_before_sum=512 tokens_after_sum=421 unchanged=0
+payload_only  both           de n=12 median_s=1.271 max_s=1.410 ratio median=1.15 min=1.12 max=1.32 tokens_before_sum=492 tokens_after_sum=422 unchanged=0
+classification whole_prompt: label words missing from compressed instruction (items of 20): {'other': 14}
+translation example whole_prompt en en-fr-01: 'Translate the following English text into French. Reply with only the translation, nothing else.\n\nText: Could you confirm the delivery date for the order we placed last week?' => 'Translate English text French. Reply only translation, nothing else.\n confirm delivery date order placed last week?'
+translation example whole_prompt fr fr-de-01: 'Translate the following French text into German. Reply with only the translation, nothing else.\n\nText: Le contrat arrive à échéance à la fin du mois et doit être renouvelé.' => 'Translate French text German. Reply only translation, nothing else.\n Text contrat arrive fin mois être renouvelé.'
+translation example whole_prompt de de-en-01: 'Translate the following German text into English. Reply with only the translation, nothing else.\n\nText: Die Rechnung für das dritte Quartal wurde gestern versendet.' => 'Translate German text English. Reply only translation, nothing.\n Rechnung dritte Quartal gestern versendet.'
+translation example payload_only en en-fr-01: 'Translate the following English text into French. Reply with only the translation, nothing else.\n\nText: Could you confirm the delivery date for the order we placed last week?' => 'Translate the following English text into French. Reply with only the translation, nothing else.\n\nText: confirm delivery date order placed last week?'
+translation example payload_only fr fr-de-01: 'Translate the following French text into German. Reply with only the translation, nothing else.\n\nText: Le contrat arrive à échéance à la fin du mois et doit être renouvelé.' => 'Translate the following French text into German. Reply with only the translation, nothing else.\n\nText contrat arrive échéance fin mois renouvelé.'
+translation example payload_only de de-en-01: 'Translate the following German text into English. Reply with only the translation, nothing else.\n\nText: Die Rechnung für das dritte Quartal wurde gestern versendet.' => 'Translate the following German text into English. Reply with only the translation, nothing else.\n\nRechnung dritte Quartal gestern versendet.'
+
+## compressor-xlmr-qwen3-0.6b-q8.json
+load_s=7.1 peak_rss_mb=1933 vram_mib 4377 -> 4377 n_rows=82
+all items: median_s=1.224 max_s=1.625 min_s=1.111
+whole_prompt  classification en n=10 median_s=1.238 max_s=1.535 ratio median=1.61 min=1.54 max=1.69 tokens_before_sum=482 tokens_after_sum=299 unchanged=0
+whole_prompt  classification fr n= 5 median_s=1.193 max_s=1.264 ratio median=1.59 min=1.56 max=1.64 tokens_before_sum=288 tokens_after_sum=181 unchanged=0
+whole_prompt  classification de n= 5 median_s=1.218 max_s=1.289 ratio median=1.53 min=1.49 max=1.58 tokens_before_sum=276 tokens_after_sum=181 unchanged=0
+whole_prompt  translation-bu en n= 7 median_s=1.234 max_s=1.523 ratio median=1.67 min=1.63 max=1.70 tokens_before_sum=225 tokens_after_sum=135 unchanged=0
+whole_prompt  translation-bu fr n= 7 median_s=1.230 max_s=1.324 ratio median=1.62 min=1.52 max=1.78 tokens_before_sum=246 tokens_after_sum=151 unchanged=0
+whole_prompt  translation-bu de n= 7 median_s=1.144 max_s=1.238 ratio median=1.62 min=1.48 max=1.71 tokens_before_sum=243 tokens_after_sum=153 unchanged=0
+whole_prompt  both           en n=17 median_s=1.234 max_s=1.535 ratio median=1.65 min=1.54 max=1.70 tokens_before_sum=707 tokens_after_sum=434 unchanged=0
+whole_prompt  both           fr n=12 median_s=1.196 max_s=1.324 ratio median=1.62 min=1.52 max=1.78 tokens_before_sum=534 tokens_after_sum=332 unchanged=0
+whole_prompt  both           de n=12 median_s=1.183 max_s=1.289 ratio median=1.54 min=1.48 max=1.71 tokens_before_sum=519 tokens_after_sum=334 unchanged=0
+payload_only  classification en n=10 median_s=1.237 max_s=1.427 ratio median=1.16 min=1.15 max=1.18 tokens_before_sum=482 tokens_after_sum=415 unchanged=0
+payload_only  classification fr n= 5 median_s=1.187 max_s=1.265 ratio median=1.21 min=1.17 max=1.24 tokens_before_sum=288 tokens_after_sum=238 unchanged=0
+payload_only  classification de n= 5 median_s=1.225 max_s=1.338 ratio median=1.16 min=1.10 max=1.17 tokens_before_sum=276 tokens_after_sum=241 unchanged=0
+payload_only  translation-bu en n= 7 median_s=1.302 max_s=1.625 ratio median=1.25 min=1.22 max=1.30 tokens_before_sum=225 tokens_after_sum=179 unchanged=0
+payload_only  translation-bu fr n= 7 median_s=1.218 max_s=1.275 ratio median=1.28 min=1.19 max=1.31 tokens_before_sum=246 tokens_after_sum=196 unchanged=0
+payload_only  translation-bu de n= 7 median_s=1.200 max_s=1.250 ratio median=1.21 min=1.11 max=1.36 tokens_before_sum=243 tokens_after_sum=200 unchanged=0
+payload_only  both           en n=17 median_s=1.258 max_s=1.625 ratio median=1.17 min=1.15 max=1.30 tokens_before_sum=707 tokens_after_sum=594 unchanged=0
+payload_only  both           fr n=12 median_s=1.191 max_s=1.275 ratio median=1.22 min=1.17 max=1.31 tokens_before_sum=534 tokens_after_sum=434 unchanged=0
+payload_only  both           de n=12 median_s=1.214 max_s=1.338 ratio median=1.17 min=1.10 max=1.36 tokens_before_sum=519 tokens_after_sum=441 unchanged=0
+classification whole_prompt: label words missing from compressed instruction (items of 20): {'other': 14}
+translation example whole_prompt en en-fr-01: 'Translate the following English text into French. Reply with only the translation, nothing else.\n\nText: Could you confirm the delivery date for the order we placed last week?' => 'Translate English text French. Reply only translation, nothing else.\n confirm delivery date order placed last week?'
+translation example whole_prompt fr fr-de-01: 'Translate the following French text into German. Reply with only the translation, nothing else.\n\nText: Le contrat arrive à échéance à la fin du mois et doit être renouvelé.' => 'Translate French text German. Reply only translation, nothing else.\n Text contrat arrive fin mois être renouvelé.'
+translation example whole_prompt de de-en-01: 'Translate the following German text into English. Reply with only the translation, nothing else.\n\nText: Die Rechnung für das dritte Quartal wurde gestern versendet.' => 'Translate German text English. Reply only translation, nothing.\n Rechnung dritte Quartal gestern versendet.'
+translation example payload_only en en-fr-01: 'Translate the following English text into French. Reply with only the translation, nothing else.\n\nText: Could you confirm the delivery date for the order we placed last week?' => 'Translate the following English text into French. Reply with only the translation, nothing else.\n\nText: confirm delivery date order placed last week?'
+translation example payload_only fr fr-de-01: 'Translate the following French text into German. Reply with only the translation, nothing else.\n\nText: Le contrat arrive à échéance à la fin du mois et doit être renouvelé.' => 'Translate the following French text into German. Reply with only the translation, nothing else.\n\nText contrat arrive échéance fin mois renouvelé.'
+translation example payload_only de de-en-01: 'Translate the following German text into English. Reply with only the translation, nothing else.\n\nText: Die Rechnung für das dritte Quartal wurde gestern versendet.' => 'Translate the following German text into English. Reply with only the translation, nothing else.\n\nRechnung dritte Quartal gestern versendet.'

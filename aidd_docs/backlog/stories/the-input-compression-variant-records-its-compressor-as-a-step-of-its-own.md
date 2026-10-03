@@ -18,7 +18,7 @@ Maps to: PRD Open Question "Whether prompt compression helps or hurts a small mo
 
 Needs: a real local model run on the reference machine (the compressor model and a llama.cpp subject). No API key.
 
-Blocked: by the spike `aidd_docs/backlog/spikes/which-llmlingua-2-class-compressor-fits-the-reference-machine-and-in-which-placement.md` (`blocked`; desk research done, only its live CPU measurement remains: per-item duration, peak RSS and unchanged VRAM beside the flagship and `qwen3-0.6b-q8`, per-language ratios and unchanged counts for the whole prompt and for the payload alone, one EN, one FR and one DE example, the optional group's installed size, and whether `llmlingua 0.2.2` loads under `transformers 4.57.6` and `torch 2.14.1`). Its `depends_on`, `the-terse-output-variant-runs-every-item-and-meets-baseline-in-a-paired-test.md` (order 4), is `ready`.
+Blocked: nothing. The spike `aidd_docs/backlog/spikes/which-llmlingua-2-class-compressor-fits-the-reference-machine-and-in-which-placement.md` is `resolved` (2026-10-04, live CPU measurement): `microsoft/llmlingua-2-xlm-roberta-large-meetingbank` on CPU in the same phase, 1.22 to 1.29 s median per item, peak RSS 1.9 GB, VRAM unchanged; its Outcome recommends compressing the payload alone, because on the whole prompt the compressor dropped the label `other` from the instruction in 14 of 20 classification items. Its `depends_on`, `the-terse-output-variant-runs-every-item-and-meets-baseline-in-a-paired-test.md` (order 4), is `done`.
 
 Current state (verified on `main` at `c68b23e`, 2026-10-03):
 
