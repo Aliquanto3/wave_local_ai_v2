@@ -2,6 +2,26 @@
 
 Questions this unattended run could not decide under its bounded authority. Each entry names the artifact, the question, the options, the recommended default with its reason, and what it blocks. Numbering starts at Q100 to stay clear of `aidd_docs/tasks/2026_10/2026_10_01_autonomous-slicing/owner-questions.md`.
 
+## Credible client sessions
+
+Epic: `aidd_docs/backlog/epics/a-release-is-called-credible-only-by-its-logged-client-sessions.md` (`proposed`). Sliced in this run into orders 1 to 4 under the owner answers Q60 to Q69 of 2026-10-01; those are not repeated here.
+
+### Q100. Does a dismissed session count toward a release's three?
+
+- Artifact: `aidd_docs/backlog/stories/each-release-reads-its-credibility-verdict-from-its-records-in-its-changelog-entry.md` (order 3).
+- Question: the PRD logs each session as "challenged, dismissed, or accepted" and validates a release after "at least 3 such logged sessions with no sustained challenge to fiche disclosure, table separation, or judge agreement". A dismissal carries no challenge, so read literally it counts toward the three, although a client who waved the result away has not found it credible. Which reading holds?
+- Options: (a) the PRD's literal reading: a dismissed session with no sustained challenge to the three claims qualifies, and the verdict states how many of the counted sessions were dismissals; (b) a dismissal never qualifies: it is recorded and shown, but only `accepted` and `challenged` sessions count; (c) a dismissal must name its reason, and one whose reason bears on one of the three claims is treated as a sustained challenge to it.
+- Recommended default: (a). It is the PRD's own text, and stating the dismissal count beside the verdict keeps a release validated mostly by dismissals visible rather than hidden. Cost: three dismissals could validate a release; (b) and (c) change the rule the PRD states, which only the owner can do.
+- Blocks: order 3, and order 4 through its `depends_on`. Order 3 is written to the default and stays `proposed` until the answer; (b) or (c) changes one acceptance bullet and one test there, and (c) also adds a dismissal-reason field to order 1's record format.
+
+### Q101. Does the epic move to `ready` now that it has stories?
+
+- Artifact: the epic (`status: proposed`).
+- Question: the epic was left `proposed` "until the owner moves it to ready" (commit `20eaa1f`). This run sliced it into four stories; an epic status change is the owner's. Is it moved to `ready`?
+- Options: (a) move it to `ready`: its decisions are settled (Q60 to Q69) and its stories are written; (b) keep it `proposed` until order 1 is delivered; (c) keep it `proposed` until a real client session is in sight.
+- Recommended default: (a). Nothing in it is undecided, and order 4 already carries the dependency on a real session. Cost: none beyond the edit.
+- Blocks: nothing in delivery; a story may be `ready` under a `proposed` epic, but a delivery run picking it should know the owner has not accepted the epic yet.
+
 ## Judge providers
 
 Spikes: `aidd_docs/backlog/spikes/is-deepseek-callable-as-a-pinned-judge-and-on-what-data-terms.md`, `aidd_docs/backlog/spikes/is-z-ai-glm-callable-as-a-pinned-judge-and-on-what-data-terms.md`, `aidd_docs/backlog/spikes/which-endpoint-serves-gpt-5-6-luna-as-a-pinned-calibration-judge-and-on-what-terms.md`. All three stay `blocked`: their Bounds require captured live calls, which this run may not make. Desk research found the same gap in all three, asked once here.

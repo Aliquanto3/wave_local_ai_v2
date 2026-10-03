@@ -81,3 +81,27 @@ Interval epic notes: order 9 already had a `Blocked:` line; it is `proposed` bec
 | one-download-holds-the-tables-their-licences-and-how-to-cite-them | a-drawn-item-reaches-the-download (7) | no | Q106 (the only question that can put a source off the permissive rung), and through `depends_on` orders 7 and 8 of the interval epic and the `ready`, unbuilt `each-release-attaches-one-archive-that-needs-no-clone` | (this commit) |
 
 Bundle epic notes: Current state added (no content-hash, stable-key or redaction column; the committed suite-definition snapshots carry item text, so a no-redistribution redaction must reach them too). Acceptance: the LICENSE-DATA bullet now also requires each licence's redistribution notices (CC BY 4.0 attribution; Apache-2.0 text and a statement of change); the last bullet no longer claims the export already states hand-written-only coverage (only `LICENSE-DATA` does). Under Q106 (a) every source is permissive, so the share-alike and redaction halves are proven on constructed bundles only, as `Needs:` allows.
+
+## Step 3: the credible-sessions epic
+
+`a-release-is-called-credible-only-by-its-logged-client-sessions` sliced into four stories under the owner answers Q60 to Q69 (recorded on the epic by `20eaa1f`). Three-amigos: three independent lenses (product, delivery, quality) on the first drafts, reconciled, then a second-round check of the two ready candidates and the new task; every finding either amended the text or became an owner question.
+
+| Order | Story | Status | Tag | Blocked by |
+| --- | --- | --- | --- | --- |
+| 1 | each-client-showing-is-logged-as-a-record-someone-who-was-not-there-can-read-back | ready | code-only | nothing |
+| 2 | a-challenge-no-named-evidence-resolved-is-sustained-and-points-at-its-follow-up-item | ready | code-only | nothing (`depends_on` order 1, `ready`) |
+| 3 | each-release-reads-its-credibility-verdict-from-its-records-in-its-changelog-entry | proposed | code-only | Q100 (does a dismissed session count toward the three) |
+| 4 | the-first-real-client-session-is-logged-the-same-day-and-read-back-by-someone-who-was-not-there | proposed | operator | through order 3 |
+
+The epic itself stays `proposed` (an epic status is the owner's: Q101). Two stories are `ready` under it; a delivery run picking them should know the owner has not yet accepted the epic.
+
+Decisions taken under this run's authority, each a delivery or interpretation choice that changes no owner decision:
+- Record format: JSONL (Q60 names JSONL or YAML), at `aidd_docs/results/client-sessions.jsonl`, with its own `.gitignore` negation (the folder ignores `*.jsonl`), checked by `git check-ignore --no-index` (a tracked file is otherwise reported as not ignored).
+- Field classes: identity and attribution fields are refused when absent; the three content fields the PRD names (role, evidence offered, criterion disputed) are reported incomplete and not counted, which is how epic check 1 ("does not count") and check 6 read together.
+- Resolving evidence is "presented within the session" (the PRD's wording); evidence found later goes to the follow-up item.
+- A challenge carries a non-empty list of claims rather than one tag, so a challenge to two of the three claims is representable; the read-back checks the list against the criterion named in words.
+- A showing of unreleased results is logged with `unreleased` and its commit and counts toward no release (the PRD asks every showing to be logged, and a verdict is per release).
+- Append-only is enforced by a history test along `--first-parent` with `fetch-depth: 0` in CI, and corrections are appended records with their own id; deleting a sustained record would otherwise restore a revoked verdict silently.
+- Revocation follows append order, not session dates (epic check 4 says "planted after a verdict was reached").
+- A sustained challenge to one of the three claims blocks whether or not its session is complete or backfilled; an internal session neither counts nor blocks.
+- A follow-up item may also be linked from a resolved challenge (the first draft's refusal had no source); its path is frozen once cited, and its status never changes whether the challenge is sustained.
