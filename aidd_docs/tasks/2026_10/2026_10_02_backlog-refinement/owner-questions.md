@@ -70,3 +70,23 @@ Spike: `aidd_docs/backlog/spikes/which-candidate-ggufs-exist-per-size-class-and-
 - Recommended default: (a). The load result changes no story's acceptance, since a refusal is already a recorded outcome, so a separate session repeats work. Cost: a class story's first run can end in a recorded refusal rather than a roster entry, which the epic allows.
 - Blocks: orders 7 and 8 entirely (no other blocker), and orders 5 and 6 together with Q107.
 
+## Tool calling and harnesses
+
+Spike: `aidd_docs/backlog/spikes/does-each-roster-model-emit-parseable-tool-calls-through-llama-server-and-can-each-candidate-harness-drive-it.md` (`blocked` on live probes per roster entry and per framework). Desk research gives no framework an "unable" verdict.
+
+### Q109. Do harness adapters keep each framework's request defaults, or align them with `direct`?
+
+- Artifact: `aidd_docs/backlog/stories/the-same-tool-calling-items-run-under-each-compared-harness.md` (order 7), and through it order 8.
+- Question: the frameworks send different requests for the same item by default: smolagents sends `tool_choice: required`, always adds a `final_answer` tool and its own system prompt of about 10 KB; LlamaIndex streams and sends `parallel_tool_calls: true`; pydantic-ai forces the tool choice only for structured output. Two open llama.cpp issues meet exactly these defaults: #27767 (a forced tool choice with thinking off yields prose, and every roster entry runs with thinking off) and #24807 (streamed Qwen3.6 tool calls dropped or misplaced). Does an adapter keep the defaults or align them?
+- Options: (a) keep each framework's defaults, record on the row the `tool_choice`, `parallel_tool_calls` and `stream` actually sent (read from the captured request), and publish an engine-defect failure as a harness-by-engine finding; (b) align every adapter to `direct`'s settings and record the override; (c) run and publish both.
+- Recommended default: (a). It measures each framework as a user runs it, and the captured request keeps the difference readable on the row. Cost: smolagents rows may measure llama.cpp #27767 rather than smolagents; the spike's attribution run shows whether it reproduces at b10537.
+- Blocks: order 7's adapters and order 8's reuse of them.
+
+### Q110. How does a row name the client package a framework reaches the engine through?
+
+- Artifact: `aidd_docs/backlog/tasks/register-the-closed-harness-candidate-set-and-its-three-row-fields.md` (`done`; this run may not edit it), `src/wave_local_ai_v2/harness.py`, and order 7.
+- Question: `harness_version` reads one installed distribution, but `langgraph` reaches the engine only through `langchain-openai`, and `llamaindex` only through `llama-index-llms-openai-like` (the task already flagged `llama-index-core` as the distribution to confirm). The package that builds the request is then not on the row. How is it named?
+- Options: (a) keep the one field and rely on the published lockfile hash; (b) make `harness_version` a composite string naming both packages; (c) add a `harness_client_version` field, null for `direct`, `smolagents` and `pydantic-ai`.
+- Recommended default: (c). It keeps the existing field's meaning and shows on the row which package built the request. Cost: one more row field and a schema bump, which a new story under order 7 (or order 7 itself) carries; the done task is not reopened.
+- Blocks: order 7 rows for `langgraph` and `llamaindex`.
+
