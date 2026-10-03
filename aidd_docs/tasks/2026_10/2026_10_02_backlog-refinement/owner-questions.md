@@ -90,3 +90,15 @@ Spike: `aidd_docs/backlog/spikes/does-each-roster-model-emit-parseable-tool-call
 - Recommended default: (c). It keeps the existing field's meaning and shows on the row which package built the request. Cost: one more row field and a schema bump, which a new story under order 7 (or order 7 itself) carries; the done task is not reopened.
 - Blocks: order 7 rows for `langgraph` and `llamaindex`.
 
+## Model-output redistribution
+
+Spike: `aidd_docs/backlog/spikes/may-the-model-outputs-in-the-published-rows-be-redistributed-and-on-what-terms.md` (`resolved`). Every model and provider whose output the bundle carries or will carry permits redistribution, on one condition the terms impose: the content is marked as AI-generated and names its model and provider. The licence-text change is a new task, `aidd_docs/backlog/tasks/the-model-output-fields-cite-the-terms-they-were-checked-against-and-carry-the-ai-generated-notice.md`.
+
+### Q111. The bundle epic's assumption row on generated completions is now verified: will the owner update it?
+
+- Artifact: `aidd_docs/backlog/epics/one-download-holds-the-tables-their-licences-and-how-to-cite-them.md` (`ready`; this run may not edit it), its Dependencies and Unknowns row "Whether generated completions may be redistributed under the bundle's terms".
+- Question: the spike verified that row against each source's terms (read 2026-10-02), with the AI-generated marking as the condition; the row still reads as an open assumption, and the epic's falsification clause names it. Is the row updated?
+- Options: (a) the owner rewrites the row as verified by the spike, names the marking condition and the new task, and leaves the hand-written-items declaration as the epic's only open licensing assumption; (b) leave the epic as written and let the spike and the task carry the finding.
+- Recommended default: (a). An epic that still lists a settled question as open invites a later run to re-investigate it. Cost: one owner edit.
+- Blocks: nothing; the task proceeds either way.
+
