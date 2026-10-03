@@ -18,6 +18,7 @@ from wave_local_ai_v2 import (
     energy,
     engines,
     fiche_registry,
+    machines,
     prompt_provenance,
     prompt_variants,
     provenance,
@@ -361,6 +362,10 @@ def _run() -> None:
             result: dict[str, Any] = response.json()
             return result
 
+        # A `cpu_only` run reads no VRAM: NVML's figure is device-wide, so it
+        # would publish the card's own occupancy as this run's (Methodology 21).
+        vram_applies = run_profile.compute_mode == machines.COMPUTE_MODE_GPU
+
         def read_rss() -> int | None:
             # None when the server exited or the OS denied the read: the
             # repetition is still recorded, with the column null rather than
@@ -376,6 +381,7 @@ def _run() -> None:
             warmup_count=settings.runtime_warmup_count,
             count=0,
             cooldown_s=settings.runtime_cooldown_s,
+            vram_applies=vram_applies,
         )
 
         # The warm-up runs outside this tracker; each counted repetition's own
@@ -394,6 +400,7 @@ def _run() -> None:
             warmup_count=0,
             count=settings.runtime_repetitions,
             cooldown_s=settings.runtime_cooldown_s,
+            vram_applies=vram_applies,
         )
         energy_result, energy_window_method = energy_tracker.finish()
 
@@ -402,10 +409,7 @@ def _run() -> None:
     aggregated_timings = aggregation.aggregate_timings(
         counted, threshold=settings.runtime_spread_threshold
     )
-    peaks = {
-        metric: aggregation.peak([rep[metric] for rep in counted])  # type: ignore[literal-required]
-        for metric in aggregation.PEAK_METRICS
-    }
+    peaks = aggregation.aggregate_peaks(counted)
     # wall_clock_s is a sum, not a peak: AGGREGATION_LABELS declares it
     # "total_over_counted_repetitions" -- each repetition's own request time,
     # summed, excluding the cooldowns between them. Each timed call includes

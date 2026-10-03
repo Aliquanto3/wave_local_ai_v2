@@ -1462,7 +1462,7 @@ def test_every_row_names_its_subjects_family_and_size_class(stubbed_run) -> None
         ("mistral", "mistral", None),
         ("google", "google", None),
     }
-    assert {row["schema_version"] for row in rows} == {"24"}
+    assert {row["schema_version"] for row in rows} == {"25"}
 
 
 def test_every_row_names_direct_its_version_and_its_measured_overhead(

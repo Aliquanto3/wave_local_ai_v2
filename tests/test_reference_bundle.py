@@ -14,6 +14,7 @@ import pytest
 
 from wave_local_ai_v2 import (
     fiche_registry,
+    machines,
     read_model,
     results,
     roster,
@@ -167,6 +168,7 @@ def _bundle_runtime_view() -> dict[str, object]:
         PUBLISHED_BUNDLE_SCHEMA_VERSION,
         FICHE_REGISTRY_DIR,
         _bundle_roster(),
+        read_model.load_machine_registry(Path(machines.DEFAULT_REGISTRY_PATH)),
     )
     assert view is not None
     return view

@@ -287,8 +287,9 @@ The command-line interface for running benchmarks.
     parameter, never a probe of both. A `run_id` the named store does not
     carry is a `404` naming the run and the store, never an empty list.
   - Every field a row does not carry comes back as a marked absence —
-    `{"absent": true, "reason": ..., "detail": {...}}` — over three finite
-    reasons: `predates_schema`, `null_in_row`, `pointer_unresolved`. Nothing
+    `{"absent": true, "reason": ..., "detail": {...}}` — over four finite
+    reasons: `predates_schema`, `null_in_row`, `pointer_unresolved`,
+    `not_applicable` (a `cpu_only` row's VRAM). Nothing
     is defaulted, zero-filled or inferred, and the service computes no
     verdict, score, agreement or aggregate.
   - `SERVICE_API_KEY` is **required to start**, unconditionally — a loopback

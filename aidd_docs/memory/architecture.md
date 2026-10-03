@@ -48,10 +48,16 @@ flowchart LR
 
 - The results service publishes a **declared-absent contract**: every field a
   view names comes back as a value or as a marked absence
-  (`{"absent": true, "reason": ..., "detail": {...}}`), over exactly three
+  (`{"absent": true, "reason": ..., "detail": {...}}`), over exactly four
   reasons — the row's `schema_version` predates the field
-  (`predates_schema`), the row carries the key as `null` (`null_in_row`), or a
-  pointer it cites did not resolve (`pointer_unresolved`). Nothing is
+  (`predates_schema`), the row carries the key as `null` (`null_in_row`), a
+  pointer it cites did not resolve (`pointer_unresolved`), or the row states
+  the measurement does not apply (`not_applicable`: a `cpu_only` runtime
+  row's `vram_used_mib` is the string `"not_applicable"` on the row and every
+  repetition from schema "25", never a number; `null` stays a failed read on
+  a `gpu` row). Pointers resolved: `fiche_hash`, `roster_entry_id`,
+  `suite_id`+`suite_version`, and a runtime row's `machine_id` against the
+  machine registry. Nothing is
   defaulted, zero-filled, back-filled or inferred anywhere in `read_model.py`,
   and a row below the service's schema floor is counted in an `unreadable`
   entry naming its version rather than rendered half-populated or dropped.

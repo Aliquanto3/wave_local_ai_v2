@@ -16,6 +16,7 @@ from wave_local_ai_v2 import (
     aggregation,
     cost,
     engines,
+    gpu,
     hardware,
     harness,
     judge,
@@ -211,7 +212,13 @@ from wave_local_ai_v2 import (
 # model produced (a cloud subject's quality row) always does, since a campaign
 # declares engines and a cloud subject runs on none. Owed only from "24": a row
 # below "24" still validates without it and is never back-filled.
-SCHEMA_VERSION = "24"
+# "25": a `cpu_only` runtime row states `vram_used_mib: "not_applicable"`
+# (`VRAM_NOT_APPLICABLE`) at the row level (its peak aggregate) and on every
+# counted and warm-up repetition, and a `gpu` row never does (Story: every view
+# names the machine and the mode, and a cpu_only row's VRAM reads not
+# applicable; Methodology 21). `null` keeps meaning a VRAM read that failed.
+# No field is added; a row below "25" is not re-checked and never rewritten.
+SCHEMA_VERSION = "25"
 
 # The two subject-composition fields "19" added, and the version from which a
 # quality row owes them.
@@ -289,6 +296,12 @@ MACHINE_NOT_APPLICABLE = "not_applicable"
 
 # The schema version from which a row owes `campaign_id`, fixed at "24".
 CAMPAIGN_SCHEMA_VERSION = "24"
+
+# The schema version from which a runtime row's VRAM fields are checked
+# against its compute mode, fixed at "25"; and the marker a `cpu_only` row
+# carries in them, owned by `gpu.py` so the repetition loop can write it.
+VRAM_NOT_APPLICABLE_SCHEMA_VERSION = "25"
+VRAM_NOT_APPLICABLE = gpu.VRAM_NOT_APPLICABLE
 
 # What a row run under no campaign says in `campaign_id`: it belongs to none,
 # stated rather than left null. Reserved: no campaign may take it as its id.
@@ -810,6 +823,8 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
                 f"row of kind 'runtime' has an unrecognised ttft_source: {ttft_source!r}"
             )
         _validate_runtime_repetition_structure(row)
+        if not _predates(row, VRAM_NOT_APPLICABLE_SCHEMA_VERSION):
+            _validate_vram_applicability(row)
 
     if kind == "quality":
         _validate_suite_level(row)
@@ -1328,6 +1343,48 @@ def _validate_machine(kind: RowKind, row: dict[str, Any]) -> None:
             f"by no local model: it must carry machine_id and compute_mode "
             f"{MACHINE_NOT_APPLICABLE!r}, got {machine_id!r} / {compute_mode!r}"
         )
+
+
+def _validate_vram_applicability(row: dict[str, Any]) -> None:
+    """Refuse a VRAM figure on a `cpu_only` row and the marker on a `gpu` row.
+
+    A `cpu_only` row carries `VRAM_NOT_APPLICABLE` at the row level and on
+    every counted and warm-up repetition: no number, zero included. A `gpu`
+    row carries a number or `null` (a failed read) in each place, never the
+    marker, so the two absences stay distinct.
+    """
+    places: list[tuple[str, Any]] = [("vram_used_mib", row["vram_used_mib"])]
+    for field in ("repetitions", "warmup_repetitions"):
+        repetitions = row[field]
+        if not isinstance(repetitions, list):
+            raise RowContractError(
+                f"row of kind 'runtime' has a non-list {field}: {repetitions!r}"
+            )
+        for position, repetition in enumerate(repetitions):
+            if not isinstance(repetition, dict) or "vram_used_mib" not in repetition:
+                raise RowContractError(
+                    f"row of kind 'runtime' has {field}[{position}] without "
+                    "vram_used_mib"
+                )
+            places.append(
+                (f"{field}[{position}].vram_used_mib", repetition["vram_used_mib"])
+            )
+
+    cpu_only = row["compute_mode"] == machines.COMPUTE_MODE_CPU_ONLY
+    for where, value in places:
+        if cpu_only and value != VRAM_NOT_APPLICABLE:
+            raise RowContractError(
+                f"row of kind 'runtime' under compute_mode 'cpu_only' carries "
+                f"{where}={value!r}: a cpu_only run has no VRAM figure and "
+                f"states {VRAM_NOT_APPLICABLE!r}"
+            )
+        is_number = isinstance(value, int | float) and not isinstance(value, bool)
+        if not cpu_only and not (value is None or is_number):
+            raise RowContractError(
+                f"row of kind 'runtime' under compute_mode "
+                f"{row['compute_mode']!r} carries {where}={value!r}: a VRAM "
+                "figure is a number, or null when the read failed"
+            )
 
 
 def _validate_suite_level(row: dict[str, Any]) -> None:

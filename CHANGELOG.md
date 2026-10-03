@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Every view names the machine and the mode, and a `cpu_only` row's VRAM
+  reads not applicable (row schema "25")** -- a `cpu_only` runtime run no
+  longer reads NVML's device-wide VRAM figure: `vram_used_mib` is
+  `"not_applicable"` on the row (its peak aggregate) and on every counted and
+  warm-up repetition, never a number, zero included, while `gpu_draw_w` and
+  the GPU energy channel keep their own measurement and labels. A `gpu` row is
+  unchanged, and a `gpu` row whose VRAM read failed still carries `null`. The
+  writer gate refuses a VRAM number on a `cpu_only` row and the marker on a
+  `gpu` row; rows below "25" are not re-checked. The results service reports
+  the marker as a fourth absence reason, `not_applicable`, which the dashboard
+  renders as "not applicable", distinct from "not reported". The runtime view
+  shows the row's `machine_id` and `compute_mode` and resolves the machine id
+  against the declared machine registry (`ServiceSettings.machine_registry_path`,
+  default `aidd_docs/roster/machines.json`) to show memory type, rated and
+  configured speed and whether a GPU is present, each marked declared or not
+  yet declared; an undeclared id is a named unresolved pointer. The
+  comparison view appends `machine` and `compute_mode` to its column
+  dimensions, so a column names its machine and mode rather than differing
+  only by fiche hash.
 - **A campaign is declared as data, and an empty cell fails it (row schema
   "24")** -- a campaign is one tracked file,
   `aidd_docs/campaigns/<campaign_id>.json` (`campaigns.py`), naming its

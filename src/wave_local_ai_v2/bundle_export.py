@@ -928,7 +928,8 @@ _RUNTIME_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     ),
     ("ttft_source",): FieldDoc("Where time to first token was read from.", _ID),
     ("vram_used_mib",): FieldDoc(
-        "GPU memory used; aggregation_vram_used_mib states the statistic.",
+        "GPU memory used; aggregation_vram_used_mib states the statistic. "
+        "'not_applicable' on a cpu_only row (schema 25+): the run used no VRAM.",
         "MiB (2^20 bytes)",
     ),
     ("process_rss_bytes",): FieldDoc(

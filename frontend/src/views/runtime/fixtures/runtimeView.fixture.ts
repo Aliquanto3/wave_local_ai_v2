@@ -84,12 +84,18 @@ const FICHE = {
   roster_entry_id: 'qwen3.6-35b-a3b-ud-iq4xs',
 }
 
+// The bundle's rows are schema "7": the machine fields came at "23".
+const PREDATES_MACHINE = absent('predates_schema', { row_schema_version: '7' })
+
 const SHARED_FIELDS = {
   roster_version: 1,
   endpoint: '/completion',
   prompt_template_id: 'none',
   prompt_template_hash: NULL_ABSENT,
   prompt_capture: 'captured',
+  machine_id: PREDATES_MACHINE,
+  compute_mode: PREDATES_MACHINE,
+  machine: PREDATES_MACHINE,
   fiche_hash: 'b9d1af56db2b6a26bfb265842bfd757dc78ed2d95e4ad3fce0088b8396d9003a', // pragma: allowlist secret
   verdict: {
     verdict: 'not_comparable',
@@ -209,10 +215,74 @@ const UNRESOLVED_FICHE_ENTRY: RuntimeEntry = {
   fiche: absent('pointer_unresolved', { pointer: 'fiche_hash', value: 'c'.repeat(64) }),
 }
 
+// The laptop's declared entry, transcribed from `aidd_docs/roster/machines.json`
+// (registry_version 1) as `read_model.resolve_machine_entry` returns it,
+// reduced to the facts the view renders.
+export const LAPTOP_MACHINE_ENTRY = {
+  machine_id: 'laptop-mobile-gpu',
+  description:
+    "Gaming laptop with a mobile GPU (Asus TUF Gaming A17): Ryzen 7 5800H, 32 GB DDR4-3200 dual channel, RTX 3060 Laptop 6 GB, Windows 11. The project's development machine.",
+  facts: {
+    memory_type: {
+      value: 'DDR4',
+      source: 'declared',
+      read_from:
+        'Get-CimInstance Win32_PhysicalMemory SMBIOSMemoryType 26 (2026-10-02)',
+    },
+    memory_rated_speed_mts: {
+      value: 3200,
+      source: 'declared',
+      read_from: 'Get-CimInstance Win32_PhysicalMemory Speed (2026-10-02)',
+    },
+    memory_configured_speed_mts: {
+      value: 3200,
+      source: 'declared',
+      read_from:
+        'Get-CimInstance Win32_PhysicalMemory ConfiguredClockSpeed (2026-10-02)',
+    },
+    gpu_present: {
+      value: true,
+      source: 'declared',
+      read_from:
+        'PRD machine definition (gaming laptop with a mobile GPU); nvidia-smi (2026-10-02)',
+    },
+  },
+  registry_version: 1,
+}
+
+// Hand-edited copy of the real row as a schema "25" `cpu_only` run on the
+// laptop: the VRAM figure is the not-applicable absence the read model
+// returns, and the machine resolves to its declared entry.
+const CPU_ONLY_ENTRY: RuntimeEntry = {
+  ...IDENTITY,
+  ...SHARED_FIELDS,
+  schema_version: '25',
+  unreliable: false,
+  machine_id: 'laptop-mobile-gpu',
+  compute_mode: 'cpu_only',
+  machine: LAPTOP_MACHINE_ENTRY,
+  vram_used_mib: absent('not_applicable', { compute_mode: 'cpu_only' }),
+}
+
 export const runtimeViewFixture: RuntimeView = {
   store: 'runtime',
   run_id: 'f5f78c795eaa4175ac506440e597ee3e',
   schema_floor: '7',
-  entries: [RELIABLE_ENTRY, UNRELIABLE_ENTRY, UNRESOLVED_FICHE_ENTRY],
+  entries: [RELIABLE_ENTRY, UNRELIABLE_ENTRY, UNRESOLVED_FICHE_ENTRY, CPU_ONLY_ENTRY],
   unreadable: [],
+}
+
+// The same cpu_only row whose machine id the registry does not declare.
+export const unresolvedMachineFixture: RuntimeView = {
+  ...runtimeViewFixture,
+  entries: [
+    {
+      ...CPU_ONLY_ENTRY,
+      machine_id: 'my-unknown-box',
+      machine: absent('pointer_unresolved', {
+        pointer: 'machine_id',
+        value: 'my-unknown-box',
+      }),
+    },
+  ],
 }

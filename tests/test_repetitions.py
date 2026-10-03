@@ -327,3 +327,25 @@ def test_a_failing_warmup_fails_the_row_with_index_zero_and_no_retry() -> None:
     assert exc_info.value.index == 0
     assert exc_info.value.reason == "empty"
     assert send.call_count == 1
+
+
+def test_a_cpu_only_set_records_vram_not_applicable_and_still_reads_power() -> None:
+    send = MagicMock(return_value=SAMPLE_RESPONSE)
+    read_gpu, read_rss, read_machine_state = _stub_reads()
+
+    warmups, counted = run_repetition_set(
+        send=send,
+        read_gpu=read_gpu,
+        read_rss=read_rss,
+        read_machine_state=read_machine_state,
+        sleep=MagicMock(),
+        warmup_count=1,
+        count=2,
+        cooldown_s=0.0,
+        vram_applies=False,
+    )
+
+    assert [rep["vram_used_mib"] for rep in [*warmups, *counted]] == [
+        "not_applicable"
+    ] * 3
+    assert [rep["gpu_draw_w"] for rep in counted] == [45.0, 45.0]

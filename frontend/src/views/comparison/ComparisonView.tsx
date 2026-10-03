@@ -54,9 +54,15 @@ function isArchitecture(value: unknown): value is Architecture {
   return typeof value === 'object' && value !== null && 'kind' in value
 }
 
-// `architecture` reads as prose; any other dimension, including one added to
-// `COMPARISON_DIMENSIONS` later, falls back to its raw value -- so a new
-// dimension renders without a new branch here.
+// `architecture` reads as prose and `machine` / `compute_mode` carry their
+// name, so a column says which machine and mode produced it; any other
+// dimension, including one added to `COMPARISON_DIMENSIONS` later, falls back
+// to its raw value -- so a new dimension renders without a new branch here.
+const DIMENSION_PREFIXES: Record<string, string> = {
+  machine: 'machine',
+  compute_mode: 'mode',
+}
+
 function describeDimension(dimension: string, value: unknown): string {
   if (dimension === 'architecture' && isArchitecture(value)) {
     const active = value.active_params_b ?? '?'
@@ -65,7 +71,9 @@ function describeDimension(dimension: string, value: unknown): string {
     }
     return `${value.kind}, ${active}B`
   }
-  return typeof value === 'string' ? value : JSON.stringify(value)
+  const text = typeof value === 'string' ? value : JSON.stringify(value)
+  const prefix = DIMENSION_PREFIXES[dimension]
+  return prefix === undefined ? text : `${prefix} ${text}`
 }
 
 function ColumnHeader({ column }: { column: ComparisonColumn }) {

@@ -16,4 +16,12 @@ describe('Absent', () => {
     expect(marker.textContent).not.toBe('0')
     expect(marker.textContent).not.toBe('—')
   })
+
+  it('renders not_applicable as "not applicable", never "not reported"', () => {
+    render(<Absent reason="not_applicable" detail={{ compute_mode: 'cpu_only' }} />)
+
+    const marker = screen.getByText('not applicable')
+    expect(marker.title).toBe('compute_mode: cpu_only')
+    expect(screen.queryByText(/not reported/i)).toBeNull()
+  })
 })

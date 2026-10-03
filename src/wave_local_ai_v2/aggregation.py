@@ -13,6 +13,7 @@ from __future__ import annotations
 import statistics
 from typing import Any
 
+from wave_local_ai_v2.gpu import VRAM_NOT_APPLICABLE
 from wave_local_ai_v2.repetitions import RepetitionResult
 
 
@@ -130,6 +131,30 @@ def peak(values: list[float | None]) -> float | None:
     if not real_values:
         return None
     return max(real_values)
+
+
+def aggregate_peaks(counted: list[RepetitionResult]) -> dict[str, Any]:
+    """Each `PEAK_METRICS` channel's peak over the counted repetitions.
+
+    A channel every repetition marks `VRAM_NOT_APPLICABLE` (a `cpu_only` run's
+    VRAM) peaks to that marker, never to a number. A set mixing the marker with
+    a reading is refused: one run is either `cpu_only` or not, and a peak taken
+    over half of it would publish a figure the run never owned.
+    """
+    peaks: dict[str, Any] = {}
+    for metric in PEAK_METRICS:
+        values = [rep[metric] for rep in counted]  # type: ignore[literal-required]
+        marked = [value == VRAM_NOT_APPLICABLE for value in values]
+        if all(marked) and values:
+            peaks[metric] = VRAM_NOT_APPLICABLE
+        elif any(marked):
+            raise AggregationError(
+                f"{metric} mixes {VRAM_NOT_APPLICABLE!r} with readings across "
+                "the counted repetitions: no peak is defined over such a set"
+            )
+        else:
+            peaks[metric] = peak(values)
+    return peaks
 
 
 def aggregate_timings(

@@ -1,0 +1,91 @@
+{
+  "run_id": "0de05d578b9a4ebc987793f8309f47a1",
+  "schema_version": "25",
+  "machine_id": "laptop-mobile-gpu",
+  "compute_mode": "cpu_only",
+  "vram_used_mib": {
+    "absent": true,
+    "reason": "not_applicable",
+    "detail": {
+      "compute_mode": "cpu_only"
+    }
+  },
+  "gpu_draw_w": 17.955,
+  "machine": {
+    "machine_id": "laptop-mobile-gpu",
+    "description": "Gaming laptop with a mobile GPU (Asus TUF Gaming A17): Ryzen 7 5800H, 32 GB DDR4-3200 dual channel, RTX 3060 Laptop 6 GB, Windows 11. The project's development machine.",
+    "facts": {
+      "cpu_model": {
+        "value": "AMD Ryzen 7 5800H with Radeon Graphics",
+        "source": "declared",
+        "read_from": "Get-CimInstance Win32_Processor Name (2026-10-02)"
+      },
+      "cpu_cores": {
+        "value": 8,
+        "source": "declared",
+        "read_from": "Get-CimInstance Win32_Processor NumberOfCores (2026-10-02)"
+      },
+      "cpu_threads": {
+        "value": 16,
+        "source": "declared",
+        "read_from": "Get-CimInstance Win32_Processor NumberOfLogicalProcessors (2026-10-02)"
+      },
+      "instruction_set_notes": {
+        "value": "AVX and AVX2 present; AVX-512F absent",
+        "source": "declared",
+        "read_from": "kernel32 IsProcessorFeaturePresent 39/40/41 (2026-10-02)"
+      },
+      "ram_installed_gb": {
+        "value": 32,
+        "source": "declared",
+        "read_from": "Get-CimInstance Win32_PhysicalMemory Capacity, 2 x 17179869184 bytes (2026-10-02)"
+      },
+      "memory_type": {
+        "value": "DDR4",
+        "source": "declared",
+        "read_from": "Get-CimInstance Win32_PhysicalMemory SMBIOSMemoryType 26 (2026-10-02)"
+      },
+      "memory_rated_speed_mts": {
+        "value": 3200,
+        "source": "declared",
+        "read_from": "Get-CimInstance Win32_PhysicalMemory Speed (2026-10-02)"
+      },
+      "memory_configured_speed_mts": {
+        "value": 3200,
+        "source": "declared",
+        "read_from": "Get-CimInstance Win32_PhysicalMemory ConfiguredClockSpeed (2026-10-02)"
+      },
+      "memory_channels": {
+        "value": 2,
+        "source": "declared",
+        "read_from": "Get-CimInstance Win32_PhysicalMemory BankLabel, P0 CHANNEL A and P0 CHANNEL B (2026-10-02)"
+      },
+      "gpu_present": {
+        "value": true,
+        "source": "declared",
+        "read_from": "PRD machine definition (gaming laptop with a mobile GPU); nvidia-smi (2026-10-02)"
+      },
+      "gpu_model": {
+        "value": "NVIDIA GeForce RTX 3060 Laptop GPU",
+        "source": "declared",
+        "read_from": "nvidia-smi --query-gpu=name (2026-10-02)"
+      },
+      "vram_nominal_gb": {
+        "value": 6,
+        "source": "declared",
+        "read_from": "nvidia-smi --query-gpu=memory.total, 6144 MiB (2026-10-02)"
+      },
+      "vram_allocatable_gb": {
+        "value": 5.1,
+        "source": "declared",
+        "read_from": "context_input/hardware.md operator measurement (WDDM reserve); not re-measured by machine-readiness order 0"
+      },
+      "os": {
+        "value": "Windows 11, build 26200",
+        "source": "declared",
+        "read_from": "Get-CimInstance Win32_OperatingSystem Caption and BuildNumber (2026-10-02)"
+      }
+    },
+    "registry_version": 1
+  }
+}

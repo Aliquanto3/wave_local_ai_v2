@@ -26,7 +26,7 @@ import time
 from collections.abc import Callable
 from typing import Any, TypedDict
 
-from wave_local_ai_v2.gpu import GpuStats
+from wave_local_ai_v2.gpu import VRAM_NOT_APPLICABLE, GpuStats
 from wave_local_ai_v2.machine_state import MachineState
 from wave_local_ai_v2.scoring import (
     FAILURE_REASON_EMPTY,
@@ -85,7 +85,9 @@ class RepetitionResult(TypedDict):
     ttft_source: str
     prompt_tok_per_s: float
     gen_tok_per_s: float
-    vram_used_mib: float | None
+    # A MiB figure, `None` when the read failed, or `VRAM_NOT_APPLICABLE` on a
+    # `cpu_only` run, which reads no VRAM.
+    vram_used_mib: float | str | None
     gpu_draw_w: float | None
     process_rss_bytes: int | None
     machine_state: MachineState
@@ -105,6 +107,7 @@ def run_repetition_set(
     warmup_count: int,
     count: int,
     cooldown_s: float,
+    vram_applies: bool = True,
 ) -> tuple[list[RepetitionResult], list[RepetitionResult]]:
     """Run the warm-up(s) then the counted repetitions, cooldown between them.
 
@@ -112,9 +115,13 @@ def run_repetition_set(
     The cooldown runs once after the last warm-up -- so the first counted
     repetition starts from the same posture as the rest -- and `count - 1`
     times between counted repetitions, never after the final one.
+
+    `vram_applies=False` (a `cpu_only` run) records `VRAM_NOT_APPLICABLE` on
+    every repetition, warm-ups included, instead of the device-wide NVML
+    figure; power is still read.
     """
     warmups = [
-        _run_one(0, send, read_gpu, read_rss, read_machine_state)
+        _run_one(0, send, read_gpu, read_rss, read_machine_state, vram_applies)
         for _ in range(warmup_count)
     ]
     if warmup_count > 0:
@@ -122,7 +129,9 @@ def run_repetition_set(
 
     counted: list[RepetitionResult] = []
     for index in range(1, count + 1):
-        counted.append(_run_one(index, send, read_gpu, read_rss, read_machine_state))
+        counted.append(
+            _run_one(index, send, read_gpu, read_rss, read_machine_state, vram_applies)
+        )
         if index < count:
             sleep(cooldown_s)
 
@@ -135,6 +144,7 @@ def _run_one(
     read_gpu: Callable[[], GpuStats],
     read_rss: Callable[[], int | None],
     read_machine_state: Callable[[], MachineState],
+    vram_applies: bool,
 ) -> RepetitionResult:
     start = time.monotonic()
     response_json = send()
@@ -173,7 +183,9 @@ def _run_one(
         ttft_source=timings["ttft_source"],
         prompt_tok_per_s=timings["prompt_tok_per_s"],
         gen_tok_per_s=timings["gen_tok_per_s"],
-        vram_used_mib=gpu_stats["vram_used_mib"],
+        vram_used_mib=(
+            gpu_stats["vram_used_mib"] if vram_applies else VRAM_NOT_APPLICABLE
+        ),
         gpu_draw_w=gpu_stats["gpu_draw_w"],
         process_rss_bytes=rss_bytes,
         machine_state=machine_state,

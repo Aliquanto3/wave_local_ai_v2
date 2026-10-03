@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from wave_local_ai_v2 import row_contract, score_interval, suite_snapshot
+from wave_local_ai_v2 import machines, row_contract, score_interval, suite_snapshot
 
 FLOOR = "7"
 RUN_ID = "run-under-test"
@@ -31,6 +31,8 @@ NAMED_VALUES: dict[str, Any] = {
     "captured_at": "2026-09-01T00:00:00+00:00",
     "roster_entry_id": ROSTER_ENTRY_ID,
     "fiche_hash": FICHE_HASH,
+    "machine_id": "laptop-mobile-gpu",
+    "compute_mode": "gpu",
     "suite_id": SUITE_ID,
     "suite_version": SUITE_VERSION,
     "prompt_variant_id": "baseline",
@@ -189,11 +191,19 @@ def build_bundle(tmp_path: Path) -> dict[str, Path]:
         encoding="utf-8",
     )
 
+    # The tracked machine registry, copied so a test can edit its own bundle's.
+    machines_path = tmp_path / "machines.json"
+    machines_path.write_text(
+        Path(machines.DEFAULT_REGISTRY_PATH).read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
     return {
         "runtime": tmp_path / "runtime.jsonl",
         "quality": tmp_path / "quality.jsonl",
         "fiches": fiches,
         "roster": roster_path,
+        "machines": machines_path,
         "suites": suites,
         "leader_sets": tmp_path / "leader-sets",
     }

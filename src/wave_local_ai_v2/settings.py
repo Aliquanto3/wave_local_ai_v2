@@ -260,6 +260,9 @@ class ServiceSettings:
     dashboard_origin: str
     tls_certfile: Path
     tls_keyfile: Path
+    # The declared machine registry a runtime row's `machine_id` resolves
+    # against: the tracked file, the same one the run CLIs check rows against.
+    machine_registry_path: Path = Path(machines.DEFAULT_REGISTRY_PATH)
 
 
 def load_service_settings() -> ServiceSettings:

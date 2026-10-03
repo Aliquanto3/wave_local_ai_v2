@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { apiFetch, UnauthorizedError } from '../../api/client'
-import type { Maybe } from '../../api/types'
+import type { MachineEntry, MachineFact, Maybe } from '../../api/types'
 import { isAbsent } from '../../api/types'
 import { Absent } from '../../components/Absent'
 import { useKeyGate } from '../../components/KeyGate'
@@ -52,6 +52,93 @@ function ThroughputCell({
       <span className="spread">(spread {renderMaybe(spread)})</span>{' '}
       <UnreliableLabel unreliable={unreliable} spread={spread} metric={metric} />
     </>
+  )
+}
+
+/**
+ * One declared machine fact with its source beside it: a declared value is
+ * marked declared, never presented as a measurement, and a fact nobody has
+ * read yet says so rather than rendering blank.
+ */
+function FactValue({
+  fact,
+  format = (value) => String(value),
+}: {
+  fact: MachineFact | undefined
+  format?: (value: unknown) => string
+}) {
+  if (fact === undefined) {
+    return <span className="machine-fact">not in the registry entry</span>
+  }
+  if (fact.source !== 'declared') {
+    return (
+      <span className="machine-fact" title={fact.read_from}>
+        not yet declared
+      </span>
+    )
+  }
+  return (
+    <span className="machine-fact" title={fact.read_from}>
+      {format(fact.value)} (declared)
+    </span>
+  )
+}
+
+/**
+ * The machine and compute mode the row names, and what the declared machine
+ * entry says about it. The machine id is always shown, so an id the registry
+ * does not resolve is still named beside its unresolved marker.
+ */
+function MachineBlock({
+  machineId,
+  computeMode,
+  machine,
+}: {
+  machineId: Maybe<string>
+  computeMode: Maybe<string>
+  machine: Maybe<MachineEntry>
+}) {
+  return (
+    <dl className="machine-block">
+      <dt>Machine</dt>
+      <dd>{renderMaybe(machineId)}</dd>
+      <dt>Compute mode</dt>
+      <dd>{renderMaybe(computeMode)}</dd>
+      {isAbsent(machine) ? (
+        <>
+          <dt>Machine entry</dt>
+          <dd>
+            <Absent reason={machine.reason} detail={machine.detail} />
+          </dd>
+        </>
+      ) : (
+        <>
+          <dt>Memory</dt>
+          <dd>
+            <FactValue fact={machine.facts.memory_type} />
+          </dd>
+          <dt>Memory speed (rated / configured)</dt>
+          <dd>
+            <FactValue
+              fact={machine.facts.memory_rated_speed_mts}
+              format={(value) => `${String(value)} MT/s`}
+            />{' '}
+            /{' '}
+            <FactValue
+              fact={machine.facts.memory_configured_speed_mts}
+              format={(value) => `${String(value)} MT/s`}
+            />
+          </dd>
+          <dt>GPU present</dt>
+          <dd>
+            <FactValue
+              fact={machine.facts.gpu_present}
+              format={(value) => (value === true ? 'yes' : 'no')}
+            />
+          </dd>
+        </>
+      )}
+    </dl>
   )
 }
 
@@ -145,6 +232,11 @@ function RuntimeRow({ entry }: { entry: RuntimeEntry }) {
         )}
       </td>
       <td>
+        <MachineBlock
+          machineId={entry.machine_id}
+          computeMode={entry.compute_mode}
+          machine={entry.machine}
+        />
         <FicheBlock fiche={entry.fiche} ficheHash={entry.fiche_hash} />
       </td>
     </tr>

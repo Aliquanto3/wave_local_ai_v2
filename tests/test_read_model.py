@@ -20,6 +20,7 @@ from store_fixtures import (
 
 from wave_local_ai_v2 import (
     leader_set,
+    machines,
     read_model,
     results,
     row_contract,
@@ -28,6 +29,7 @@ from wave_local_ai_v2 import (
 )
 from wave_local_ai_v2.read_model import (
     ABSENCE_REASONS,
+    ABSENT_NOT_APPLICABLE,
     ABSENT_NULL_IN_ROW,
     ABSENT_POINTER_UNRESOLVED,
     ABSENT_PREDATES_SCHEMA,
@@ -44,6 +46,7 @@ SUITE_DEFINITIONS_DIR = Path(settings.DEFAULT_SUITE_DEFINITIONS_DIR)
 FICHE_REGISTRY_DIR = Path(settings.DEFAULT_FICHE_REGISTRY_DIR)
 ROSTER_PATH = Path(settings.DEFAULT_ROSTER_PATH)
 LEADER_SETS_DIR = Path(settings.DEFAULT_LEADER_SETS_DIR)
+MACHINES_PATH = Path(machines.DEFAULT_REGISTRY_PATH)
 
 
 def reference_bundle_quality_view() -> dict[str, Any]:
@@ -68,6 +71,7 @@ def reference_bundle_runtime_view() -> dict[str, Any]:
         REFERENCE_BUNDLE_SCHEMA_VERSION,
         FICHE_REGISTRY_DIR,
         read_model.load_roster_file(ROSTER_PATH),
+        read_model.load_machine_registry(MACHINES_PATH),
     )
     assert view is not None
     return view
@@ -77,10 +81,19 @@ def loaded_roster(bundle: dict[str, Path]) -> Any:
     return read_model.load_roster_file(bundle["roster"])
 
 
+def loaded_machines(bundle: dict[str, Path]) -> Any:
+    return read_model.load_machine_registry(bundle["machines"])
+
+
 def build_runtime(bundle: dict[str, Path], rows: list[dict[str, Any]]) -> Any:
     write_store(bundle["runtime"], rows)
     return read_model.runtime_view(
-        bundle["runtime"], RUN_ID, FLOOR, bundle["fiches"], loaded_roster(bundle)
+        bundle["runtime"],
+        RUN_ID,
+        FLOOR,
+        bundle["fiches"],
+        loaded_roster(bundle),
+        loaded_machines(bundle),
     )
 
 
@@ -530,6 +543,7 @@ def test_a_missing_roster_file_leaves_every_entry_named_not_raising(
         FLOOR,
         bundle["fiches"],
         read_model.load_roster_file(tmp_path / "no-roster.json"),
+        loaded_machines(bundle),
     )
 
     assert view is not None
@@ -796,7 +810,11 @@ def _two_runs_differing_in_one_row_field() -> list[dict[str, Any]]:
 def test_todays_comparison_dimensions_leave_the_columns_unchanged(
     bundle: dict[str, Path], tmp_path: Path
 ) -> None:
-    assert read_model.COMPARISON_DIMENSIONS == ("architecture",)
+    assert read_model.COMPARISON_DIMENSIONS == (
+        "architecture",
+        "machine",
+        "compute_mode",
+    )
 
     view = build_comparison(
         bundle, _two_runs_differing_in_one_row_field(), two_entry_roster_path(tmp_path)
@@ -952,6 +970,54 @@ def test_the_same_model_on_two_machines_keeps_one_column_per_machine(
     assert by_fiche == {"a" * 64: "run-host-a", "b" * 64: "run-host-b"}
 
 
+def test_two_rows_differing_only_in_machine_open_two_columns_naming_them(
+    bundle: dict[str, Path], tmp_path: Path
+) -> None:
+    # Same fiche hash on purpose: the machine dimension alone splits them.
+    rows = [
+        make_row(
+            "quality",
+            roster_entry_id=ROSTER_ENTRY_ID,
+            item_id="item-01",
+            run_id=run_id,
+            captured_at=captured_at,
+            machine_id=machine_id,
+            compute_mode=mode,
+        )
+        for run_id, captured_at, machine_id, mode in (
+            ("run-laptop", "2026-01-01T00:00:00+00:00", "laptop-mobile-gpu", "gpu"),
+            ("run-tower", "2026-02-01T00:00:00+00:00", "tower-desktop-gpu", "gpu"),
+        )
+    ]
+
+    view = build_comparison(bundle, rows, two_entry_roster_path(tmp_path))
+
+    columns = view["suites"][0]["columns"]
+    assert {
+        column["run_id"]: (
+            column["dimensions"]["machine"],
+            column["dimensions"]["compute_mode"],
+        )
+        for column in columns
+    } == {
+        "run-laptop": ("laptop-mobile-gpu", "gpu"),
+        "run-tower": ("tower-desktop-gpu", "gpu"),
+    }
+
+
+def test_a_row_predating_the_machine_fields_names_why_its_dimensions_are_absent(
+    bundle: dict[str, Path], tmp_path: Path
+) -> None:
+    row = make_row("quality", roster_entry_id=ROSTER_ENTRY_ID, item_id="item-01")
+    del row["machine_id"], row["compute_mode"]
+
+    view = build_comparison(bundle, [row], two_entry_roster_path(tmp_path))
+
+    [column] = view["suites"][0]["columns"]
+    for dimension in ("machine", "compute_mode"):
+        assert column["dimensions"][dimension].reason == ABSENT_PREDATES_SCHEMA
+
+
 # Every field a quality row renders, in either score shape: the only place a
 # compared cell's fields may come from.
 QUALITY_OWNED_FIELDS: frozenset[str] = (
@@ -1042,7 +1108,7 @@ def test_the_reference_bundle_runtime_row_carries_the_storys_named_fields() -> N
 
 
 @pytest.mark.parametrize("kind", ["runtime", "quality"])
-def test_no_absence_anywhere_carries_a_reason_outside_the_named_three(
+def test_no_absence_anywhere_carries_a_reason_outside_the_named_four(
     bundle: dict[str, Path], kind: row_contract.RowKind
 ) -> None:
     stripped = make_row(kind, fiche_hash="0" * 64, roster_entry_id="unknown")
@@ -1075,7 +1141,14 @@ def test_the_views_never_write_to_the_store(bundle: dict[str, Path]) -> None:
     listing_before = sorted(path.name for path in root.iterdir())
     loaded = loaded_roster(bundle)
 
-    read_model.runtime_view(bundle["runtime"], RUN_ID, FLOOR, bundle["fiches"], loaded)
+    read_model.runtime_view(
+        bundle["runtime"],
+        RUN_ID,
+        FLOOR,
+        bundle["fiches"],
+        loaded,
+        loaded_machines(bundle),
+    )
     read_model.quality_view(
         bundle["quality"], RUN_ID, FLOOR, loaded, bundle["suites"], bundle["fiches"]
     )
@@ -1492,3 +1565,113 @@ def test_a_leader_set_record_missing_its_incomplete_flag_is_unresolved(
 
     (use_case,) = view["use_cases"]
     assert use_case["leader"].reason == ABSENT_POINTER_UNRESOLVED
+
+
+# --------------------------------------------------------------------------
+# The machine pointer and the not-applicable VRAM (schema "25")
+# --------------------------------------------------------------------------
+
+
+def _cpu_only_runtime_row(**overrides: Any) -> dict[str, Any]:
+    return make_row(
+        "runtime",
+        schema_version="25",
+        compute_mode="cpu_only",
+        vram_used_mib="not_applicable",
+        **overrides,
+    )
+
+
+def test_the_runtime_view_names_the_machine_its_mode_and_their_declared_facts(
+    bundle: dict[str, Path],
+) -> None:
+    entry = build_runtime(bundle, [_cpu_only_runtime_row()])["entries"][0]
+
+    assert entry["machine_id"] == "laptop-mobile-gpu"
+    assert entry["compute_mode"] == "cpu_only"
+    machine = entry["machine"]
+    assert machine["machine_id"] == "laptop-mobile-gpu"
+    facts = machine["facts"]
+    assert facts["memory_type"]["value"] == "DDR4"
+    assert facts["memory_type"]["source"] == "declared"
+    assert facts["memory_rated_speed_mts"]["value"] == 3200
+    assert facts["gpu_present"] == {
+        "value": True,
+        "source": "declared",
+        "read_from": facts["gpu_present"]["read_from"],
+    }
+
+
+def test_a_cpu_only_rows_vram_is_absent_as_not_applicable(
+    bundle: dict[str, Path],
+) -> None:
+    entry = build_runtime(bundle, [_cpu_only_runtime_row()])["entries"][0]
+
+    assert entry["vram_used_mib"] == Absent(
+        ABSENT_NOT_APPLICABLE, {"compute_mode": "cpu_only"}
+    )
+    assert read_model.to_jsonable(entry["vram_used_mib"]) == {
+        "absent": True,
+        "reason": "not_applicable",
+        "detail": {"compute_mode": "cpu_only"},
+    }
+
+
+def test_a_gpu_rows_failed_vram_read_stays_null_in_row_not_not_applicable(
+    bundle: dict[str, Path],
+) -> None:
+    row = make_row("runtime", schema_version="25", vram_used_mib=None)
+
+    entry = build_runtime(bundle, [row])["entries"][0]
+
+    assert entry["vram_used_mib"] == Absent(ABSENT_NULL_IN_ROW, {})
+
+
+def test_a_not_applicable_string_outside_vram_stays_a_value(
+    bundle: dict[str, Path],
+) -> None:
+    # A cloud row's engine says `not_applicable` as a value, not an absence.
+    row = make_row("runtime", engine_id="not_applicable")
+
+    entry = build_runtime(bundle, [row])["entries"][0]
+
+    assert entry["engine_id"] == "not_applicable"
+
+
+def test_an_undeclared_machine_id_is_a_named_unresolved_pointer(
+    bundle: dict[str, Path],
+) -> None:
+    row = make_row("runtime", machine_id="my-unknown-box")
+
+    entry = build_runtime(bundle, [row])["entries"][0]
+
+    assert entry["machine"] == Absent(
+        ABSENT_POINTER_UNRESOLVED,
+        {"pointer": "machine_id", "value": "my-unknown-box"},
+    )
+    assert entry["machine_id"] == "my-unknown-box"
+
+
+def test_an_unreadable_machine_registry_leaves_every_machine_named_unresolved(
+    bundle: dict[str, Path],
+) -> None:
+    bundle["machines"].write_text("not json", encoding="utf-8")
+
+    entry = build_runtime(bundle, [make_row("runtime")])["entries"][0]
+
+    assert entry["machine"] == Absent(
+        ABSENT_POINTER_UNRESOLVED,
+        {"pointer": "machine_id", "value": "laptop-mobile-gpu"},
+    )
+
+
+def test_a_runtime_row_predating_the_machine_fields_names_why(
+    bundle: dict[str, Path],
+) -> None:
+    row = make_row("runtime")
+    del row["machine_id"], row["compute_mode"]
+
+    entry = build_runtime(bundle, [row])["entries"][0]
+
+    for field in ("machine", "machine_id", "compute_mode"):
+        assert entry[field].reason == ABSENT_PREDATES_SCHEMA

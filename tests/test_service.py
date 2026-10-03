@@ -92,6 +92,7 @@ def settings(
         dashboard_origin=DASHBOARD_ORIGIN,
         tls_certfile=certfile,
         tls_keyfile=keyfile,
+        machine_registry_path=bundle["machines"],
     )
 
 
@@ -110,6 +111,23 @@ def remote(settings: ServiceSettings):  # type: ignore[no-untyped-def]
 # --------------------------------------------------------------------------
 # The four routes
 # --------------------------------------------------------------------------
+
+
+def test_the_runtime_route_resolves_the_rows_machine_from_its_registry(
+    local: TestClient, settings: ServiceSettings
+) -> None:
+    body = local.get(f"/api/runs/{RUN_ID}/runtime").json()
+    machine = body["entries"][0]["machine"]
+    assert machine["machine_id"] == "laptop-mobile-gpu"
+    assert machine["facts"]["memory_type"]["value"] == "DDR4"
+
+    settings.machine_registry_path.write_text("{}", encoding="utf-8")
+    body = local.get(f"/api/runs/{RUN_ID}/runtime").json()
+    assert body["entries"][0]["machine"] == {
+        "absent": True,
+        "reason": "pointer_unresolved",
+        "detail": {"pointer": "machine_id", "value": "laptop-mobile-gpu"},
+    }
 
 
 def test_the_runs_route_answers_two_named_collections(local: TestClient) -> None:

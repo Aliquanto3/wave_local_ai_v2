@@ -249,13 +249,14 @@ def create_app(settings: ServiceSettings) -> FastAPI:
 
     @api.get("/runs/{run_id}/runtime")
     def get_runtime(run_id: str) -> dict[str, Any]:
-        """The runtime table for one run, with each row's fiche beside it."""
+        """The runtime table for one run, each row's fiche and machine beside it."""
         view = read_model.runtime_view(
             settings.runtime_results_path,
             run_id,
             settings.schema_floor,
             settings.fiche_registry_dir,
             loaded_roster(),
+            read_model.load_machine_registry(settings.machine_registry_path),
         )
         if view is None:
             raise _not_found(run_id, STORE_RUNTIME, settings.schema_floor)

@@ -6,7 +6,7 @@ rather than each route shaping its own dictionary:
 
 1. **Nothing is defaulted, zero-filled, back-filled or inferred.** No `or 0`,
    no `.get(field, 0)`, no `dict.setdefault`. A field a row does not carry
-   resolves to an `Absent` naming which of three finite reasons applies.
+   resolves to an `Absent` naming which of four finite reasons applies.
 2. **Nothing is computed.** No verdict, no agreement, no score, no aggregate,
    no sum. A row's `verdict` block is returned as it stands; a number absent
    from a row is absent from the view. The one derived value in here,
@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from wave_local_ai_v2 import path_guard, roster, row_contract, scoring
+from wave_local_ai_v2 import machines, path_guard, roster, row_contract, scoring
 from wave_local_ai_v2.fiche_registry import read_fiche
 from wave_local_ai_v2.leader_set import (
     STATUS_MEMBER,
@@ -41,15 +41,28 @@ from wave_local_ai_v2.leader_set import (
 from wave_local_ai_v2.results import StoreRead, UnreadableRows, read_rows_from_floor
 from wave_local_ai_v2.suite_snapshot import snapshot_filename
 
-# The three reasons a field a view names carries no value. Finite and
+# The four reasons a field a view names carries no value. Finite and
 # collected, so "is this a reason we ship?" is a set membership test rather
-# than a grep over call sites.
+# than a grep over call sites. `not_applicable` is a statement the row makes
+# (a `cpu_only` run has no VRAM figure, schema "25"), distinct from
+# `null_in_row`, which is a measurement that was due and is missing.
 ABSENT_PREDATES_SCHEMA = "predates_schema"
 ABSENT_NULL_IN_ROW = "null_in_row"
 ABSENT_POINTER_UNRESOLVED = "pointer_unresolved"
+ABSENT_NOT_APPLICABLE = "not_applicable"
 ABSENCE_REASONS: frozenset[str] = frozenset(
-    {ABSENT_PREDATES_SCHEMA, ABSENT_NULL_IN_ROW, ABSENT_POINTER_UNRESOLVED}
+    {
+        ABSENT_PREDATES_SCHEMA,
+        ABSENT_NULL_IN_ROW,
+        ABSENT_POINTER_UNRESOLVED,
+        ABSENT_NOT_APPLICABLE,
+    }
 )
+
+# The row fields whose not-applicable marker is a measurement's absence, not a
+# value. `engine_id` / `machine_id` `not_applicable` on a cloud row stay
+# values: they name what produced the row, and the views render them as such.
+NOT_APPLICABLE_MEASUREMENTS: frozenset[str] = frozenset({"vram_used_mib"})
 
 # Which of the two quality score shapes a row publishes. The discriminator is
 # the row's own declaration, read exactly as `row_contract._validate_graded_fields`
@@ -57,9 +70,10 @@ ABSENCE_REASONS: frozenset[str] = frozenset(
 SCORE_SHAPE_GRADED = "graded"
 SCORE_SHAPE_EXACT_MATCH = "exact_match"
 
-# The three pointers a row cites and this module resolves.
+# The pointers a row cites and this module resolves.
 POINTER_FICHE_HASH = "fiche_hash"
 POINTER_ROSTER_ENTRY_ID = "roster_entry_id"
+POINTER_MACHINE_ID = "machine_id"
 POINTER_SUITE = "suite_id/suite_version"
 
 # The leader set is its own published record, written by the analysis
@@ -129,6 +143,11 @@ def resolve_field(row: dict[str, Any], field: str) -> Any | Absent:
     value = row[field]
     if value is None:
         return Absent(ABSENT_NULL_IN_ROW, {})
+    if (
+        field in NOT_APPLICABLE_MEASUREMENTS
+        and value == row_contract.VRAM_NOT_APPLICABLE
+    ):
+        return Absent(ABSENT_NOT_APPLICABLE, {"compute_mode": row.get("compute_mode")})
     return value
 
 
@@ -209,6 +228,10 @@ RUNTIME_VIEW_FIELDS: frozenset[str] = frozenset(
         # rendered, so "these are llama.cpp numbers" is read, not assumed.
         "engine_id",
         "engine_build",
+        # The declared machine and the compute mode (schema "23"): rendered
+        # in the fiche block, the machine resolved to its declared entry.
+        "machine_id",
+        "compute_mode",
         "fiche_hash",
         "verdict",
         "max_tokens",
@@ -282,13 +305,6 @@ RUNTIME_FIELDS_NOT_RENDERED: frozenset[str] = frozenset(
         # Where the subject prompt went (schema "16"); always `none` on a
         # runtime row. Whether the pitch renders it is the pitch epic's call.
         "subject_egress",
-        # The declared machine and compute mode the run was executed under
-        # (schema "23"). On the row so every number names the machine and
-        # mode that produced it; rendering the machine dimension to a
-        # decision-maker is the pitch epic's to decide (the machine epic
-        # excludes it), not this one's.
-        "machine_id",
-        "compute_mode",
         # The campaign the run belongs to, or `none` (schema "24"): campaign
         # membership is bookkeeping a completeness listing reads, not a value
         # a view renders.
@@ -387,7 +403,9 @@ QUALITY_FIELDS_NOT_RENDERED: frozenset[str] = frozenset(
         "subject_egress",
         # The declared machine and compute mode a local subject ran under, or
         # `not_applicable` for both on a cloud subject's row (schema "23").
-        # Rendering the machine dimension is the pitch epic's call.
+        # Not rendered by the quality view; the comparison view reads both as
+        # the `machine` and `compute_mode` column dimensions
+        # (`COMPARISON_DIMENSIONS`), resolved from the row.
         "machine_id",
         "compute_mode",
         # The campaign the run belongs to, or `none` (schema "24"): campaign
@@ -449,11 +467,12 @@ EXACT_MATCH_LANGUAGE_CELL_FIELDS: frozenset[str] = frozenset(
 # appending a name here and, once it
 # resolves from the row rather than the roster entry, teaching
 # `_resolve_comparison_dimension` how to read it -- never reshaping the
-# column-assembly loop in `_comparison_columns`. Reserved future entries:
-# `machine`, `engine`, `prompt_variant`, each resolved from the row once it
-# carries the field; `architecture` alone resolves from the roster entry
-# today.
-COMPARISON_DIMENSIONS: tuple[str, ...] = ("architecture",)
+# column-assembly loop in `_comparison_columns`. `architecture` resolves from
+# the roster entry; `machine` (the row's `machine_id`) and `compute_mode`
+# resolve from the row (schema "23"), so a column names its machine and mode
+# rather than differing from its neighbour only by fiche hash. Reserved future
+# entries: `engine`, `prompt_variant`, each resolved from the row.
+COMPARISON_DIMENSIONS: tuple[str, ...] = ("architecture", "machine", "compute_mode")
 
 # The row fields that make one comparison column one model. `roster_entry_id`
 # alone is not enough: a cited cloud comparator row carries the roster entry
@@ -503,6 +522,8 @@ def _resolve_comparison_dimension(
         if isinstance(resolved_roster_entry, Absent):
             return resolved_roster_entry
         return resolved_roster_entry["architecture"]
+    if dimension == "machine":
+        return resolve_field(row, POINTER_MACHINE_ID)
     return resolve_field(row, dimension)
 
 
@@ -517,6 +538,18 @@ def load_roster_file(path: Path) -> roster.RosterFile | None:
     try:
         return roster.load_roster(path)
     except roster.RosterError:
+        return None
+
+
+def load_machine_registry(path: Path) -> machines.MachineRegistry | None:
+    """The machine registry at `path`, or `None` when it cannot be read.
+
+    Same posture as `load_roster_file`: with `None`, every `machine_id`
+    resolves to a `pointer_unresolved` absence naming the id.
+    """
+    try:
+        return machines.load_registry(path)
+    except machines.MachineRegistryError:
         return None
 
 
@@ -574,6 +607,30 @@ def resolve_roster_entry(
             "active_params_b": entry.architecture.active_params_b,
         },
         "roster_version": roster_file.roster_version,
+    }
+
+
+def resolve_machine_entry(
+    row: dict[str, Any], machine_registry: machines.MachineRegistry | None
+) -> Any | Absent:
+    """The declared machine entry the row's `machine_id` names.
+
+    Every fact comes back as the registry states it, `{value, source,
+    read_from}`, so a view marks each one declared or not yet declared rather
+    than presenting a declaration as a measurement. An id the registry does
+    not declare is `pointer_unresolved` naming it, never a blank.
+    """
+    machine_id = resolve_field(row, POINTER_MACHINE_ID)
+    if isinstance(machine_id, Absent):
+        return machine_id
+    if machine_registry is None or machine_id not in machine_registry.entries:
+        return _unresolved(POINTER_MACHINE_ID, machine_id)
+    entry = machine_registry.entries[str(machine_id)]
+    return {
+        "machine_id": entry.machine_id,
+        "description": entry.description,
+        "facts": {name: dict(fact) for name, fact in entry.facts.items()},
+        "registry_version": machine_registry.registry_version,
     }
 
 
@@ -850,8 +907,10 @@ def runtime_view(
     floor: str,
     fiche_registry_dir: Path,
     roster_file: roster.RosterFile | None,
+    machine_registry: machines.MachineRegistry | None,
 ) -> dict[str, Any] | None:
-    """One entry per runtime row of `run_id`, each with its fiche resolved."""
+    """One entry per runtime row of `run_id`, each with its fiche and declared
+    machine resolved."""
     store = read_rows_from_floor(runtime_path, floor)
     rows = _rows_for_run(store, run_id)
     if not rows:
@@ -861,6 +920,7 @@ def runtime_view(
             **_identity(row),
             **resolve_fields(row, RUNTIME_VIEW_FIELDS),
             "roster_entry": resolve_roster_entry(row, roster_file),
+            "machine": resolve_machine_entry(row, machine_registry),
             "fiche": resolve_fiche(row, fiche_registry_dir),
         }
         for row in rows

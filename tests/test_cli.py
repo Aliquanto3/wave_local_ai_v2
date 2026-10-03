@@ -1011,6 +1011,59 @@ def test_a_gpu_and_a_cpu_only_run_store_two_fiches_and_never_reproduce(
     assert "compute_mode" in cpu_row["verdict"]["differing_fields"]
 
 
+def _vram_values(row: dict) -> list:
+    """Every `vram_used_mib` a row holds: the peak, then each repetition."""
+    return [
+        row["vram_used_mib"],
+        *(rep["vram_used_mib"] for rep in row["warmup_repetitions"]),
+        *(rep["vram_used_mib"] for rep in row["repetitions"]),
+    ]
+
+
+def test_a_cpu_only_run_publishes_no_vram_number_anywhere_on_the_row(
+    stubbed_run,
+) -> None:
+    # The stubbed NVML read still answers 3161 MiB, as the device-wide figure
+    # would on a GPU-bearing machine: none of it may reach the row.
+    results_path, started = stubbed_run
+    started["load_settings"].return_value = replace(
+        started["load_settings"].return_value, compute_mode="cpu_only"
+    )
+
+    _run()
+
+    [row] = read_rows(results_path)
+    assert row["schema_version"] == "25"
+    values = _vram_values(row)
+    assert len(values) == 1 + row["warmup_count"] + row["repetitions_n"]
+    assert set(values) == {"not_applicable"}
+    assert '"vram_used_mib": 3161' not in results_path.read_text(encoding="utf-8")
+    # Power and the GPU energy channel keep their own measurement and labels.
+    assert row["gpu_draw_w"] == 45.0
+    assert row["gpu_energy_method"] is not None
+
+
+def test_a_gpu_run_keeps_its_vram_figure(stubbed_run) -> None:
+    results_path, _ = stubbed_run
+
+    _run()
+
+    [row] = read_rows(results_path)
+    assert set(_vram_values(row)) == {3161.0}
+
+
+def test_a_gpu_run_whose_vram_read_failed_stays_null_not_not_applicable(
+    stubbed_run,
+) -> None:
+    results_path, started = stubbed_run
+    started["gpu_stats"].return_value = {"vram_used_mib": None, "gpu_draw_w": None}
+
+    _run()
+
+    [row] = read_rows(results_path)
+    assert set(_vram_values(row)) == {None}
+
+
 @pytest.mark.parametrize(
     ("changes", "named"),
     [
