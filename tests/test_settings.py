@@ -896,3 +896,99 @@ def test_the_loaded_service_settings_repr_omits_the_key(
     monkeypatch.setenv("SERVICE_API_KEY", secret)
 
     assert secret not in repr(load_service_settings())
+
+
+def _run_settings(tmp_path: Path, **overrides: object) -> Settings:
+    return Settings(
+        slm_models_dir=tmp_path,
+        llama_server_path=tmp_path / "llama-server.exe",
+        results_path=tmp_path / "runtime.jsonl",
+        **overrides,  # type: ignore[arg-type]
+    )
+
+
+def test_load_settings_reads_machine_and_mode_with_no_default(
+    monkeypatch, tmp_path: Path
+) -> None:
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    server_path = tmp_path / "llama-server.exe"
+    server_path.write_text("")
+    monkeypatch.setenv("SLM_MODELS_DIR", str(models_dir))
+    monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
+    monkeypatch.delenv("MACHINE_ID", raising=False)
+    monkeypatch.delenv("COMPUTE_MODE", raising=False)
+
+    unset = load_settings()
+    assert (unset.machine_id, unset.compute_mode) == (None, None)
+
+    monkeypatch.setenv("MACHINE_ID", "laptop-mobile-gpu")
+    monkeypatch.setenv("COMPUTE_MODE", "cpu_only")
+    loaded = load_settings()
+    assert (loaded.machine_id, loaded.compute_mode) == (
+        "laptop-mobile-gpu",
+        "cpu_only",
+    )
+
+
+def test_require_run_profile_resolves_a_declared_machine_and_mode(
+    tmp_path: Path,
+) -> None:
+    profile = settings_module.require_run_profile(
+        _run_settings(tmp_path, machine_id="laptop-mobile-gpu", compute_mode="gpu")
+    )
+
+    assert profile.machine_id == "laptop-mobile-gpu"
+    assert profile.compute_mode == "gpu"
+    cpu = settings_module.require_run_profile(
+        _run_settings(tmp_path, machine_id="pro-pc-no-gpu", compute_mode="cpu_only")
+    )
+    assert cpu.machine.gpu_present is False
+
+
+@pytest.mark.parametrize("machine_id", [None, "my-own-box"])
+def test_a_missing_or_undeclared_machine_refuses_naming_the_declared_ids(
+    tmp_path: Path, machine_id: str | None
+) -> None:
+    with pytest.raises(SettingsError, match="MACHINE_ID") as caught:
+        settings_module.require_run_profile(
+            _run_settings(tmp_path, machine_id=machine_id, compute_mode="gpu")
+        )
+
+    for declared in ("laptop-mobile-gpu", "pro-pc-no-gpu", "tower-desktop-gpu"):
+        assert declared in str(caught.value)
+
+
+@pytest.mark.parametrize("compute_mode", [None, "hybrid"])
+def test_a_missing_or_unknown_mode_refuses_naming_both_modes(
+    tmp_path: Path, compute_mode: str | None
+) -> None:
+    with pytest.raises(SettingsError, match="COMPUTE_MODE") as caught:
+        settings_module.require_run_profile(
+            _run_settings(
+                tmp_path, machine_id="laptop-mobile-gpu", compute_mode=compute_mode
+            )
+        )
+
+    assert "gpu" in str(caught.value)
+    assert "cpu_only" in str(caught.value)
+
+
+def test_a_gpu_run_on_a_gpu_less_machine_refuses_naming_it(tmp_path: Path) -> None:
+    with pytest.raises(SettingsError, match="'pro-pc-no-gpu'"):
+        settings_module.require_run_profile(
+            _run_settings(tmp_path, machine_id="pro-pc-no-gpu", compute_mode="gpu")
+        )
+
+
+def test_an_unreadable_machine_registry_refuses(monkeypatch, tmp_path: Path) -> None:
+    from wave_local_ai_v2 import machines
+
+    def broken() -> machines.MachineRegistry:
+        raise machines.MachineRegistryError("gone")
+
+    monkeypatch.setattr(machines, "tracked_registry", broken)
+    with pytest.raises(SettingsError, match="machine registry cannot be read"):
+        settings_module.require_run_profile(
+            _run_settings(tmp_path, machine_id="laptop-mobile-gpu", compute_mode="gpu")
+        )

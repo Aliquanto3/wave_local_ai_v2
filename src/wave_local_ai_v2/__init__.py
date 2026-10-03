@@ -37,7 +37,7 @@ from wave_local_ai_v2.repetitions import (
     run_repetition_set,
 )
 from wave_local_ai_v2.results import append_row, captured_at, new_run_id
-from wave_local_ai_v2.settings import SettingsError, load_settings
+from wave_local_ai_v2.settings import SettingsError, load_settings, require_run_profile
 from wave_local_ai_v2.timings import MissingTimingsError, read_process_rss
 
 # The seed is pinned in the request body, not by a server flag, so
@@ -223,6 +223,9 @@ def main() -> None:
 
 def _run() -> None:
     settings = load_settings()
+    # The declared machine and compute mode, before anything is captured or
+    # launched: a missing or undeclared one refuses here.
+    run_profile = require_run_profile(settings)
     run_id = new_run_id()
     fiche = capture_fiche()
     provenance_fields = provenance.capture_provenance()
@@ -249,6 +252,7 @@ def _run() -> None:
         settings.host_threads,
         model_path,
         engine=engine,
+        compute_mode=run_profile.compute_mode,
     )
     # The five sampler values already reach the model through `flags`; only
     # `seed` is sent per request, so a request never diverges from what the
@@ -273,6 +277,8 @@ def _run() -> None:
     run_fiche = build_fiche(
         fiche,
         **engine_fields,
+        machine_id=run_profile.machine_id,
+        compute_mode=run_profile.compute_mode,
         roster_entry_id=roster_entry.entry_id,
         model_sha256=roster_entry.sha256,
         quant=roster_entry.quant,
@@ -435,6 +441,8 @@ def _run() -> None:
         "subject_egress": row_contract.SUBJECT_EGRESS_NONE,
         "engine_id": engine.engine_id,
         "engine_build": engine_fields["engine_build"],
+        "machine_id": run_profile.machine_id,
+        "compute_mode": run_profile.compute_mode,
         "fiche_hash": fiche_hash_value,
         "prompt": sent_prompt,
         "max_tokens": FIXED_MAX_TOKENS,

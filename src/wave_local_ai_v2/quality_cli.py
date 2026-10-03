@@ -78,7 +78,12 @@ from wave_local_ai_v2.scoring import (
     FAILURE_REASON_TRUNCATED_CONTEXT,
     FAILURE_REASON_TRUNCATED_MAX_TOKENS,
 )
-from wave_local_ai_v2.settings import Settings, SettingsError, load_settings
+from wave_local_ai_v2.settings import (
+    Settings,
+    SettingsError,
+    load_settings,
+    require_run_profile,
+)
 from wave_local_ai_v2.suite_gate import SuiteGateError, SuiteGateResult
 from wave_local_ai_v2.suite_registry import SuiteDefinition, SuiteRegistryError
 
@@ -248,6 +253,9 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
     # gate refuses, aborts before settings, the roster or any process.
     spec = suite_registry.resolve(suite)
     settings = load_settings()
+    # The declared machine and compute mode, before the roster or any
+    # process: a missing or undeclared one refuses here.
+    run_profile = require_run_profile(settings)
     # One id for the whole invocation: the local and cloud batches are two
     # halves of one comparison, and a reader must be able to tell which local
     # rows a given cloud row was scored against. `--resume` reuses a prior
@@ -296,6 +304,7 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
         settings.host_threads,
         model_path,
         engine=engine,
+        compute_mode=run_profile.compute_mode,
     )
     # Probing the binary itself doesn't need the server running, so this is
     # done before launch rather than costing readiness-wait time. An
@@ -303,7 +312,11 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
     engine_fields = engines.fiche_fields(
         engine, settings.llama_server_path, flags, roster_entry.entry_id
     )
-    local_engine_fields = quality_rows.local_engine_fields(engine_fields)
+    local_producer_fields = quality_rows.local_producer_fields(
+        engine_fields,
+        machine_id=run_profile.machine_id,
+        compute_mode=run_profile.compute_mode,
+    )
 
     # After the build probe, because the engine and its build are part of the
     # configuration a resumed batch must match; still before the server
@@ -315,7 +328,7 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
             run_id=run_id,
             roster_entry=roster_entry,
             prompt_variant=prompt_variant,
-            local_engine_fields=local_engine_fields,
+            local_producer_fields=local_producer_fields,
         )
 
     # One fiche per invocation, built from the one local launch this run
@@ -326,6 +339,8 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
     run_fiche = build_fiche(
         capture_fiche(),
         **engine_fields,
+        machine_id=run_profile.machine_id,
+        compute_mode=run_profile.compute_mode,
         roster_entry_id=roster_entry.entry_id,
         model_sha256=roster_entry.sha256,
         quant=roster_entry.quant,
@@ -389,7 +404,7 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
             prompt_variant=prompt_variant,
             variant_prompts=variant_prompts,
             fiche_hash=fiche_hash_value,
-            engine_row_fields=local_engine_fields,
+            producer_row_fields=local_producer_fields,
             batch_fields=quality_rows.local_batch_fields(
                 settings, local_energy, local_completions
             ),
@@ -578,16 +593,17 @@ def _refuse_a_resume_under_another_configuration(
     run_id: str,
     roster_entry: roster.RosterEntry,
     prompt_variant: prompt_variants.PromptVariant,
-    local_engine_fields: Mapping[str, str | None],
+    local_producer_fields: Mapping[str, str | None],
 ) -> None:
     """Raise `ResumeConfigurationError` unless every row this run already
     wrote for this suite was produced the way this invocation would.
 
     A resume folds the rows on disk into the completed batch's score, so a
     row written under another model, suite version, prompt set, prompt
-    variant, sampler, endpoint, roster entry, thinking policy, engine or
-    engine build would make one published score span two configurations.
-    A cloud batch is held to the engine not applying. Checked for every provider
+    variant, sampler, endpoint, roster entry, thinking policy, engine,
+    engine build, machine or compute mode would make one published score span
+    two configurations. A cloud batch is held to none of the last four
+    applying. Checked for every provider
     before anything spawns or is written, so a refusal writes nothing.
     """
     shared = {
@@ -603,22 +619,27 @@ def _refuse_a_resume_under_another_configuration(
             roster_entry.display_id,
             LOCAL_SAMPLING,
             prompt_provenance.LOCAL_CHAT_ENDPOINT,
-            local_engine_fields,
+            local_producer_fields,
         ),
         "mistral": (
             mistral_client.MODEL,
             CLOUD_SAMPLING,
             mistral_client.CHAT_COMPLETIONS_URL,
-            quality_rows.ENGINE_NOT_APPLICABLE_FIELDS,
+            quality_rows.NO_LOCAL_PRODUCER_FIELDS,
         ),
         "google": (
             google_client.MODEL,
             GOOGLE_SAMPLING,
             google_client.GENERATE_URL,
-            quality_rows.ENGINE_NOT_APPLICABLE_FIELDS,
+            quality_rows.NO_LOCAL_PRODUCER_FIELDS,
         ),
     }
-    for provider, (model_id, sampling, endpoint, engine_fields) in by_provider.items():
+    for provider, (
+        model_id,
+        sampling,
+        endpoint,
+        producer_fields,
+    ) in by_provider.items():
         prior_rows = results.batch_rows(
             settings.quality_results_path, run_id, provider, task_suite=spec.task_suite
         )
@@ -629,7 +650,7 @@ def _refuse_a_resume_under_another_configuration(
                 "model_id": model_id,
                 "sampling": dict(sampling),
                 "endpoint": endpoint,
-                **engine_fields,
+                **producer_fields,
             },
         )
         if conflict is not None:
@@ -745,7 +766,7 @@ def _try_run_cloud_provider(
         fiche_hash=fiche_hash,
         batch_fields=batch["batch_fields"],
         extra_row_fields=batch["extra_row_fields"],
-        engine_row_fields=quality_rows.ENGINE_NOT_APPLICABLE_FIELDS,
+        producer_row_fields=quality_rows.NO_LOCAL_PRODUCER_FIELDS,
         resumed=is_resume,
         retry_budget={provider: budget.total},
         partial_failure=failure,
@@ -1192,7 +1213,7 @@ def _score_and_write(
     prompt_variant: prompt_variants.PromptVariant,
     variant_prompts: list[str],
     fiche_hash: str,
-    engine_row_fields: Mapping[str, str | None],
+    producer_row_fields: Mapping[str, str | None],
     batch_fields: dict[str, Any],
     resumed: bool,
     retry_budget: dict[str, int],
@@ -1257,7 +1278,7 @@ def _score_and_write(
             "provider": provider,
             "subject_egress": row_contract.subject_egress_for(provider),
             **quality_rows.subject_composition_fields(model_id, provider, roster_entry),
-            **engine_row_fields,
+            **producer_row_fields,
             "fiche_hash": fiche_hash,
             **batch_fields,
             "task_suite": spec.task_suite,

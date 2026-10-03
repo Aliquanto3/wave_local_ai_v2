@@ -127,7 +127,8 @@ def test_validate_host_fit_passes_at_or_below_the_expert_ceiling(
     loaded = roster.load_roster(roster_path)
     entry = roster.resolve_entry(loaded, MOE_ENTRY_ID)
 
-    roster.validate_host_fit(entry, n_cpu_moe=37)  # 37 <= expert_count (40)
+    # 37 <= expert_count (40)
+    roster.validate_host_fit(entry, n_cpu_moe=37, compute_mode="gpu")
 
 
 def test_validate_host_fit_passes_when_moe_entry_gets_no_n_cpu_moe(
@@ -136,7 +137,7 @@ def test_validate_host_fit_passes_when_moe_entry_gets_no_n_cpu_moe(
     loaded = roster.load_roster(roster_path)
     entry = roster.resolve_entry(loaded, MOE_ENTRY_ID)
 
-    roster.validate_host_fit(entry, n_cpu_moe=None)
+    roster.validate_host_fit(entry, n_cpu_moe=None, compute_mode="gpu")
 
 
 def test_validate_host_fit_refuses_a_dense_entry_given_any_n_cpu_moe(
@@ -146,7 +147,7 @@ def test_validate_host_fit_refuses_a_dense_entry_given_any_n_cpu_moe(
     entry = roster.resolve_entry(loaded, DENSE_ENTRY_ID)
 
     with pytest.raises(RosterError, match=DENSE_ENTRY_ID):
-        roster.validate_host_fit(entry, n_cpu_moe=1)
+        roster.validate_host_fit(entry, n_cpu_moe=1, compute_mode="gpu")
 
 
 def test_validate_host_fit_refuses_an_moe_entry_over_its_expert_ceiling(
@@ -156,7 +157,19 @@ def test_validate_host_fit_refuses_an_moe_entry_over_its_expert_ceiling(
     entry = roster.resolve_entry(loaded, MOE_ENTRY_ID)
 
     with pytest.raises(RosterError, match="40"):
-        roster.validate_host_fit(entry, n_cpu_moe=41)
+        roster.validate_host_fit(entry, n_cpu_moe=41, compute_mode="gpu")
+
+
+def test_validate_host_fit_refuses_any_n_cpu_moe_under_cpu_only_naming_the_mode(
+    roster_path: Path,
+) -> None:
+    loaded = roster.load_roster(roster_path)
+    entry = roster.resolve_entry(loaded, MOE_ENTRY_ID)
+
+    roster.validate_host_fit(entry, n_cpu_moe=None, compute_mode="cpu_only")
+    for value in (0, 37):
+        with pytest.raises(RosterError, match="cpu_only"):
+            roster.validate_host_fit(entry, n_cpu_moe=value, compute_mode="cpu_only")
 
 
 def test_resolve_entry_raises_on_an_unknown_id(roster_path: Path) -> None:

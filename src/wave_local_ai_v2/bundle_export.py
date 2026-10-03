@@ -228,6 +228,16 @@ _COMMON_FIELDS: dict[tuple[str, ...], FieldDoc] = {
         "The build could not be read, or no local engine produced the row "
         "(engine_id is then not_applicable).",
     ),
+    ("machine_id",): FieldDoc(
+        "Declared machine (aidd_docs/roster/machines.json) the run was executed "
+        "on; not_applicable on a row no local model produced (a cloud subject).",
+        _ID,
+    ),
+    ("compute_mode",): FieldDoc(
+        "Compute mode the run was executed under: gpu or cpu_only; "
+        "not_applicable on a row no local model produced (a cloud subject).",
+        _ID,
+    ),
     ("fiche_hash",): FieldDoc(
         "Hardware and run fiche the row cites. Resolved into the fiche_* columns.",
         _SHA,
@@ -969,6 +979,17 @@ FICHE_FIELDS: dict[tuple[str, ...], FieldDoc] = {
         "by the roster entry and the host and port removed.",
         _SHA,
         "The fiche predates the engine fields (projection 1).",
+    ),
+    ("machine_id",): FieldDoc(
+        "Declared machine the run was executed on, on a fiche hashed under "
+        "projection 3.",
+        _ID,
+        "The fiche predates the machine fields (projection 1 or 2).",
+    ),
+    ("compute_mode",): FieldDoc(
+        "Compute mode (gpu or cpu_only), on a fiche hashed under projection 3.",
+        _ID,
+        "The fiche predates the machine fields (projection 1 or 2).",
     ),
     ("model_sha256",): FieldDoc("Checksum of the model file served.", _SHA),
     ("os",): FieldDoc("Operating system.", _TEXT),

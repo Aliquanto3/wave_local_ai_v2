@@ -334,13 +334,16 @@ DIMENSIONS: dict[str, Dimension] = {
 }
 DEFAULT_DIMENSION = "model"
 
-# The engine that produced a row and its build (schema "22"). Along `model`
+# The engine that produced a row and its build (schema "22"), and the
+# declared machine and compute mode it ran under (schema "23"). Along `model`
 # they move with the axis only where they differ by construction: one side's
 # subject was served by a local engine and the other's by a cloud provider,
-# whose rows state that no engine applies. Between two locally served sides a
-# different engine or build is a confound, not part of what a model
-# comparison compares.
-ENGINE_FIELDS: frozenset[str] = frozenset({"engine_id", "engine_build"})
+# whose rows state that none of the four applies. Between two locally served
+# sides a different engine, build, machine or mode is a confound, not part of
+# what a model comparison compares.
+ENGINE_FIELDS: frozenset[str] = frozenset(
+    {"engine_id", "engine_build", "machine_id", "compute_mode"}
+)
 
 
 class ComparisonInputError(ValueError):
@@ -842,7 +845,8 @@ def _axis(
     reference_rows: Sequence[Mapping[str, Any]],
     candidate_rows: Sequence[Mapping[str, Any]],
 ) -> Dimension:
-    """`dimension`'s axis for these two sides, with the engine rule applied."""
+    """`dimension`'s axis for these two sides, with the local-producer rule
+    (engine, machine, mode) applied."""
     axis = DIMENSIONS[dimension]
     if dimension != DEFAULT_DIMENSION:
         return axis

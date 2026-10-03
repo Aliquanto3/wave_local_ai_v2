@@ -19,6 +19,8 @@ BASE_FICHE = {
     "engine_id": "llama.cpp",
     "engine_build": "b10537",
     "engine_config_hash": "e" * 64,
+    "machine_id": "laptop-mobile-gpu",
+    "compute_mode": "gpu",
     "roster_entry_id": "fake-entry",
     "model_sha256": "0" * 64,
     "quant": "UD-IQ4_XS",
@@ -235,7 +237,14 @@ def test_a_legacy_reference_fiche_with_no_engine_field_is_not_comparable(
     legacy = {
         key: value
         for key, value in BASE_FICHE.items()
-        if key not in ("engine_id", "engine_build", "engine_config_hash")
+        if key
+        not in (
+            "engine_id",
+            "engine_build",
+            "engine_config_hash",
+            "machine_id",
+            "compute_mode",
+        )
     }
     legacy["llama_cpp_build"] = "b10537"
     candidate_hash = _write_fiche(registry_dir)
@@ -254,7 +263,7 @@ def test_a_legacy_reference_fiche_with_no_engine_field_is_not_comparable(
     )
 
     assert result["verdict"] == VERDICT_NOT_COMPARABLE
-    assert result["differing_fields"] == ["engine_build", "engine_id"]
+    assert result["differing_fields"] == ["compute_mode", "engine_build", "engine_id"]
 
 
 def test_a_blocking_field_null_on_the_reference_only_is_not_comparable(
@@ -289,6 +298,125 @@ def test_a_blocking_field_null_on_the_candidate_only_is_not_comparable(
     assert result["reference_run_id"] is None
     assert result["differing_fields"] == ["flags"]
     assert "null" in result["reason"]
+
+
+def test_a_cpu_only_candidate_against_a_gpu_reference_is_not_comparable(
+    tmp_path,
+) -> None:
+    """Epic success check 1 at the verdict: one machine, one model, two modes.
+
+    The fiches hash apart and are both stored, so each row reads its own
+    flags, and the verdict names `compute_mode` instead of comparing a CPU
+    median against a GPU one."""
+    registry_dir = tmp_path / "fiches"
+    gpu_hash = _write_fiche(registry_dir)
+    cpu_hash = _write_fiche(
+        registry_dir,
+        compute_mode="cpu_only",
+        flags=["-ngl", "0", "--device", "none"],
+    )
+    assert gpu_hash != cpu_hash
+    reference = _runtime_row(gpu_hash)
+    candidate = _runtime_row(cpu_hash, run_id="run-candidate", gen_tok_per_s=26.0)
+
+    result = runtime_verdict(candidate, [reference], registry_dir, tolerance=0.10)
+
+    assert result["verdict"] == VERDICT_NOT_COMPARABLE
+    assert "compute_mode" in result["differing_fields"]
+
+
+def test_a_mode_mismatch_alone_is_not_comparable_naming_compute_mode(
+    tmp_path,
+) -> None:
+    """Even with an identical flag list, the mode alone blocks."""
+    registry_dir = tmp_path / "fiches"
+    gpu_hash = _write_fiche(registry_dir)
+    cpu_hash = _write_fiche(registry_dir, compute_mode="cpu_only")
+
+    result = runtime_verdict(
+        _runtime_row(cpu_hash, run_id="run-candidate"),
+        [_runtime_row(gpu_hash)],
+        registry_dir,
+        tolerance=0.10,
+    )
+
+    assert result["verdict"] == VERDICT_NOT_COMPARABLE
+    assert result["differing_fields"] == ["compute_mode"]
+
+
+def _no_gpu_fiche(registry_dir, **overrides) -> str:
+    return _write_fiche(
+        registry_dir,
+        machine_id="pro-pc-no-gpu",
+        compute_mode="cpu_only",
+        gpu_name=None,
+        gpu_driver_version=None,
+        cuda_ceiling=None,
+        flags=["-ngl", "0", "--device", "none"],
+        **overrides,
+    )
+
+
+def test_two_cpu_only_runs_on_a_declared_gpu_less_machine_can_reproduce(
+    tmp_path,
+) -> None:
+    registry_dir = tmp_path / "fiches"
+    fiche_hash = _no_gpu_fiche(registry_dir)
+
+    result = runtime_verdict(
+        _runtime_row(fiche_hash, run_id="run-candidate", gen_tok_per_s=25.0),
+        [_runtime_row(fiche_hash)],
+        registry_dir,
+        tolerance=0.10,
+    )
+
+    assert result["verdict"] == VERDICT_REPRODUCED
+    assert result["differing_fields"] == []
+
+
+def test_a_gpu_that_failed_capture_on_a_gpu_declaring_machine_never_matches(
+    tmp_path,
+) -> None:
+    """The null-never-matches rule still holds where a GPU is declared: the
+    laptop declares one, so its null `gpu_name` is a failed capture."""
+    registry_dir = tmp_path / "fiches"
+    fiche_hash = _write_fiche(
+        registry_dir, compute_mode="cpu_only", gpu_name=None, flags=["-ngl", "0"]
+    )
+
+    result = runtime_verdict(
+        _runtime_row(fiche_hash, run_id="run-candidate"),
+        [_runtime_row(fiche_hash)],
+        registry_dir,
+        tolerance=0.10,
+    )
+
+    assert result["verdict"] == VERDICT_NOT_COMPARABLE
+    assert result["differing_fields"] == ["gpu_name"]
+
+
+def test_an_undeclared_machine_never_declares_its_gpu_absent(tmp_path) -> None:
+    registry_dir = tmp_path / "fiches"
+    fiche_hash = _no_gpu_fiche(registry_dir, cpu="other")
+    # Re-stored under an id the registry does not declare.
+    undeclared_hash = _write_fiche(
+        registry_dir,
+        machine_id="someone-elses-box",
+        compute_mode="cpu_only",
+        gpu_name=None,
+        flags=["-ngl", "0", "--device", "none"],
+    )
+    assert fiche_hash != undeclared_hash
+
+    result = runtime_verdict(
+        _runtime_row(undeclared_hash, run_id="run-candidate"),
+        [_runtime_row(undeclared_hash)],
+        registry_dir,
+        tolerance=0.10,
+    )
+
+    assert result["verdict"] == VERDICT_NOT_COMPARABLE
+    assert result["differing_fields"] == ["gpu_name"]
 
 
 def _quality_row(model_id="Fake Model", suite_version="1", seed=1, **overrides) -> dict:

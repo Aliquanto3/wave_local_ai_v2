@@ -36,6 +36,16 @@ READY_TIMEOUT_S = 120.0
 SHUTDOWN_GRACE_S = 5.0
 
 
+# What `cpu_only` adds after `-ngl 0`. Observed on the laptop's CUDA build
+# (b10537, `qwen3-0.6b-q8`, a 4001-token prompt): `-ngl 0` alone still drove
+# the GPU to 74% utilisation during prompt processing (the host-tensor
+# operation offload), while `-ngl 0 --device none` kept it at 0% throughout
+# (aidd_docs/tasks/2026_10/2026_10_02_gpu-cpu-never-share-a-fiche/evidence/).
+# So `-ngl 0` alone is not CPU-only, and this pair is what the mode emits.
+CPU_ONLY_N_GPU_LAYERS = 0
+CPU_ONLY_DEVICE_FLAGS: tuple[str, ...] = ("--device", "none")
+
+
 class ServerStartupError(RuntimeError):
     """Raised when llama-server fails to become ready."""
 
@@ -47,8 +57,17 @@ def build_flags(
     model_path: Path,
     *,
     engine: engines.EngineEntry | None = None,
+    compute_mode: str | None = None,
 ) -> list[str]:
     """Build the full launch flag list for `entry` on this host.
+
+    `compute_mode` `cpu_only` overrides the entry's `-ngl` with
+    `CPU_ONLY_N_GPU_LAYERS` followed by `CPU_ONLY_DEVICE_FLAGS`, and resolves
+    no `--n-cpu-moe` from the entry (its `validated_host` value is a `gpu`
+    profile's); an operator value under `cpu_only` is refused by
+    `roster.validate_host_fit`. `gpu`, or `None` (no profile override), is the
+    entry's own flag set as written -- the MoE flagship's validated command,
+    byte for byte. Every row-writing CLI passes its run's declared mode.
 
     Model-intrinsic flags (`-ngl`, `-c`, `-fa`, `--jinja`, `-np`,
     `--load-mode`, the sampler flags) come from `entry.server_flags`;
@@ -70,10 +89,14 @@ def build_flags(
     `kind == "dense"` special case that would quietly drop a flag the
     operator asked for.
     """
-    resolved_n_cpu_moe = (
-        entry.validated_host["n_cpu_moe"] if host_n_cpu_moe is None else host_n_cpu_moe
-    )
-    roster.validate_host_fit(entry, resolved_n_cpu_moe)
+    cpu_only = compute_mode == "cpu_only"
+    if host_n_cpu_moe is not None:
+        resolved_n_cpu_moe: int | None = host_n_cpu_moe
+    elif cpu_only:
+        resolved_n_cpu_moe = None
+    else:
+        resolved_n_cpu_moe = entry.validated_host["n_cpu_moe"]
+    roster.validate_host_fit(entry, resolved_n_cpu_moe, compute_mode=compute_mode)
     engine = engine or engines.tracked_reference_engine()
 
     flags = entry.server_flags
@@ -82,8 +105,10 @@ def build_flags(
         "-m",
         str(model_path),
         "-ngl",
-        str(flags["n_gpu_layers"]),
+        str(CPU_ONLY_N_GPU_LAYERS if cpu_only else flags["n_gpu_layers"]),
     ]
+    if cpu_only:
+        result += CPU_ONLY_DEVICE_FLAGS
     if resolved_n_cpu_moe is not None:
         result += ["--n-cpu-moe", str(resolved_n_cpu_moe)]
     result += [

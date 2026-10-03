@@ -359,6 +359,25 @@ copy .env.example .env     # Windows
 Fill `SLM_MODELS_DIR` (the parent directory from step 3) and
 `LLAMA_SERVER_PATH` (the binary path from step 2).
 
+Then name the machine and the compute mode. Both are required and have no
+default: every runtime and quality run refuses before any server starts
+until they are set, and every fiche and row records them.
+
+- `MACHINE_ID` — one of the declared machines in
+  `aidd_docs/roster/machines.json`: `laptop-mobile-gpu`,
+  `tower-desktop-gpu` or `pro-pc-no-gpu`. An id names a declared
+  configuration, not a box: a RAM upgrade or a GPU swap is a new entry with
+  a new id, added to that file before the machine runs anything. An
+  undeclared id is refused, naming the declared ones.
+- `COMPUTE_MODE` — `gpu` or `cpu_only`. `gpu` launches the roster entry's
+  own flag set. `cpu_only` puts every layer on the CPU: it launches with
+  `-ngl 0 --device none` and no `--n-cpu-moe` (the CUDA build still drives
+  the GPU during prompt processing with `-ngl 0` alone), and refuses a
+  `SERVER_N_CPU_MOE` value rather than dropping it. `gpu` on a machine
+  declared GPU-less is refused. A `gpu` run and a `cpu_only` run of one
+  model on one machine produce two fiches and are never compared as a
+  reproduction of each other.
+
 Two more env vars set the host-fitted launch flags that are not part of the
 roster's model data: `SERVER_N_CPU_MOE` and `SERVER_THREADS` (default `8`),
 matching `--n-cpu-moe` and `-t` on this project's own laptop fiche. They

@@ -26,18 +26,29 @@ from wave_local_ai_v2.engines import EngineFicheFields
 from wave_local_ai_v2.settings import Settings
 from wave_local_ai_v2.suite_gate import SuiteGateResult
 
-# What a cloud subject's quality row carries for the engine: no local engine
-# produced it, which the row states rather than leaving null.
-ENGINE_NOT_APPLICABLE_FIELDS: Mapping[str, str | None] = MappingProxyType(
-    {"engine_id": row_contract.ENGINE_NOT_APPLICABLE, "engine_build": None}
+# What a cloud subject's quality row carries for the engine, the machine and
+# the compute mode: no local engine, no declared machine and neither `gpu` nor
+# `cpu_only` produced it, which the row states rather than leaving null.
+NO_LOCAL_PRODUCER_FIELDS: Mapping[str, str | None] = MappingProxyType(
+    {
+        "engine_id": row_contract.ENGINE_NOT_APPLICABLE,
+        "engine_build": None,
+        "machine_id": row_contract.MACHINE_NOT_APPLICABLE,
+        "compute_mode": row_contract.MACHINE_NOT_APPLICABLE,
+    }
 )
 
 
-def local_engine_fields(fiche_fields: EngineFicheFields) -> dict[str, str | None]:
-    """The two engine fields a local row carries, read off its own fiche's."""
+def local_producer_fields(
+    fiche_fields: EngineFicheFields, *, machine_id: str, compute_mode: str
+) -> dict[str, str | None]:
+    """The four fields a local row carries for what produced it: the engine
+    and build off its own fiche's, and the run's declared machine and mode."""
     return {
         "engine_id": fiche_fields["engine_id"],
         "engine_build": fiche_fields["engine_build"],
+        "machine_id": machine_id,
+        "compute_mode": compute_mode,
     }
 
 

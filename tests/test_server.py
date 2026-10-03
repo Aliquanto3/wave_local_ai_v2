@@ -179,6 +179,41 @@ def test_build_flags_for_a_dense_entry_omits_the_moe_offload() -> None:
     ]
 
 
+def test_cpu_only_puts_every_layer_on_the_cpu_and_emits_no_moe_offload() -> None:
+    """`cpu_only` on the MoE flagship: `-ngl 0 --device none`, no `--n-cpu-moe`.
+
+    The entry's own `validated_host.n_cpu_moe` (37) is a `gpu` profile's value
+    and is not resolved under `cpu_only`; every other flag keeps its place.
+    """
+    entry = _shipped_entry()
+    gpu = server.build_flags(entry, None, 8, model_path=Path("model.gguf"))
+
+    flags = server.build_flags(
+        entry, None, 8, model_path=Path("model.gguf"), compute_mode="cpu_only"
+    )
+
+    assert flags[:6] == ["-m", "model.gguf", "-ngl", "0", "--device", "none"]
+    assert "--n-cpu-moe" not in flags
+    assert flags[6:] == gpu[6:]
+    assert (
+        server.build_flags(
+            entry, None, 8, model_path=Path("model.gguf"), compute_mode="gpu"
+        )
+        == gpu
+    )
+
+
+def test_cpu_only_refuses_a_supplied_n_cpu_moe_naming_the_mode() -> None:
+    with pytest.raises(roster.RosterError, match="cpu_only"):
+        server.build_flags(
+            _shipped_entry(),
+            37,
+            8,
+            model_path=Path("model.gguf"),
+            compute_mode="cpu_only",
+        )
+
+
 def test_build_flags_refuses_a_shipped_dense_entry_given_an_explicit_zero() -> None:
     """`SERVER_N_CPU_MOE=0` is an instruction, not the absence of one.
 

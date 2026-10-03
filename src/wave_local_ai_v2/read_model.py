@@ -282,6 +282,13 @@ RUNTIME_FIELDS_NOT_RENDERED: frozenset[str] = frozenset(
         # Where the subject prompt went (schema "16"); always `none` on a
         # runtime row. Whether the pitch renders it is the pitch epic's call.
         "subject_egress",
+        # The declared machine and compute mode the run was executed under
+        # (schema "23"). On the row so every number names the machine and
+        # mode that produced it; rendering the machine dimension to a
+        # decision-maker is the pitch epic's to decide (the machine epic
+        # excludes it), not this one's.
+        "machine_id",
+        "compute_mode",
     }
 )
 
@@ -374,6 +381,11 @@ QUALITY_FIELDS_NOT_RENDERED: frozenset[str] = frozenset(
         # is a property every row carries; whether the pitch renders it is the
         # pitch epic's call, not this one's.
         "subject_egress",
+        # The declared machine and compute mode a local subject ran under, or
+        # `not_applicable` for both on a cloud subject's row (schema "23").
+        # Rendering the machine dimension is the pitch epic's call.
+        "machine_id",
+        "compute_mode",
         # The retry total the batch's cloud calls drew from, and the failure
         # that left it partial if any (schema "17"). Bookkeeping about how a
         # batch was run; a partial row's null score already renders as an

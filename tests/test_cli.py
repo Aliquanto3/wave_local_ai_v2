@@ -174,6 +174,8 @@ def stubbed_run(tmp_path, monkeypatch):
     server_path.write_text("")
 
     fake_settings = Settings(
+        machine_id="laptop-mobile-gpu",
+        compute_mode="gpu",
         slm_models_dir=model_dir,
         llama_server_path=server_path,
         results_path=results_path,
@@ -524,6 +526,8 @@ def test_run_takes_the_mean_of_the_two_middle_values_when_n_is_even(
     server_path.write_text("")
 
     fake_settings = Settings(
+        machine_id="laptop-mobile-gpu",
+        compute_mode="gpu",
         slm_models_dir=model_dir,
         llama_server_path=server_path,
         results_path=results_path,
@@ -611,6 +615,8 @@ def test_run_appends_zero_rows_when_request_fails(tmp_path, monkeypatch) -> None
     server_path.write_text("")
 
     fake_settings = Settings(
+        machine_id="laptop-mobile-gpu",
+        compute_mode="gpu",
         slm_models_dir=model_dir,
         llama_server_path=server_path,
         results_path=results_path,
@@ -664,6 +670,8 @@ def test_run_appends_zero_rows_when_server_never_becomes_ready(tmp_path) -> None
     server_path.write_text("")
 
     fake_settings = Settings(
+        machine_id="laptop-mobile-gpu",
+        compute_mode="gpu",
         slm_models_dir=model_dir,
         llama_server_path=server_path,
         results_path=results_path,
@@ -962,3 +970,69 @@ def test_main_exits_one_on_a_failing_warmup_with_no_retry(stubbed_run, capsys) -
     assert "repetition 0 failed: empty" in capsys.readouterr().err
     assert started["post"].call_count == 1
     assert _bytes_or_empty(results_path) == before
+
+
+def test_a_gpu_and_a_cpu_only_run_store_two_fiches_and_never_reproduce(
+    stubbed_run, tmp_path
+) -> None:
+    """Epic success check 1 through the runtime CLI: one machine, one model,
+    one run per mode. Two fiche hashes, two stored fiches each with its own
+    flags, and the second row's verdict names `compute_mode`."""
+    results_path, started = stubbed_run
+    gpu_settings = started["load_settings"].return_value
+    started["load_settings"].return_value = replace(
+        gpu_settings, runtime_reference_path=results_path
+    )
+    _run()
+    started["load_settings"].return_value = replace(
+        gpu_settings, runtime_reference_path=results_path, compute_mode="cpu_only"
+    )
+    _run()
+
+    gpu_row, cpu_row = read_rows(results_path)
+    assert (gpu_row["machine_id"], gpu_row["compute_mode"]) == (
+        "laptop-mobile-gpu",
+        "gpu",
+    )
+    assert (cpu_row["machine_id"], cpu_row["compute_mode"]) == (
+        "laptop-mobile-gpu",
+        "cpu_only",
+    )
+    assert gpu_row["fiche_hash"] != cpu_row["fiche_hash"]
+    gpu_fiche = read_fiche(gpu_row["fiche_hash"], tmp_path / "fiches")
+    cpu_fiche = read_fiche(cpu_row["fiche_hash"], tmp_path / "fiches")
+    assert gpu_fiche is not None and cpu_fiche is not None
+    assert gpu_fiche["compute_mode"] == "gpu"
+    assert cpu_fiche["compute_mode"] == "cpu_only"
+    assert "--device" not in gpu_fiche["flags"]
+    assert cpu_fiche["flags"][2:6] == ["-ngl", "0", "--device", "none"]
+    assert len(list((tmp_path / "fiches").glob("*.json"))) == 2
+    assert cpu_row["verdict"]["verdict"] == "not_comparable"
+    assert "compute_mode" in cpu_row["verdict"]["differing_fields"]
+
+
+@pytest.mark.parametrize(
+    ("changes", "named"),
+    [
+        ({"machine_id": None}, "MACHINE_ID"),
+        ({"machine_id": "my-box"}, "MACHINE_ID"),
+        ({"compute_mode": None}, "COMPUTE_MODE"),
+        ({"machine_id": "pro-pc-no-gpu"}, "pro-pc-no-gpu"),
+    ],
+)
+def test_a_run_without_a_valid_run_profile_refuses_before_any_server_starts(
+    stubbed_run, capsys, changes: dict, named: str
+) -> None:
+    results_path, started = stubbed_run
+    started["load_settings"].return_value = replace(
+        started["load_settings"].return_value, **changes
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        main()
+
+    assert exit_info.value.code == 1
+    assert named in capsys.readouterr().err
+    started["running_server"].assert_not_called()
+    started["probe_build"].assert_not_called()
+    assert not results_path.exists()

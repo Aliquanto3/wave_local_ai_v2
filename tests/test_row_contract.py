@@ -8,6 +8,7 @@ from wave_local_ai_v2 import (
     aggregation,
     engines,
     harness,
+    machines,
     prompt_variants,
     quality_rows,
     roster,
@@ -25,6 +26,8 @@ from wave_local_ai_v2.row_contract import (
     ITEM_MEASUREMENT_FIELDS,
     JUDGE_EGRESS_FIELDS,
     JUDGED_FIELDS,
+    MACHINE_FICHE_SCHEMA_VERSION,
+    MACHINE_NOT_APPLICABLE,
     PARTIAL_NULL_SCORE_FIELDS,
     REQUIRED_FIELDS,
     SCHEMA_VERSION,
@@ -83,6 +86,8 @@ COMPLETE_RUNTIME_ROW = {
     "subject_egress": "none",
     "engine_id": "llama.cpp",
     "engine_build": "b10537",
+    "machine_id": "laptop-mobile-gpu",
+    "compute_mode": "gpu",
     "fiche_hash": "a" * 64,
     "verdict": {"verdict": "not_comparable", "reference_run_id": None},
     "prompt": "hello",
@@ -169,6 +174,8 @@ COMPLETE_QUALITY_ROW = {
     "subject_egress": "none",
     "engine_id": "llama.cpp",
     "engine_build": "b10537",
+    "machine_id": "laptop-mobile-gpu",
+    "compute_mode": "gpu",
     "fiche_hash": "a" * 64,
     "cpu_energy_kwh": 0.0003,
     "cpu_energy_method": "estimated_tdp",
@@ -1097,14 +1104,14 @@ def test_the_schema_version_moved_once_for_the_thinking_policy() -> None:
     # `thinking_policy` is required on every quality row, because a score
     # produced with the subject allowed to reason and one produced without it
     # are not the same measurement and a row has to say which it is.
-    assert SCHEMA_VERSION == "22"
+    assert SCHEMA_VERSION == "23"
 
 
 def test_the_schema_version_moved_for_the_runtime_energy_window() -> None:
     # "12" fixes audit finding C3: the runtime row's energy figures used to
     # span the whole counted-repetition window, cooldowns included. Required
     # only on runtime rows -- quality rows carry no energy window at all.
-    assert SCHEMA_VERSION == "22"
+    assert SCHEMA_VERSION == "23"
     assert {"active_window_s", "idle_window_s", "energy_window_method"} <= (
         REQUIRED_FIELDS["runtime"]
     )
@@ -1117,7 +1124,7 @@ def test_the_schema_version_moved_for_the_judge_call_record_extension() -> None:
     # "13" adds five fields inside each judge call record. Additive inside the
     # conditional judge block: neither row kind's required set moves, so a
     # deterministic quality row validates unchanged.
-    assert SCHEMA_VERSION == "22"
+    assert SCHEMA_VERSION == "23"
     assert set(NEW_JUDGE_RECORD_FIELDS).isdisjoint(REQUIRED_FIELDS["quality"])
     assert set(NEW_JUDGE_RECORD_FIELDS).isdisjoint(JUDGED_FIELDS)
     validate_row("quality", COMPLETE_QUALITY_ROW)
@@ -1127,7 +1134,7 @@ def test_the_schema_version_moved_for_the_prompt_variant() -> None:
     # "14" makes both row kinds name the variant they ran under and carry the
     # prompt as the variant left it. Not conditional: every row ran under some
     # variant, and a row below "14" is never back-filled with `baseline`.
-    assert SCHEMA_VERSION == "22"
+    assert SCHEMA_VERSION == "23"
     for kind in ("runtime", "quality"):
         assert set(PROMPT_VARIANT_FIELDS) <= REQUIRED_FIELDS[kind]
 
@@ -1135,7 +1142,7 @@ def test_the_schema_version_moved_for_the_prompt_variant() -> None:
 def test_the_schema_version_moved_for_the_engine() -> None:
     # "22" makes every row name the engine that produced it and its build,
     # and moves the cited fiche to the projection carrying the engine fields.
-    assert SCHEMA_VERSION == "22"
+    assert SCHEMA_VERSION == "23"
     assert ENGINE_FICHE_SCHEMA_VERSION == "22"
     for kind in ("runtime", "quality"):
         assert {"engine_id", "engine_build"} <= REQUIRED_FIELDS[kind]
@@ -1182,8 +1189,14 @@ def test_a_malformed_engine_build_is_refused(build: object) -> None:
         validate_row("runtime", {**COMPLETE_RUNTIME_ROW, "engine_build": build})
 
 
-# What a cloud subject's row states for the engine: none produced it.
-_NO_ENGINE = {"engine_id": ENGINE_NOT_APPLICABLE, "engine_build": None}
+# What a cloud subject's row states for the engine, the machine and the mode:
+# no local model produced it.
+_NO_ENGINE = {
+    "engine_id": ENGINE_NOT_APPLICABLE,
+    "engine_build": None,
+    "machine_id": MACHINE_NOT_APPLICABLE,
+    "compute_mode": MACHINE_NOT_APPLICABLE,
+}
 
 
 def _cloud_row(provider: str, **changes: object) -> dict:
@@ -1253,12 +1266,115 @@ def test_an_unreadable_engine_registry_refuses_the_row(monkeypatch) -> None:
         validate_row("runtime", COMPLETE_RUNTIME_ROW)
 
 
+def test_the_schema_version_moved_for_the_machine_and_mode() -> None:
+    # "23" makes every row name the declared machine and the compute mode,
+    # and moves the cited fiche to the projection carrying both.
+    assert SCHEMA_VERSION == "23"
+    assert MACHINE_FICHE_SCHEMA_VERSION == "23"
+    for kind in ("runtime", "quality"):
+        assert {"machine_id", "compute_mode"} <= REQUIRED_FIELDS[kind]
+
+
+@pytest.mark.parametrize(
+    ("kind", "row"),
+    [("runtime", COMPLETE_RUNTIME_ROW), ("quality", COMPLETE_QUALITY_ROW)],
+    ids=["runtime", "local-quality"],
+)
+@pytest.mark.parametrize("field", ["machine_id", "compute_mode"])
+def test_a_row_missing_the_machine_or_the_mode_is_refused_naming_it(
+    kind: str, row: dict, field: str
+) -> None:
+    incomplete = {key: value for key, value in row.items() if key != field}
+
+    with pytest.raises(RowContractError, match=field):
+        validate_row(kind, incomplete)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("kind", "row"),
+    [("runtime", COMPLETE_RUNTIME_ROW), ("quality", COMPLETE_QUALITY_ROW)],
+    ids=["runtime", "local-quality"],
+)
+def test_an_undeclared_machine_is_refused_through_the_gate_naming_the_declared(
+    tmp_path, kind: str, row: dict
+) -> None:
+    path = tmp_path / f"{kind}.jsonl"
+
+    with pytest.raises(
+        RowContractError, match="machine_id 'my-box'.*declared: laptop-mobile-gpu"
+    ):
+        append_row(path, kind, {**row, "machine_id": "my-box"})  # type: ignore[arg-type]
+
+    assert not path.exists()
+
+
+@pytest.mark.parametrize("mode", [None, "hybrid", MACHINE_NOT_APPLICABLE])
+def test_a_local_row_names_gpu_or_cpu_only(mode: object) -> None:
+    with pytest.raises(RowContractError, match="compute_mode"):
+        validate_row("runtime", {**COMPLETE_RUNTIME_ROW, "compute_mode": mode})
+
+
+def test_a_cpu_only_row_on_the_no_gpu_machine_validates() -> None:
+    validate_row(
+        "quality",
+        {
+            **COMPLETE_QUALITY_ROW,
+            "machine_id": "pro-pc-no-gpu",
+            "compute_mode": "cpu_only",
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    ("machine_id", "compute_mode"),
+    [
+        ("laptop-mobile-gpu", "gpu"),
+        (MACHINE_NOT_APPLICABLE, "cpu_only"),
+        ("laptop-mobile-gpu", MACHINE_NOT_APPLICABLE),
+        (None, None),
+    ],
+)
+def test_a_cloud_row_never_carries_a_machine_or_a_mode(
+    machine_id: object, compute_mode: object
+) -> None:
+    cloud = _cloud_row("mistral", machine_id=machine_id, compute_mode=compute_mode)
+
+    with pytest.raises(RowContractError, match="produced by no local model"):
+        validate_row("quality", cloud)
+
+
+def test_a_row_below_the_machine_schema_validates_without_both_fields() -> None:
+    old = {
+        key: value
+        for key, value in COMPLETE_RUNTIME_ROW.items()
+        if key not in {"machine_id", "compute_mode"}
+    }
+
+    validate_row("runtime", {**old, "schema_version": "22"})
+    validate_row(
+        "runtime",
+        {**COMPLETE_RUNTIME_ROW, "schema_version": "22", "machine_id": "my-box"},
+    )
+    with pytest.raises(RowContractError, match="compute_mode, machine_id"):
+        validate_row("runtime", {**old, "schema_version": "23"})
+
+
+def test_an_unreadable_machine_registry_refuses_the_row(monkeypatch) -> None:
+    def unreadable() -> frozenset[str]:
+        raise machines.MachineRegistryError("machine registry not readable")
+
+    monkeypatch.setattr(machines, "declared_machine_ids", unreadable)
+
+    with pytest.raises(RowContractError, match="machine registry cannot be read"):
+        validate_row("runtime", COMPLETE_RUNTIME_ROW)
+
+
 def test_the_schema_version_moved_for_the_suite_level() -> None:
     # "15" makes every quality row name the level its suite was certified at
     # and its item's licence, source and source revision. Not conditional:
     # every suite is certified at some level. Quality rows only -- a runtime
     # row runs no suite.
-    assert SCHEMA_VERSION == "22"
+    assert SCHEMA_VERSION == "23"
     assert set(SUITE_LEVEL_FIELDS) <= REQUIRED_FIELDS["quality"]
     assert set(SUITE_LEVEL_FIELDS).isdisjoint(REQUIRED_FIELDS["runtime"])
 
@@ -1435,7 +1551,7 @@ def test_a_registered_non_baseline_variant_is_not_held_to_the_authored_text(
 def test_the_schema_version_moved_for_the_subject_egress() -> None:
     # "16" makes every row of either kind state where its subject prompt went.
     # Not conditional: every row was produced by sending a prompt somewhere.
-    assert SCHEMA_VERSION == "22"
+    assert SCHEMA_VERSION == "23"
     for kind in ("runtime", "quality"):
         assert "subject_egress" in REQUIRED_FIELDS[kind]
     # The subject field is not a member of the judge block, and the judge
@@ -1574,7 +1690,7 @@ def test_the_schema_version_moved_for_the_retry_budget_and_partial_batches() -> 
     # "17" makes every quality row name the retry budget its batch ran under
     # and whether that batch was left partial. The runtime row makes no cloud
     # call and has no resume, so it is untouched.
-    assert SCHEMA_VERSION == "22"
+    assert SCHEMA_VERSION == "23"
     for field in ("retry_budget", "partial_failure"):
         assert field in REQUIRED_FIELDS["quality"]
         assert field not in REQUIRED_FIELDS["runtime"]
@@ -1717,7 +1833,7 @@ def test_the_schema_version_moved_for_the_per_item_measurement() -> None:
     # "18" puts each item's own tokens, engine-reported TTFT and cached prompt
     # tokens on every quality row (Q24 (a)); the runtime row keeps its
     # Methodology 6 aggregate and is untouched.
-    assert SCHEMA_VERSION == "22"
+    assert SCHEMA_VERSION == "23"
     assert ITEM_MEASUREMENT_FIELDS <= REQUIRED_FIELDS["quality"]
     assert ITEM_MEASUREMENT_FIELDS.isdisjoint(REQUIRED_FIELDS["runtime"])
 
@@ -1947,7 +2063,7 @@ def test_the_writers_block_names_a_cloud_subject_by_its_own_family() -> None:
 def test_the_schema_version_moved_for_the_harness_fields() -> None:
     # "20" puts the harness id, its installed version and its per-call prompt
     # overhead on every quality row; the runtime row is untouched.
-    assert SCHEMA_VERSION == "22"
+    assert SCHEMA_VERSION == "23"
     assert HARNESS_SCHEMA_VERSION == "20"
     assert HARNESS_FIELDS == {
         "harness_id",

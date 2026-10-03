@@ -184,6 +184,8 @@ def stubbed_probe(tmp_path, monkeypatch):
     server_path.write_text("")
 
     fake_settings = Settings(
+        machine_id="laptop-mobile-gpu",
+        compute_mode="gpu",
         slm_models_dir=model_dir,
         llama_server_path=server_path,
         results_path=tmp_path / "runtime.jsonl",
@@ -614,6 +616,12 @@ def test_local_probe_rows_name_the_engine_and_the_cloud_row_states_none(
     assert {
         (row["provider"], row["engine_id"], row["engine_build"]) for row in rows
     } == {("local", "llama.cpp", "b10537"), ("google", "not_applicable", None)}
+    assert {
+        (row["provider"], row["machine_id"], row["compute_mode"]) for row in rows
+    } == {
+        ("local", "laptop-mobile-gpu", "gpu"),
+        ("google", "not_applicable", "not_applicable"),
+    }
 
 
 def test_the_local_probe_row_publishes_the_rendered_prompt_and_the_policy(
@@ -884,6 +892,8 @@ def test_the_run_id_is_printed_before_the_batches(stubbed_probe, capsys) -> None
             frozenset({"local", "mistral"}),
             "google is not enabled in QUALITY_PROVIDERS",
         ),
+        ("machine_id", None, "MACHINE_ID is not set"),
+        ("compute_mode", "hybrid", "COMPUTE_MODE='hybrid'"),
     ],
 )
 def test_a_missing_judge_refuses_the_run_before_anything_is_generated(
@@ -1243,6 +1253,7 @@ def _judged_by_another_model(row: dict) -> dict:
         # agreement over two builds.
         (lambda row: {**row, "engine_build": "b1"}, "engine_build="),
         (lambda row: {**row, "engine_id": "ollama"}, "engine_id="),
+        (lambda row: {**row, "compute_mode": "cpu_only"}, "compute_mode="),
     ],
 )
 def test_a_probe_resume_over_rows_of_another_configuration_is_refused(

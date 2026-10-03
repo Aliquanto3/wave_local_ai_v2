@@ -213,6 +213,8 @@ def stubbed_run(tmp_path, monkeypatch):
     server_path.write_text("")
 
     fake_settings = Settings(
+        machine_id="laptop-mobile-gpu",
+        compute_mode="gpu",
         slm_models_dir=model_dir,
         llama_server_path=server_path,
         results_path=tmp_path / "runtime.jsonl",
@@ -549,6 +551,62 @@ def test_local_rows_name_the_engine_and_cloud_rows_state_it_does_not_apply(
         ("local", "llama.cpp", "b10537"),
         ("mistral", "not_applicable", None),
     }
+
+
+def test_local_rows_name_the_machine_and_mode_and_cloud_rows_state_neither_applies(
+    stubbed_run, tmp_path
+) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    assert {
+        (row["provider"], row["machine_id"], row["compute_mode"]) for row in rows
+    } == {
+        ("local", "laptop-mobile-gpu", "gpu"),
+        ("mistral", "not_applicable", "not_applicable"),
+    }
+    stored_fiche = read_fiche(rows[0]["fiche_hash"], tmp_path / "fiches")
+    assert stored_fiche is not None
+    assert (stored_fiche["machine_id"], stored_fiche["compute_mode"]) == (
+        "laptop-mobile-gpu",
+        "gpu",
+    )
+
+
+def test_a_cpu_only_batch_launches_cpu_only_and_names_it(stubbed_run, tmp_path) -> None:
+    quality_results_path, started = stubbed_run
+    started["load_settings"].return_value = dataclasses.replace(
+        started["load_settings"].return_value, compute_mode="cpu_only"
+    )
+
+    quality_cli._run()
+
+    local = [
+        row for row in read_rows(quality_results_path) if row["provider"] == "local"
+    ]
+    assert {row["compute_mode"] for row in local} == {"cpu_only"}
+    stored_fiche = read_fiche(local[0]["fiche_hash"], tmp_path / "fiches")
+    assert stored_fiche is not None
+    assert stored_fiche["flags"][2:6] == ["-ngl", "0", "--device", "none"]
+
+
+def test_a_batch_without_a_machine_refuses_before_any_server_starts(
+    stubbed_run, capsys
+) -> None:
+    quality_results_path, started = stubbed_run
+    started["load_settings"].return_value = dataclasses.replace(
+        started["load_settings"].return_value, machine_id=None
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        quality_cli.main()
+
+    assert exit_info.value.code == 1
+    assert "MACHINE_ID is not set" in capsys.readouterr().err
+    assert started["running_server"].call_count == 0
+    assert not quality_results_path.exists()
 
 
 def test_the_verified_thinking_switch_is_recorded(stubbed_run, capsys) -> None:
@@ -1283,7 +1341,7 @@ def test_every_row_names_its_subjects_family_and_size_class(stubbed_run) -> None
         ("mistral", "mistral", None),
         ("google", "google", None),
     }
-    assert {row["schema_version"] for row in rows} == {"22"}
+    assert {row["schema_version"] for row in rows} == {"23"}
 
 
 def test_every_row_names_direct_its_version_and_its_measured_overhead(
@@ -2729,6 +2787,36 @@ def _truncate_mistral_half(path: Path, keep: int, **edits: object) -> list[dict]
     return kept
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("compute_mode", "cpu_only"), ("machine_id", "tower-desktop-gpu")],
+)
+def test_a_resume_of_a_local_batch_under_another_machine_or_mode_is_refused(
+    stubbed_run, capsys, field: str, value: str
+) -> None:
+    # One local score over two machines or two modes is refused, writing nothing.
+    quality_results_path, started = stubbed_run
+    run_id = "resume-other-profile"
+    quality_cli._run(resume_run_id=run_id)
+    rows = read_rows(quality_results_path)
+    kept = [{**row, field: value} for row in rows if row["provider"] == "local"][:5]
+    quality_results_path.write_text(
+        "".join(f"{json.dumps(row)}\n" for row in kept), encoding="utf-8"
+    )
+    started["running_server"].reset_mock()
+    with (
+        patch("sys.argv", ["wave-local-ai-v2-quality", "--resume", run_id]),
+        pytest.raises(SystemExit) as exit_info,
+    ):
+        quality_cli.main()
+
+    assert exit_info.value.code == 1
+    stderr = capsys.readouterr().err
+    assert f"refusing --resume {run_id}: the local batch's" in stderr
+    assert f"{field}='{value}'" in stderr
+    assert started["running_server"].call_count == 0
+
+
 def test_a_resume_of_a_local_batch_under_another_engine_build_is_refused(
     stubbed_run, capsys
 ) -> None:
@@ -2772,6 +2860,8 @@ def test_a_resume_of_a_local_batch_under_another_engine_build_is_refused(
         ("thinking_policy", "enabled"),
         # A cloud batch is held to the engine not applying.
         ("engine_id", "llama.cpp"),
+        # ...and to the machine and the mode not applying.
+        ("compute_mode", "gpu"),
     ],
 )
 def test_a_resume_over_rows_of_another_configuration_is_refused_writing_nothing(

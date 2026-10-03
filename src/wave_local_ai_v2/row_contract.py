@@ -20,6 +20,7 @@ from wave_local_ai_v2 import (
     harness,
     judge,
     judge_protocol,
+    machines,
     prompt_provenance,
     prompt_variants,
     roster,
@@ -193,7 +194,17 @@ from wave_local_ai_v2 import (
 # `llama_cpp_build`. Owed only from "22": a row below "22" still validates
 # without them, is verified under projection "1", and is never back-filled
 # with `llama.cpp`.
-SCHEMA_VERSION = "22"
+# "23": `machine_id` and `compute_mode` became required on both row kinds
+# (Story: a GPU run and a CPU-only run never share a fiche; Methodology 21).
+# A runtime row and a local quality row name a machine the tracked registry
+# (`machines.py`) declares and `gpu` or `cpu_only`; a row no local model
+# produced (a cloud subject's quality row) states `not_applicable` for both.
+# From this version a cited fiche is hashed under projection "3"
+# (`MACHINE_FICHE_SCHEMA_VERSION`), which carries both inside the identity, so
+# a `gpu` and a `cpu_only` run of one model on one machine never share a
+# fiche. Owed only from "23": a row below "23" still validates without them,
+# is verified under projection "1" or "2", and is never back-filled.
+SCHEMA_VERSION = "23"
 
 # The two subject-composition fields "19" added, and the version from which a
 # quality row owes them.
@@ -258,18 +269,35 @@ ENGINE_FIELDS: frozenset[str] = frozenset({"engine_id", "engine_build"})
 ENGINE_FICHE_SCHEMA_VERSION = "22"
 
 
+# The schema version from which a cited fiche is hashed under projection "3"
+# (`machine_id` and `compute_mode` inside the identity), and from which a row
+# owes `MACHINE_FIELDS`. Fixed at "23" like the two constants above.
+MACHINE_FIELDS: frozenset[str] = frozenset({"machine_id", "compute_mode"})
+MACHINE_FICHE_SCHEMA_VERSION = "23"
+
+# What a row no local model produced (a cloud subject's quality row) says in
+# both `machine_id` and `compute_mode`: neither a declared machine nor `gpu` /
+# `cpu_only` produced it, which the row states rather than leaving null.
+MACHINE_NOT_APPLICABLE = "not_applicable"
+
+
 def fiche_projection_for(schema_version: object) -> str:
     """The `hardware.FICHE_PROJECTIONS` version a row at `schema_version` cites.
 
-    Below `ENGINE_FICHE_SCHEMA_VERSION`: "1". At or above it, and for a
-    version that cannot be read as a number: the current projection -- an
-    unreadable version cannot be proven old, so it is held to today's rule.
+    Below `ENGINE_FICHE_SCHEMA_VERSION`: "1". Below
+    `MACHINE_FICHE_SCHEMA_VERSION`: "2". At or above it, and for a version
+    that cannot be read as a number: the current projection -- an unreadable
+    version cannot be proven old, so it is held to today's rule.
     """
     try:
-        is_legacy = int(schema_version) < int(ENGINE_FICHE_SCHEMA_VERSION)  # type: ignore[call-overload]
+        version = int(schema_version)  # type: ignore[call-overload]
     except (TypeError, ValueError):
-        is_legacy = False
-    return "1" if is_legacy else hardware.CURRENT_FICHE_PROJECTION
+        return hardware.CURRENT_FICHE_PROJECTION
+    if version < int(ENGINE_FICHE_SCHEMA_VERSION):
+        return "1"
+    if version < int(MACHINE_FICHE_SCHEMA_VERSION):
+        return "2"
+    return hardware.CURRENT_FICHE_PROJECTION
 
 
 RowKind = Literal["runtime", "quality"]
@@ -306,6 +334,10 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             # live-probed build (schema "22")
             "engine_id",
             "engine_build",
+            # machines: the declared machine and the compute mode the run was
+            # executed under (schema "23")
+            "machine_id",
+            "compute_mode",
             # fiche_registry: the hardware + run-specific fiche, cited by hash
             "fiche_hash",
             # verdict.runtime_verdict
@@ -418,6 +450,11 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             # `ENGINE_NOT_APPLICABLE` when none did (schema "22")
             "engine_id",
             "engine_build",
+            # machines: the declared machine and compute mode a local subject
+            # ran under, or `MACHINE_NOT_APPLICABLE` for both on a cloud
+            # subject's row (schema "23")
+            "machine_id",
+            "compute_mode",
             "fiche_hash",
             # energy.EnergyResult / emissions.local_emissions / scope3_cloud_emissions
             # -- same twelve fields as the runtime row (plan.md's Decisions:
@@ -697,6 +734,8 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
         missing -= SCORE_INTERVAL_FIELDS
     if _predates(row, ENGINE_FICHE_SCHEMA_VERSION):
         missing -= ENGINE_FIELDS
+    if _predates(row, MACHINE_FICHE_SCHEMA_VERSION):
+        missing -= MACHINE_FIELDS
     if missing:
         raise RowContractError(
             f"row of kind {kind!r} is missing required field(s): "
@@ -716,6 +755,8 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
     _validate_subject_egress(kind, row)
     if not _predates(row, ENGINE_FICHE_SCHEMA_VERSION):
         _validate_engine(kind, row)
+    if not _predates(row, MACHINE_FICHE_SCHEMA_VERSION):
+        _validate_machine(kind, row)
 
     cost_total = row["cost_total"]
     # The two bases are the values the cost was actually computed from: a kWh
@@ -1199,6 +1240,44 @@ def _validate_engine(kind: RowKind, row: dict[str, Any]) -> None:
             f"by no local engine: it must carry engine_id "
             f"{ENGINE_NOT_APPLICABLE!r} and a null engine_build, got "
             f"{engine_id!r} / {engine_build!r}"
+        )
+
+
+def _validate_machine(kind: RowKind, row: dict[str, Any]) -> None:
+    """Refuse an undeclared machine or an unknown mode, and either on a row no
+    local model produced.
+
+    A runtime row and a local quality row must name a machine the tracked
+    registry declares and a compute mode (`gpu` or `cpu_only`). Any other
+    quality row must state `MACHINE_NOT_APPLICABLE` for both: a cloud
+    subject's row never carries `gpu` or `cpu_only`.
+    """
+    machine_id = row["machine_id"]
+    compute_mode = row["compute_mode"]
+    if kind == "runtime" or row["provider"] == SUBJECT_PROVIDER_LOCAL:
+        try:
+            declared = machines.declared_machine_ids()
+        except machines.MachineRegistryError as exc:
+            raise RowContractError(
+                f"row of kind {kind!r}: the machine registry cannot be read: {exc}"
+            ) from exc
+        if machine_id not in declared:
+            raise RowContractError(
+                f"row of kind {kind!r} names machine_id {machine_id!r}, which is "
+                f"not a declared machine (declared: {', '.join(sorted(declared))})"
+            )
+        if compute_mode not in machines.COMPUTE_MODES:
+            raise RowContractError(
+                f"row of kind {kind!r} has compute_mode {compute_mode!r}; a "
+                f"locally produced row names {' or '.join(machines.COMPUTE_MODES)}"
+            )
+        return
+
+    if machine_id != MACHINE_NOT_APPLICABLE or compute_mode != MACHINE_NOT_APPLICABLE:
+        raise RowContractError(
+            f"row of kind {kind!r} from provider {row['provider']!r} was produced "
+            f"by no local model: it must carry machine_id and compute_mode "
+            f"{MACHINE_NOT_APPLICABLE!r}, got {machine_id!r} / {compute_mode!r}"
         )
 
 

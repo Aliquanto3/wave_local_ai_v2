@@ -1,0 +1,17 @@
+label=devnone flags: -ngl 0 --device none (pid 2180)
+health: {"status":"ok"}
+--- nvidia-smi before completion
+memory.used [MiB], utilization.gpu [%]
+107 MiB, 0 %
+pid, process_name, used_gpu_memory [MiB]
+32208, C:\Users\Anael\llama_cpp\llama-b10537-bin-win-cuda-12.4-x64\llama-server.exe, [N/A]
+107 MiB, 0 %
+107 MiB, 0 %
+107 MiB, 0 %
+107 MiB, 0 %
+107 MiB, 0 %
+107 MiB, 0 %
+--- completion timings
+{'prompt_n': 4001, 'prompt_per_second': 210.92642089336644, 'predicted_n': 32, 'predicted_per_second': 20.264643165781777}
+pid, process_name, used_gpu_memory [MiB]
+32208, C:\Users\Anael\llama_cpp\llama-b10537-bin-win-cuda-12.4-x64\llama-server.exe, [N/A]

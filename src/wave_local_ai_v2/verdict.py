@@ -2,12 +2,13 @@
 receives `reproduced`, `not_reproduced`, or `not_comparable`, stored on the row.
 
 Reference matching never uses CPU, RAM, driver, or OS: only `engine_id`,
-`engine_build`, `quant`, `gpu_name` and the raw `flags` list decide whether
-a candidate and a reference row are the same run to compare (PRD Methodology
-8; plan.md's Decisions table resolves the tension between "shares the
-re-run's fiche hash" and "CPU/RAM/driver/OS never block a comparison" by
-naming these four fields explicitly, separate from the fiche's full identity
-hash).
+`engine_build`, `quant`, `gpu_name`, the raw `flags` list and `compute_mode`
+decide whether a candidate and a reference row are the same run to compare
+(PRD Methodology 8; plan.md's Decisions table resolves the tension between
+"shares the re-run's fiche hash" and "CPU/RAM/driver/OS never block a
+comparison" by naming these fields explicitly, separate from the fiche's full
+identity hash -- a divergence from the PRD's wording that stays recorded, with
+`compute_mode` now in both definitions).
 
 A blocking field that is null on either side never matches, not even another
 null: two unknown builds or GPUs are not evidence of the same run, so such a
@@ -16,6 +17,17 @@ legacy projection carries no engine field at all (`hardware.FICHE_PROJECTIONS`
 "1"); that absence reads as null here, so a run against such a reference is
 `not_comparable` naming the engine fields rather than matched on a
 `llama_cpp_build` nobody tied to an engine.
+
+`compute_mode` blocks too (Methodology 8): a `gpu` row and a `cpu_only` row
+from one machine are never a failed reproduction of each other. A fiche
+written before projection "3" carries no mode, which reads as null here.
+
+A GPU the machine registry declares absent is not an unknown GPU: on a fiche
+whose `machine_id` names a machine declared GPU-less, a null `gpu_name` reads
+as `GPU_DECLARED_ABSENT`, which matches itself, so two `cpu_only` runs on the
+no-GPU machine can reproduce. A null `gpu_name` on any other fiche -- a GPU
+that failed to capture on a machine that declares one, or an undeclared
+machine -- stays null and never matches.
 """
 
 from __future__ import annotations
@@ -23,7 +35,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, TypedDict
 
-from wave_local_ai_v2 import fiche_registry
+from wave_local_ai_v2 import fiche_registry, machines
 
 VERDICT_REPRODUCED = "reproduced"
 VERDICT_NOT_REPRODUCED = "not_reproduced"
@@ -32,7 +44,19 @@ VERDICT_NOT_COMPARABLE = "not_comparable"
 # `engine_id` and `engine_build` generalise `llama_cpp_build`: two engines on
 # one machine with one model are never the same run, so a mismatch is
 # `not_comparable` naming the engine, never a false `not_reproduced`.
-_RUNTIME_BLOCKING_FIELDS = ("engine_id", "engine_build", "quant", "gpu_name", "flags")
+_RUNTIME_BLOCKING_FIELDS = (
+    "engine_id",
+    "engine_build",
+    "quant",
+    "gpu_name",
+    "flags",
+    "compute_mode",
+)
+
+# What `runtime_blocking_fields` reads a null `gpu_name` as, on a fiche whose
+# machine the tracked registry declares GPU-less: a stated absence, equal to
+# itself, rather than an unknown value that never matches.
+GPU_DECLARED_ABSENT = "declared_absent"
 
 # The two per-item values a quality batch can be compared on, in the order
 # they are tried. Methodology 8's "identical per-item predicted labels or
@@ -47,13 +71,23 @@ class ReferenceMatch(TypedDict):
 
 
 def runtime_blocking_fields(fiche: dict[str, Any]) -> dict[str, Any]:
-    """Project `fiche` to exactly the fields a runtime reference match compares."""
-    return {key: fiche.get(key) for key in _RUNTIME_BLOCKING_FIELDS}
+    """Project `fiche` to exactly the fields a runtime reference match compares.
+
+    A null `gpu_name` on a machine declared GPU-less reads as
+    `GPU_DECLARED_ABSENT`; every other null stays null.
+    """
+    blocking = {key: fiche.get(key) for key in _RUNTIME_BLOCKING_FIELDS}
+    if blocking["gpu_name"] is None and machines.declares_no_gpu(
+        fiche.get("machine_id")
+    ):
+        blocking["gpu_name"] = GPU_DECLARED_ABSENT
+    return blocking
 
 
 def null_blocking_fields(fiche: dict[str, Any]) -> list[str]:
     """The blocking fields `fiche` leaves null, in declaration order."""
-    return [key for key in _RUNTIME_BLOCKING_FIELDS if fiche.get(key) is None]
+    blocking = runtime_blocking_fields(fiche)
+    return [key for key in _RUNTIME_BLOCKING_FIELDS if blocking[key] is None]
 
 
 def _resolve_fiche(row: dict[str, Any], registry_dir: Path) -> dict[str, Any] | None:

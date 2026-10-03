@@ -648,15 +648,27 @@ def family_of(model_id: str, entry: RosterEntry | None = None) -> str:
     return family
 
 
-def validate_host_fit(entry: RosterEntry, n_cpu_moe: int | None) -> None:
+def validate_host_fit(
+    entry: RosterEntry, n_cpu_moe: int | None, *, compute_mode: str | None
+) -> None:
     """Raise `RosterError` when `n_cpu_moe` cannot be applied to `entry`.
 
     A dense entry never accepts a host `n_cpu_moe` value. An MoE entry
     accepts any value at or below its `architecture.expert_count`; a `None`
     value is always accepted (a caller decision outside this rule's scope).
+    Under `compute_mode` `cpu_only` no value is accepted at all: every layer
+    is already on the CPU, and `--n-cpu-moe 0` would mean the opposite (offload
+    no experts), so a supplied value is refused naming the mode, never dropped.
     """
     if n_cpu_moe is None:
         return
+
+    if compute_mode == "cpu_only":
+        raise RosterError(
+            f"roster entry {entry.entry_id!r} runs under compute mode "
+            f"'cpu_only': it cannot take a host n_cpu_moe value "
+            f"({n_cpu_moe!r} given); unset SERVER_N_CPU_MOE"
+        )
 
     if entry.architecture.kind == "dense":
         raise RosterError(

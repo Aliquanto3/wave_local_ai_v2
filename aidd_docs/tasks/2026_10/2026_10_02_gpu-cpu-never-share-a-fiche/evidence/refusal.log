@@ -1,0 +1,3 @@
+== refusal: no COMPUTE_MODE
+error: COMPUTE_MODE is not set: a run declares gpu or cpu_only, never a default
+exit=1

@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A GPU run and a CPU-only run never share a fiche (row schema "23")** --
+  a tracked machine registry (`aidd_docs/roster/machines.json`,
+  `machines.py`) declares the three PRD machines (`laptop-mobile-gpu`,
+  `tower-desktop-gpu`, `pro-pc-no-gpu`), each fact marked `declared` with
+  how it was read, or `not_yet_declared` with a null value until the
+  machine-readiness check reads it; an entry missing a fact refuses to load.
+  `MACHINE_ID` and `COMPUTE_MODE` (`gpu` or `cpu_only`) are required run
+  inputs with no default: the runtime CLI, the quality CLI and the judge
+  probe refuse a missing or undeclared machine, a missing mode, or `gpu` on
+  a machine declared GPU-less, before any server starts. `cpu_only`
+  launches `-ngl 0 --device none` (observed: `-ngl 0` alone still uses the
+  GPU on the CUDA build) and no `--n-cpu-moe`; a `SERVER_N_CPU_MOE` value
+  under `cpu_only` is refused naming the mode. The `gpu` launch is
+  byte-identical. The fiche carries `machine_id` and `compute_mode` inside a
+  third hashed projection, chosen by the citing row's `schema_version`, so
+  committed fiches keep verifying unedited. Runtime rows and local quality
+  rows carry both fields and the writer gate refuses an undeclared machine;
+  a cloud subject's row states `not_applicable` for both. `compute_mode`
+  is verdict-blocking (a `cpu_only` run against a `gpu` reference is
+  `not_comparable` naming it), and a null GPU on a machine declared GPU-less
+  reads as declared absent, so two `cpu_only` runs there can reproduce. A
+  `--resume` under another machine or mode is refused; along the
+  comparison's `model` dimension both move with the axis only between a
+  local and a cloud side. Rows below "23" are not back-filled.
+
 - **Every row names the engine that produced it, and the fiche hashes it
   (row schema "22")** -- a tracked engine registry
   (`aidd_docs/roster/engines.json`, `engines.py`) holds one entry,

@@ -72,7 +72,12 @@ from wave_local_ai_v2 import (
 from wave_local_ai_v2.energy import measure_energy
 from wave_local_ai_v2.hardware import build_fiche, capture_fiche
 from wave_local_ai_v2.results import append_row, captured_at, new_run_id
-from wave_local_ai_v2.settings import Settings, SettingsError, load_settings
+from wave_local_ai_v2.settings import (
+    Settings,
+    SettingsError,
+    load_settings,
+    require_run_profile,
+)
 from wave_local_ai_v2.suite_gate import SuiteGateResult
 
 REQUEST_TIMEOUT_S = 300
@@ -383,7 +388,7 @@ class _RunContext:
     # it: its id and live-probed build. A cloud subject's rows state that no
     # engine applies.
     engine: engines.EngineEntry
-    local_engine_fields: dict[str, str | None]
+    local_producer_fields: dict[str, str | None]
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -431,6 +436,9 @@ def main() -> None:
 
 def _run(resume_run_id: str | None = None) -> None:
     settings = load_settings()
+    # The declared machine and compute mode, before anything else: a missing
+    # or undeclared one refuses before any judge preflight or process.
+    run_profile = require_run_profile(settings)
     # Offline, before anything is generated or paid for: a probe missing a
     # judge must cost nothing at all.
     _preflight_judges(settings)
@@ -460,20 +468,27 @@ def _run(resume_run_id: str | None = None) -> None:
         settings.host_threads,
         model_path,
         engine=engine,
+        compute_mode=run_profile.compute_mode,
     )
     engine_fields = engines.fiche_fields(
         engine, settings.llama_server_path, flags, roster_entry.entry_id
     )
-    local_engine_fields = quality_rows.local_engine_fields(engine_fields)
+    local_producer_fields = quality_rows.local_producer_fields(
+        engine_fields,
+        machine_id=run_profile.machine_id,
+        compute_mode=run_profile.compute_mode,
+    )
     # After the build probe (the engine and its build are part of the
     # configuration), before the fiche, any spawn or any row is written.
     if is_resume:
         _refuse_a_resume_under_another_configuration(
-            settings, run_id, roster_entry, local_engine_fields
+            settings, run_id, roster_entry, local_producer_fields
         )
     run_fiche = build_fiche(
         capture_fiche(),
         **engine_fields,
+        machine_id=run_profile.machine_id,
+        compute_mode=run_profile.compute_mode,
         roster_entry_id=roster_entry.entry_id,
         model_sha256=roster_entry.sha256,
         quant=roster_entry.quant,
@@ -564,7 +579,7 @@ def _run(resume_run_id: str | None = None) -> None:
             judge_backends.PROVIDER_GOOGLE: google_budget.total,
         },
         engine=engine,
-        local_engine_fields=local_engine_fields,
+        local_producer_fields=local_producer_fields,
     )
 
     local_summary = _run_local_batch(
@@ -595,7 +610,7 @@ def _refuse_a_resume_under_another_configuration(
     settings: Settings,
     run_id: str,
     roster_entry: roster.RosterEntry,
-    local_engine_fields: Mapping[str, str | None],
+    local_producer_fields: Mapping[str, str | None],
 ) -> None:
     """Raise `ResumeConfigurationError` unless every row this run already
     wrote was produced, and judged, the way this invocation would.
@@ -620,14 +635,14 @@ def _refuse_a_resume_under_another_configuration(
             LOCAL_SAMPLING,
             prompt_provenance.LOCAL_CHAT_ENDPOINT,
             sorted([mistral_client.MODEL, google_client.MODEL]),
-            local_engine_fields,
+            local_producer_fields,
         ),
         judge_backends.PROVIDER_GOOGLE: (
             google_client.MODEL,
             GOOGLE_SAMPLING,
             google_client.GENERATE_URL,
             [mistral_client.MODEL],
-            quality_rows.ENGINE_NOT_APPLICABLE_FIELDS,
+            quality_rows.NO_LOCAL_PRODUCER_FIELDS,
         ),
     }
     for provider, (
@@ -635,7 +650,7 @@ def _refuse_a_resume_under_another_configuration(
         sampling,
         endpoint,
         judge_ids,
-        engine_fields,
+        producer_fields,
     ) in by_provider.items():
         prior_rows = results.batch_rows(
             settings.judge_probe_reference_path, run_id, provider, task_suite=TASK_SUITE
@@ -648,7 +663,7 @@ def _refuse_a_resume_under_another_configuration(
                 "sampling": dict(sampling),
                 "endpoint": endpoint,
                 "judge_model_ids": judge_ids,
-                **engine_fields,
+                **producer_fields,
             },
             derived={"judge_model_ids": _judge_model_ids},
         )
@@ -930,9 +945,9 @@ def _build_row(
             model_id, provider, context.roster_entry
         ),
         **(
-            context.local_engine_fields
+            context.local_producer_fields
             if provider == PROVIDER_LOCAL
-            else quality_rows.ENGINE_NOT_APPLICABLE_FIELDS
+            else quality_rows.NO_LOCAL_PRODUCER_FIELDS
         ),
         "fiche_hash": context.fiche_hash,
         **batch_fields,

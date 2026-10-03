@@ -365,6 +365,13 @@ and a dense entry given any value (`0` included) refuses with a `RosterError`
 naming it before anything spawns. See `architecture.md`'s Gotchas for why
 these, and not the roster, are the knob to change on different hardware.
 
+`MACHINE_ID` (a declared entry of `aidd_docs/roster/machines.json`) and
+`COMPUTE_MODE` (`gpu` or `cpu_only`) are required by the runtime CLI, the
+quality CLI and the judge probe, with no default: each refuses a missing or
+undeclared value, or `gpu` on a machine declared GPU-less, before any server
+starts. `cpu_only` launches `-ngl 0 --device none` with no `--n-cpu-moe`, and
+refuses a `SERVER_N_CPU_MOE` value naming the mode.
+
 ## Distribution
 
 - Installed in editable mode via `uv sync` (dev workflow)

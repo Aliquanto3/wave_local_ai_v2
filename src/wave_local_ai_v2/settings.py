@@ -9,6 +9,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from wave_local_ai_v2 import machines
+
 DEFAULT_RESULTS_PATH = "aidd_docs/results/runtime.jsonl"
 DEFAULT_QUALITY_RESULTS_PATH = "aidd_docs/results/quality.jsonl"
 DEFAULT_ROSTER_PATH = "aidd_docs/roster/models.json"
@@ -178,6 +180,14 @@ class Settings:
     # absence of an instruction.
     host_n_cpu_moe: int | None = None
     host_threads: int = DEFAULT_HOST_THREADS
+    # The declared machine and the compute mode a run is executed under, as
+    # `MACHINE_ID` / `COMPUTE_MODE` named them, or `None` when unset. They are
+    # never defaulted: `load_settings` reads them with no fallback, and every
+    # row-writing CLI calls `require_run_profile` before anything else, which
+    # refuses an absent or undeclared value. `None` here only lets a command
+    # that writes no row (the candidate gate, the validator) load settings.
+    machine_id: str | None = None
+    compute_mode: str | None = None
     # No existence check at load time, mirrors roster_path: fiche_registry.write_fiche
     # creates it via mkdir(parents=True, exist_ok=True), matching results.append_row's
     # own pattern.
@@ -408,6 +418,11 @@ def load_settings() -> Settings:
             minimum_reason="--n-cpu-moe cannot offload a negative number of experts",
         )
     )
+    # Required run inputs with no default (Methodology 21: "never as a
+    # fallback"); validated by `require_run_profile`, not here, so a command
+    # that writes no row still loads.
+    machine_id = os.environ.get("MACHINE_ID") or None
+    compute_mode = os.environ.get("COMPUTE_MODE") or None
     host_threads = _require_numeric(
         "SERVER_THREADS",
         DEFAULT_HOST_THREADS,
@@ -510,6 +525,8 @@ def load_settings() -> Settings:
         runtime_spread_threshold=runtime_spread_threshold,
         host_n_cpu_moe=host_n_cpu_moe,
         host_threads=host_threads,
+        machine_id=machine_id,
+        compute_mode=compute_mode,
         runtime_reference_path=runtime_reference_path,
         quality_reference_path=quality_reference_path,
         judge_probe_reference_path=judge_probe_reference_path,
@@ -526,6 +543,59 @@ def load_settings() -> Settings:
         cloud_retry_retries_per_item=cloud_retry_retries_per_item,
         contested_ordinal_max_delta=contested_ordinal_max_delta,
     )
+
+
+@dataclass(frozen=True)
+class RunProfile:
+    """The declared machine and the compute mode one run is executed under."""
+
+    machine: machines.MachineEntry
+    compute_mode: str
+
+    @property
+    def machine_id(self) -> str:
+        return self.machine.machine_id
+
+
+def require_run_profile(settings: Settings) -> RunProfile:
+    """The run's machine and mode, or `SettingsError` naming what is wrong.
+
+    Called by every row-writing CLI right after `load_settings`, before the
+    roster, the build probe, the fiche or any process: a run with no machine
+    id, an undeclared one, no compute mode, an unknown one, or `gpu` on a
+    machine declared GPU-less never starts a server.
+    """
+    try:
+        registry = machines.tracked_registry()
+    except machines.MachineRegistryError as exc:
+        raise SettingsError(f"the machine registry cannot be read: {exc}") from exc
+    declared = ", ".join(sorted(registry.entries))
+    if settings.machine_id is None:
+        raise SettingsError(
+            f"MACHINE_ID is not set: a run names the declared machine it runs "
+            f"on (declared: {declared})"
+        )
+    if settings.machine_id not in registry.entries:
+        raise SettingsError(
+            f"MACHINE_ID={settings.machine_id!r} is not a declared machine "
+            f"(declared: {declared})"
+        )
+    modes = " or ".join(machines.COMPUTE_MODES)
+    if settings.compute_mode is None:
+        raise SettingsError(
+            f"COMPUTE_MODE is not set: a run declares {modes}, never a default"
+        )
+    if settings.compute_mode not in machines.COMPUTE_MODES:
+        raise SettingsError(
+            f"COMPUTE_MODE={settings.compute_mode!r} is not a compute mode ({modes})"
+        )
+    machine = registry.entries[settings.machine_id]
+    if settings.compute_mode == machines.COMPUTE_MODE_GPU and not machine.gpu_present:
+        raise SettingsError(
+            f"COMPUTE_MODE=gpu on machine {machine.machine_id!r}, which is "
+            "declared to have no GPU: run it as cpu_only"
+        )
+    return RunProfile(machine=machine, compute_mode=settings.compute_mode)
 
 
 def _parse_quality_providers(raw: str) -> frozenset[str]:

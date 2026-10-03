@@ -495,8 +495,18 @@ def test_a_local_and_a_cloud_subject_differ_on_egress_without_a_confound() -> No
     assert member["confounds"] == []
 
 
-_LLAMA = {"engine_id": "llama.cpp", "engine_build": "b10537"}
-_NO_ENGINE = {"engine_id": "not_applicable", "engine_build": None}
+_LLAMA = {
+    "engine_id": "llama.cpp",
+    "engine_build": "b10537",
+    "machine_id": "laptop-mobile-gpu",
+    "compute_mode": "gpu",
+}
+_NO_ENGINE = {
+    "engine_id": "not_applicable",
+    "engine_build": None,
+    "machine_id": "not_applicable",
+    "compute_mode": "not_applicable",
+}
 
 
 def test_a_local_and_a_cloud_subject_differ_on_the_engine_without_a_confound() -> None:
@@ -508,13 +518,20 @@ def test_a_local_and_a_cloud_subject_differ_on_the_engine_without_a_confound() -
         _binary_rows("run-cand", "model-b", cand, provider="mistral", **_NO_ENGINE),
     )
     assert member["comparison_kind"] == comparison.KIND_TEST
-    assert {"engine_id", "engine_build"} <= set(member["differing_fields"])
+    assert {"engine_id", "engine_build", "machine_id", "compute_mode"} <= set(
+        member["differing_fields"]
+    )
     assert member["confounds"] == []
 
 
 @pytest.mark.parametrize(
     ("field", "value"),
-    [("engine_id", "ollama"), ("engine_build", "b9999")],
+    [
+        ("engine_id", "ollama"),
+        ("engine_build", "b9999"),
+        ("machine_id", "tower-desktop-gpu"),
+        ("compute_mode", "cpu_only"),
+    ],
 )
 def test_two_local_models_on_another_engine_or_build_are_confounded(
     field: str, value: str
