@@ -30,3 +30,15 @@ Spikes: `aidd_docs/backlog/spikes/is-deepseek-callable-as-a-pinned-judge-and-on-
 - Recommended default: (a). The PRD names it, it is not deprecated, the saving is about a dollar per large campaign (the spike's projection puts calibration well under the ten-dollar estimate either way), and switching changes nothing for Q102. Cost: a calibration judge one generation behind OpenAI's current Luna.
 - Blocks: nothing; order 11 is written against the PRD's model.
 
+## Publication suites
+
+Spikes: `aidd_docs/backlog/spikes/which-public-classification-benchmark-seeds-the-publication-suite-and-on-what-terms.md`, `aidd_docs/backlog/spikes/which-public-translation-benchmark-seeds-the-publication-suite-and-on-what-terms.md`. Both licence rungs are settled from evidence (permissive in both cases); what remains in each is a choice only the owner can make.
+
+### Q105. Which public benchmark seeds the classification publication suite?
+
+- Artifact: the classification spike, and `aidd_docs/backlog/stories/a-publication-level-classification-suite-stands-beside-the-hand-written-one.md` (interval epic order 7).
+- Question: two CC BY 4.0 sources meet the size and language bounds; the rung is permissive either way. MInDS-14 (`PolyAI/minds14` at `40ce77cb32a384e4d50a568e1ec39ac804019d33`) carries 14 e-banking customer-service intents, spoken natively in FR and DE and transcribed by ASR, 539 to 611 rows per language, licence stated on the card only. MASSIVE 1.1 (`AmazonScience/massive` at `ff6bd8e4b27c3543e4f8fe2108f32bb95a6f8740`), the epic's named lead, carries 18 voice-assistant scenarios translated in parallel, 2,974 test rows per language, licence in a LICENSE file and the publisher's NOTICE, loaded from a tarball because its HF loader is a script `datasets` 4.x cannot run. Which one seeds the suite?
+- Options: (a) MInDS-14, 300 items, 100 per language, stratified by intent; (b) MASSIVE 1.1, `test` partition, `scenario` label, 300 items, stable key `locale/id`; (c) both, as two publication suites, at the cost of a second published batch.
+- Recommended default: (a). The story's outcome is to show whether a finding on the hand-written support-routing suite survives at a scale where a 10-point gap can be resolved; MInDS-14 is the only candidate whose labels are customer-service routing, while a MASSIVE score would measure a different task. Cost: its licence evidence is the card's identifier and a prose line, not a licence file (the loader records any licence file the source ships, and a different licence reopens the spike); ASR noise lowers the exact-match ceiling; the pool is small enough that a later redraw overlaps.
+- Blocks: interval epic order 7, hence order 9 (`the-threshold-review-is-written-from-the-first-publication-run.md`) and the bundle epic's order 7 (`a-drawn-item-reaches-the-download-under-its-own-terms-or-as-a-visible-hole.md`).
+
