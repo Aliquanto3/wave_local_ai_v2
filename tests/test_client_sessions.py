@@ -247,7 +247,7 @@ GOOD = _record(session_id="session-aaaaaaaaaaaa")
         (_record(backfilled="no"), "backfilled"),
         (_record(challenges=[_challenge(role=3)]), "challenges[0].role"),
         (
-            _record(challenges=[_challenge(resolving_evidence=None)]),
+            _record(challenges=[_challenge(resolving_evidence=3)]),
             "challenges[0].resolving_evidence",
         ),
         (_record(challenges=[_challenge(follow_up=1)]), "challenges[0].follow_up"),
@@ -538,3 +538,230 @@ def test_the_procedures_worked_example_passes_the_check_in_key_order() -> None:
         assert f"| `{key}` |" in procedure, key
     for key in client_sessions.CHALLENGE_KEYS:
         assert f"| `{key}` |" in procedure, key
+
+
+# --- sustained challenges and their follow-up items -------------------------
+
+SESSION = "session-0a1b2c3d4e5f"
+CLIENT = "client-9f8e7d6c5b4a"
+DEFECT = "aidd_docs/backlog/defects/the-runtime-table-names-no-gpu.md"
+SPIKE = "aidd_docs/backlog/spikes/is-the-judge-agreement-reproducible.md"
+
+
+def _item(kind: str, *ids: str, status: str = "open") -> str:
+    return (
+        f"---\ntype: {kind}\nstatus: {status}\n---\n\n# A follow-up item\n\n"
+        f"Opened by {' and '.join(ids)}.\n"
+    )
+
+
+ITEMS = {
+    DEFECT: _item("defect", SESSION, CLIENT),
+    SPIKE: _item("spike", SESSION, CLIENT),
+    "aidd_docs/backlog/stories/a-story.md": _item("story", SESSION, CLIENT),
+    "aidd_docs/backlog/defects/typed-as-a-spike.md": _item("spike", SESSION, CLIENT),
+    "aidd_docs/backlog/spikes/typed-as-a-defect.md": _item("defect", SESSION, CLIENT),
+    "aidd_docs/backlog/defects/no-session.md": _item("defect", CLIENT),
+    "aidd_docs/backlog/defects/no-client.md": _item("defect", SESSION),
+    "aidd_docs/backlog/defects/no-frontmatter.md": f"# {SESSION} {CLIENT}\n",
+    "aidd_docs/backlog/defects/unterminated.md": (
+        f"---\nstatus: open\n\n# Body\ntype: defect\n{SESSION} {CLIENT}\n"
+    ),
+    "aidd_docs/backlog/defects/../defects/x.md": _item("defect", SESSION, CLIENT),
+}
+
+
+def _sustained(**overrides: Any) -> dict[str, Any]:
+    return _challenge(**{"resolving_evidence": "", "follow_up": DEFECT, **overrides})
+
+
+def _check_items(
+    *records: dict[str, Any], items: dict[str, str] = ITEMS
+) -> client_sessions.CheckReport:
+    return check_records(
+        _text(*records), CHANGELOG, lambda sha: sha == KNOWN_COMMIT, items.get
+    )
+
+
+@pytest.mark.parametrize("evidence", [None, "", "  \t"])
+def test_no_named_resolving_evidence_reads_as_sustained(evidence: str | None) -> None:
+    challenge = _sustained(resolving_evidence=evidence)
+    report = _check_items(_record(challenges=[challenge]))
+
+    assert client_sessions.is_sustained(challenge)
+    assert report.passed, report.refusals
+    assert report.records[0].sustained == 1
+    assert "1 challenge(s), 1 sustained" in client_sessions.render_report(report, "f")
+
+
+def test_named_resolving_evidence_reads_as_resolved() -> None:
+    report = _check_items(_record())
+
+    assert not client_sessions.is_sustained(_challenge())
+    assert report.passed and report.records[0].sustained == 0
+
+
+@pytest.mark.parametrize(
+    "follow_up",
+    [
+        ABSENT,
+        "",
+        "  ",
+        None,
+        "aidd_docs/backlog/stories/a-story.md",
+        "aidd_docs/backlog/defects/",
+        "aidd_docs/backlog/defects/never-filed.md",
+        "aidd_docs/backlog/defects/typed-as-a-spike.md",
+        "aidd_docs/backlog/spikes/typed-as-a-defect.md",
+        "aidd_docs/backlog/defects/no-session.md",
+        "aidd_docs/backlog/defects/no-client.md",
+        "aidd_docs/backlog/defects/no-frontmatter.md",
+        "aidd_docs/backlog/defects/unterminated.md",
+        "aidd_docs/backlog/defects/../defects/x.md",
+        f"/{DEFECT}",
+        f"C:/repo/{DEFECT}",
+        DEFECT.replace("/", "\\"),
+    ],
+)
+def test_a_sustained_challenge_without_a_valid_follow_up_is_refused(
+    follow_up: object,
+) -> None:
+    report = _check_items(_record(challenges=[_sustained(follow_up=follow_up)]))
+
+    assert not report.passed and report.records == []
+    assert _located(report) == {(1, "challenges[0].follow_up")}
+    assert all(
+        f"session {SESSION}, challenge 0" in item.reason for item in report.refusals
+    )
+
+
+@pytest.mark.parametrize("path", [DEFECT, SPIKE])
+def test_a_sustained_challenge_pointing_at_a_matching_item_passes(path: str) -> None:
+    report = _check_items(_record(challenges=[_sustained(follow_up=path)]))
+
+    assert report.passed, report.refusals
+
+
+def test_an_item_naming_only_the_replaced_record_serves_its_correction() -> None:
+    first = _record(challenges=[_sustained()])
+    correction = _record(
+        session_id="session-c7149e2a0f85",
+        corrects=SESSION,
+        logged_date="2026-10-03",
+        challenges=[_sustained()],
+    )
+
+    report = _check_items(first, correction)
+
+    assert report.passed, report.refusals
+    assert [record.sustained for record in report.records] == [1, 1]
+
+
+def test_an_item_naming_an_unrelated_session_is_refused() -> None:
+    other = _record(session_id="session-111111111111", challenges=[_sustained()])
+
+    report = _check_items(_record(challenges=[_sustained()]), other)
+
+    assert _located(report) == {(2, "challenges[0].follow_up")}
+    assert "session-111111111111" in report.refusals[0].reason
+
+
+def test_two_challenges_may_share_one_item() -> None:
+    report = _check_items(_record(challenges=[_sustained(), _sustained()]))
+
+    assert report.passed and report.records[0].sustained == 2
+
+
+def test_a_resolved_challenge_may_link_an_item_and_stays_resolved() -> None:
+    report = _check_items(_record(challenges=[_challenge(follow_up=SPIKE)]))
+
+    assert report.passed and report.records[0].sustained == 0
+
+
+def test_a_resolved_challenge_linking_a_missing_item_is_refused() -> None:
+    missing = "aidd_docs/backlog/spikes/never-filed.md"
+    report = _check_items(_record(challenges=[_challenge(follow_up=missing)]))
+
+    assert _located(report) == {(1, "challenges[0].follow_up")}
+
+
+@pytest.mark.parametrize("status", ["cancelled", "done"])
+def test_a_closed_item_leaves_its_challenge_sustained(status: str) -> None:
+    items = {DEFECT: _item("defect", SESSION, CLIENT, status=status)}
+
+    report = _check_items(_record(challenges=[_sustained()]), items=items)
+
+    assert report.passed and report.records[0].sustained == 1
+
+
+@pytest.mark.parametrize(
+    ("text", "kind"),
+    [
+        ("---\ntype: defect\n---\n", "defect"),
+        ("---\ntype: 'spike'\n---\n", "spike"),
+        ('---\nstatus: open\ntype: "spike"\n---\n', "spike"),
+        ("---\nstatus: open\n---\ntype: spike\n", None),
+        ("---\ntype: spike\n", None),
+        ("---\nstatus: open\n\n# Body\ntype: spike\n", None),
+        ("\ufeff---\ntype: defect\n---\n", "defect"),
+        ("---\nstatus: open\n", None),
+        ("type: spike\n", None),
+        ("", None),
+    ],
+)
+def test_the_frontmatter_type_is_read_with_the_standard_library(
+    text: str, kind: str | None
+) -> None:
+    assert client_sessions.frontmatter_type(text) == kind
+
+
+def test_a_correction_loop_through_a_duplicate_id_terminates() -> None:
+    first = _record(challenges=[_sustained()])
+    second = _record(
+        session_id="session-c7149e2a0f85", corrects=SESSION, challenges=[_sustained()]
+    )
+    loop = _record(corrects="session-c7149e2a0f85", challenges=[_sustained()])
+
+    report = _check_items(first, second, loop)
+
+    assert (3, "session_id") in _located(report)
+
+
+def _planted_repo(tmp_path: Path) -> tuple[Path, Path]:
+    sessions = tmp_path / RECORD
+    sessions.parent.mkdir(parents=True)
+    sessions.write_text(_text(_record(challenges=[_sustained()])), encoding="utf-8")
+    item = tmp_path / DEFECT
+    item.parent.mkdir(parents=True)
+    item.write_text(ITEMS[DEFECT], encoding="utf-8")
+    changelog = tmp_path / "CHANGELOG.md"
+    changelog.write_text(CHANGELOG, encoding="utf-8")
+    return sessions, changelog
+
+
+def test_a_cited_item_renamed_after_commit_fails_the_committed_record_check(
+    tmp_path: Path,
+) -> None:
+    sessions, changelog = _planted_repo(tmp_path)
+    assert check_file(sessions, changelog).passed
+
+    item = tmp_path / DEFECT
+    item.rename(item.with_name("renamed.md"))
+    report = check_file(sessions, changelog)
+
+    assert _located(report) == {(1, "challenges[0].follow_up")}
+    assert "does not exist" in report.refusals[0].reason
+
+
+def test_an_item_saved_with_a_byte_order_mark_passes(tmp_path: Path) -> None:
+    sessions, changelog = _planted_repo(tmp_path)
+    (tmp_path / DEFECT).write_text("\ufeff" + ITEMS[DEFECT], encoding="utf-8")
+
+    assert check_file(sessions, changelog).passed
+
+
+def test_an_unreadable_item_reads_as_missing(tmp_path: Path) -> None:
+    (tmp_path / "binary.md").write_bytes(b"\xff\xfe\x00")
+    read = client_sessions.repo_item_reader(tmp_path)
+
+    assert read("binary.md") is None and read("absent.md") is None

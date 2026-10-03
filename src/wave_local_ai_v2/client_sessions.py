@@ -14,6 +14,15 @@ incomplete. Every refusal names the line and the field. Exit `0` when nothing
 is refused (incomplete records are reported, not failed), `1` when anything
 is, `2` when the record or the changelog cannot be read at all.
 
+A challenge is sustained exactly when its `resolving_evidence` is null, empty
+or whitespace only (`is_sustained`); no field states it, so nothing can
+disagree with it. Every sustained challenge names its follow-up item in
+`follow_up`: a defect under `aidd_docs/backlog/defects/` or a spike under
+`aidd_docs/backlog/spikes/` whose frontmatter `type` matches its folder and
+whose text carries the record's `client_id` and the `session_id` of a record
+of its correction chain. A `follow_up` given on a resolved challenge is held
+to the same rules and leaves the challenge resolved.
+
 `append_only_violations` walks the record's committed versions along the
 first-parent line and names every version that is not a line-for-line prefix
 of the next: a committed line is never edited or removed.
@@ -75,6 +84,13 @@ CONTENT_FIELDS = ("role", "criterion", "evidence_offered")
 AUDIENCES = ("external", "internal")
 OUTCOMES = ("challenged", "dismissed", "accepted")
 CLAIMS = ("fiche_disclosure", "table_separation", "judge_agreement", "other")
+# Each folder a follow-up item may live in, and the frontmatter `type` its
+# items carry (Q65: a defect when a claim was shown wrong, a spike when it was
+# left unresolved).
+FOLLOW_UP_FOLDERS = {
+    "aidd_docs/backlog/defects/": "defect",
+    "aidd_docs/backlog/spikes/": "spike",
+}
 
 SESSION_ID = re.compile(r"session-[0-9a-f]{12}")
 CLIENT_ID = re.compile(r"client-[0-9a-f]{12}")
@@ -109,6 +125,7 @@ class SessionRecord:
     audience: str
     outcome: str
     challenges: int
+    sustained: int
     backfilled: bool
     corrects: str | None
 
@@ -151,6 +168,70 @@ def git_commit_exists(repo: Path) -> Callable[[str], bool]:
     return exists
 
 
+def repo_item_reader(repo: Path) -> Callable[[str], str | None]:
+    """The text of a repository-relative file in `repo`, or None when it is
+    not a readable file."""
+
+    def read(path: str) -> str | None:
+        try:
+            return (repo / path).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return None
+
+    return read
+
+
+def _no_item(path: str) -> str | None:
+    return None
+
+
+def is_sustained(challenge: dict[str, Any]) -> bool:
+    """True when no evidence presented within the session is named as having
+    resolved the challenge: `resolving_evidence` null, empty or whitespace."""
+    evidence = challenge.get("resolving_evidence")
+    return evidence is None or (isinstance(evidence, str) and not evidence.strip())
+
+
+def frontmatter_type(text: str) -> str | None:
+    """The `type` of a Markdown file's leading `---` frontmatter block; None
+    when the block is absent, unterminated or carries no `type`. A leading
+    UTF-8 byte order mark is ignored."""
+    lines = text.removeprefix("\ufeff").splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None
+    kind = None
+    for line in lines[1:]:
+        if line.strip() == "---":
+            return kind
+        key, sep, value = line.partition(":")
+        if sep and key == "type" and kind is None:
+            kind = value.strip().strip("\"'") or None
+    return None
+
+
+def _follow_up_folder(path: str) -> tuple[str | None, str | None]:
+    """The item kind the path's folder requires, or the reason it is refused."""
+    if "\\" in path:
+        return None, "uses a backslash: write the path with forward slashes"
+    if path.startswith("/") or re.match(r"[A-Za-z]:", path):
+        return None, "is absolute: write it relative to the repository root"
+    if ".." in path.split("/"):
+        return None, "contains '..'"
+    for folder, kind in FOLLOW_UP_FOLDERS.items():
+        if path.startswith(folder) and len(path) > len(folder):
+            return kind, None
+    return None, f"is outside {' and '.join(FOLLOW_UP_FOLDERS)}"
+
+
+@dataclass(frozen=True)
+class _Citation:
+    """One challenge's follow-up path, checked once the whole file is read."""
+
+    index: int
+    path: str
+    kind: str
+
+
 class _Line:
     """The findings of one line, gathered while its fields are read."""
 
@@ -159,6 +240,9 @@ class _Line:
         self.record = record
         self.refusals: list[Finding] = []
         self.incomplete: list[Finding] = []
+        self.citations: list[_Citation] = []
+        session_id = record.get("session_id")
+        self.session = session_id if isinstance(session_id, str) else "<no session>"
 
     def refuse(self, name: str, reason: str) -> None:
         self.refusals.append(Finding(self.number, name, reason))
@@ -268,9 +352,10 @@ def _check_challenge(line: _Line, index: int, challenge: object) -> None:
                     )
             if len(set(map(str, claims))) != len(claims):
                 line.refuse(f"{prefix}.claims", "names a claim twice")
-    for key in ("resolving_evidence", "follow_up"):
-        if key in challenge and not isinstance(challenge[key], str):
-            line.refuse(f"{prefix}.{key}", "is not a string")
+    evidence = challenge.get("resolving_evidence")
+    if evidence is not None and not isinstance(evidence, str):
+        line.refuse(f"{prefix}.resolving_evidence", "is not a string or null")
+    _check_follow_up(line, index, challenge)
     for key in CONTENT_FIELDS:
         if key not in challenge:
             line.incomplete.append(Finding(line.number, f"{prefix}.{key}", "absent"))
@@ -280,6 +365,71 @@ def _check_challenge(line: _Line, index: int, challenge: object) -> None:
             line.incomplete.append(
                 Finding(line.number, f"{prefix}.{key}", "stated empty")
             )
+
+
+def _check_follow_up(line: _Line, index: int, challenge: dict[str, Any]) -> None:
+    name = f"challenges[{index}].follow_up"
+    where = f"session {line.session}, challenge {index}"
+    path = challenge.get("follow_up")
+    if "follow_up" in challenge and not isinstance(path, str):
+        line.refuse(name, f"{where}: is not a string")
+        return
+    if path is None or not path.strip():
+        if "resolving_evidence" in challenge and is_sustained(challenge):
+            line.refuse(
+                name,
+                f"{where}: the challenge is sustained (no resolving evidence "
+                "named) and names no follow-up item",
+            )
+        return
+    kind, problem = _follow_up_folder(path)
+    if kind is None:
+        line.refuse(name, f"{where}: {path!r} {problem}")
+        return
+    line.citations.append(_Citation(index, path, kind))
+
+
+def _check_citations(
+    line: _Line, chain: list[str], read_item: Callable[[str], str | None]
+) -> None:
+    client_id = line.record.get("client_id")
+    for citation in line.citations:
+        name = f"challenges[{citation.index}].follow_up"
+        where = f"session {line.session}, challenge {citation.index}"
+        text = read_item(citation.path)
+        if text is None:
+            line.refuse(name, f"{where}: {citation.path} does not exist")
+            continue
+        kind = frontmatter_type(text)
+        if kind != citation.kind:
+            line.refuse(
+                name,
+                f"{where}: {citation.path} has frontmatter type {kind!r}, "
+                f"not {citation.kind!r} as its folder requires",
+            )
+        if not isinstance(client_id, str) or client_id not in text:
+            line.refuse(name, f"{where}: {citation.path} does not contain {client_id}")
+        if not any(session_id in text for session_id in chain):
+            line.refuse(
+                name,
+                f"{where}: {citation.path} contains no session id of the "
+                f"record's correction chain ({', '.join(chain)})",
+            )
+
+
+def _chain(session_id: str, corrected_by: dict[str, str]) -> list[str]:
+    """Every session id linked to `session_id` by `corrects`, oldest first."""
+    corrects = {later: earlier for earlier, later in corrected_by.items()}
+    first = session_id
+    # A refused duplicate session id can close a loop; stop at a repeat.
+    walked = {first}
+    while first in corrects and corrects[first] not in walked:
+        first = corrects[first]
+        walked.add(first)
+    chain = [first]
+    while chain[-1] in corrected_by and corrected_by[chain[-1]] not in chain:
+        chain.append(corrected_by[chain[-1]])
+    return chain
 
 
 def _check_line(
@@ -340,6 +490,7 @@ def _check_line(
         audience=audience,
         outcome=outcome,
         challenges=len(challenges),
+        sustained=sum(map(is_sustained, challenges)),
         backfilled=record["backfilled"],
         corrects=corrects,
     )
@@ -349,11 +500,17 @@ def check_records(
     text: str,
     changelog_text: str,
     commit_exists: Callable[[str], bool],
+    read_item: Callable[[str], str | None] = _no_item,
 ) -> CheckReport:
-    """Every refusal, incompleteness and read-back of one record file's text."""
+    """Every refusal, incompleteness and read-back of one record file's text.
+
+    `read_item` returns a follow-up item's text by its repository path, or
+    None when no such file exists; the default knows no item.
+    """
     releases = dated_releases(changelog_text)
     report = CheckReport()
     seen: dict[str, int] = {}
+    read_lines: list[tuple[_Line, SessionRecord | None]] = []
     for number, raw in enumerate(text.splitlines(), start=1):
         try:
             record = json.loads(raw)
@@ -384,6 +541,11 @@ def check_records(
                 )
             elif isinstance(session_id, str):
                 report.corrected_by[corrects] = session_id
+        read_lines.append((line, read))
+    # Follow-up items are read once every correction link is known: an item
+    # may name any record of the citing record's chain.
+    for line, read in read_lines:
+        _check_citations(line, _chain(line.session, report.corrected_by), read_item)
         report.refusals.extend(line.refusals)
         report.incomplete.extend(line.incomplete)
         if read is not None and not line.refusals:
@@ -397,6 +559,7 @@ def check_file(sessions: Path, changelog: Path) -> CheckReport:
         sessions.read_text(encoding="utf-8"),
         changelog.read_text(encoding="utf-8"),
         git_commit_exists(changelog.resolve().parent),
+        repo_item_reader(changelog.resolve().parent),
     )
 
 
@@ -407,7 +570,10 @@ def _record_line(record: SessionRecord, corrected_by: dict[str, str]) -> str:
         release = f"release {record.release}"
     marks = [
         f"{record.session_date}, {record.audience} audience, {release}",
-        f"{record.outcome}, {record.challenges} challenge(s)",
+        (
+            f"{record.outcome}, {record.challenges} challenge(s), "
+            f"{record.sustained} sustained"
+        ),
     ]
     if record.backfilled:
         marks.append("backfilled")

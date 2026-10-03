@@ -82,8 +82,8 @@ field before you commit.
    | `criterion` | the acceptance criterion disputed, in words |
    | `claims` | the claims the criterion bears on, a non-empty list drawn from `fiche_disclosure`, `table_separation`, `judge_agreement` and `other` |
    | `evidence_offered` | the evidence the challenger offered for the challenge; `"none offered"` when you know they offered none |
-   | `resolving_evidence` | the evidence presented within the session that resolved it, named so a reader can find it; `""` when nothing presented in the session resolved it |
-   | `follow_up` | optional: the path of the backlog item the challenge opened |
+   | `resolving_evidence` | the evidence presented within the session that resolved it, named so a reader can find it; `""` when nothing presented in the session resolved it, which makes the challenge sustained (step 4) |
+   | `follow_up` | the repository path of the challenge's follow-up item (step 4): required when the challenge is sustained, optional otherwise |
 
    An outcome of `challenged` carries at least one challenge; `accepted` and
    `dismissed` carry `[]`.
@@ -113,7 +113,47 @@ field before you commit.
    credibility. Never write `""` for one of these three: the check reports
    it as stated empty, which is incomplete too.
 
-4. **Run the check.** From the repository root, after appending your line to
+4. **File a follow-up item for every sustained challenge.** A challenge is
+   sustained when its `resolving_evidence` is `""` (or `null`, or blank): no
+   evidence presented within the session is named as having resolved it. No
+   other field says whether a challenge is sustained, so nothing can
+   contradict it. Evidence found after the session never goes into
+   `resolving_evidence`; write it into the follow-up item instead.
+
+   Choose the item's kind from what the session showed, and record it by
+   where you file the item:
+
+   - a **defect**, under `aidd_docs/backlog/defects/` with frontmatter
+     `type: defect`, when the session showed a claim to be wrong;
+   - a **spike**, under `aidd_docs/backlog/spikes/` with frontmatter
+     `type: spike`, when the session left a claim unresolved.
+
+   The item is a Markdown file whose YAML frontmatter carries `type` and
+   `status`, like every other item in those folders. Its text contains the
+   record's `client_id` and its `session_id`, and nothing else about the
+   client: like the record, the item never names the client organisation
+   and never carries client-provided material. Then set `follow_up` to the
+   item's path relative to the repository root, with forward slashes
+   (`aidd_docs/backlog/defects/<slug>.md`); the check refuses a backslash,
+   an absolute path and `..`.
+
+   One item may serve several sustained challenges, of the same record or of
+   later ones. A resolved challenge may link an item too; the check holds
+   that link to the same rules and the challenge stays resolved.
+
+   The item records the follow-up; it does not build the fix. The epic that
+   owns the disputed criterion works it.
+
+   **The item's path is frozen once a record cites it.** Never rename or
+   delete the file: cancel it by setting its status and keeping the file
+   with its Cancellation section. A `cancelled` or `done` item never turns
+   the challenge into a resolved one, because the check reads sustained from
+   the record alone. If the path must change anyway, append a correction
+   (see "Correcting a record") naming the new path. The item may name the
+   session id of any record of the correction chain, so an item opened for
+   the original record keeps serving its correction.
+
+5. **Run the check.** From the repository root, after appending your line to
    `aidd_docs/results/client-sessions.jsonl`:
 
    ```bash
@@ -136,7 +176,7 @@ field before you commit.
    audience, release, outcome, number of challenges, and the markings
    backfilled, corrects and corrected by), then the incomplete fields, then
    the refusals, then `PASS` or `FAIL`. It does not echo the free text:
-   step 5 re-reads your line itself.
+   step 6 re-reads your line itself.
 
    - `Refusals`: each line names the record's line number and field, such as
      `line 3: release: '0.3.0' is neither a dated section of CHANGELOG.md
@@ -145,15 +185,23 @@ field before you commit.
    - `Incomplete`: a content field left out or stated empty. The check still
      passes (exit `0`); fill it if you can, or accept that the record will
      not count.
+   - A `follow_up` refusal names the session and the challenge, such as
+     `line 3: challenges[0].follow_up: session session-<id>, challenge 0:
+     the challenge is sustained (no resolving evidence named) and names no
+     follow-up item`. It also fires when the item is outside the two
+     folders, does not exist, has a frontmatter `type` that does not match
+     its folder, or lacks the record's `client_id` or a `session_id` of its
+     correction chain. CI runs the same check on the committed record on
+     every push, so a cited item renamed or deleted later fails CI.
    - `nothing checked` on stderr (exit `2`): the record file or `CHANGELOG.md`
      could not be read; run the command from the repository root.
 
-5. **Re-read the line** you wrote, every free-text field of it, for client
-   names, client material and deal outcomes, then commit the one changed
-   file:
+6. **Re-read the line** you wrote, every free-text field of it, and every
+   follow-up item you filed, for client names, client material and deal
+   outcomes, then commit the record and its items together:
 
    ```bash
-   git add aidd_docs/results/client-sessions.jsonl
+   git add aidd_docs/results/client-sessions.jsonl aidd_docs/backlog/defects/<slug>.md
    git commit -m "docs(results): log client session session-<id>"
    ```
 
