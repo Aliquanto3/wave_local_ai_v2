@@ -25,7 +25,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from wave_local_ai_v2 import chrf, score_interval
+from wave_local_ai_v2 import chrf, code_generation_suite, code_sandbox, score_interval
 from wave_local_ai_v2.scoring import (
     GradedItem,
     ScoredItem,
@@ -183,9 +183,33 @@ def chrf_against_reference(
     return per_item, aggregate_chrf_against_reference(items, per_item)
 
 
+def unit_tests_pass(
+    items: Sequence[Any],
+    completions: Sequence[Mapping[str, Any]],
+    *,
+    max_output_tokens: int,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Run each item's tests against its generated code inside the sandbox.
+
+    Scores 1.0 when every test passes and 0.0 otherwise, with the failure
+    named; the graded block publishes it and the exact-match fields are
+    nulled. The runner is `code_sandbox.active_runner()`: a sandbox that
+    cannot start raises `SandboxUnavailable`, never runs the code elsewhere.
+    """
+    runner = code_sandbox.active_runner()
+    per_item = [
+        code_generation_suite.score_item(
+            item, completion, max_output_tokens=max_output_tokens, runner=runner
+        )
+        for item, completion in zip(items, completions, strict=True)
+    ]
+    return per_item, code_generation_suite.aggregate(items, per_item)
+
+
 SCORING_RULES: dict[str, ScoringRule] = {
     "exact_label_match": exact_label_match,
     "chrf_against_reference": chrf_against_reference,
+    "unit_tests_pass": unit_tests_pass,
 }
 
 # One aggregate per rule, keyed by the same name: the registry refuses a rule
@@ -193,4 +217,23 @@ SCORING_RULES: dict[str, ScoringRule] = {
 BATCH_AGGREGATES: dict[str, BatchAggregate] = {
     "exact_label_match": aggregate_exact_label_match,
     "chrf_against_reference": aggregate_chrf_against_reference,
+    "unit_tests_pass": code_generation_suite.aggregate,
+}
+
+ItemCheck = Callable[[Sequence[Mapping[str, Any]]], list[str]]
+"""`(items) -> problems`: what a rule needs every item of its suite to carry."""
+
+# A rule whose items need more than the core keys names its check here; the
+# registry runs it at load and refuses a definition it finds problems in.
+ITEM_CHECKS: dict[str, ItemCheck] = {
+    "unit_tests_pass": code_generation_suite.item_problems,
+}
+
+Preflight = Callable[[Sequence[Mapping[str, Any]]], None]
+"""`(items) -> None`, raising when the rule cannot score this host's batch."""
+
+# A rule that needs something of the host before any process starts names
+# its check here; the CLI runs it right after `--suite` resolves.
+PREFLIGHTS: dict[str, Preflight] = {
+    "unit_tests_pass": code_generation_suite.preflight,
 }

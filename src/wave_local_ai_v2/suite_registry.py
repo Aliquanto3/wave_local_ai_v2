@@ -137,6 +137,16 @@ class SuiteDefinition:
         # Checked against the table when the definition loaded.
         return scoring_rules.BATCH_AGGREGATES[self.scoring_rule](items, per_item)
 
+    def preflight(self) -> None:
+        """Run the scoring rule's host check, if it declares one.
+
+        Raises before any process starts when the rule cannot score here
+        (the code-generation sandbox absent): the suite refuses to start.
+        """
+        check = scoring_rules.PREFLIGHTS.get(self.scoring_rule)
+        if check is not None:
+            check(self.items)
+
 
 def prompt_set_hash(items: Sequence[Mapping[str, Any]]) -> str:
     """SHA-256 hex digest over the items' prompts only, deterministically ordered.
@@ -227,6 +237,13 @@ def _definition_from_data(data: dict[str, Any], *, origin: str) -> SuiteDefiniti
         )
 
     items = _items(data["items"], origin)
+    item_check = scoring_rules.ITEM_CHECKS.get(rule_name)
+    item_problems = item_check(items) if item_check is not None else []
+    if item_problems:
+        raise SuiteRegistryError(
+            f"suite definition {origin} has items its scoring rule "
+            f"{rule_name!r} cannot score: " + "; ".join(item_problems)
+        )
     _check_selection(data, items, origin)
     # The gate runs on every load and its refusal propagates: no definition
     # object exists for a suite it refuses, including a suite that falls short

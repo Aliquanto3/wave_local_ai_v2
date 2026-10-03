@@ -762,6 +762,16 @@ _QUALITY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     ("failure_counts", "truncated_context"): FieldDoc(
         "Items in the batch cut by the context window.", _COUNT
     ),
+    ("failure_counts", "compile_error"): FieldDoc(
+        "Code items in the batch whose generated code did not compile.", _COUNT
+    ),
+    ("failure_counts", "tests_failed"): FieldDoc(
+        "Code items in the batch whose generated code failed a test.", _COUNT
+    ),
+    ("failure_counts", "timeout"): FieldDoc(
+        "Code items in the batch whose tests ran past the sandbox's wall clock.",
+        _COUNT,
+    ),
     ("failure_counts",): FieldDoc("Batch failure counts block.", _JSON_OBJECT),
     ("retries",): FieldDoc("Retries the item's request took.", _COUNT),
     ("resumed",): FieldDoc("Whether the row was written by a --resume run.", _BOOL),
@@ -877,6 +887,49 @@ _GRADED_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     ),
     ("reference_output",): FieldDoc(
         "Reference text the score was computed against.", _TEXT, _GRADED_DOC
+    ),
+}
+
+# The code block: present only on a code-generation row (schema "30").
+_CODE_DOC = "Not a code-generation row."
+_CODE_FIELDS: dict[tuple[str, ...], FieldDoc] = {
+    ("programming_language",): FieldDoc(
+        "Programming language the item's code is written and tested in.",
+        _ID,
+        _CODE_DOC,
+    ),
+    ("sandbox", "runtime"): FieldDoc(
+        "Container runtime the generated code ran under.", _ID
+    ),
+    ("sandbox", "image"): FieldDoc("Container image the tests ran in.", _ID),
+    ("sandbox", "image_id"): FieldDoc(
+        "Local id that image resolved to; the container ran from it.", _ID
+    ),
+    ("sandbox", "network"): FieldDoc("Network the sandbox had (always none).", _ID),
+    ("sandbox", "host_mount"): FieldDoc(
+        "Whether a host directory was mounted (always false).", _BOOL
+    ),
+    ("sandbox", "wall_clock_cap_s"): FieldDoc(
+        "Wall-clock cap on one item's sandboxed run.", "seconds"
+    ),
+    ("sandbox", "memory_cap_mib"): FieldDoc(
+        "Memory cap on the sandbox container.", "MiB"
+    ),
+    ("sandbox", "pids_cap"): FieldDoc("Process cap on the sandbox container.", _COUNT),
+    ("sandbox",): FieldDoc("Sandbox and caps block.", _JSON_OBJECT, _CODE_DOC),
+    ("programming_language_breakdown", "*", "score"): FieldDoc(
+        "Share of the batch's items in this programming language whose tests "
+        "all passed.",
+        _RATIO,
+    ),
+    ("programming_language_breakdown", "*", "n"): FieldDoc(
+        "Items in this programming language in the batch.", _COUNT
+    ),
+    ("programming_language_breakdown",): FieldDoc(
+        "Per-programming-language score block: a cell only for a language the "
+        "suite tags.",
+        _JSON_OBJECT,
+        f"Not a code-generation row, {_PARTIAL_SCORE_DOC}",
     ),
 }
 
@@ -1026,6 +1079,7 @@ ROW_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     **_ENERGY_COST_FIELDS,
     **_QUALITY_FIELDS,
     **_GRADED_FIELDS,
+    **_CODE_FIELDS,
     **_JUDGED_FIELDS,
     **_RUNTIME_FIELDS,
 }
@@ -2050,6 +2104,7 @@ def contract_fields(kind: row_contract.RowKind) -> frozenset[str]:
         fields = (
             fields
             | row_contract.GRADED_FIELDS
+            | row_contract.CODE_FIELDS
             | row_contract.JUDGED_FIELDS
             | {"subject_output"}
         )

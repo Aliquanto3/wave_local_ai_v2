@@ -467,6 +467,9 @@ QUALITY_FIELDS_NOT_RENDERED: frozenset[str] = frozenset(
 # block; a row carrying none of it resolves every field to an absence.
 QUALITY_JUDGE_FIELDS: frozenset[str] = row_contract.JUDGED_FIELDS
 QUALITY_GRADED_FIELDS: frozenset[str] = row_contract.GRADED_FIELDS
+# The contract's code block (schema "30"), rendered beside the graded block
+# on a code-generation row only.
+QUALITY_CODE_FIELDS: frozenset[str] = row_contract.CODE_FIELDS
 
 # The keys one per-language cell carries, per shape. The graded set is the
 # contract's own declaration; the exact-match one is derived from
@@ -845,6 +848,22 @@ def score_shape_of(row: dict[str, Any]) -> str:
     return SCORE_SHAPE_EXACT_MATCH
 
 
+def programming_language_score(
+    row: dict[str, Any], language: str
+) -> dict[str, Any] | None:
+    """The batch's score cell for one programming language, or nothing.
+
+    Only a language the suite tags has a cell; any other language -- or a
+    row that is not a code row -- answers `None`, never an average over
+    items that do not carry the tag (epic success check 11).
+    """
+    breakdown = row.get("programming_language_breakdown")
+    if not isinstance(breakdown, dict):
+        return None
+    cell = breakdown.get(language)
+    return dict(cell) if isinstance(cell, dict) else None
+
+
 def _quality_entry(
     row: dict[str, Any],
     *,
@@ -873,6 +892,8 @@ def _quality_entry(
         entry["score_breakdown"] = _resolve_language_cells(
             row, "score_breakdown", GRADED_LANGUAGE_CELL_FIELDS
         )
+        if QUALITY_CODE_FIELDS & row.keys():
+            entry.update(resolve_fields(row, QUALITY_CODE_FIELDS))
     else:
         entry.update(resolve_fields(row, QUALITY_EXACT_MATCH_FIELDS))
         entry["language_breakdown"] = _resolve_language_cells(

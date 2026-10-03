@@ -1,0 +1,18 @@
+docker: 29.7.2
+image: sha256:11b8a687f7d5386322d4a5ffe3d485acf985f859ef9122ddde551d9aae3a82c4 resolved id: sha256:11b8a687f7d5386322d4a5ffe3d485acf985f859ef9122ddde551d9aae3a82c4
+sandbox block: {"runtime": "docker", "image": "sha256:11b8a687f7d5386322d4a5ffe3d485acf985f859ef9122ddde551d9aae3a82c4", "image_id": "sha256:11b8a687f7d5386322d4a5ffe3d485acf985f859ef9122ddde551d9aae3a82c4", "network": "none", "host_mount": false, "wall_clock_cap_s": 20, "memory_cap_mib": 256, "pids_cap": 64}
+command: ["run", "--rm", "-i", "--name", "wave-sandbox-<id>", "--pull", "never", "--network", "none", "--read-only", "--tmpfs", "/work:rw,size=16m,mode=1777", "--tmpfs", "/tmp:rw,size=16m,mode=1777", "--workdir", "/work", "--user", "65534:65534", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--memory", "256m", "--memory-swap", "256m", "--pids-limit", "64", "--cpus", "1", "--env", "PYTHONDONTWRITEBYTECODE=1", "--entrypoint", "python", "sha256:11b8a687f7d5386322d4a5ffe3d485acf985f859ef9122ddde551d9aae3a82c4"]
+check_available(python): ok
+check_available(python, javascript): refused: code-generation suite refused: sandbox image 'node:22-slim' for javascript is not present locally and is never pulled (set CODE_SANDBOX_NODE_IMAGE to a local image)
+correct: status=passed wall=0.5s detail='6331552f01024cdc8068c00b7e47dc2b\n'
+fails_a_test: status=tests_failed wall=0.5s detail='e 4, in <module>\n  File "/work/test_solution.py", line 17, in test_bad_size\n    raise AssertionError(\'expected ValueError\')\nAssertionError: expected ValueError\n'
+does_not_compile: status=compile_error wall=0.5s detail='SyntaxError("expected \':\'", (\'solution.py\', 1, 23, \'def chunk(items, size)\\n\', 1, 24))'
+opens_network: status=tests_failed wall=0.5s detail='ise exceptions[0]\n  File "/usr/local/lib/python3.12/socket.py", line 850, in create_connection\n    sock.connect(sa)\nOSError: [Errno 101] Network is unreachable\n'
+writes_outside_workdir: status=tests_failed wall=0.5s detail='ution.py", line 1, in <module>\n    open(\'/etc/planted\', \'w\').write(\'x\')\n    ^^^^^^^^^^^^^^^^^^^^^^^^^\nOSError: [Errno 30] Read-only file system: \'/etc/planted\'\n'
+writes_home: status=tests_failed wall=0.5s detail="ser('~/planted'), 'w').write('x')\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/nonexistent/planted'\n"
+wrong_then_sys_exit_0: status=tests_failed wall=0.5s detail=''
+wrong_then_bare_exit: status=tests_failed wall=0.5s detail=''
+wrong_then_os_exit_0: status=tests_failed wall=0.5s detail=''
+never_returns: status=timeout wall=20.5s detail='over 20s in the container'
+fork_bomb_capped: status=tests_failed wall=1.3s detail=' <module>\n    os.fork()\n    os.fork()\nBlockingIOError: [Errno 11] Resource temporarily unavailable\nBlockingIOError: [Errno 11] Resource temporarily unavailable\n'
+containers left: none

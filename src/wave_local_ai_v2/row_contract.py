@@ -14,6 +14,8 @@ from typing import Any, Literal
 
 from wave_local_ai_v2 import (
     aggregation,
+    code_generation_suite,
+    code_sandbox,
     cost,
     engines,
     gpu,
@@ -259,7 +261,15 @@ from wave_local_ai_v2 import (
 # `not_reproduced`). Additive: no field is renamed or removed, runtime rows
 # are unchanged, and a quality row below "29" still validates without them
 # and is never back-filled.
-SCHEMA_VERSION = "29"
+# "30": a code-generation row carries a code block (Story: generated code is
+# scored by its tests in a sandbox, or not run at all; Methodology 9): the
+# item's `programming_language`, the `sandbox` it ran in with its caps, and
+# the batch's `programming_language_breakdown` (`CODE_FIELDS`). Required only
+# on a row that carries any of it, the conditional shape "10" established, so
+# every other row validates unchanged and nothing is back-filled. A code row
+# is a graded row: `item_score` is 1.0 when every test passed and 0.0 with
+# its failure reason otherwise.
+SCHEMA_VERSION = "30"
 
 # The two subject-composition fields "19" added, and the version from which a
 # quality row owes them.
@@ -703,6 +713,7 @@ PARTIAL_NULL_SCORE_FIELDS: tuple[str, ...] = (
     "score_breakdown",
     "judged_headline_score",
     "score_interval",
+    "programming_language_breakdown",
 )
 
 
@@ -824,6 +835,27 @@ GRADED_FIELDS: frozenset[str] = frozenset(
 # The three keys every `score_breakdown` cell carries. Declared here, on the
 # contract, for the same reason the judge block's inner key sets are.
 GRADED_LANGUAGE_CELL_FIELDS: frozenset[str] = frozenset({"score", "n", "indicative"})
+
+# The code block (schema "30"): what a sandboxed code-generation row carries
+# beside its graded block. Carrying any member is the declaration.
+CODE_FIELDS: frozenset[str] = frozenset(
+    {"programming_language", "sandbox", "programming_language_breakdown"}
+)
+# The sandbox and caps every code row records (`code_sandbox.describe`).
+SANDBOX_FIELDS: frozenset[str] = frozenset(
+    {
+        "runtime",
+        "image",
+        "image_id",
+        "network",
+        "host_mount",
+        "wall_clock_cap_s",
+        "memory_cap_mib",
+        "pids_cap",
+    }
+)
+_SANDBOX_CAPS = ("wall_clock_cap_s", "memory_cap_mib", "pids_cap")
+CODE_LANGUAGE_CELL_FIELDS: frozenset[str] = frozenset({"score", "n"})
 
 
 class RowContractError(ValueError):
@@ -970,6 +1002,7 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
         _validate_harness(row)
         _validate_judged_fields(row)
         _validate_graded_fields(row)
+        _validate_code_fields(row)
         # After the graded block: a malformed graded score is named as such
         # before the interval beside it is checked against it.
         _validate_score_interval(row)
@@ -2139,3 +2172,103 @@ def _validate_runtime_repetition_structure(row: dict[str, Any]) -> None:
             f"match the declared measurement set: {declared!r} != "
             f"{set(aggregation.MEASUREMENT_FIELDS)!r}"
         )
+
+
+def _validate_code_fields(row: dict[str, Any]) -> None:
+    """Hold a row that declares itself a code row to the whole code block.
+
+    A code row is a graded row run in the sandbox: no network, no host
+    mount, its caps recorded; a per-programming-language cell only for the
+    languages the suite tags.
+    """
+    present = CODE_FIELDS & row.keys()
+    if not present:
+        return
+    missing = CODE_FIELDS - row.keys()
+    if missing:
+        raise RowContractError(
+            f"row of kind 'quality' declares itself a code row by carrying "
+            f"{', '.join(sorted(present))} but is missing code field(s): "
+            f"{', '.join(sorted(missing))}"
+        )
+    if not GRADED_FIELDS <= row.keys():
+        raise RowContractError(
+            "row of kind 'quality' carries a code block without the graded "
+            "block its pass or fail score is published in"
+        )
+    language = row["programming_language"]
+    if language not in code_sandbox.PROGRAMMING_LANGUAGES:
+        raise RowContractError(
+            f"row of kind 'quality' has programming_language {language!r}, not "
+            f"one of {', '.join(code_sandbox.PROGRAMMING_LANGUAGES)}"
+        )
+    reason = row["failure_reason"]
+    if reason is not None and reason not in code_generation_suite.FAILURE_REASONS:
+        raise RowContractError(
+            f"row of kind 'quality' has code failure_reason {reason!r}, not one "
+            f"of {', '.join(code_generation_suite.FAILURE_REASONS)}"
+        )
+    if row["item_score"] not in (0.0, 1.0):
+        raise RowContractError(
+            f"row of kind 'quality' has code item_score {row['item_score']!r}: "
+            "an item scores 1.0 when every test passes and 0.0 otherwise"
+        )
+    _validate_sandbox(row["sandbox"])
+    breakdown = row["programming_language_breakdown"]
+    if row.get("partial_failure") is not None and breakdown is None:
+        return
+    _validate_code_breakdown(breakdown, language)
+
+
+def _validate_sandbox(sandbox: Any) -> None:
+    if not isinstance(sandbox, dict) or set(sandbox) != SANDBOX_FIELDS:
+        raise RowContractError(
+            f"row of kind 'quality' has a sandbox block {sandbox!r}, expected "
+            f"exactly: {', '.join(sorted(SANDBOX_FIELDS))}"
+        )
+    if sandbox["network"] != "none" or sandbox["host_mount"] is not False:
+        raise RowContractError(
+            "row of kind 'quality' records a sandbox with network "
+            f"{sandbox['network']!r} and host_mount {sandbox['host_mount']!r}: "
+            "generated code runs with no network and no host mount"
+        )
+    for key in ("runtime", "image", "image_id"):
+        if not (isinstance(sandbox[key], str) and sandbox[key]):
+            raise RowContractError(
+                f"row of kind 'quality' has a sandbox with a malformed {key}"
+            )
+    for cap in _SANDBOX_CAPS:
+        value = sandbox[cap]
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise RowContractError(
+                f"row of kind 'quality' has sandbox {cap}={value!r}: a cap is a "
+                "positive integer"
+            )
+
+
+def _validate_code_breakdown(breakdown: Any, language: str) -> None:
+    if not isinstance(breakdown, dict) or language not in breakdown:
+        raise RowContractError(
+            "row of kind 'quality' has a programming_language_breakdown "
+            f"{breakdown!r} with no cell for its own language {language!r}"
+        )
+    for key, cell in breakdown.items():
+        if key not in code_sandbox.PROGRAMMING_LANGUAGES:
+            raise RowContractError(
+                f"row of kind 'quality' has a programming_language_breakdown "
+                f"cell for {key!r}, a language no code suite tags"
+            )
+        if not (
+            isinstance(cell, dict)
+            and set(cell) == CODE_LANGUAGE_CELL_FIELDS
+            and isinstance(cell["n"], int)
+            and not isinstance(cell["n"], bool)
+            and cell["n"] > 0
+            and isinstance(cell["score"], int | float)
+            and not isinstance(cell["score"], bool)
+            and 0.0 <= cell["score"] <= 1.0
+        ):
+            raise RowContractError(
+                f"row of kind 'quality' has a malformed "
+                f"programming_language_breakdown cell for {key!r}: {cell!r}"
+            )

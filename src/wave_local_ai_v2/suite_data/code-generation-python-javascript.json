@@ -1,0 +1,258 @@
+{
+  "suite_id": "code-generation-python-javascript",
+  "suite_version": "1",
+  "task_suite": "code-generation",
+  "scoring_rule": "unit_tests_pass",
+  "max_output_tokens": 512,
+  "stop_sequences": [],
+  "context_length": 32768,
+  "thinking_policy": "disabled",
+  "level": "development",
+  "divergence_tolerance": {
+    "value": 0.1,
+    "unit": "fraction_of_items",
+    "reason": "Provisional, not yet set against an observed cloud re-run of this suite: none is published, and no paid call was made when it was declared. It mirrors the classification and translation suites' 0.10 (2 of 24 items whose pass or fail outcome differs) until a Mistral or Google re-run of this suite against its published reference is observed and the value is re-set against it."
+  },
+  "items": [
+    {
+      "item_id": "py-en-01",
+      "prompt": "Write a Python function `is_palindrome(text)` that returns True when the text reads the same forwards and backwards once letters are lowercased and every character that is not a letter or a digit is ignored, and False otherwise. Reply with only the code, in one fenced code block.",
+      "language": "en",
+      "programming_language": "python",
+      "tests": "from solution import is_palindrome\n\n\ndef test_simple():\n    assert is_palindrome('level') is True\n\n\ndef test_ignores_case_and_punctuation():\n    assert is_palindrome('A man, a plan, a canal: Panama') is True\n\n\ndef test_not_a_palindrome():\n    assert is_palindrome('invoice') is False\n\n\ndef test_empty():\n    assert is_palindrome('') is True\n",
+      "provenance": "hand_written",
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
+    },
+    {
+      "item_id": "py-en-02",
+      "prompt": "Write a Python function `fizzbuzz(n)` that returns a list of strings for the numbers 1 to n: \"Fizz\" for multiples of 3, \"Buzz\" for multiples of 5, \"FizzBuzz\" for multiples of both, and the number itself otherwise. Reply with only the code, in one fenced code block.",
+      "language": "en",
+      "programming_language": "python",
+      "tests": "from solution import fizzbuzz\n\n\ndef test_fifteen():\n    assert fizzbuzz(15) == ['1', '2', 'Fizz', '4', 'Buzz', 'Fizz', '7', '8', 'Fizz', 'Buzz', '11', 'Fizz', '13', '14', 'FizzBuzz']\n\n\ndef test_zero():\n    assert fizzbuzz(0) == []\n",
+      "provenance": "hand_written",
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
+    },
+    {
+      "item_id": "py-en-03",
+      "prompt": "Write a Python function `flatten(nested)` that takes a list whose elements may themselves be lists, nested to any depth, and returns one flat list of the non-list elements in their original order. Reply with only the code, in one fenced code block.",
+      "language": "en",
+      "programming_language": "python",
+      "tests": "from solution import flatten\n\n\ndef test_deep():\n    assert flatten([1, [2, [3, [4]], 5], [], 6]) == [1, 2, 3, 4, 5, 6]\n\n\ndef test_flat():\n    assert flatten(['a', 'b']) == ['a', 'b']\n\n\ndef test_empty():\n    assert flatten([]) == []\n",
+      "provenance": "hand_written",
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
+    },
+    {
+      "item_id": "py-en-04",
+      "prompt": "Write a Python function `chunk(items, size)` that splits the list into consecutive lists of at most size elements, the last one possibly shorter, and raises ValueError when size is smaller than 1. Reply with only the code, in one fenced code block.",
+      "language": "en",
+      "programming_language": "python",
+      "tests": "from solution import chunk\n\n\ndef test_uneven():\n    assert chunk([1, 2, 3, 4, 5], 2) == [[1, 2], [3, 4], [5]]\n\n\ndef test_empty():\n    assert chunk([], 3) == []\n\n\ndef test_bad_size():\n    try:\n        chunk([1], 0)\n    except ValueError:\n        return\n    raise AssertionError('expected ValueError')\n",
+      "provenance": "hand_written",
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
+    },
+    {
+      "item_id": "py-fr-01",
+      "prompt": "Écrivez une fonction Python `compter_voyelles(texte)` qui renvoie le nombre de voyelles a, e, i, o, u et y du texte, sans tenir compte de la casse (les lettres accentuées ne comptent pas). Répondez uniquement avec le code, dans un seul bloc de code délimité.",
+      "language": "fr",
+      "programming_language": "python",
+      "tests": "from solution import compter_voyelles\n\n\ndef test_phrase():\n    assert compter_voyelles('Bonjour Yves') == 5\n\n\ndef test_sans_voyelle():\n    assert compter_voyelles('Pfft, grr') == 0\n\n\ndef test_vide():\n    assert compter_voyelles('') == 0\n",
+      "provenance": "hand_written",
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
+    },
+    {
+      "item_id": "py-fr-02",
+      "prompt": "Écrivez une fonction Python `moyenne(nombres)` qui renvoie la moyenne arithmétique d'une liste de nombres et lève une ValueError si la liste est vide. Répondez uniquement avec le code, dans un seul bloc de code délimité.",
+      "language": "fr",
+      "programming_language": "python",
+      "tests": "from solution import moyenne\n\n\ndef test_entiers():\n    assert moyenne([2, 4, 9]) == 5\n\n\ndef test_decimaux():\n    assert abs(moyenne([0.5, 1.5]) - 1.0) < 1e-9\n\n\ndef test_vide():\n    try:\n        moyenne([])\n    except ValueError:\n        return\n    raise AssertionError('ValueError attendue')\n",
+      "provenance": "hand_written",
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
+    },
+    {
+      "item_id": "py-fr-03",
+      "prompt": "Écrivez une fonction Python `inverser_mots(phrase)` qui renvoie les mots de la phrase dans l'ordre inverse, séparés par une seule espace, en ignorant les espaces en trop. Répondez uniquement avec le code, dans un seul bloc de code délimité.",
+      "language": "fr",
+      "programming_language": "python",
+      "tests": "from solution import inverser_mots\n\n\ndef test_phrase():\n    assert inverser_mots('la facture est payée') == 'payée est facture la'\n\n\ndef test_espaces():\n    assert inverser_mots('  un   deux ') == 'deux un'\n\n\ndef test_vide():\n    assert inverser_mots('') == ''\n",
+      "provenance": "hand_written",
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
+    },
+    {
+      "item_id": "py-fr-04",
+      "prompt": "Écrivez une fonction Python `est_premier(n)` qui renvoie True si l'entier n est un nombre premier et False sinon (les entiers inférieurs à 2 ne sont pas premiers). Répondez uniquement avec le code, dans un seul bloc de code délimité.",
+      "language": "fr",
+      "programming_language": "python",
+      "tests": "from solution import est_premier\n\n\ndef test_premiers():\n    assert [n for n in range(30) if est_premier(n)] == [2, 3, 5, 7, 11, 13, 17, 19, 23, 29]\n\n\ndef test_negatif():\n    assert est_premier(-7) is False\n\n\ndef test_grand():\n    assert est_premier(7919) is True\n",
+      "provenance": "hand_written",
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
+    },
+    {
+      "item_id": "py-de-01",
+      "prompt": "Schreiben Sie eine Python-Funktion `ziffernsumme(n)`, die die Summe der Ziffern der nicht negativen ganzen Zahl n zurückgibt. Antworten Sie nur mit dem Code, in einem einzigen abgegrenzten Codeblock.",
+      "language": "de",
+      "programming_language": "python",
+      "tests": "from solution import ziffernsumme\n\n\ndef test_zahl():\n    assert ziffernsumme(4096) == 19\n\n\ndef test_null():\n    assert ziffernsumme(0) == 0\n",
+      "provenance": "hand_written",
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
+    },
+    {
+      "item_id": "py-de-02",
+      "prompt": "Schreiben Sie eine Python-Funktion `zweitgroesste(zahlen)`, die die zweitgrößte unterschiedliche Zahl der Liste zurückgibt, oder None, wenn die Liste weniger als zwei unterschiedliche Zahlen enthält. Antworten Sie nur mit dem Code, in einem einzigen abgegrenzten Codeblock.",
+      "language": "de",
+      "programming_language": "python",
+      "tests": "from solution import zweitgroesste\n\n\ndef test_liste():\n    assert zweitgroesste([4, 9, 9, 1]) == 4\n\n\ndef test_gleich():\n    assert zweitgroesste([3, 3]) is None\n\n\ndef test_leer():\n    assert zweitgroesste([]) is None\n",
+      "provenance": "hand_written",
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
+    },
+    {
+      "item_id": "py-de-03",
+      "prompt": "Schreiben Sie eine Python-Funktion `lauflaenge(text)`, die den Text lauflängenkodiert zurückgibt: jede Folge gleicher Zeichen wird als das Zeichen gefolgt von der Länge der Folge geschrieben, zum Beispiel \"aaab\" als \"a3b1\". Antworten Sie nur mit dem Code, in einem einzigen abgegrenzten Codeblock.",
+      "language": "de",
+      "programming_language": "python",
+      "tests": "from solution import lauflaenge\n\n\ndef test_beispiel():\n    assert lauflaenge('aaab') == 'a3b1'\n\n\ndef test_wechsel():\n    assert lauflaenge('aabccc') == 'a2b1c3'\n\n\ndef test_leer():\n    assert lauflaenge('') == ''\n",
+      "provenance": "hand_written",
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
+    },
+    {
+      "item_id": "py-de-04",
+      "prompt": "Schreiben Sie eine Python-Funktion `iban_formatieren(iban)`, die eine IBAN normalisiert zurückgibt: alle Leerzeichen entfernt, in Großbuchstaben und in Vierergruppen durch je ein Leerzeichen getrennt. Antworten Sie nur mit dem Code, in einem einzigen abgegrenzten Codeblock.",
+      "language": "de",
+      "programming_language": "python",
+      "tests": "from solution import iban_formatieren\n\n\ndef test_formatieren():\n    assert iban_formatieren('de89 3704 0044 0532 0130 00') == 'DE89 3704 0044 0532 0130 00'\n\n\ndef test_ohne_leerzeichen():\n    assert iban_formatieren('fr7630006000011234567890189') == 'FR76 3000 6000 0112 3456 7890 189'\n",
+      "provenance": "hand_written",
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
+    },
+    {
+      "item_id": "js-en-01",
+      "prompt": "Write a JavaScript ES module that exports a function `capitalizeWords(text)` that returns the text with the first letter of every space-separated word in upper case and the rest of the word unchanged. Use no dependency. Reply with only the code, in one fenced code block.",
+      "language": "en",
+      "programming_language": "javascript",
+      "tests": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { capitalizeWords } from \"./solution.mjs\";\n\ntest(\"words\", () => {\n  assert.equal(capitalizeWords(\"quarterly sales report\"), \"Quarterly Sales Report\");\n});\n\ntest(\"keeps the rest\", () => {\n  assert.equal(capitalizeWords(\"iPhone and macOS\"), \"IPhone And MacOS\");\n});\n\ntest(\"empty\", () => {\n  assert.equal(capitalizeWords(\"\"), \"\");\n});\n",
+      "provenance": "hand_written",
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
+    },
+    {
+      "item_id": "js-en-02",
+      "prompt": "Write a JavaScript ES module that exports a function `range(start, end, step = 1)` that returns the array of numbers from start up to but not including end, counting by step (a positive integer). Use no dependency. Reply with only the code, in one fenced code block.",
+      "language": "en",
+      "programming_language": "javascript",
+      "tests": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { range } from \"./solution.mjs\";\n\ntest(\"default step\", () => {\n  assert.deepEqual(range(2, 6), [2, 3, 4, 5]);\n});\n\ntest(\"step\", () => {\n  assert.deepEqual(range(0, 10, 3), [0, 3, 6, 9]);\n});\n\ntest(\"empty\", () => {\n  assert.deepEqual(range(5, 5), []);\n});\n",
+      "provenance": "hand_written",
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
+    },
+    {
+      "item_id": "js-en-03",
+      "prompt": "Write a JavaScript ES module that exports a function `uniqueSorted(numbers)` that returns a new array holding each distinct number of the input once, in ascending numeric order, without modifying the input. Use no dependency. Reply with only the code, in one fenced code block.",
+      "language": "en",
+      "programming_language": "javascript",
+      "tests": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { uniqueSorted } from \"./solution.mjs\";\n\ntest(\"numeric order\", () => {\n  assert.deepEqual(uniqueSorted([10, 2, 33, 2, 10, 1]), [1, 2, 10, 33]);\n});\n\ntest(\"input untouched\", () => {\n  const input = [3, 1, 3];\n  uniqueSorted(input);\n  assert.deepEqual(input, [3, 1, 3]);\n});\n",
+      "provenance": "hand_written",
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
+    },
+    {
+      "item_id": "js-en-04",
+      "prompt": "Write a JavaScript ES module that exports a function `groupBy(items, key)` that returns a plain object mapping each distinct value of the property named key to the array of items carrying that value, in input order. Use no dependency. Reply with only the code, in one fenced code block.",
+      "language": "en",
+      "programming_language": "javascript",
+      "tests": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { groupBy } from \"./solution.mjs\";\n\ntest(\"groups\", () => {\n  const a = { team: \"ops\", n: 1 }, b = { team: \"dev\", n: 2 }, c = { team: \"ops\", n: 3 };\n  assert.deepEqual(groupBy([a, b, c], \"team\"), { ops: [a, c], dev: [b] });\n});\n\ntest(\"empty\", () => {\n  assert.deepEqual(groupBy([], \"team\"), {});\n});\n",
+      "provenance": "hand_written",
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
+    },
+    {
+      "item_id": "js-fr-01",
+      "prompt": "Écrivez un module ES JavaScript qui exporte une fonction `compterMots(texte)` qui renvoie le nombre de mots du texte, un mot étant une suite de caractères sans espace blanc (0 pour un texte vide ou fait seulement d'espaces). N'utilisez aucune dépendance. Répondez uniquement avec le code, dans un seul bloc de code délimité.",
+      "language": "fr",
+      "programming_language": "javascript",
+      "tests": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { compterMots } from \"./solution.mjs\";\n\ntest(\"phrase\", () => {\n  assert.equal(compterMots(\"Merci pour votre retour rapide\"), 5);\n});\n\ntest(\"espaces\", () => {\n  assert.equal(compterMots(\"  un\\tdeux\\n trois  \"), 3);\n});\n\ntest(\"vide\", () => {\n  assert.equal(compterMots(\"   \"), 0);\n});\n",
+      "provenance": "hand_written",
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
+    },
+    {
+      "item_id": "js-fr-02",
+      "prompt": "Écrivez un module ES JavaScript qui exporte une fonction `factorielle(n)` qui renvoie la factorielle de l'entier n positif ou nul (factorielle(0) vaut 1). N'utilisez aucune dépendance. Répondez uniquement avec le code, dans un seul bloc de code délimité.",
+      "language": "fr",
+      "programming_language": "javascript",
+      "tests": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { factorielle } from \"./solution.mjs\";\n\ntest(\"valeurs\", () => {\n  assert.equal(factorielle(0), 1);\n  assert.equal(factorielle(5), 120);\n  assert.equal(factorielle(10), 3628800);\n});\n",
+      "provenance": "hand_written",
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
+    },
+    {
+      "item_id": "js-fr-03",
+      "prompt": "Écrivez un module ES JavaScript qui exporte une fonction `formaterMontant(centimes)` qui convertit un montant entier positif ou nul en centimes en une chaîne en euros avec exactement deux décimales et une virgule comme séparateur décimal, sans séparateur de milliers ni symbole (par exemple 123456 donne \"1234,56\"). N'utilisez aucune dépendance. Répondez uniquement avec le code, dans un seul bloc de code délimité.",
+      "language": "fr",
+      "programming_language": "javascript",
+      "tests": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { formaterMontant } from \"./solution.mjs\";\n\ntest(\"exemple\", () => {\n  assert.equal(formaterMontant(123456), \"1234,56\");\n});\n\ntest(\"petits montants\", () => {\n  assert.equal(formaterMontant(5), \"0,05\");\n  assert.equal(formaterMontant(0), \"0,00\");\n  assert.equal(formaterMontant(1990), \"19,90\");\n});\n",
+      "provenance": "hand_written",
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
+    },
+    {
+      "item_id": "js-fr-04",
+      "prompt": "Écrivez un module ES JavaScript qui exporte une fonction `estAnagramme(a, b)` qui renvoie true si les deux chaînes sont des anagrammes l'une de l'autre en ignorant la casse et les espaces, et false sinon. N'utilisez aucune dépendance. Répondez uniquement avec le code, dans un seul bloc de code délimité.",
+      "language": "fr",
+      "programming_language": "javascript",
+      "tests": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { estAnagramme } from \"./solution.mjs\";\n\ntest(\"anagramme\", () => {\n  assert.equal(estAnagramme(\"Chien\", \"niche\"), true);\n  assert.equal(estAnagramme(\"La crise\", \"Calries\"), true);\n});\n\ntest(\"pas anagramme\", () => {\n  assert.equal(estAnagramme(\"devis\", \"facture\"), false);\n  assert.equal(estAnagramme(\"aab\", \"abb\"), false);\n});\n",
+      "provenance": "hand_written",
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
+    },
+    {
+      "item_id": "js-de-01",
+      "prompt": "Schreiben Sie ein JavaScript-ES-Modul, das eine Funktion `fibonacci(n)` exportiert, die die n-te Fibonacci-Zahl zurückgibt, mit fibonacci(0) gleich 0 und fibonacci(1) gleich 1. Verwenden Sie keine Abhängigkeit. Antworten Sie nur mit dem Code, in einem einzigen abgegrenzten Codeblock.",
+      "language": "de",
+      "programming_language": "javascript",
+      "tests": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { fibonacci } from \"./solution.mjs\";\n\ntest(\"werte\", () => {\n  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7].map(fibonacci), [0, 1, 1, 2, 3, 5, 8, 13]);\n});\n\ntest(\"groesser\", () => {\n  assert.equal(fibonacci(40), 102334155);\n});\n",
+      "provenance": "hand_written",
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
+    },
+    {
+      "item_id": "js-de-02",
+      "prompt": "Schreiben Sie ein JavaScript-ES-Modul, das eine Funktion `zaehleZeichen(text, zeichen)` exportiert, die zurückgibt, wie oft das einzelne Zeichen zeichen im Text vorkommt, unter Beachtung der Groß- und Kleinschreibung. Verwenden Sie keine Abhängigkeit. Antworten Sie nur mit dem Code, in einem einzigen abgegrenzten Codeblock.",
+      "language": "de",
+      "programming_language": "javascript",
+      "tests": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { zaehleZeichen } from \"./solution.mjs\";\n\ntest(\"zaehlen\", () => {\n  assert.equal(zaehleZeichen(\"Rechnungsnummer\", \"n\"), 3);\n  assert.equal(zaehleZeichen(\"Rechnungsnummer\", \"R\"), 1);\n});\n\ntest(\"kein treffer\", () => {\n  assert.equal(zaehleZeichen(\"\", \"a\"), 0);\n});\n",
+      "provenance": "hand_written",
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
+    },
+    {
+      "item_id": "js-de-03",
+      "prompt": "Schreiben Sie ein JavaScript-ES-Modul, das eine Funktion `maxTeilsumme(zahlen)` exportiert, die die größte Summe eines zusammenhängenden, nicht leeren Teilarrays des nicht leeren Zahlenarrays zurückgibt. Verwenden Sie keine Abhängigkeit. Antworten Sie nur mit dem Code, in einem einzigen abgegrenzten Codeblock.",
+      "language": "de",
+      "programming_language": "javascript",
+      "tests": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { maxTeilsumme } from \"./solution.mjs\";\n\ntest(\"gemischt\", () => {\n  assert.equal(maxTeilsumme([-2, 1, -3, 4, -1, 2, 1, -5, 4]), 6);\n});\n\ntest(\"nur negativ\", () => {\n  assert.equal(maxTeilsumme([-8, -3, -6]), -3);\n});\n",
+      "provenance": "hand_written",
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
+    },
+    {
+      "item_id": "js-de-04",
+      "prompt": "Schreiben Sie ein JavaScript-ES-Modul, das eine Funktion `istAusgeglichen(text)` exportiert, die true zurückgibt, wenn alle runden, eckigen und geschweiften Klammern im Text korrekt geöffnet, geschlossen und verschachtelt sind, und sonst false; andere Zeichen werden ignoriert. Verwenden Sie keine Abhängigkeit. Antworten Sie nur mit dem Code, in einem einzigen abgegrenzten Codeblock.",
+      "language": "de",
+      "programming_language": "javascript",
+      "tests": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { istAusgeglichen } from \"./solution.mjs\";\n\ntest(\"ausgeglichen\", () => {\n  assert.equal(istAusgeglichen(\"f(a[0], {b: 1})\"), true);\n  assert.equal(istAusgeglichen(\"\"), true);\n});\n\ntest(\"nicht ausgeglichen\", () => {\n  assert.equal(istAusgeglichen(\"(]\"), false);\n  assert.equal(istAusgeglichen(\"((\"), false);\n  assert.equal(istAusgeglichen(\"())\"), false);\n});\n",
+      "provenance": "hand_written",
+      "contamination_risk": false,
+      "licence": "CC-BY-4.0"
+    }
+  ]
+}

@@ -15,10 +15,11 @@ def _completion(
     }
 
 
-def test_the_rule_table_names_exactly_the_two_shipped_rules() -> None:
+def test_the_rule_table_names_exactly_the_three_shipped_rules() -> None:
     assert set(scoring_rules.SCORING_RULES) == {
         "exact_label_match",
         "chrf_against_reference",
+        "unit_tests_pass",
     }
 
 

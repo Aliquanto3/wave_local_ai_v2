@@ -22,6 +22,10 @@ _SHIPPED = {
         "4",
         "16150e4406042a8940093740640627b7ce4ce9e80ae64bc080b7b4d80f6f7574",  # pragma: allowlist secret
     ),
+    "code-generation-python-javascript": (
+        "1",
+        "ec4d5c46bb3179644533aa6c7331f43ba4999661f43dc46945b80bc3c8f9c3fc",  # pragma: allowlist secret
+    ),
 }
 
 _VALID = {

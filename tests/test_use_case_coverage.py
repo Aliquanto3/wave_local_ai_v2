@@ -346,7 +346,6 @@ def test_run_today_the_command_refuses_naming_what_is_not_yet_covered(
     assert capsys.readouterr().err.splitlines()[1:] == [
         "- document-comparison: has no state",
         f"- text-rewriting: {unresolved}",
-        "- code-generation: has no state",
         "- agentic-planning: has no state",
         "- agentic-tool-calling: has no state",
         "- web-research: has no state",

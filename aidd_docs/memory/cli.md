@@ -71,6 +71,26 @@ The command-line interface for running benchmarks.
       `suite_accuracy` and `language_breakdown`. Prints `suite_score=`.
       `unparseable` is structurally unreachable (no closed set, no
       extraction step) and its count stays 0.
+    - `code-generation-python-javascript` (`task_suite` `code-generation`,
+      rule `unit_tests_pass`): 24 hand-written function tasks, 12 Python and
+      12 JavaScript, instructions 8 each in `en`/`fr`/`de`, 512 output
+      tokens. The first fenced block of the answer (else the whole answer)
+      runs against the item's tests in a Docker container
+      (`code_sandbox.py`: `--pull never`, `--network none`, no mount,
+      read-only root, `tmpfs` workdir, user 65534, 256 MiB, 64 pids, 20 s
+      wall clock enforced by an in-container watchdog, host kill and
+      `rm -f` only past a grace), run from the image's resolved local id;
+      JavaScript under `node --test`. A pass needs exit 0 and a per-run
+      nonce reached after the last test, so code that exits 0 before its
+      tests ran fails. Item 1.0 when every test passes, else 0.0 with `compile_error`/`tests_failed`/`timeout` beside
+      the shared reasons. Publishes the graded block (tests as
+      `reference_output`) plus the code block (schema "30"):
+      `programming_language`, `sandbox` (runtime, image, image id, caps) and
+      `programming_language_breakdown` (a cell only per tagged language).
+      Images: `CODE_SANDBOX_PYTHON_IMAGE` (default `python:3.12-slim`) and
+      `CODE_SANDBOX_NODE_IMAGE` (default `node:22-slim`), local only. No
+      `docker` on PATH, no daemon or a missing image exits `1` as one line
+      before settings or any process; generated code never runs on the host.
   - One row never carries both score shapes (`row_contract` refuses it):
     select on `task_suite` before comparing any score column. A
     single-reference chrF compares models against identical references, not

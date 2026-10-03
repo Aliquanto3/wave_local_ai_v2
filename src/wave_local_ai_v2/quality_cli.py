@@ -51,6 +51,7 @@ import requests
 
 from wave_local_ai_v2 import (
     campaigns,
+    code_sandbox,
     cost,
     engines,
     fiche_registry,
@@ -269,6 +270,9 @@ def main() -> None:
         # An unregistered `--suite`, an unknown scoring rule or a malformed
         # definition: refused before any process spawns, naming what is wrong.
         SuiteRegistryError,
+        # No container runtime, daemon or sandbox image for a suite whose
+        # generated code must run sandboxed: refused, never run on the host.
+        code_sandbox.SandboxUnavailable,
         # An unregistered `--prompt-variant` id or version.
         prompt_variants.PromptVariantError,
         # A run outside its campaign's declaration, or a declaration that
@@ -290,6 +294,9 @@ def _run(
     # Resolved first: an unregistered id, or a definition the registry or the
     # gate refuses, aborts before settings, the roster or any process.
     spec = suite_registry.resolve(suite)
+    # A rule that needs the host (the code sandbox) refuses here, before
+    # settings, the roster or any process: generated code never runs outside it.
+    spec.preflight()
     prompt_variant = prompt_variants.resolve(*prompt_variant_ref)
     settings = load_settings()
     # The declared machine and compute mode, before the roster or any

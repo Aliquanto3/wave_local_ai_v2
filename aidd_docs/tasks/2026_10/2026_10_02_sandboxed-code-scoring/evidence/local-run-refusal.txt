@@ -1,0 +1,9 @@
+$ CODE_SANDBOX_PYTHON_IMAGE=sha256:11b8a687f7d5386322d4a5ffe3d485acf985f859ef9122ddde551d9aae3a82c4 QUALITY_PROVIDERS=local wave-local-ai-v2-quality --suite code-generation-python-javascript
+ghcr.io/aliquanto3/wave_local_ai_v2:v0.1.0 11b8a687f7d5
+wave-local-ai-v2:ci c672706cba14
+ghcr.io/aliquanto3/wave_local_ai_v2:latest 099ed9432507
+alpine:latest 28bd5fe8b56d
+hello-world:latest 5dd0d3e6e255
+error: code-generation suite refused: sandbox image 'node:22-slim' for javascript is not present locally and is never pulled (set CODE_SANDBOX_NODE_IMAGE to a local image)
+exit=1
+ls: cannot access '/c/Users/Anael/dev/wave_local_ai_v2-night/aidd_docs/tasks/2026_10/2026_10_02_sandboxed-code-scoring/evidence/quality.jsonl': No such file or directory

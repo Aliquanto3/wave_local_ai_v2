@@ -21,7 +21,8 @@
     },
     {
       "use_case": "code-generation",
-      "state": null
+      "state": "exercised",
+      "suite_ids": ["code-generation-python-javascript"]
     },
     {
       "use_case": "agentic-planning",

@@ -13,6 +13,7 @@ from store_fixtures import ROSTER_REQUIREMENTS, single_refusal, write_raised_ros
 
 from wave_local_ai_v2 import (
     chrf,
+    code_sandbox,
     comparison,
     engines,
     google_client,
@@ -20,6 +21,7 @@ from wave_local_ai_v2 import (
     mistral_client,
     prompt_variants,
     quality_cli,
+    row_contract,
     score_interval,
     scoring_rules,
     suite_registry,
@@ -1554,7 +1556,7 @@ def test_every_row_names_its_subjects_family_and_size_class(stubbed_run) -> None
         ("mistral", "mistral", None),
         ("google", "google", None),
     }
-    assert {row["schema_version"] for row in rows} == {"29"}
+    assert {row["schema_version"] for row in rows} == {"30"}
 
 
 def test_every_row_names_direct_its_version_and_its_measured_overhead(
@@ -3622,3 +3624,57 @@ def test_main_installs_the_graceful_stop_and_exits_one_when_stopped(
     assert installed == [True]
     assert exc_info.value.code == 1
     assert "error: run stopped by signal 15" in capsys.readouterr().err
+
+
+# --- the sandboxed code-generation suite --------------------------------------
+
+_CODE_SUITE_ID = "code-generation-python-javascript"
+
+
+def test_a_code_suite_with_no_container_runtime_exits_1_before_any_process(
+    stubbed_run, monkeypatch, capsys
+) -> None:
+    quality_results_path, started = stubbed_run
+    host_runs: list[object] = []
+    monkeypatch.setattr(code_sandbox, "active_runner", code_sandbox.DockerSandbox)
+    monkeypatch.setattr(code_sandbox.shutil, "which", lambda name: None)
+    monkeypatch.setattr(
+        code_sandbox.subprocess, "run", lambda *a, **k: host_runs.append(a)
+    )
+    monkeypatch.setattr(
+        "sys.argv", ["wave-local-ai-v2-quality", "--suite", _CODE_SUITE_ID]
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        quality_cli.main()
+
+    assert exit_info.value.code == 1
+    err = capsys.readouterr().err
+    assert err.count("\n") == 1 and "no container runtime" in err
+    assert started["load_settings"].call_count == 0
+    assert started["running_server"].call_count == 0
+    assert host_runs == []
+    assert not quality_results_path.exists()
+
+
+def test_a_code_suite_run_publishes_code_rows_per_programming_language(
+    stubbed_run, fake_sandbox
+) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run(suite=_CODE_SUITE_ID)
+
+    rows = [
+        row for row in read_rows(quality_results_path) if row["provider"] == "local"
+    ]
+    spec = suite_registry.resolve(_CODE_SUITE_ID)
+    assert [row["item_id"] for row in rows] == [item["item_id"] for item in spec.items]
+    for row, item in zip(rows, spec.items, strict=True):
+        assert row["schema_version"] == "30"
+        assert row["programming_language"] == item["programming_language"]
+        assert row["sandbox"]["network"] == "none"
+        assert row["sandbox"]["host_mount"] is False
+        assert set(row["programming_language_breakdown"]) == {"python", "javascript"}
+        assert row["item_score"] == 0.0 and row["failure_reason"] is not None
+        assert not row_contract.JUDGED_FIELDS & row.keys()
+    assert fake_sandbox.checked == [("python", "javascript")]

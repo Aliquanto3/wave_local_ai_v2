@@ -114,6 +114,7 @@ def test_every_registered_suite_is_exported() -> None:
     assert ids == {
         "classification-support-routing",
         "translation-business-short-form",
+        "code-generation-python-javascript",
     }
 
 
