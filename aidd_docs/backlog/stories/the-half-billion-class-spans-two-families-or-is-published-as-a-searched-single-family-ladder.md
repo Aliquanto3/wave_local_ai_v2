@@ -19,7 +19,9 @@ Maps to: PRD AC "Given the published roster, each size class it publishes spans 
 
 Needs: a real local model run on the dev machine (gate downloads under 1 GB per candidate, one load each, then both suites per entry). No API key; an operator only if a candidate is refused for its architecture, since the build-upgrade tradeoff is the owner's.
 
-Blocked: by the spike `aidd_docs/backlog/spikes/which-candidate-ggufs-exist-per-size-class-and-does-the-pinned-build-load-them.md`, which establishes which of this class's shortlisted GGUFs exist, at which quants, and whether the pinned build loads them.
+Blocked: by the spike `aidd_docs/backlog/spikes/which-candidate-ggufs-exist-per-size-class-and-does-the-pinned-build-load-them.md` (`blocked`), which still needs one live gate run under b10537 per architecture of this class, with its `/props` template: Granite 4.0 H 350M (`granitehybrid`), Granite 4.0 350M (`granite`) and the LFM2 candidate Q107 picks (`lfm2`); by Q107 (which LFM2 model stands for the line at ~0.5B: `LFM2.5-350M` by default, the literal smallest `LFM2.5-230M`, or the first-generation `LFM2-350M`) and by Q108 (whether those loads are this story's own first gate runs, which drops the spike from this line), both in `aidd_docs/tasks/2026_10/2026_10_02_backlog-refinement/owner-questions.md`. Both `depends_on` targets are `done`.
+
+Current state (verified on `main` at `c68b23e`, 2026-10-03): the class holds one entry, `qwen3-0.6b-q8` (`Q8_0`, 596,049,920 total params, 639,446,688 bytes on disk), and its `size_classes` declaration in `aidd_docs/roster/models.json` (`roster_version` 4) is `single_family_ladder: false`, `moe_sought: false`, `moe_entry: null`, `moe_absent_reason: null`, so the README's composition block names two failures for it ("spans one family (qwen) without the single-family-ladder label", "has no MoE represented and no reason recorded"). `roster.KNOWN_FAMILIES` already holds `ibm` and `liquid`. `candidate_gate.run_gate` writes a pass record whose `entry` block carries `size_class` (`roster.size_class_for`), `bytes_on_disk`, `architecture.total_params`, `kind` and `expert_count` read off the GGUF, so an entry is a copy of that block. The candidate record file `candidate_gate.DEFAULT_RECORDS_PATH` (`aidd_docs/roster/candidate-records.jsonl`) does not exist yet; the first gate run creates it. `roster.SizeClassDeclaration` has four fields only: the ladder label is a boolean with no field naming refused candidates, so the refusals behind a label are read from the candidate record and named in the README's composition section.
 
 ## Acceptance
 
@@ -37,7 +39,7 @@ Blocked: by the spike `aidd_docs/backlog/spikes/which-candidate-ggufs-exist-per-
 
 ## Tests it needs
 
-- `tests/test_roster.py`: the new entries load, resolve their family and follow the version bump; the composition check's test over the shipped file is updated to the new composition of this class.
+- `tests/test_roster.py`: the new entries load, resolve their family and follow the version bump; the composition check's tests over the shipped file and its README block (`tests/test_composition_check.py`, `test_the_shipped_roster_reports_four_single_family_classes_and_fails`, `test_the_readme_quotes_the_check_output_on_the_shipped_roster`) are updated to the new composition of this class.
 
 ## Evidence it publishes
 
