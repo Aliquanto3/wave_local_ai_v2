@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The terse-output variant runs every item and meets baseline in a paired
+  test (schema "27")** -- the prompt variant registry gains
+  `output_compressed` v1, a terse-output instruction appended to the
+  authored prompt, whose wording is its hashed definition. A variant may
+  declare the task families it `applies_to` with its
+  `applicability_reason` (`output_compressed`: `classification` only). An
+  item outside them still runs with its authored prompt, and its quality row
+  states `prompt_variant_noop: true`; the row gate checks that value against
+  the registry and, for every variant, `prompt_before_template` against the
+  variant applied to the item's authored text. `wave-local-ai-v2-quality
+  --prompt-variant ID[@VERSION]` picks the variant (default `baseline`). Tests
+  hold caps, stop sequences, context length, thinking policy, scorer, parser,
+  expected output and item set identical across the two variants on every
+  suite. A laptop pair (`qwen3-0.6b-q8`, classification) is compared in
+  `aidd_docs/results/README.md`.
+
 - **Each machine returns its rows by pull request, and a hash collision is
   refused** -- every declared machine owns a tracked results location,
   `aidd_docs/results/machines/<machine_id>/` (`runtime.jsonl`,
@@ -392,6 +408,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exist, composing nothing server-side across them; `CoverageAbsence.tsx`
   renders the `no-use-case-is-silently-absent` absence once, at the page
   level.
+
+### Fixed
+
+- **A batch interval is no longer a comparison confound** -- `comparison.py`
+  exempts `score_interval` (schema "21") with the other batch outcomes: two
+  batches that score differently always publish different intervals, so
+  every real pair was published as an observation naming it.
 
 ### Changed
 

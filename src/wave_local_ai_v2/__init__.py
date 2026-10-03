@@ -257,7 +257,10 @@ def _run() -> None:
     # item does. `/completion` applies no template, so what the variant
     # returns is also the string the engine receives and the row publishes.
     prompt_variant = prompt_variants.resolve(PROMPT_VARIANT_ID)
-    sent_prompt = prompt_variants.apply_variant(prompt_variant, FIXED_PROMPT)
+    # The fixed prompt belongs to no task family (`None`).
+    sent_prompt = prompt_variants.apply_variant(
+        prompt_variant, FIXED_PROMPT, None
+    ).prompt
     # Under a campaign, checked against its declaration before the build
     # probe or any spawn. The fixed prompt scores no suite, so no suite is
     # checked; with no campaign the row records that it belongs to none.

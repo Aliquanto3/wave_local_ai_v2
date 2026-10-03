@@ -211,6 +211,8 @@ EXCLUDED_FROM_DIFFERING: frozenset[str] = frozenset(
         "item_id",
         "prompt",
         "prompt_before_template",
+        # derived from the variant and the suite's family, never a confound
+        "prompt_variant_noop",
         "expected_label",
         "predicted_label",
         "correct",
@@ -230,6 +232,9 @@ EXCLUDED_FROM_DIFFERING: frozenset[str] = frozenset(
         "suite_score",
         "score_breakdown",
         "failure_counts",
+        # the batch's interval (schema "21"): computed from the outcomes, so
+        # two batches that score differently always differ on it
+        "score_interval",
         "judges",
         "agreement",
         "agreement_statistic",

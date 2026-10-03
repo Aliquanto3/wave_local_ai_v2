@@ -34,6 +34,16 @@ The command-line interface for running benchmarks.
     scoring differs, a new entry in `scoring_rules.SCORING_RULES`. Unknown
     top-level and item keys are carried as data (`SuiteDefinition.extra`, the
     item mapping) and exported in the snapshot.
+  - `--prompt-variant VARIANT_ID[@VERSION]` names the registered prompt
+    variant (`prompt_variants.py`) every item runs under, default `baseline`,
+    latest version when none is given; an unregistered id or version exits
+    `1` before any process. A variant may declare the task families it
+    `applies_to`: every item of the suite still runs, and outside those
+    families the authored prompt is sent unchanged and each row states
+    `prompt_variant_noop: true` (quality rows, schema "27"). `baseline` v1
+    applies everywhere; `output_compressed` v1 appends a terse-output
+    instruction on `classification` and is a no-op on `translation`. Under a
+    campaign the variant must be one it declares.
     - `classification-support-routing` (`task_suite` `classification`, rule
       `exact_label_match`): 20 support messages routed into one of four labels
       (`en`/`fr`/`de`, each >=25% share), 32 output tokens, scored by exact

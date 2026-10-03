@@ -16,8 +16,14 @@ suite prompt is held to. Changing a definition therefore means bumping its
 version *and* recording the new hash, which leaves the old (id, version)
 naming the definition its published rows ran under.
 
-`baseline` is the only entry today. The other three variants the epic
-declares (`constrained_output`, `output_compressed`, `input_compressed`) are
+A definition may declare the task families (a suite's `task_suite`) it
+`applies_to`, with its `applicability_reason`; one that declares none applies
+to every family. A variant never removes an item: an item of a family it does
+not apply to is still run, with the authored prompt unchanged, and its row
+records that the transformation was a no-op.
+
+`baseline` and `output_compressed` are registered today. The other two
+variants the epic declares (`constrained_output`, `input_compressed`) are
 added by their own stories.
 """
 
@@ -31,8 +37,13 @@ from types import MappingProxyType
 from typing import Any
 
 BASELINE_ID = "baseline"
+OUTPUT_COMPRESSED_ID = "output_compressed"
 
 TRANSFORMATION_IDENTITY = "identity"
+TRANSFORMATION_APPEND_INSTRUCTION = "append_instruction"
+
+# What separates the authored prompt from an appended instruction.
+INSTRUCTION_SEPARATOR = "\n\n"
 
 
 class PromptVariantError(ValueError):
@@ -47,6 +58,19 @@ class PromptVariant:
     version: str
     definition: Mapping[str, Any]
     definition_hash: str
+
+
+@dataclass(frozen=True)
+class VariantApplication:
+    """What a variant made of one authored prompt, and whether it skipped it.
+
+    `noop` is true when the item's task family is outside the variant's
+    declared `applies_to`: the transformation was not applied and `prompt`
+    is the authored text.
+    """
+
+    prompt: str
+    noop: bool
 
 
 def definition_hash(definition: Mapping[str, Any]) -> str:
@@ -72,6 +96,35 @@ REGISTERED_VARIANTS: tuple[Mapping[str, Any], ...] = (
         },
         "definition_hash": (
             "aea6cde7c1e788c7a9c47050ec7888d8dce7963b95814e5b3f2cd47d8a69ea93"  # pragma: allowlist secret
+        ),
+    },
+    {
+        "variant_id": OUTPUT_COMPRESSED_ID,
+        "version": "1",
+        "definition": {
+            "transformation": TRANSFORMATION_APPEND_INSTRUCTION,
+            "instruction": (
+                "Answer as tersely as possible: no greeting, no explanation, "
+                "no filler words, no full sentences. Output only what the task "
+                "asks for."
+            ),
+            "applies_to": ["classification"],
+            "applicability_reason": (
+                "A classification answer is one label scored by exact match, so "
+                "a terse-output instruction can only change how the label is "
+                "worded around, and the test behind the family reads the "
+                "effect. A translation's length is set by its source and its "
+                "reference, so a terse instruction could only remove content "
+                "the reference requires: the variant records a no-op there."
+            ),
+            "description": (
+                "The item's authored prompt followed by a terse-output "
+                "(Caveman-style) instruction: does telling a small model to "
+                "answer tersely help or hurt it?"
+            ),
+        },
+        "definition_hash": (
+            "f210943107058d5a9ebbbac26eee312b01f3220bfe874e56676d0fa41c69388c"  # pragma: allowlist secret
         ),
     },
 )
@@ -107,6 +160,20 @@ def load_registry(
                 f"declares {variant.definition_hash}: its definition was edited "
                 "without a version bump"
             )
+        applies_to = variant.definition.get("applies_to")
+        if applies_to is not None and (
+            not isinstance(applies_to, list)
+            or not applies_to
+            or not all(isinstance(family, str) and family for family in applies_to)
+            or not isinstance(variant.definition.get("applicability_reason"), str)
+            or not variant.definition["applicability_reason"].strip()
+        ):
+            raise PromptVariantError(
+                f"prompt variant {variant.variant_id!r} version "
+                f"{variant.version!r} declares applies_to {applies_to!r}: it "
+                "must be a non-empty list of task families with a non-empty "
+                "applicability_reason"
+            )
         if variant.definition.get("transformation") not in _TRANSFORMATIONS:
             raise PromptVariantError(
                 f"prompt variant {variant.variant_id!r} version "
@@ -138,23 +205,48 @@ def resolve(variant_id: str, version: str | None = None) -> PromptVariant:
     )
 
 
-def apply_variant(variant: PromptVariant, authored_prompt: str) -> str:
-    """The prompt `variant` makes of `authored_prompt`, before any templating.
+def applies(variant: PromptVariant, task_family: str | None) -> bool:
+    """Whether `variant` transforms a prompt of `task_family`.
+
+    A definition declaring no `applies_to` applies to every family, and to a
+    prompt that belongs to none (`None`: the runtime benchmark's fixed
+    prompt); one declaring a list applies only to the families it names.
+    """
+    applies_to = variant.definition.get("applies_to")
+    return applies_to is None or task_family in applies_to
+
+
+def apply_variant(
+    variant: PromptVariant, authored_prompt: str, task_family: str | None
+) -> VariantApplication:
+    """What `variant` makes of `authored_prompt`, before any templating.
 
     The one place a variant is applied: every writer's subject call sends
-    what this returns, and every row publishes it as `prompt_before_template`.
+    the returned `prompt`, and every row publishes it as
+    `prompt_before_template` beside the returned `noop`. Outside the
+    variant's declared families the authored text comes back unchanged and
+    `noop` is true: the item is still run, never dropped.
     """
+    if not applies(variant, task_family):
+        return VariantApplication(prompt=authored_prompt, noop=True)
     transform = _TRANSFORMATIONS[variant.definition["transformation"]]
-    return transform(authored_prompt)
+    return VariantApplication(
+        prompt=transform(variant.definition, authored_prompt), noop=False
+    )
 
 
-def _identity(prompt: str) -> str:
+def _identity(definition: Mapping[str, Any], prompt: str) -> str:
     return prompt
 
 
+def _append_instruction(definition: Mapping[str, Any], prompt: str) -> str:
+    return f"{prompt}{INSTRUCTION_SEPARATOR}{definition['instruction']}"
+
+
 # The transformation each definition names, by its `transformation` key.
-_TRANSFORMATIONS: dict[str, Callable[[str], str]] = {
+_TRANSFORMATIONS: dict[str, Callable[[Mapping[str, Any], str], str]] = {
     TRANSFORMATION_IDENTITY: _identity,
+    TRANSFORMATION_APPEND_INSTRUCTION: _append_instruction,
 }
 
 REGISTRY: Mapping[tuple[str, str], PromptVariant] = load_registry(REGISTERED_VARIANTS)

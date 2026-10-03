@@ -208,6 +208,11 @@ _COMMON_FIELDS: dict[tuple[str, ...], FieldDoc] = {
         "Prompt variant applied to the authored prompt before templating.", _ID
     ),
     ("prompt_variant_version",): FieldDoc("Version of that variant.", _ID),
+    ("prompt_variant_noop",): FieldDoc(
+        "Whether the variant does not apply to the item's task family, so the "
+        "item ran with its authored prompt unchanged (quality rows, schema 27).",
+        _BOOL,
+    ),
     ("subject_egress",): FieldDoc(
         "Where the subject prompt went: 'none' when it was served on the "
         "machine, else the id of the cloud provider that received it. The "

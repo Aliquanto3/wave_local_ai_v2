@@ -13,9 +13,11 @@ from store_fixtures import ROSTER_REQUIREMENTS, single_refusal, write_raised_ros
 
 from wave_local_ai_v2 import (
     chrf,
+    comparison,
     google_client,
     local_client,
     mistral_client,
+    prompt_variants,
     quality_cli,
     score_interval,
     scoring_rules,
@@ -950,9 +952,7 @@ def test_the_variant_runs_before_templating_on_the_local_and_cloud_paths(
 ) -> None:
     quality_results_path, started = stubbed_run
     _enable_google(started)
-    monkeypatch.setattr(quality_cli, "PROMPT_VARIANT_ID", marking_variant)
-
-    quality_cli._run()
+    quality_cli._run(prompt_variant_ref=(marking_variant, None))
 
     marked = [mark_prompt(item["prompt"]) for item in CLASSIFICATION_TASK_SUITE]
     local_bodies = [call.kwargs["json"] for call in item_posts(started["post"])]
@@ -1487,7 +1487,7 @@ def test_every_row_names_its_subjects_family_and_size_class(stubbed_run) -> None
         ("mistral", "mistral", None),
         ("google", "google", None),
     }
-    assert {row["schema_version"] for row in rows} == {"26"}
+    assert {row["schema_version"] for row in rows} == {"27"}
 
 
 def test_every_row_names_direct_its_version_and_its_measured_overhead(
@@ -3160,3 +3160,186 @@ def test_a_run_below_its_declared_minimum_refuses_before_the_weights_and_any_spa
     assert record["requirement"] == "ram_gb"
     assert record["profile_id"] == f"{DEFAULT_ROSTER_ENTRY_ID}@laptop-mobile-gpu/gpu"
     assert not quality_results_path.exists()
+
+
+# --------------------------------------------------------------------------
+# The terse-output variant (schema "27"): every item of every suite runs under
+# it, a family it does not declare records a no-op, and nothing but the
+# prompt moves between it and `baseline`.
+
+_OUTPUT_COMPRESSED = (prompt_variants.OUTPUT_COMPRESSED_ID, "1")
+
+# What a suite fixes for every variant: its identity, caps, stop sequences,
+# context length, thinking policy, scorer (the metric triple on a graded
+# suite) and expected output. The stubbed engine answers every prompt alike,
+# so the per-item outcome fields equal too exactly when the parser and the
+# scorer are the same.
+_VARIANT_INVARIANT_FIELDS = (
+    "suite_id",
+    "suite_version",
+    "task_suite",
+    "prompt_set_hash",
+    "suite_level",
+    "max_output_tokens",
+    "stop_sequences",
+    "context_length",
+    "thinking_policy",
+    "sampling",
+    "metric_id",
+    "metric_version",
+    "metric_params",
+    "expected_label",
+    "reference_output",
+    "predicted_label",
+    "correct",
+    "item_score",
+    "failure_reason",
+    "suite_accuracy",
+    "suite_score",
+)
+
+
+def _rows_by_variant(quality_results_path, provider="local"):
+    by_variant: dict[str, list[dict]] = {}
+    for row in read_rows(quality_results_path):
+        if row["provider"] == provider:
+            by_variant.setdefault(row["prompt_variant_id"], []).append(row)
+    return by_variant
+
+
+def test_the_prompt_variant_flag_parses_an_id_and_an_optional_version() -> None:
+    assert quality_cli._parse_args([]).prompt_variant == ("baseline", None)
+    assert quality_cli._parse_args(
+        ["--prompt-variant", "output_compressed"]
+    ).prompt_variant == ("output_compressed", None)
+    assert (
+        quality_cli._parse_args(
+            ["--prompt-variant", "output_compressed@1"]
+        ).prompt_variant
+        == _OUTPUT_COMPRESSED
+    )
+
+
+def test_an_unregistered_prompt_variant_exits_1_before_any_process(
+    stubbed_run, monkeypatch, capsys
+) -> None:
+    _, started = stubbed_run
+    monkeypatch.setattr(
+        "sys.argv", ["wave-local-ai-v2-quality", "--prompt-variant", "caveman"]
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        quality_cli.main()
+
+    assert excinfo.value.code == 1
+    assert "'caveman' is not in the registry" in capsys.readouterr().err
+    started["running_server"].assert_not_called()
+
+
+@pytest.mark.parametrize("suite_id", suite_registry.registered_ids())
+def test_a_variant_changes_the_prompt_and_nothing_else_on_every_suite(
+    stubbed_run, suite_id
+) -> None:
+    quality_results_path, _ = stubbed_run
+    spec = suite_registry.resolve(suite_id)
+
+    quality_cli._run(suite=suite_id)
+    quality_cli._run(suite=suite_id, prompt_variant_ref=_OUTPUT_COMPRESSED)
+
+    for provider in ("local", "mistral"):
+        by_variant = _rows_by_variant(quality_results_path, provider)
+        baseline = by_variant["baseline"]
+        compressed = by_variant["output_compressed"]
+        # No variant removes an item: the same ids, in the same order.
+        assert [row["item_id"] for row in compressed] == [
+            row["item_id"] for row in baseline
+        ]
+        assert [row["item_id"] for row in baseline] == [
+            item["item_id"] for item in spec.items
+        ]
+        for base_row, variant_row in zip(baseline, compressed, strict=True):
+            for field in _VARIANT_INVARIANT_FIELDS:
+                assert variant_row.get(field) == base_row.get(field), field
+
+
+def test_a_declared_family_sends_the_instruction_and_records_no_noop(
+    stubbed_run,
+) -> None:
+    quality_results_path, _ = stubbed_run
+    variant = prompt_variants.resolve(*_OUTPUT_COMPRESSED)
+
+    quality_cli._run(prompt_variant_ref=_OUTPUT_COMPRESSED)
+
+    rows = _rows_by_variant(quality_results_path)["output_compressed"]
+    by_item = {item["item_id"]: item for item in CLASSIFICATION_TASK_SUITE}
+    for row in rows:
+        expected = prompt_variants.apply_variant(
+            variant, by_item[row["item_id"]]["prompt"], "classification"
+        ).prompt
+        assert row["prompt_variant_noop"] is False
+        assert row["prompt_before_template"] == expected
+        assert expected.endswith(variant.definition["instruction"])
+
+
+def test_an_undeclared_family_records_a_noop_and_keeps_every_item(
+    stubbed_run,
+) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run(
+        suite="translation-business-short-form",
+        prompt_variant_ref=_OUTPUT_COMPRESSED,
+    )
+
+    rows = _rows_by_variant(quality_results_path)["output_compressed"]
+    by_item = {item["item_id"]: item for item in TRANSLATION_TASK_SUITE}
+    assert set(by_item) == {row["item_id"] for row in rows}
+    for row in rows:
+        assert row["prompt_variant_noop"] is True
+        assert row["prompt_before_template"] == by_item[row["item_id"]]["prompt"]
+
+
+def test_an_unparseable_terse_answer_scores_0_with_its_reason_and_is_counted(
+    stubbed_run,
+) -> None:
+    quality_results_path, started = stubbed_run
+    # A terse abbreviation the unchanged parser cannot map onto a label.
+    started["post"].side_effect = local_post_router(content="bill.")
+
+    quality_cli._run(prompt_variant_ref=_OUTPUT_COMPRESSED)
+
+    rows = _rows_by_variant(quality_results_path)["output_compressed"]
+    assert len(rows) == len(CLASSIFICATION_TASK_SUITE)
+    for row in rows:
+        assert row["correct"] is False
+        assert row["predicted_label"] is None
+        assert row["failure_reason"] == "unparseable"
+        assert row["suite_accuracy"] == 0.0
+
+
+def test_a_baseline_and_variant_pair_differs_only_on_the_variant_fields(
+    stubbed_run,
+) -> None:
+    quality_results_path, _ = stubbed_run
+    quality_cli._run()
+    quality_cli._run(prompt_variant_ref=_OUTPUT_COMPRESSED)
+    by_variant = _rows_by_variant(quality_results_path)
+    reference, candidate = by_variant["baseline"], by_variant["output_compressed"]
+
+    member = comparison.compare_sides(
+        reference,
+        candidate,
+        comparison.Side(reference[0]["run_id"], {"provider": "local"}),
+        comparison.Side(candidate[0]["run_id"], {"provider": "local"}),
+        dimension="prompt_variant",
+    )
+
+    assert member["comparison_kind"] == comparison.KIND_TEST
+    assert member["confounds"] == []
+    # Both arms are at version "1", so the id is the one field that moves;
+    # nothing outside the variant's own fields does.
+    assert member["differing_fields"] == ["prompt_variant_id"]
+    assert set(member["differing_fields"]) <= {
+        "prompt_variant_id",
+        "prompt_variant_version",
+    }

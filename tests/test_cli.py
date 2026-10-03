@@ -1068,7 +1068,7 @@ def test_a_cpu_only_run_publishes_no_vram_number_anywhere_on_the_row(
     _run()
 
     [row] = read_rows(results_path)
-    assert row["schema_version"] == "26"
+    assert row["schema_version"] == "27"
     values = _vram_values(row)
     assert len(values) == 1 + row["warmup_count"] + row["repetitions_n"]
     assert set(values) == {"not_applicable"}

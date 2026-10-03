@@ -228,7 +228,17 @@ from wave_local_ai_v2 import (
 # subject's quality row) states `PROFILE_NOT_APPLICABLE` for both. Owed only
 # from "26": a row below "26" still validates without them and is never
 # back-filled.
-SCHEMA_VERSION = "26"
+# "27": `prompt_variant_noop` became required on quality rows (Story: the
+# terse-output variant runs every item and meets baseline in a paired test;
+# Methodology 2, 22). A variant declares the task families it applies to; an
+# item of any other family is still run, with its authored prompt unchanged,
+# and its row states `true`. The gate checks the value against the registry
+# for the row's `task_suite`, and checks `prompt_before_template` against the
+# variant applied to the item's authored text for every variant, not only
+# `baseline`. Runtime rows run one fixed prompt of no task family and carry
+# no such field. Owed only from "27": a row below "27" still validates
+# without it and is never back-filled.
+SCHEMA_VERSION = "27"
 
 # The two subject-composition fields "19" added, and the version from which a
 # quality row owes them.
@@ -320,6 +330,10 @@ PROFILE_SCHEMA_VERSION = "26"
 PROFILE_FIELDS: frozenset[str] = frozenset({"profile_id", "profile_overrides"})
 PROFILE_NOT_APPLICABLE = MACHINE_NOT_APPLICABLE
 OVERRIDABLE_PROFILE_VALUES: frozenset[str] = frozenset({"n_cpu_moe", "threads"})
+
+# The schema version from which a quality row owes `prompt_variant_noop`.
+VARIANT_NOOP_SCHEMA_VERSION = "27"
+VARIANT_NOOP_FIELD = "prompt_variant_noop"
 
 # What a row run under no campaign says in `campaign_id`: it belongs to none,
 # stated rather than left null. Reserved: no campaign may take it as its id.
@@ -493,6 +507,8 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "prompt_variant_id",
             "prompt_variant_version",
             "prompt_before_template",
+            # whether the variant skipped this item's task family (schema "27")
+            VARIANT_NOOP_FIELD,
             "model_id",
             "provider",
             # Where the subject prompt went: `none` for a local subject, the
@@ -848,6 +864,8 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
         missing -= {"campaign_id"}
     if _predates(row, PROFILE_SCHEMA_VERSION):
         missing -= PROFILE_FIELDS
+    if kind == "quality" and _predates(row, VARIANT_NOOP_SCHEMA_VERSION):
+        missing -= {VARIANT_NOOP_FIELD}
     if missing:
         raise RowContractError(
             f"row of kind {kind!r} is missing required field(s): "
@@ -1537,13 +1555,17 @@ def _validate_suite_level(row: dict[str, Any]) -> None:
 
 
 def _validate_prompt_variant(kind: RowKind, row: dict[str, Any]) -> None:
-    """Refuse a variant the registry does not hold, and an unchecked `baseline`.
+    """Refuse a variant the registry does not hold, and an unchecked prompt.
 
-    `baseline` is a claim this gate checks rather than a label it trusts: the
-    row's `prompt_before_template` must equal the authored text of the item
-    it names, resolved from the code that owns that text -- never from a
-    field on the row, which a hand-built row could forge alongside the
-    transformed prompt.
+    The variant is a claim this gate checks rather than a label it trusts:
+    the row's `prompt_before_template` must equal the variant applied to the
+    authored text of the item it names, resolved from the code that owns that
+    text -- never from a field on the row, which a hand-built row could forge
+    alongside the transformed prompt. `baseline` is checked on every row and
+    refused when its text cannot be resolved; another variant is checked
+    from schema "27" whenever its text resolves. From "27" a quality row's
+    `prompt_variant_noop` must equal the registry's answer for its
+    `task_suite`.
     """
     variant_id = row["prompt_variant_id"]
     version = row["prompt_variant_version"]
@@ -1558,19 +1580,40 @@ def _validate_prompt_variant(kind: RowKind, row: dict[str, Any]) -> None:
             f"prompt variant {variant_id!r} has no such registered version"
         )
 
-    if variant_id != prompt_variants.BASELINE_ID:
+    variant = prompt_variants.REGISTRY[(variant_id, version)]
+    # A quality row names its task family; a runtime row's fixed prompt
+    # belongs to none.
+    task_family = row.get("task_suite") if kind == "quality" else None
+    owes_noop = kind == "quality" and not _predates(row, VARIANT_NOOP_SCHEMA_VERSION)
+    if owes_noop:
+        noop = row[VARIANT_NOOP_FIELD]
+        expected_noop = not prompt_variants.applies(variant, task_family)
+        if noop is not expected_noop:
+            raise RowContractError(
+                f"row of kind {kind!r} has {VARIANT_NOOP_FIELD} {noop!r}: prompt "
+                f"variant {variant_id!r} version {version!r} "
+                f"{'does not apply' if expected_noop else 'applies'} to task "
+                f"family {task_family!r}, so it must be {expected_noop!r}"
+            )
+
+    if variant_id != prompt_variants.BASELINE_ID and not owes_noop:
         return
     authored, unresolved_reason = _authored_prompt(kind, row)
     if authored is None:
+        if variant_id != prompt_variants.BASELINE_ID:
+            return
         raise RowContractError(
             f"row of kind {kind!r} declares prompt variant 'baseline' but its "
             f"prompt_before_template cannot be checked: {unresolved_reason}"
         )
-    if row["prompt_before_template"] != authored:
+    expected = prompt_variants.apply_variant(variant, authored, task_family).prompt
+    if row["prompt_before_template"] != expected:
         raise RowContractError(
-            f"row of kind {kind!r} declares prompt variant 'baseline' but its "
-            "prompt_before_template differs from the item's authored text: a "
-            "baseline row carries the authored prompt unchanged"
+            f"row of kind {kind!r} declares prompt variant {variant_id!r} "
+            f"version {version!r} but its prompt_before_template differs from "
+            "that variant applied to the item's authored text: a "
+            f"{variant_id!r} row carries what the variant made of the authored "
+            "prompt"
         )
 
 

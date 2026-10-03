@@ -1,0 +1,3 @@
+filled       engine=llama.cpp variant=baseline@1 roster_entry=qwen3-0.6b-q8 suite=classification-support-routing runs=9a68cbaf9dd147a9b179edfd7b605b58
+filled       engine=llama.cpp variant=output_compressed@1 roster_entry=qwen3-0.6b-q8 suite=classification-support-routing runs=13ade3c585b64455bd4d2fd4ce9f0337
+campaign 'terse-output-laptop': 2 declared cell(s), none empty

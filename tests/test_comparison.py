@@ -636,6 +636,28 @@ def test_a_prompt_variant_dimension_is_a_clean_test() -> None:
     assert member["differing_fields"] == ["prompt_variant_id"]
 
 
+def test_a_batch_interval_moving_with_the_scores_is_not_a_confound() -> None:
+    # Two batches that score differently publish different intervals; the
+    # interval is an outcome of the compared quantity, not a configuration.
+    ref, cand = _pairs_outcomes(14, 1, 4, 1)
+    member = compare_sides(
+        _binary_rows("run-ref", "model-a", ref, score_interval={"lower": 0.6}),
+        _binary_rows(
+            "run-cand",
+            "model-a",
+            cand,
+            prompt_variant_id="terse",
+            score_interval={"lower": 0.7},
+        ),
+        Side("run-ref"),
+        Side("run-cand"),
+        dimension="prompt_variant",
+    )
+    assert member["comparison_kind"] == comparison.KIND_TEST
+    assert member["differing_fields"] == ["prompt_variant_id"]
+    assert member["confounds"] == []
+
+
 def test_inputs_that_cannot_make_a_record_raise() -> None:
     rows = _binary_rows("run-ref", "model-a", [True])
     with pytest.raises(ComparisonInputError, match="reference"):

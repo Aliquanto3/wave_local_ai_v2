@@ -92,11 +92,11 @@ from wave_local_ai_v2.suite_registry import SuiteDefinition, SuiteRegistryError
 
 REQUEST_TIMEOUT_S = 300
 
-# The prompt variant every row of an invocation runs under, resolved through
-# the registry once per run and applied to each item's authored prompt before
-# any provider's templating. A declaration, not a call-site choice: the
-# campaign declaration that will carry it as data is a later story.
-PROMPT_VARIANT_ID = prompt_variants.BASELINE_ID
+# The prompt variant an invocation with no `--prompt-variant` runs under. One
+# variant per invocation, resolved through the registry once and applied to
+# each item's authored prompt before any provider's templating; a campaign
+# checks it against the variants it declares.
+DEFAULT_PROMPT_VARIANT = (prompt_variants.BASELINE_ID, None)
 
 # A quality score is only meaningful if a second run reproduces it
 # (`aidd_docs/memory/architecture.md`: "quality scores are reproducible (model +
@@ -216,13 +216,37 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "id is refused naming the registered ones. Default: %(default)s."
         ),
     )
+    parser.add_argument(
+        "--prompt-variant",
+        metavar="VARIANT_ID[@VERSION]",
+        type=_prompt_variant_ref,
+        default=DEFAULT_PROMPT_VARIANT,
+        help=(
+            "The registered prompt variant every item runs under, at VERSION "
+            "or its latest version (registered: "
+            f"{', '.join(sorted({key[0] for key in prompt_variants.REGISTRY}))}"
+            "). Every item of the suite is run; outside the variant's "
+            "declared task families its rows record a no-op. An unregistered "
+            "id or version is refused naming it. Default: baseline."
+        ),
+    )
     return parser.parse_args(argv)
+
+
+def _prompt_variant_ref(value: str) -> tuple[str, str | None]:
+    """`ID` or `ID@VERSION` as `(id, version or None)`."""
+    variant_id, _, version = value.partition("@")
+    return variant_id, version or None
 
 
 def main() -> None:
     args = _parse_args()
     try:
-        _run(resume_run_id=args.resume, suite=args.suite)
+        _run(
+            resume_run_id=args.resume,
+            suite=args.suite,
+            prompt_variant_ref=args.prompt_variant,
+        )
     except (
         SettingsError,
         server.ServerStartupError,
@@ -243,6 +267,8 @@ def main() -> None:
         # An unregistered `--suite`, an unknown scoring rule or a malformed
         # definition: refused before any process spawns, naming what is wrong.
         SuiteRegistryError,
+        # An unregistered `--prompt-variant` id or version.
+        prompt_variants.PromptVariantError,
         # A run outside its campaign's declaration, or a declaration that
         # fails its own check: refused before any process spawns.
         campaigns.CampaignError,
@@ -254,10 +280,15 @@ def main() -> None:
         sys.exit(1)
 
 
-def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
+def _run(
+    resume_run_id: str | None = None,
+    suite: str = DEFAULT_SUITE,
+    prompt_variant_ref: tuple[str, str | None] = DEFAULT_PROMPT_VARIANT,
+) -> None:
     # Resolved first: an unregistered id, or a definition the registry or the
     # gate refuses, aborts before settings, the roster or any process.
     spec = suite_registry.resolve(suite)
+    prompt_variant = prompt_variants.resolve(*prompt_variant_ref)
     settings = load_settings()
     # The declared machine and compute mode, before the roster or any
     # process: a missing or undeclared one refuses here.
@@ -300,9 +331,12 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
     # Applied once, here, to every item: the local and both cloud paths send
     # these strings, and every row publishes its own as
     # `prompt_before_template`.
-    prompt_variant = prompt_variants.resolve(PROMPT_VARIANT_ID)
+    # Every item is run under every variant: outside the variant's declared
+    # families the authored text is sent unchanged and the rows say so.
     variant_prompts = [
-        prompt_variants.apply_variant(prompt_variant, item["prompt"])
+        prompt_variants.apply_variant(
+            prompt_variant, item["prompt"], spec.task_suite
+        ).prompt
         for item in spec.items
     ]
 
@@ -1332,6 +1366,9 @@ def _score_and_write(
             ),
             "prompt_variant_id": prompt_variant.variant_id,
             "prompt_variant_version": prompt_variant.version,
+            "prompt_variant_noop": not prompt_variants.applies(
+                prompt_variant, spec.task_suite
+            ),
             "prompt_before_template": variant_prompts[index],
             # Everything the suite's own scorer decided: the exact-match
             # fields on one suite, the graded block on the other, each

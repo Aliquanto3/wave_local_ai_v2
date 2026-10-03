@@ -597,6 +597,39 @@ identical bytes. Command output:
 The export flattens these records into its fifth table, `comparison_records.csv` (see "The
 bundle as five flat tables" above).
 
+## Terse output against baseline: not distinguishable, and no shorter (2026-10-03)
+
+One campaign cell pair on the laptop (`laptop-mobile-gpu`, `gpu`, pinned
+build `b10537`, `llama.cpp`), campaign `terse-output-laptop`: roster entry
+`qwen3-0.6b-q8`, suite `classification-support-routing@4`, `baseline` v1
+(run `9a68cbaf`) against `output_compressed` v1 (run `13ade3c5`), local only,
+schema "27". Both cells filled, all 20 items in each, every
+`output_compressed` row `prompt_variant_noop: false`.
+
+| Arm | Accuracy | Mean output tokens per item | Unparseable |
+| --- | --- | --- | --- |
+| `baseline` | 0.45 (9/20) | 2.0 | 0 |
+| `output_compressed` | 0.30 (6/20) | 2.0 | 0 |
+
+`wave-local-ai-v2-compare --dimension prompt_variant`: McNemar exact, 6 both
+right, 11 both wrong, 3 right under `baseline` only, 0 under the variant
+only, p = 0.25, direction `reference_higher`, **verdict `not
+distinguishable`**; differing fields `prompt_variant_id` alone (both arms are
+version "1"), no confound. The output-token comparison
+(`--quantity item_tokens_out`, Wilcoxon) is `not distinguishable` with all 20
+differences zero: this model already answers with one label word, so the
+instruction had nothing to cut. The three lost items (`account-02`,
+`account-de-02`, `other-01`) were each relabelled `technical`, not left
+unparseable. Read it as: on this suite and model, a terse-output instruction
+saves no tokens and, if anything, costs accuracy, at a sample too small to
+say so. The records, rows, fiche and logs are in
+`aidd_docs/tasks/2026_10/2026_10_02_terse-output-variant/evidence/`; no row
+here entered a committed store.
+
+The first run of this pair also surfaced a defect, fixed in the same change:
+`comparison.py` counted `score_interval` as a configuration field, so any two
+batches that scored differently were published as an observation naming it.
+
 ## The use-case coverage record, and why it is not here yet
 
 `use-case-coverage.json` is the published coverage record: one entry for each

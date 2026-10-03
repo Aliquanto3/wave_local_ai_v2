@@ -400,6 +400,9 @@ QUALITY_FIELDS_NOT_RENDERED: frozenset[str] = frozenset(
         "prompt_variant_id",
         "prompt_variant_version",
         "prompt_before_template",
+        # Whether the variant skipped the item's task family (schema "27"):
+        # derived from the variant and the suite, read with the variant.
+        "prompt_variant_noop",
         # The level the suite was certified at, and the item's licence, source
         # and source revision (schema "15"). On the row so a development
         # score is never mistaken for a publication one; whether the pitch

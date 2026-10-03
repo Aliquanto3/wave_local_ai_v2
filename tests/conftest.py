@@ -33,7 +33,11 @@ def marking_variant(monkeypatch: pytest.MonkeyPatch) -> str:
     """
     from wave_local_ai_v2 import prompt_variants
 
-    monkeypatch.setitem(prompt_variants._TRANSFORMATIONS, "test_mark", mark_prompt)
+    monkeypatch.setitem(
+        prompt_variants._TRANSFORMATIONS,
+        "test_mark",
+        lambda definition, prompt: mark_prompt(prompt),
+    )
     definition = {"transformation": "test_mark"}
     registry = prompt_variants.load_registry(
         [

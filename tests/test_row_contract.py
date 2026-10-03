@@ -178,6 +178,7 @@ COMPLETE_QUALITY_ROW = {
     "prompt_capture": "captured",
     "prompt_variant_id": "baseline",
     "prompt_variant_version": "1",
+    "prompt_variant_noop": False,
     "prompt_before_template": _AUTHORED_PROMPT,
     "model_id": "Qwen3.6-35B-A3B",
     "provider": "local",
@@ -1117,14 +1118,14 @@ def test_the_schema_version_moved_once_for_the_thinking_policy() -> None:
     # `thinking_policy` is required on every quality row, because a score
     # produced with the subject allowed to reason and one produced without it
     # are not the same measurement and a row has to say which it is.
-    assert SCHEMA_VERSION == "26"
+    assert SCHEMA_VERSION == "27"
 
 
 def test_the_schema_version_moved_for_the_runtime_energy_window() -> None:
     # "12" fixes audit finding C3: the runtime row's energy figures used to
     # span the whole counted-repetition window, cooldowns included. Required
     # only on runtime rows -- quality rows carry no energy window at all.
-    assert SCHEMA_VERSION == "26"
+    assert SCHEMA_VERSION == "27"
     assert {"active_window_s", "idle_window_s", "energy_window_method"} <= (
         REQUIRED_FIELDS["runtime"]
     )
@@ -1137,7 +1138,7 @@ def test_the_schema_version_moved_for_the_judge_call_record_extension() -> None:
     # "13" adds five fields inside each judge call record. Additive inside the
     # conditional judge block: neither row kind's required set moves, so a
     # deterministic quality row validates unchanged.
-    assert SCHEMA_VERSION == "26"
+    assert SCHEMA_VERSION == "27"
     assert set(NEW_JUDGE_RECORD_FIELDS).isdisjoint(REQUIRED_FIELDS["quality"])
     assert set(NEW_JUDGE_RECORD_FIELDS).isdisjoint(JUDGED_FIELDS)
     validate_row("quality", COMPLETE_QUALITY_ROW)
@@ -1147,7 +1148,7 @@ def test_the_schema_version_moved_for_the_prompt_variant() -> None:
     # "14" makes both row kinds name the variant they ran under and carry the
     # prompt as the variant left it. Not conditional: every row ran under some
     # variant, and a row below "14" is never back-filled with `baseline`.
-    assert SCHEMA_VERSION == "26"
+    assert SCHEMA_VERSION == "27"
     for kind in ("runtime", "quality"):
         assert set(PROMPT_VARIANT_FIELDS) <= REQUIRED_FIELDS[kind]
 
@@ -1155,7 +1156,7 @@ def test_the_schema_version_moved_for_the_prompt_variant() -> None:
 def test_the_schema_version_moved_for_the_engine() -> None:
     # "22" makes every row name the engine that produced it and its build,
     # and moves the cited fiche to the projection carrying the engine fields.
-    assert SCHEMA_VERSION == "26"
+    assert SCHEMA_VERSION == "27"
     assert ENGINE_FICHE_SCHEMA_VERSION == "22"
     for kind in ("runtime", "quality"):
         assert {"engine_id", "engine_build"} <= REQUIRED_FIELDS[kind]
@@ -1284,7 +1285,7 @@ def test_an_unreadable_engine_registry_refuses_the_row(monkeypatch) -> None:
 def test_the_schema_version_moved_for_the_machine_and_mode() -> None:
     # "23" makes every row name the declared machine and the compute mode,
     # and moves the cited fiche to the projection carrying both.
-    assert SCHEMA_VERSION == "26"
+    assert SCHEMA_VERSION == "27"
     assert MACHINE_FICHE_SCHEMA_VERSION == "23"
     for kind in ("runtime", "quality"):
         assert {"machine_id", "compute_mode"} <= REQUIRED_FIELDS[kind]
@@ -1389,7 +1390,7 @@ def test_the_schema_version_moved_for_the_suite_level() -> None:
     # and its item's licence, source and source revision. Not conditional:
     # every suite is certified at some level. Quality rows only -- a runtime
     # row runs no suite.
-    assert SCHEMA_VERSION == "26"
+    assert SCHEMA_VERSION == "27"
     assert set(SUITE_LEVEL_FIELDS) <= REQUIRED_FIELDS["quality"]
     assert set(SUITE_LEVEL_FIELDS).isdisjoint(REQUIRED_FIELDS["runtime"])
 
@@ -1499,9 +1500,9 @@ def test_a_genuine_baseline_row_of_each_kind_passes() -> None:
 
 
 def test_an_unregistered_prompt_variant_is_refused_naming_the_field() -> None:
-    row = {**COMPLETE_QUALITY_ROW, "prompt_variant_id": "output_compressed"}
+    row = {**COMPLETE_QUALITY_ROW, "prompt_variant_id": "input_compressed"}
 
-    with pytest.raises(RowContractError, match="prompt_variant_id 'output_compressed'"):
+    with pytest.raises(RowContractError, match="prompt_variant_id 'input_compressed'"):
         validate_row("quality", row)
 
 
@@ -1532,11 +1533,11 @@ def test_a_baseline_row_whose_authored_text_cannot_be_resolved_is_refused(
     assert reason in str(excinfo.value)
 
 
-def test_a_registered_non_baseline_variant_is_not_held_to_the_authored_text(
+def test_a_non_baseline_row_below_27_is_not_held_to_the_authored_text(
     monkeypatch,
 ) -> None:
-    # The authored-text rule is baseline's own: another variant's job is to
-    # transform the prompt, so its pre-template string differs by design.
+    # Below "27" the authored-text rule was baseline's own; such a row is
+    # never re-checked under the rule "27" added.
     definition = {"transformation": "identity", "description": "test-only"}
     registry = prompt_variants.load_registry(
         [
@@ -1552,11 +1553,91 @@ def test_a_registered_non_baseline_variant_is_not_held_to_the_authored_text(
     monkeypatch.setattr(prompt_variants, "REGISTRY", registry)
     row = {
         **COMPLETE_QUALITY_ROW,
+        "schema_version": "26",
         "prompt_variant_id": "test_variant",
         "prompt_before_template": "anything at all",
     }
+    del row["prompt_variant_noop"]
 
     validate_row("quality", row)
+
+
+# --------------------------------------------------------------------------
+# The variant no-op (schema "27"): a quality row says whether its variant
+# skipped the item's task family, and the gate checks it and the prompt.
+
+
+def _output_compressed_row(**changes) -> dict:
+    variant = prompt_variants.resolve(prompt_variants.OUTPUT_COMPRESSED_ID, "1")
+    row = {
+        **COMPLETE_QUALITY_ROW,
+        "prompt_variant_id": variant.variant_id,
+        "prompt_variant_version": variant.version,
+        "prompt_before_template": prompt_variants.apply_variant(
+            variant, _AUTHORED_PROMPT, COMPLETE_QUALITY_ROW["task_suite"]
+        ).prompt,
+        "prompt_variant_noop": False,
+    }
+    row.update(changes)
+    return row
+
+
+def test_an_output_compressed_classification_row_validates() -> None:
+    validate_row("quality", _output_compressed_row())
+
+
+def test_a_quality_row_at_27_missing_the_noop_field_is_refused_by_name() -> None:
+    row = dict(COMPLETE_QUALITY_ROW)
+    del row["prompt_variant_noop"]
+
+    with pytest.raises(RowContractError, match="prompt_variant_noop"):
+        validate_row("quality", row)
+
+
+def test_a_quality_row_below_27_owes_no_noop_field() -> None:
+    row = {**COMPLETE_QUALITY_ROW, "schema_version": "26"}
+    del row["prompt_variant_noop"]
+
+    validate_row("quality", row)
+
+
+@pytest.mark.parametrize("noop", [True, 1, None])
+def test_a_noop_value_disagreeing_with_the_registry_is_refused(noop) -> None:
+    row = _output_compressed_row(prompt_variant_noop=noop)
+
+    with pytest.raises(RowContractError, match="prompt_variant_noop") as excinfo:
+        validate_row("quality", row)
+    assert "applies to task family 'classification'" in str(excinfo.value)
+
+
+def test_a_variant_row_whose_prompt_is_not_the_variant_output_is_refused() -> None:
+    row = _output_compressed_row(prompt_before_template=_AUTHORED_PROMPT)
+
+    with pytest.raises(RowContractError, match="'output_compressed'"):
+        validate_row("quality", row)
+
+
+def test_a_variant_row_whose_item_cannot_be_resolved_is_not_held_to_a_text() -> None:
+    # Only `baseline` refuses an unresolvable item: another variant's row
+    # still carries its no-op check.
+    row = _output_compressed_row(suite_id="an-unknown-suite")
+
+    validate_row("quality", row)
+
+
+def test_a_noop_row_carries_the_authored_text_and_says_so(monkeypatch) -> None:
+    # A family the variant does not declare: the item still runs, with the
+    # authored prompt unchanged, and the row states the no-op.
+    row = _output_compressed_row(
+        task_suite="judge-probe",
+        prompt_before_template=_AUTHORED_PROMPT,
+        prompt_variant_noop=True,
+    )
+
+    validate_row("quality", row)
+
+    with pytest.raises(RowContractError, match="prompt_variant_noop"):
+        validate_row("quality", {**row, "prompt_variant_noop": False})
 
 
 # --------------------------------------------------------------------------
@@ -1566,7 +1647,7 @@ def test_a_registered_non_baseline_variant_is_not_held_to_the_authored_text(
 def test_the_schema_version_moved_for_the_subject_egress() -> None:
     # "16" makes every row of either kind state where its subject prompt went.
     # Not conditional: every row was produced by sending a prompt somewhere.
-    assert SCHEMA_VERSION == "26"
+    assert SCHEMA_VERSION == "27"
     for kind in ("runtime", "quality"):
         assert "subject_egress" in REQUIRED_FIELDS[kind]
     # The subject field is not a member of the judge block, and the judge
@@ -1705,7 +1786,7 @@ def test_the_schema_version_moved_for_the_retry_budget_and_partial_batches() -> 
     # "17" makes every quality row name the retry budget its batch ran under
     # and whether that batch was left partial. The runtime row makes no cloud
     # call and has no resume, so it is untouched.
-    assert SCHEMA_VERSION == "26"
+    assert SCHEMA_VERSION == "27"
     for field in ("retry_budget", "partial_failure"):
         assert field in REQUIRED_FIELDS["quality"]
         assert field not in REQUIRED_FIELDS["runtime"]
@@ -1848,7 +1929,7 @@ def test_the_schema_version_moved_for_the_per_item_measurement() -> None:
     # "18" puts each item's own tokens, engine-reported TTFT and cached prompt
     # tokens on every quality row (Q24 (a)); the runtime row keeps its
     # Methodology 6 aggregate and is untouched.
-    assert SCHEMA_VERSION == "26"
+    assert SCHEMA_VERSION == "27"
     assert ITEM_MEASUREMENT_FIELDS <= REQUIRED_FIELDS["quality"]
     assert ITEM_MEASUREMENT_FIELDS.isdisjoint(REQUIRED_FIELDS["runtime"])
 
@@ -2077,7 +2158,7 @@ def test_the_writers_block_names_a_cloud_subject_by_its_own_family() -> None:
 def test_the_schema_version_moved_for_the_harness_fields() -> None:
     # "20" puts the harness id, its installed version and its per-call prompt
     # overhead on every quality row; the runtime row is untouched.
-    assert SCHEMA_VERSION == "26"
+    assert SCHEMA_VERSION == "27"
     assert HARNESS_SCHEMA_VERSION == "20"
     assert HARNESS_FIELDS == {
         "harness_id",
@@ -2438,7 +2519,7 @@ def _cpu_only_runtime_row() -> dict:
 
 
 def test_the_schema_version_moved_for_vram_not_applicable() -> None:
-    assert SCHEMA_VERSION == "26"
+    assert SCHEMA_VERSION == "27"
     assert VRAM_NOT_APPLICABLE_SCHEMA_VERSION == "25"
     assert VRAM_NOT_APPLICABLE == "not_applicable"
 
@@ -2511,7 +2592,7 @@ def test_a_repetition_without_vram_is_refused_by_the_vram_check() -> None:
 
 
 def test_the_schema_version_moved_for_the_run_profile() -> None:
-    assert SCHEMA_VERSION == "26"
+    assert SCHEMA_VERSION == "27"
     assert PROFILE_SCHEMA_VERSION == "26"
     for kind in ("runtime", "quality"):
         assert PROFILE_FIELDS <= REQUIRED_FIELDS[kind]

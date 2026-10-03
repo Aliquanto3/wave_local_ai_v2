@@ -985,6 +985,7 @@ def _build_row(
         "prompt": prompt if prompt is not None else prompt_before_template,
         "prompt_variant_id": prompt_variant.variant_id,
         "prompt_variant_version": prompt_variant.version,
+        "prompt_variant_noop": not prompt_variants.applies(prompt_variant, TASK_SUITE),
         "prompt_before_template": prompt_before_template,
         "expected_label": None,
         "predicted_label": None,
@@ -1064,7 +1065,8 @@ def _run_local_batch(
     items = [JUDGE_PROBE_ITEMS[index] for index in indexes]
     prompt_variant = prompt_variants.resolve(PROMPT_VARIANT_ID)
     variant_prompts = [
-        prompt_variants.apply_variant(prompt_variant, item["prompt"]) for item in items
+        prompt_variants.apply_variant(prompt_variant, item["prompt"], TASK_SUITE).prompt
+        for item in items
     ]
     local_batch, energy = measure_energy(
         lambda: _generate_local_outputs(
@@ -1270,7 +1272,9 @@ def _run_cloud_subject_item(
     item = _item_by_id(CLOUD_SUBJECT_ITEM_ID)
     api_key = settings.google_api_key
     prompt_variant = prompt_variants.resolve(PROMPT_VARIANT_ID)
-    variant_prompt = prompt_variants.apply_variant(prompt_variant, item["prompt"])
+    variant_prompt = prompt_variants.apply_variant(
+        prompt_variant, item["prompt"], TASK_SUITE
+    ).prompt
 
     pacer.wait()
     _, context_retries = retry.call_with_retry(
