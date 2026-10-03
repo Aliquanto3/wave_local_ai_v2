@@ -102,3 +102,28 @@ Spike: `aidd_docs/backlog/spikes/may-the-model-outputs-in-the-published-rows-be-
 - Recommended default: (a). An epic that still lists a settled question as open invites a later run to re-investigate it. Cost: one owner edit.
 - Blocks: nothing; the task proceeds either way.
 
+## Web research search tools
+
+Spike: `aidd_docs/backlog/spikes/which-two-search-tools-are-obtainable-archivable-and-what-each-sends-upstream.md` (`blocked`). On desk evidence two tools pass, so the out-of-scope trigger in order 10 does not fire: SearXNG self-hosted (pinned at commit `783a094`, no account, but its default engines scrape DuckDuckGo, the Brave website and Google CSE from the instance's IP) and the Mojeek API (own index, one egress destination, "Full storage rights" on its Business plan). Brave's API, Exa and SerpApi forbid storing or republishing results; Google CSE is closed to new customers; Bing's API is retired. No provider grants republication of response text in a CC-BY bundle. Remaining live work: a pinned SearXNG instance and Mojeek queries in EN, FR and DE, captured with their upstream URLs (an install and a provider call this run may not make).
+
+### Q112. Which hosted search tool is the second tool?
+
+- Artifact: `aidd_docs/backlog/stories/two-search-tools-answer-the-same-queries-and-each-row-names-its-tool.md` (order 10) and the second adapter of `aidd_docs/backlog/stories/a-web-research-score-recomputes-offline-from-its-archived-search-responses.md` (order 9).
+- Options: (a) the Mojeek API on its Business plan (storage rights stated, own index, about £2 to £3 per 1,000 queries, the owner opens the account and buys credits); (b) Tavily's free tier (no cost, terms silent on storage, keeps and may train on queries); (c) Serper or Jina (free credits, results scraped from Google or undisclosed backends, so egress is two-hop).
+- Recommended default: (a). It is the only hosted option whose terms say storage is allowed, and its egress is one destination, so a row's egress field is exact. Cost: an account and a small prepaid amount, an owner act.
+- Blocks: order 10, and order 9's second adapter.
+
+### Q113. Which SearXNG engine set is pinned?
+
+- Artifact: order 9 (its egress field) and order 10.
+- Options: (a) the default set as shipped (DuckDuckGo, the Brave website, Google CSE through a hard-coded partner id, Wikipedia, Wikidata); (b) the default set minus `google cse`; (c) only engines with sanctioned access (Wikipedia, Wikidata, keyed API engines).
+- Recommended default: (b). `google cse` reaches Google through a third party's partner id against Google's terms on automated access; dropping it removes the clearest terms problem and keeps a metasearch representative of a typical deployment. Cost: the remaining engines still scrape two websites, which the row's egress field names; (c) leaves no general web engine.
+- Blocks: order 9's egress field and order 10.
+
+### Q114. What does the bundle publish from the archived search responses?
+
+- Artifact: order 9 (its archive format and publication), and the bundle epic's redistribution rules.
+- Options: (a) keep each full response in the run archive, which the offline recompute reads, and publish per row only the result URLs, a content hash of the archived response, the tool, the egress destinations and the scores, without titles or snippets; (b) publish full responses in the bundle under a per-item third-party notice, outside CC-BY; (c) ask Mojeek for written permission to republish, publish its responses if granted, otherwise (a).
+- Recommended default: (a). No provider's terms and no snippet author grants republication, and (a) still lets any holder of the archive reproduce the score with the network off. Cost: a bundle reader cannot recompute web-research scores without the archive, which the PRD's offline-recompute criterion then reaches only for the archive holder.
+- Blocks: order 9's archive format and its publication.
+
