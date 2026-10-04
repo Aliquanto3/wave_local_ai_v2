@@ -1,0 +1,21 @@
+# preconditions 2026-10-04T06:10:19+02:00 HEAD 6de6888a08be48a40da297e287b7bcd8e9ded324
+?? aidd_docs/tasks/2026_10/2026_10_04_top-class/evidence/fiches/
+?? aidd_docs/tasks/2026_10/2026_10_04_top-class/evidence/quality.jsonl
+?? aidd_docs/tasks/2026_10/2026_10_04_top-class/evidence/suite-gemma-4-12b-it-iq4xs-classification-support-routing.log
+?? aidd_docs/tasks/2026_10/2026_10_04_top-class/evidence/suite-gemma-4-12b-it-iq4xs-classification-support-routing.vram.csv
+?? aidd_docs/tasks/2026_10/2026_10_04_top-class/evidence/suite-gemma-4-12b-it-iq4xs-translation-business-short-form.log
+0 MiB
+Informationÿ: aucune tƒche en service ne correspond aux critŠres sp‚cifi‚s.
+listeners on 8080: 0
+ff30926f02184ff387c08e5dfafa0ac9
+pre-flight: vram_gb not checked under gpu: roster entry 'gemma-4-12b-it-iq4xs' declares no minimum yet (awaits a per-process VRAM peak, as for every roster entry)
+[codecarbon INFO @ 06:10:21] offline tracker init
+[codecarbon WARNING @ 06:10:21] Multiple instances of codecarbon are allowed to run at the same time.
+thinking switch verified: engine=llama.cpp field=chat_template_kwargs renders_differ=True with=59a95c5db6748c4e266825cb6e142cb9a49a8dc551f6ce9842d6faa547a91588 without=1854731bcc2ddcc84b1c861bb0522300bdc03262b7cd9be567b1747a66f6deba
+mistral skipped: not enabled in QUALITY_PROVIDERS
+google skipped: not enabled in QUALITY_PROVIDERS
+model=Gemma-4-12B-it provider=local suite_score=0.87
+exit 0
+# after 2026-10-04T06:11:14+02:00
+0 MiB
+InformationÂ : aucune tÃ¢che en service ne correspond aux critÃ¨res spÃ©cifiÃ©s.

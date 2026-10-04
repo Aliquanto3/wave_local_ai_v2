@@ -629,10 +629,13 @@ Its chat template carries a thinking switch, so its entry declares
 `thinking_control: {"chat_template_kwargs": {"enable_thinking": false}}`, as the
 Qwen entries do; the gate verified it renders a different prompt with and
 without the switch. The model is dense, so it launches with no `--n-cpu-moe`.
-On the laptop's 6 GB GPU it launched at the declared `-ngl 99`, but its weights
-(6.38 GB) exceed the GPU's memory: the dedicated memory fills and the Windows
-driver keeps the rest in shared system memory, so the model runs, more slowly
-than a full offload would.
+On the laptop's 6 GB GPU it launched at the declared `-ngl 99`. Its weights
+(6,080 MiB) fit under the GPU's 6,144 MiB on their own, but the KV cache at a
+32,768-token context and the compute buffers come on top, and dedicated memory
+plateaued at 5,959-5,973 MiB. The rest most likely sits in the shared system
+memory the Windows driver falls back to (inferred: the logs hold no
+llama-server buffer lines), so the model runs, and its speed there is not a
+full-offload figure.
 
 ## 4. Configure `.env` and run
 

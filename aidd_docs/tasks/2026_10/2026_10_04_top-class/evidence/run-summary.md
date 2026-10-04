@@ -30,9 +30,13 @@ Launch, declared against launched: the gate's one load ran the declared block
 the server came up and answered, so no load refusal occurred and no stepped-down
 `-ngl` was re-declared: the launched value equals the declared one. Dedicated GPU
 memory, sampled every 2 s (`gate-gemma-4-12b-it-iq4xs.vram.csv`), went 0 -> 5,931 ->
-5,959 MiB of 6,144 while the server was up. The weights alone are 6.38 GB, so part of
-the model sat outside dedicated VRAM, in the shared system memory the Windows driver
-falls back to (inferred from the sizes; nvidia-smi reports dedicated memory only).
+5,959 MiB of 6,144 while the server was up, and plateaued there. The weights are
+6,080 MiB (6,375,734,080 B), which alone would fit, but a full offload adds the KV cache
+for the 32,768-token context and the compute buffers. So part of the model most likely
+sat outside dedicated VRAM, in the shared system memory the Windows driver falls back
+to. This is inferred: nvidia-smi reports dedicated memory only, and the logs hold no
+llama-server buffer lines. The conclusion that the laptop's speed for this model is not
+a full-offload figure is an inference on the same grounds.
 `--fit` (on by default in b10537) adjusts only unset arguments, and `-ngl` and `-c` are
 set, so it did not change them.
 
@@ -40,3 +44,35 @@ Composition check after the entry: `composition-check.txt` (exit 0, `PASS`; no
 failure left).
 
 No `src/` change.
+
+## Stage B: the suites
+
+| Step | Command | Outcome | Log |
+| --- | --- | --- | --- |
+| Gemma 4 12B classification | `wave-local-ai-v2-quality --suite classification-support-routing` | `51bcde3e05814d2097a6be81a83d1e54`, 20 rows, accuracy 1.00 (interval `zero_width`) | `suite-gemma-4-12b-it-iq4xs-classification-support-routing.log` |
+| Gemma 4 12B translation | `wave-local-ai-v2-quality --suite translation-business-short-form` | `ff30926f02184ff387c08e5dfafa0ac9`, 21 rows, chrF 0.866 [0.803, 0.921] | `suite-gemma-4-12b-it-iq4xs-translation-business-short-form.log` |
+| Promote | `wave-local-ai-v2-promote --run-id <the two> --machine laptop-mobile-gpu` | 41 quality rows added; 1 fiche copied (`c9db1dea...`) | `promote.log` |
+| Merge | `wave-local-ai-v2-merge-bundle`, then `--check` | 6 runtime, 285 quality, 0 refusals; check exit 0 | `merge.log` |
+
+Both runs started from commit `6de6888a08be48a40da297e287b7bcd8e9ded324` (the entry
+committed) with no tracked change (`git status --porcelain` at the top of each log
+lists untracked paths only), so all 41 rows carry `tree_dirty: false` and that sha,
+`roster_version` 10, family `google`, `~8B-and-up`, `thinking_policy` `disabled`,
+`profile_overrides` `{}`. Each run verified the thinking switch before its first item
+(`renders_differ=True`). No item failed (`failure_counts` all 0). The fiche's flags are
+the declared ones (`-ngl 99 -c 32768 -fa on -t 8 --jinja -np 1 --load-mode auto`, no
+`--n-cpu-moe`): the declared value launched, no fallback value was needed. Dedicated
+GPU memory peaked at 5,973 of 6,144 MiB (`suite-*.vram.csv`, sampled every 5 s).
+Classification took 33 s, translation 55 s, wall clock per log.
+Environment: `MACHINE_ID=laptop-mobile-gpu`, `COMPUTE_MODE=gpu`,
+`QUALITY_PROVIDERS=local`, `ROSTER_ENTRY_ID=gemma-4-12b-it-iq4xs`, live store
+`quality.jsonl` and fiche registry `fiches/` in this folder. No paid call, no judge, no
+`.env`.
+
+Diff of the tracked stores: one hunk `@@ -244,0 +245,41 @@` per file, no line removed;
+the last 41 lines of each equal `quality.jsonl` here. `wave-local-ai-v2-validate` with
+`FICHE_REGISTRY_DIR` unset: `checked 285 row(s)` on `quality-reference.jsonl` and the
+laptop store, `checked 6 row(s)` on `runtime-reference.jsonl`, each exit 0.
+
+The 26B-A4B was not gated: the 12B passed the gate and completed both suites (owner
+answer Q129 (a)).

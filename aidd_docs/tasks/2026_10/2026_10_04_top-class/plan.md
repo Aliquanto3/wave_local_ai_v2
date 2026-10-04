@@ -1,6 +1,6 @@
 ---
 objective: "The ~8B-and-up class holds a second family and a dense model beside the Qwen3.6-35B-A3B flagship, admitted through the candidate gate and run through both suites on the laptop from a committed tree, or says which requirement it misses and why; the composition check passes for the class."
-status: in_progress
+status: implemented
 ---
 
 # Plan: The top class spans two families with dense and MoE, or says why not

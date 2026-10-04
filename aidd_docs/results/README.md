@@ -750,8 +750,8 @@ class's entries. A class spanning two families passes; a labelled
 single-family ladder passes; a class with no entries publishes nothing and
 is not failed. Exit `2` means the roster file could not be loaded at all.
 
-**Today it fails, which is the honest state.** Run on the shipped roster
-(`roster_version` 4) before any new entry is authored, it reports four
+**It failed at first, which was the honest state.** Run on the shipped roster
+(`roster_version` 4) before any new entry was authored, it reported four
 classes, each spanning exactly one family (`qwen`), none labelled, and the
 three dense classes with no MoE searched for and no reason recorded. The
 roster is deliberately not labelled here: the search that would justify a
@@ -1078,12 +1078,15 @@ count; its header says 256 experts) stays the open point it was.
 gate's load ran the declared block (`-ngl 99`, 32,768-token context, `-t 8`, no
 `--n-cpu-moe`) and the server came up and answered `/props` and the thinking probe, so
 no load refusal occurred and no stepped-down `-ngl` was needed: 99 is the value that
-launched. The weights alone (6.38 GB) exceed the GPU's 6,144 MiB, and the dedicated
-memory nvidia-smi reported while the server was up was 5,959 MiB (sampled every 2 s,
-`gate-gemma-4-12b-it-iq4xs.vram.csv` in the story's evidence), so part of the model
-necessarily sits outside dedicated VRAM, in the shared system memory the Windows driver
-falls back to. The model loads and answers; its speed on this laptop is not a
-full-offload figure.
+launched. The weights are 6,080 MiB (6,375,734,080 B), which alone would fit under the
+GPU's 6,144 MiB, but a full offload also places the KV cache for the 32,768-token
+context and the compute buffers on the GPU. Dedicated memory plateaued at 5,959 MiB
+while the server was up (sampled every 2 s, `gate-gemma-4-12b-it-iq4xs.vram.csv` in the
+story's evidence) and at 5,973 MiB during the suites, below what weights, cache and
+buffers together need. So part of the model most likely sits outside dedicated VRAM,
+in the shared system memory the Windows driver falls back to; this is inferred, since
+the logs hold no llama-server buffer lines. The model loads and answers; its speed on
+this laptop is, by the same inference, not a full-offload figure.
 
 **The GGUF spike's architecture at this class** (owner answer Q125 (a)):
 
@@ -1100,12 +1103,40 @@ that dependency as untested; the epic asks it of the tower, not of this laptop.
 
 **Language claim.** Gemma 4's card names no language, only counts ("Out-of-the-box
 support for 35+ languages, pre-trained on 140+ languages.", unsloth's card l.157 at the
-pinned revision), so the entry's claim lists none, as the flagship's does. A row cannot
-contradict a claim that names no language; the per-language scores below are the
-measurement.
+pinned revision), so the entry's claim lists none, as the flagship's does.
 
-**The new rows.** Pending: both suites run for the entry from the commit that adds it,
-on a clean tree.
+**The new rows.** Both runs on `laptop-mobile-gpu`, `compute_mode` `gpu`, under the
+entry's profile (`gemma-4-12b-it-iq4xs@laptop-mobile-gpu/gpu`: `-ngl 99`, the declared
+value, launched; `-c 32768`; `-t 8`; no override; no `--n-cpu-moe`), `thinking_policy`
+`disabled` with the entry's switch, verified before the first item of each run (the
+two renders differ). They ran from the commit that added the entry, on a clean tree:
+every row carries `commit_sha` `6de6888a08be48a40da297e287b7bcd8e9ded324`
+(`tree_dirty: false`) and `roster_version` 10. Fiche `c9db1dea...`. Dedicated GPU
+memory peaked at 5,973 of 6,144 MiB during the runs, the same
+dedicated-memory plateau the gate showed (not evidence of a full offload). The entry completed both suites with no failed item, so the search's stop
+condition (owner answers Q127 (a), Q129 (a)) holds and the 26B-A4B stays untried.
+
+| Entry | Suite | `run_id` | Rows | Score [95% interval] | `en` | `fr` | `de` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `gemma-4-12b-it-iq4xs` | `classification-support-routing@5` | `51bcde3e05814d2097a6be81a83d1e54` | 20 | accuracy **1.00** (interval `zero_width`) | 1.00 (n=10) | 1.00 * (n=5) | 1.00 * (n=5) |
+| `gemma-4-12b-it-iq4xs` | `translation-business-short-form@4` | `ff30926f02184ff387c08e5dfafa0ac9` | 21 | chrF **0.866** [0.803, 0.921] | 0.893 * (EN->FR) | 0.785 * (FR->DE) | 0.920 * (DE->EN) |
+
+`*` = `indicative`. The bundle now holds 285 quality rows: the 244 before and these
+41, promoted into `machines/laptop-mobile-gpu/` and merged. Every classification
+answer parsed and every item was routed correctly. The flagship's local rows at the
+same suite version (`classification-support-routing@5`, runs `acb6e894...` and
+`68ac4f21...`, `disabled`, same laptop) also score 1.00, so on this suite the dense
+12B and the MoE flagship cannot be told apart: both intervals are zero-width, and the
+suite cannot separate them. No flagship row at `translation-business-short-form@4` is
+in the bundle, so the translation figure has no same-version counterpart in its class
+yet.
+
+**Language claim against the rows.** The claim names no language, so no row can
+contradict it. The rows themselves are all in the target language (French for
+EN->FR, German for FR->DE, English for DE->EN). The weakest direction is FR->DE at
+0.785 on seven items, an indicative figure whose lowest items are paraphrases rather
+than errors (`fr-de-04` 0.453, "nennen Sie uns einen verfügbaren Zeitraum";
+`fr-de-05` 0.625, "in unseren Räumlichkeiten").
 
 Every quality row written from schema `"19"` on carries `family` (its
 subject's: the local entry's, or a cloud model's own) and `size_class` (the

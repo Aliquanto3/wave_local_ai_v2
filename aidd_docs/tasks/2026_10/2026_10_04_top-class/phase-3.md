@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Instruction: Both suites from the committed tree, promote, merge (stage B)
