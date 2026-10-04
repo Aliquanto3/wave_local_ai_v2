@@ -3315,12 +3315,54 @@ def test_an_unregistered_prompt_variant_exits_1_before_any_process(
     started["running_server"].assert_not_called()
 
 
+# A suite larger than this runs the variant check over `_covering_slice`.
+_VARIANT_CHECK_MAX_ITEMS = 50
+
+
+def _covering_slice(items):
+    """The suite's items, in suite order, keeping each one that brings a
+    language, an expected label or an item shape (its key set) no earlier
+    kept item has: every kind of item the suite holds, each at least once."""
+    seen: set[tuple[str, object]] = set()
+    kept = []
+    for item in items:
+        marks = {
+            ("language", item["language"]),
+            ("label", item.get("expected_label")),
+            ("shape", frozenset(item)),
+        }
+        if not marks <= seen:
+            kept.append(item)
+            seen |= marks
+    return tuple(kept)
+
+
 @pytest.mark.parametrize("suite_id", suite_registry.registered_ids())
 def test_a_variant_changes_the_prompt_and_nothing_else_on_every_suite(
-    stubbed_run, suite_id
+    stubbed_run, suite_id, monkeypatch
 ) -> None:
     quality_results_path, _ = stubbed_run
     spec = suite_registry.resolve(suite_id)
+    if len(spec.items) > _VARIANT_CHECK_MAX_ITEMS:
+        # A variant transforms each item's prompt on its own, by the suite's
+        # task family alone (`prompt_variants.apply_variant`), and the CLI
+        # writes each row's other fields from the item, the suite and the
+        # run, never from another item. So what a 300-item drawn suite can
+        # add over a slice is more items of kinds the slice already holds:
+        # the slice keeps every language, every expected label and every
+        # item shape, and the full suite is checked to hold no other kind.
+        sliced = _covering_slice(spec.items)
+        assert {frozenset(item) for item in spec.items} == {
+            frozenset(item) for item in sliced
+        }
+        assert {item["language"] for item in sliced} == {
+            item["language"] for item in spec.items
+        }
+        assert {item.get("expected_label") for item in sliced} == {
+            item.get("expected_label") for item in spec.items
+        }
+        spec = dataclasses.replace(spec, items=sliced)
+        monkeypatch.setitem(suite_registry._LOADED, suite_id, spec)
 
     quality_cli._run(suite=suite_id)
     quality_cli._run(suite=suite_id, prompt_variant_ref=_OUTPUT_COMPRESSED)

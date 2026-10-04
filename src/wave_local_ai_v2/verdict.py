@@ -321,15 +321,27 @@ def select_quality_references(
     number pulls both suites' rows into the comparison, trips the
     `unmatched_items` guard below, and reports `not_comparable` for a batch
     that reproduced item for item.
+
+    `suite_id` is part of the key too, wherever both rows carry one: two
+    suites now share a `task_suite` (the hand-written and the publication
+    classification suites), and each versions itself independently, so a
+    shared `task_suite` and `suite_version` no longer name one suite. A row
+    carrying no `suite_id` is matched as before, on `task_suite` alone.
     """
     if not candidate_rows:
         return []
     first = candidate_rows[0]
     seed = first.get("sampling", {}).get("seed")
+    suite_id = first.get("suite_id")
     return [
         row
         for row in reference_rows
         if row.get("task_suite") == first.get("task_suite")
+        and (
+            suite_id is None
+            or row.get("suite_id") is None
+            or row.get("suite_id") == suite_id
+        )
         and row.get("model_id") == first.get("model_id")
         and row.get("suite_version") == first.get("suite_version")
         and row.get("sampling", {}).get("seed") == seed
@@ -464,7 +476,7 @@ def quality_verdict(
             [],
             None,
             "no reference row shares this batch's "
-            "task_suite/model_id/suite_version/seed",
+            "task_suite/suite_id/model_id/suite_version/seed",
             rule_fields=rule_fields,
         )
 

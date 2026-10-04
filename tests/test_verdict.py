@@ -11,6 +11,7 @@ from wave_local_ai_v2.verdict import (
     VERDICT_REPRODUCED,
     quality_verdict,
     runtime_verdict,
+    select_quality_references,
 )
 
 BASE_FICHE = {
@@ -499,6 +500,49 @@ def test_quality_reference_selection_never_crosses_task_suites() -> None:
 
     assert result["verdict"] == VERDICT_REPRODUCED
     assert result["compared_field"] == "item_score"
+
+
+def test_a_publication_batch_never_selects_the_hand_written_suites_reference() -> None:
+    # Both classification suites share task_suite, and each versions itself
+    # independently: at a shared suite_version the hand-written suite's rows
+    # must not stand in as the reference of a MInDS-14 batch.
+    reference = [
+        _quality_row(
+            task_suite="classification",
+            suite_id="classification-support-routing",
+            item_id="billing-01",
+        )
+    ]
+    candidate = [
+        _quality_row(
+            run_id="run-candidate",
+            task_suite="classification",
+            suite_id="classification-banking-intents-minds14",
+            item_id="PolyAI/minds14:en-US~ABROAD/a.wav",
+            predicted_label="abroad",
+        )
+    ]
+
+    assert select_quality_references(candidate, reference) == []
+    result = _local_verdict(candidate, reference)
+    assert result["verdict"] == VERDICT_NOT_COMPARABLE
+    assert result["reference_run_id"] is None
+
+
+def test_a_row_without_a_suite_id_is_matched_on_task_suite_as_before() -> None:
+    reference = [_quality_row(task_suite="classification")]
+    with_id = [
+        _quality_row(
+            run_id="run-candidate",
+            task_suite="classification",
+            suite_id="classification-support-routing",
+        )
+    ]
+    without_id = [_quality_row(run_id="run-candidate", task_suite="classification")]
+
+    assert select_quality_references(with_id, reference) == reference
+    assert select_quality_references(without_id, reference) == reference
+    assert _local_verdict(with_id, reference)["verdict"] == VERDICT_REPRODUCED
 
 
 def _two_run_reference(first_label: str, second_label: str) -> list[dict]:

@@ -1,6 +1,6 @@
 ---
 objective: "A 300-item publication-level classification suite drawn from MInDS-14 by the recorded sampler rule stands beside the hand-written 20-item suite, scored against its own label set, licensed and attributed on the permissive rung, and published in the reference bundle with one development-level batch of the hand-written suite on the same subject in the same session."
-status: in-progress
+status: implemented
 ---
 
 # Plan: A publication-level classification suite stands beside the hand-written one

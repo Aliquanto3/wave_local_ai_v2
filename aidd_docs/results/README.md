@@ -80,6 +80,38 @@ content hash, under the selection rule its definition records.
   (Methodology 4). Their label sets differ (four routing queues against fourteen banking
   intents), so the two accuracies are not on one scale either.
 
+### Both levels on one subject: Granite 4.0 H 350M (2026-10-04)
+
+One bench session on `laptop-mobile-gpu` (`gpu`), from commit `95040a7` with no tracked
+change, so every row carries `tree_dirty: false`: one development-level batch of the
+hand-written suite and one publication-level batch over MInDS-14, on the same subject.
+Rows carry no session id, so the pair is defined by the three fields both batches share,
+checkable from the rows (`tests/test_reference_bundle.py`): `roster_entry_id`
+`granite-4.0-h-350m-q8`, `fiche_hash` `5ce2bf21...` (the fiche its earlier batches
+cite) and `engine_build` `b10537`. The development score leads; the publication score
+sits beside it as the scale check. The two are never averaged, and they are not on one
+scale: four routing queues against fourteen banking intents.
+
+| Level | Suite | run_id | Items | Accuracy | 95% interval | Minimum detectable effect |
+| ----- | ----- | ------ | ----- | -------- | ------------ | ------------------------- |
+| development (leads) | `classification-support-routing@5` | `1c5a5471245e458d80dea8393383b59e` | 20 | 0.50 | [0.30, 0.70] | 0.200 |
+| publication (beside it) | `classification-banking-intents-minds14@1` | `7b8f2569a2044a9e9f8f62a0b7770098` | 300 | 0.227 | [0.180, 0.277] | 0.048 |
+
+Per language, the publication batch holds 100 items in each cell: EN [0.20, 0.37], FR
+[0.11, 0.26], DE [0.15, 0.30], each with a minimum detectable effect of 0.075 to 0.085;
+the development batch's cells hold 10, 5 and 5 items, with minimum detectable effects of
+0.30 to 0.40. At 20 items nothing under 20 points is resolvable; at 300, about 5 points
+is, which is the scale the epic asks the publication level to reach.
+
+Read the publication score with its failure shape. The subject named an intent on 294 of
+300 items (6 `unparseable`, no truncation), and 143 of those answers were `app_error`:
+a 0.34B model collapsing onto a few labels, not a scoring artefact. Every intent it did
+name, `app_error`, `business_loan` and `cash_deposit` among them, parsed to itself
+through the multi-word label match. The development batch repeats this subject's earlier
+published 0.50 on the same suite version.
+
+Commands, logs and the live stores: `aidd_docs/tasks/2026_10/2026_10_04_publication-classification-suite/evidence/`.
+
 ## The client-session record (`client-sessions.jsonl`)
 
 `client-sessions.jsonl` is not part of the bundle: it records how the results were

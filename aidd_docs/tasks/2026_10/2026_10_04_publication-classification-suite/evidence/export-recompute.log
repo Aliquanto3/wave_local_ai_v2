@@ -1,0 +1,51 @@
+wrote <scratch>/export/quality_items.csv (605 rows)
+wrote <scratch>/export/runtime_aggregates.csv (6 rows)
+wrote <scratch>/export/fiches.csv (13 rows)
+wrote <scratch>/export/roster.csv (9 rows)
+wrote <scratch>/export/comparison_records.csv (0 rows)
+wrote <scratch>/export/column_dictionary.csv (472 rows)
+wrote <scratch>/export/bundle_manifest.csv (7 rows)
+exit 0
+exit 0
+# recompute_from_export: lines for this story's two batches, then the summary
+match  interval 1c5a5471245e458d80dea8393383b59e local Granite-4.0-H-350M baseline  score_interval_suite_n: published "20", recomputed "20"
+match  interval 1c5a5471245e458d80dea8393383b59e local Granite-4.0-H-350M baseline  score_interval_suite_lower: published "0.3", recomputed "0.3"
+match  interval 1c5a5471245e458d80dea8393383b59e local Granite-4.0-H-350M baseline  score_interval_suite_upper: published "0.7", recomputed "0.7"
+match  interval 1c5a5471245e458d80dea8393383b59e local Granite-4.0-H-350M baseline  score_interval_suite_minimum_detectable_effect: published "0.19999999999999998", recomputed "0.19999999999999998"
+match  interval 1c5a5471245e458d80dea8393383b59e local Granite-4.0-H-350M baseline  score_interval_suite_null_reason: published "", recomputed ""
+match  interval 1c5a5471245e458d80dea8393383b59e local Granite-4.0-H-350M baseline  score_interval_by_language_en_n: published "10", recomputed "10"
+match  interval 1c5a5471245e458d80dea8393383b59e local Granite-4.0-H-350M baseline  score_interval_by_language_en_lower: published "0.2", recomputed "0.2"
+match  interval 1c5a5471245e458d80dea8393383b59e local Granite-4.0-H-350M baseline  score_interval_by_language_en_upper: published "0.8", recomputed "0.8"
+match  interval 1c5a5471245e458d80dea8393383b59e local Granite-4.0-H-350M baseline  score_interval_by_language_en_minimum_detectable_effect: published "0.30000000000000004", recomputed "0.30000000000000004"
+match  interval 1c5a5471245e458d80dea8393383b59e local Granite-4.0-H-350M baseline  score_interval_by_language_en_null_reason: published "", recomputed ""
+match  interval 1c5a5471245e458d80dea8393383b59e local Granite-4.0-H-350M baseline  score_interval_by_language_fr_n: published "5", recomputed "5"
+match  interval 1c5a5471245e458d80dea8393383b59e local Granite-4.0-H-350M baseline  score_interval_by_language_fr_lower: published "0.0", recomputed "0.0"
+match  interval 1c5a5471245e458d80dea8393383b59e local Granite-4.0-H-350M baseline  score_interval_by_language_fr_upper: published "0.8", recomputed "0.8"
+match  interval 1c5a5471245e458d80dea8393383b59e local Granite-4.0-H-350M baseline  score_interval_by_language_fr_minimum_detectable_effect: published "0.4", recomputed "0.4"
+match  interval 1c5a5471245e458d80dea8393383b59e local Granite-4.0-H-350M baseline  score_interval_by_language_fr_null_reason: published "", recomputed ""
+match  interval 1c5a5471245e458d80dea8393383b59e local Granite-4.0-H-350M baseline  score_interval_by_language_de_n: published "5", recomputed "5"
+match  interval 1c5a5471245e458d80dea8393383b59e local Granite-4.0-H-350M baseline  score_interval_by_language_de_lower: published "0.2", recomputed "0.2"
+match  interval 1c5a5471245e458d80dea8393383b59e local Granite-4.0-H-350M baseline  score_interval_by_language_de_upper: published "1.0", recomputed "1.0"
+match  interval 1c5a5471245e458d80dea8393383b59e local Granite-4.0-H-350M baseline  score_interval_by_language_de_minimum_detectable_effect: published "0.4", recomputed "0.4"
+match  interval 1c5a5471245e458d80dea8393383b59e local Granite-4.0-H-350M baseline  score_interval_by_language_de_null_reason: published "", recomputed ""
+match  interval 7b8f2569a2044a9e9f8f62a0b7770098 local Granite-4.0-H-350M baseline  score_interval_suite_n: published "300", recomputed "300"
+match  interval 7b8f2569a2044a9e9f8f62a0b7770098 local Granite-4.0-H-350M baseline  score_interval_suite_lower: published "0.18", recomputed "0.18"
+match  interval 7b8f2569a2044a9e9f8f62a0b7770098 local Granite-4.0-H-350M baseline  score_interval_suite_upper: published "0.27666666666666667", recomputed "0.27666666666666667"
+match  interval 7b8f2569a2044a9e9f8f62a0b7770098 local Granite-4.0-H-350M baseline  score_interval_suite_minimum_detectable_effect: published "0.04833333333333334", recomputed "0.04833333333333334"
+match  interval 7b8f2569a2044a9e9f8f62a0b7770098 local Granite-4.0-H-350M baseline  score_interval_suite_null_reason: published "", recomputed ""
+match  interval 7b8f2569a2044a9e9f8f62a0b7770098 local Granite-4.0-H-350M baseline  score_interval_by_language_en_n: published "100", recomputed "100"
+match  interval 7b8f2569a2044a9e9f8f62a0b7770098 local Granite-4.0-H-350M baseline  score_interval_by_language_en_lower: published "0.2", recomputed "0.2"
+match  interval 7b8f2569a2044a9e9f8f62a0b7770098 local Granite-4.0-H-350M baseline  score_interval_by_language_en_upper: published "0.37", recomputed "0.37"
+match  interval 7b8f2569a2044a9e9f8f62a0b7770098 local Granite-4.0-H-350M baseline  score_interval_by_language_en_minimum_detectable_effect: published "0.08499999999999999", recomputed "0.08499999999999999"
+match  interval 7b8f2569a2044a9e9f8f62a0b7770098 local Granite-4.0-H-350M baseline  score_interval_by_language_en_null_reason: published "", recomputed ""
+match  interval 7b8f2569a2044a9e9f8f62a0b7770098 local Granite-4.0-H-350M baseline  score_interval_by_language_fr_n: published "100", recomputed "100"
+match  interval 7b8f2569a2044a9e9f8f62a0b7770098 local Granite-4.0-H-350M baseline  score_interval_by_language_fr_lower: published "0.11", recomputed "0.11"
+match  interval 7b8f2569a2044a9e9f8f62a0b7770098 local Granite-4.0-H-350M baseline  score_interval_by_language_fr_upper: published "0.26", recomputed "0.26"
+match  interval 7b8f2569a2044a9e9f8f62a0b7770098 local Granite-4.0-H-350M baseline  score_interval_by_language_fr_minimum_detectable_effect: published "0.07500000000000001", recomputed "0.07500000000000001"
+match  interval 7b8f2569a2044a9e9f8f62a0b7770098 local Granite-4.0-H-350M baseline  score_interval_by_language_fr_null_reason: published "", recomputed ""
+match  interval 7b8f2569a2044a9e9f8f62a0b7770098 local Granite-4.0-H-350M baseline  score_interval_by_language_de_n: published "100", recomputed "100"
+match  interval 7b8f2569a2044a9e9f8f62a0b7770098 local Granite-4.0-H-350M baseline  score_interval_by_language_de_lower: published "0.14975000000000221", recomputed "0.14975000000000221"
+match  interval 7b8f2569a2044a9e9f8f62a0b7770098 local Granite-4.0-H-350M baseline  score_interval_by_language_de_upper: published "0.3", recomputed "0.3"
+match  interval 7b8f2569a2044a9e9f8f62a0b7770098 local Granite-4.0-H-350M baseline  score_interval_by_language_de_minimum_detectable_effect: published "0.07512499999999889", recomputed "0.07512499999999889"
+match  interval 7b8f2569a2044a9e9f8f62a0b7770098 local Granite-4.0-H-350M baseline  score_interval_by_language_de_null_reason: published "", recomputed ""
+320 values recomputed (interval), 0 differ

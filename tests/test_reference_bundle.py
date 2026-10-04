@@ -393,3 +393,40 @@ def test_every_row_of_a_superseded_file_lands_in_unreadable() -> None:
         assert sum(entry.count for entry in read.unreadable) == len(
             results.read_rows(path)
         )
+
+
+def test_the_publication_batch_has_a_development_pair_on_the_same_subject() -> None:
+    """Every published classification batch over a publication suite stands
+    beside a development-level batch of the hand-written classification suite
+    with the same roster entry, fiche, engine build and commit. Rows carry no
+    session id, so that key is the pair's definition, checkable from the rows
+    alone; the commit is in it so that an earlier batch of the same subject on
+    the same fiche never stands in for the one run beside it."""
+    batches: dict[str, dict[str, object]] = {}
+    for row in results.read_rows(QUALITY_REFERENCE_PATH):
+        batches.setdefault(str(row["run_id"]), row)
+    publication = [
+        row
+        for row in batches.values()
+        if row["suite_level"] == "publication" and row["task_suite"] == "classification"
+    ]
+
+    def pair_key(row: dict[str, object]) -> tuple[object, ...]:
+        return (
+            row["roster_entry_id"],
+            row["fiche_hash"],
+            row["engine_build"],
+            row["commit_sha"],
+        )
+
+    development = {
+        pair_key(row)
+        for row in batches.values()
+        if row["suite_id"] == "classification-support-routing"
+        and row["suite_level"] == "development"
+        and row["score_interval"] is not None
+    }
+    assert publication
+    for row in publication:
+        assert row["score_interval"] is not None
+        assert pair_key(row) in development, pair_key(row)
