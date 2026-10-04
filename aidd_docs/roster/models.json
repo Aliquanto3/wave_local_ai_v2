@@ -1,11 +1,11 @@
 {
-  "roster_version": 6,
+  "roster_version": 7,
   "size_classes": {
     "~0.5B": {
       "single_family_ladder": false,
-      "moe_sought": false,
+      "moe_sought": true,
       "moe_entry": null,
-      "moe_absent_reason": null
+      "moe_absent_reason": "sought, none found: no MoE GGUF below 1B total parameters in the epic's candidate families (Granite, LFM2, Gemma 4, Ministral, Phi); the smallest MoE the search found is Granite 3.1 1B-A400M (1,334,628,352 total, ~2B) (GGUF spike which-candidate-ggufs-exist-per-size-class-and-does-the-pinned-build-load-them, read 2026-10-02)"
     },
     "~2B": {
       "single_family_ladder": false,
@@ -328,6 +328,86 @@
         "expert_count": 0,
         "active_params_b": 4.0,
         "total_params": 4022468096
+      },
+      "server_flags": {
+        "n_gpu_layers": 99,
+        "context_size": 32768,
+        "flash_attention": "on",
+        "jinja": true,
+        "parallel_slots": 1,
+        "load_mode": "auto",
+        "sampler": {
+          "temperature": 0.6,
+          "top_p": 0.95,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5
+        }
+      }
+    },
+    "granite-4.0-h-350m-q8": {
+      "repo": "ibm-granite/granite-4.0-h-350m-GGUF",
+      "revision": "a864f823cce6e6048b5752e2816fe7a23987d790",
+      "file": "granite-4.0-h-350m/granite-4.0-h-350m-Q8_0.gguf",
+      "display_id": "Granite-4.0-H-350M",
+      "quant": "Q8_0",
+      "sha256": "c7d9873640dc303b6773dcc44e72e5bdf533e1c95ca8421e6191fbff5c94c942",
+      "size_class": "~0.5B",
+      "bytes_on_disk": 366195616,
+      "requirements": {
+        "gpu": {
+          "ram_gb": {
+            "value": 0.37,
+            "source": "declared",
+            "read_from": "lower bound: the weights' size, bytes_on_disk 366195616 (no runtime peak of this model is published yet)"
+          },
+          "vram_gb": {
+            "value": null,
+            "source": "not_yet_declared",
+            "read_from": "awaits a per-process VRAM peak, as for every roster entry"
+          },
+          "disk_gb": {
+            "value": 0.37,
+            "source": "declared",
+            "read_from": "bytes_on_disk 366195616 (the weights file), checked only when the weights are not yet on disk"
+          }
+        },
+        "cpu_only": {
+          "ram_gb": {
+            "value": 0.37,
+            "source": "declared",
+            "read_from": "lower bound: the weights' size, bytes_on_disk 366195616 (no runtime peak of this model is published yet)"
+          },
+          "disk_gb": {
+            "value": 0.37,
+            "source": "declared",
+            "read_from": "bytes_on_disk 366195616 (the weights file), checked only when the weights are not yet on disk"
+          }
+        }
+      },
+      "family": "ibm",
+      "thinking_control": "none",
+      "licence": {
+        "id": "apache-2.0",
+        "client_commercial_use": true,
+        "read_on": "2026-10-04",
+        "source_url": "https://huggingface.co/ibm-granite/granite-4.0-h-350m-GGUF/blob/a864f823cce6e6048b5752e2816fe7a23987d790/README.md"
+      },
+      "language_claim": {
+        "languages": [
+          "en",
+          "fr",
+          "de"
+        ],
+        "source_url": "https://huggingface.co/ibm-granite/granite-4.0-h-350m/blob/3b17b717b8f2f5d305b0a92c1491e239aeda19c8/README.md",
+        "read_on": "2026-10-04",
+        "statement": "English, German, Spanish, French, Japanese, Portuguese, Arabic, Czech, Italian, Korean, Dutch, and Chinese."
+      },
+      "architecture": {
+        "kind": "dense",
+        "expert_count": 0,
+        "active_params_b": 0.34,
+        "total_params": 340332224
       },
       "server_flags": {
         "n_gpu_layers": 99,

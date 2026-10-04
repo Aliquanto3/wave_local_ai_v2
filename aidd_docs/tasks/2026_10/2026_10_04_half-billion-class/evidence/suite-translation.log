@@ -1,0 +1,11 @@
+# preconditions 2026-10-04T03:30:08+02:00
+0 MiB
+Informationÿ: aucune tƒche en service ne correspond aux critŠres sp‚cifi‚s.
+d8c5b24b38194c34b42f225ad44af0f9
+pre-flight: vram_gb not checked under gpu: roster entry 'granite-4.0-h-350m-q8' declares no minimum yet (awaits a per-process VRAM peak, as for every roster entry)
+[codecarbon INFO @ 03:30:11] offline tracker init
+[codecarbon WARNING @ 03:30:11] Multiple instances of codecarbon are allowed to run at the same time.
+mistral skipped: not enabled in QUALITY_PROVIDERS
+google skipped: not enabled in QUALITY_PROVIDERS
+model=Granite-4.0-H-350M provider=local suite_score=0.48
+exit 0

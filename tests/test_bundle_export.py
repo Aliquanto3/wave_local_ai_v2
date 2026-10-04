@@ -95,10 +95,11 @@ def test_the_roster_table_holds_each_thinking_control_as_one_json_cell(
         "thinking_control"
     ]
     for row in _read_csv(committed_export / "roster.csv"):
-        assert (
-            json.loads(row["thinking_control"])
-            == entries[row["entry_id"]]["thinking_control"]
-        )
+        cell = row["thinking_control"]
+        # An object is one JSON cell; a model that does not reason declares
+        # the identifier `none`, carried as it is.
+        value = cell if cell == "none" else json.loads(cell)
+        assert value == entries[row["entry_id"]]["thinking_control"]
 
 
 def test_the_manifest_declares_the_schema_the_bundle_carries(

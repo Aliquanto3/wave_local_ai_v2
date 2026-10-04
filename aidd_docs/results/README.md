@@ -713,7 +713,7 @@ which names that same suite. That refusal is the current coverage reading
 the record appears here once the last entry resolves, and until then the
 overview's coverage absence above stays true.
 
-## Roster composition: four unlabelled single-family classes (2026-10-02)
+## Roster composition: three unlabelled single-family classes (2026-10-04)
 
 Methodology 13's composition rule is a command, not prose:
 `uv run wave-local-ai-v2-composition-check [--roster <models.json>]`
@@ -756,15 +756,17 @@ classes, each spanning exactly one family (`qwen`), none labelled, and the
 three dense classes with no MoE searched for and no reason recorded. The
 roster is deliberately not labelled here: the search that would justify a
 ladder label or a MoE absence is the per-class stories' work. A check that
-passed on this roster would not be checking the rule.
+passed on this roster would not be checking the rule. Since `roster_version` 7
+the `~0.5B` class passes (its section below); the three other classes still
+fail as they did.
 `tests/test_composition_check.py` fails when the block below drifts from the
 command's output.
 
 <!-- composition-check:start -->
 ```text
-Roster composition: aidd_docs/roster/models.json (roster_version 6)
+Roster composition: aidd_docs/roster/models.json (roster_version 7)
 Size classes, banded on total parameters: ~0.5B < 1,000,000,000 <= ~2B < 3,000,000,000 <= ~4B < 6,000,000,000 <= ~8B-and-up
-  ~0.5B: 1 entry; families: qwen; dense: yes; MoE: no; label: none; MoE sought: no; MoE absence reason: none
+  ~0.5B: 2 entries; families: ibm, qwen; dense: yes; MoE: no; label: none; MoE sought: yes; MoE absence reason: sought, none found: no MoE GGUF below 1B total parameters in the epic's candidate families (Granite, LFM2, Gemma 4, Ministral, Phi); the smallest MoE the search found is Granite 3.1 1B-A400M (1,334,628,352 total, ~2B) (GGUF spike which-candidate-ggufs-exist-per-size-class-and-does-the-pinned-build-load-them, read 2026-10-02)
   ~2B: 1 entry; families: qwen; dense: yes; MoE: no; label: none; MoE sought: no; MoE absence reason: none
   ~4B: 1 entry; families: qwen; dense: yes; MoE: no; label: none; MoE sought: no; MoE absence reason: none
   ~8B-and-up: 1 entry; families: qwen; dense: no; MoE: yes (qwen3.6-35b-a3b-ud-iq4xs); label: none; MoE sought: yes; MoE absence reason: n/a
@@ -773,15 +775,14 @@ Entries
   qwen3-0.6b-q8: ~0.5B; family qwen; dense; 596,049,920 total params; 639,446,688 bytes on disk; licence Apache-2.0, client commercial use yes, read 2026-10-02
   qwen3-1.7b-q8: ~2B; family qwen; dense; 1,720,574,976 total params; 1,834,426,016 bytes on disk; licence Apache-2.0, client commercial use yes, read 2026-10-02
   qwen3-4b-q4km: ~4B; family qwen; dense; 4,022,468,096 total params; 2,497,280,256 bytes on disk; licence Apache-2.0, client commercial use yes, read 2026-10-02
-Failures (7)
-  size class ~0.5B: spans one family (qwen) without the single-family-ladder label
-  size class ~0.5B: has no MoE represented and no reason recorded
+  granite-4.0-h-350m-q8: ~0.5B; family ibm; dense; 340,332,224 total params; 366,195,616 bytes on disk; licence apache-2.0, client commercial use yes, read 2026-10-04
+Failures (5)
   size class ~2B: spans one family (qwen) without the single-family-ladder label
   size class ~2B: has no MoE represented and no reason recorded
   size class ~4B: spans one family (qwen) without the single-family-ladder label
   size class ~4B: has no MoE represented and no reason recorded
   size class ~8B-and-up: spans one family (qwen) without the single-family-ladder label
-FAIL: 7 failure(s)
+FAIL: 5 failure(s)
 ```
 <!-- composition-check:end -->
 
@@ -789,6 +790,80 @@ FAIL: 7 failure(s)
 publish its output beside the table; a class it names is either fixed in the
 roster or published with the failure stated. It is not part of the merge gate
 or CI while the shipped roster is expected to fail it.
+
+### The ~0.5B class: Granite 4.0 H 350M beside Qwen3-0.6B (2026-10-04)
+
+**The class spans two families.** `granite-4.0-h-350m-q8` (IBM, `granitehybrid`,
+dense, 340,332,224 total parameters, 366,195,616 bytes on disk) entered the roster
+at `roster_version` 7 from its candidate-gate pass record
+(`aidd_docs/roster/candidate-records.jsonl`, 2026-10-04) beside `qwen3-0.6b-q8`, and
+completed both suites on the laptop. The search stops there (owner answer Q127 (a)):
+one non-Qwen entry that passed the gate and completed both suites suffices, so the
+class seeks no third family and is not a single-family ladder.
+
+| Candidate, in gate order | Pin | Outcome |
+| --- | --- | --- |
+| Granite 4.0 H 350M (`granitehybrid`) | `ibm-granite/granite-4.0-h-350m-GGUF@a864f823cce6e6048b5752e2816fe7a23987d790`, `granite-4.0-h-350m-Q8_0.gguf` | **passed** every step; entered |
+| Granite 4.0 350M (`granite`) | `ibm-granite/granite-4.0-350m-GGUF@b8208a86a58427e1739265318028eb5895b74bf2` | not reached: class stopped at `granite-4.0-h-350m-q8` |
+| LFM2.5-350M (`lfm2`) | `LiquidAI/LFM2.5-350M-GGUF@657e078c94084481950a2d555a941481f715536b` | not reached: class stopped at `granite-4.0-h-350m-q8` |
+
+No candidate was refused or deferred, so the pinned build `b10537` held and no
+build-upgrade question arises. `LFM2.5-230M` was never a candidate (owner answer
+Q107 (a)).
+
+**Quant.** Both entries are `Q8_0`: IBM ships the class's Qwen quant, so the
+class compares families, not quants.
+
+**Licences.** Granite 4.0 H 350M: `apache-2.0` (the hub's identifier, read off the
+GGUF repository's card at its pinned revision, which carries no LICENSE file),
+client-side commercial use permitted. Had LFM2.5-350M been reached, it would have
+entered with `client_commercial_use: false` (its declaration says so): section 5 of
+the LFM Open License v1.0 conditions commercial use on a legal entity below USD 10M
+annual revenue, read against a user above that threshold; the licence bans no
+publication of benchmark results, so the gate's licence step would pass either way.
+
+**MoE.** Sought, none found: the GGUF spike's search found no MoE GGUF below 1B
+total parameters in the epic's candidate families; the smallest it found is
+Granite 3.1 1B-A400M, in `~2B`. The class's declaration records that reason, so the
+class is dense-only by nature, not by omission.
+
+**The GGUF spike's architectures at this class** (owner answer Q125 (a)):
+
+- `granitehybrid`: loaded under `b10537`; closed by the pass record of
+  `granite-4.0-h-350m-q8` (`observed`: `llama_cpp_build` `b10537`,
+  `chat_template_hash` `9524df67b77a7b25a2dfee898f75b316a157eb9d855b51e32aeac79d7c8a83ce`,
+  `thinking` `{"declared": "none", "verified": true}`).
+- `granite`: not reached: class stopped at `granite-4.0-h-350m-q8`.
+- `lfm2`: not reached: class stopped at `granite-4.0-h-350m-q8`.
+
+**The new rows.** Both runs on `laptop-mobile-gpu`, `compute_mode` `gpu`, profile
+`granite-4.0-h-350m-q8@laptop-mobile-gpu/gpu` (`-ngl 99`, the declared value,
+launched; `-t 8`; no override), `thinking_policy` `disabled` with the entry's `none`
+control (no switch sent), fiche `5ce2bf21...`. They were run from the working tree
+that added the entry, before it was committed, so they carry `tree_dirty: true`
+beside `commit_sha` `4cf22a17f4d3801cd9b871210511dccaea64c74b`.
+
+| Suite | `run_id` | Rows | Score [95% interval] | `en` | `fr` | `de` |
+| --- | --- | --- | --- | --- | --- | --- |
+| `classification-support-routing@5` | `29295f9be29f4901998e6958de0cfa65` | 20 | accuracy **0.50** [0.30, 0.70] | 0.50 (n=10) | 0.40 * (n=5) | 0.60 * (n=5) |
+| `translation-business-short-form@4` | `d8c5b24b38194c34b42f225ad44af0f9` | 21 | chrF **0.484** [0.358, 0.614] | 0.328 * (EN->FR) | 0.326 * (FR->DE) | 0.799 * (DE->EN) |
+
+`*` = `indicative`. The bundle now holds 121 quality rows: the 80 of the 2026-10-04
+regeneration and these 41, promoted into `machines/laptop-mobile-gpu/` and merged.
+Every classification answer parsed; nine of the ten misrouted items were answered
+`account`, and no item was routed to `billing`. No `Qwen3-0.6B` quality row at these
+suite versions is in the bundle, so the class's side-by-side reading rests on the
+earlier, superseded tables below (classification `@3` 0.45, translation `@2` 0.5121),
+not on rows of the same suite version.
+
+**Finding: the rows contradict the EN/FR/DE claim on output into French and German.**
+The entry claims `en`, `fr` and `de` (the base model card's "English, German, Spanish,
+French, ..."). Translating into French, 4 of 7 items (`en-fr-01`, `-02`, `-03`, `-07`)
+came back in English; translating into German, none of 7 items is German alone: two
+came back in English (`fr-de-02`, `-05`), one is the single word "Not" (`fr-de-06`),
+and four mix French words into German (`fr-de-01`, `-03`, `-04`, `-07`). Into English
+it scores 0.799. The claim stays on the entry, as the epic decides; this is a finding
+about the model at this size, not a reason to remove it.
 
 Every quality row written from schema `"19"` on carries `family` (its
 subject's: the local entry's, or a cloud model's own) and `size_class` (the

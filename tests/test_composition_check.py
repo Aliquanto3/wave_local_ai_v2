@@ -353,13 +353,13 @@ def test_an_entry_without_a_licence_prints_no_licence_terms(tmp_path, capsys) ->
 # Calibration: the shipped roster, before any new entry is authored.
 
 
-def test_the_shipped_roster_reports_four_single_family_classes_and_fails(
+def test_the_shipped_roster_passes_the_half_billion_class_and_fails_three(
     capsys,
 ) -> None:
     code = composition_check.main(["--roster", REAL_ROSTER_PATH.as_posix()])
     out = capsys.readouterr().out
 
-    # A check that passes on today's four-Qwen roster is not checking the rule.
+    # The three single-family Qwen classes still fail, unlabelled.
     assert code == 1
     report = composition_check.check_composition(
         composition_check.roster.load_roster(REAL_ROSTER_PATH),
@@ -372,6 +372,11 @@ def test_the_shipped_roster_reports_four_single_family_classes_and_fails(
         "~8B-and-up",
     ]
     for item in report.classes:
+        if item.size_class == "~0.5B":
+            # Granite 4.0 H 350M beside Qwen3-0.6B, and the MoE search recorded.
+            assert item.families == ("ibm", "qwen")
+            assert not [f for f in report.failures if f.subject == "size class ~0.5B"]
+            continue
         assert item.families == ("qwen",), item.size_class
         assert (
             f"size class {item.size_class}: spans one family (qwen) without the "

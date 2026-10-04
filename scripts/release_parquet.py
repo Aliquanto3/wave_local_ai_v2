@@ -92,6 +92,9 @@ UNIT_KINDS: Mapping[str, str] = {
     "JSON array of language codes; [] when the card names none of the three": (STRING),
     # Fiche fields of every shape (CPU name, RAM in GB) share one column.
     "as the fiche field": STRING,
+    # A metric's parameters (chrF's integer orders beside any other shape a
+    # metric declares) share one unit, so the column keeps the CSV cell.
+    "as the metric defines": STRING,
 }
 
 COMPRESSION = "snappy"

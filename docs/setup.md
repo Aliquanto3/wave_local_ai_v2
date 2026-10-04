@@ -83,6 +83,8 @@ the `cpu_only` profile that exists for the same machine and runs nothing.
 | `Qwen3-1.7B` `Q8_0` | `cpu_only` | 2.28 | n/a | 1.84 | RAM: lower bound, as for the flagship |
 | `Qwen3-4B` `Q4_K_M` | `gpu` | 4.28 | not yet declared | 2.50 | RAM: peak 4275 MB of the published laptop row |
 | `Qwen3-4B` `Q4_K_M` | `cpu_only` | 4.28 | n/a | 2.50 | RAM: lower bound, as for the flagship |
+| `Granite-4.0-H-350M` `Q8_0` | `gpu` | 0.37 | not yet declared | 0.37 | RAM: lower bound, the weights' size (no runtime peak published) |
+| `Granite-4.0-H-350M` `Q8_0` | `cpu_only` | 0.37 | n/a | 0.37 | RAM: lower bound, as for `gpu` |
 
 The `gpu` RAM peaks are the side-by-side runtime table of
 `aidd_docs/results/README.md`; each declaration's full source is its
@@ -393,6 +395,57 @@ means nothing was recorded (a malformed declaration, an unreachable hub, a
 busy port, an unreadable build). The gate never writes `models.json`: copy the
 pass record's `entry` into it as a reviewed change, and add the model's row to
 the tables above.
+
+### 3.3 The second family at ~0.5B: Granite 4.0 H 350M
+
+The ~0.5B class holds a second family beside `Qwen3-0.6B`: IBM's Granite 4.0
+H 350M (`granitehybrid`, a dense Mamba2 hybrid), entered from its candidate
+gate pass record (`aidd_docs/roster/candidate-records.jsonl`). It is taken at
+`Q8_0`, the quant of the class's Qwen entry, which IBM ships, so the two rows
+of this class compare families, not quants. As above, the roster file is the
+source of truth and a mismatch with this section is a bug.
+
+| Entry id | Repo | Revision | File in the repo | Under `SLM_MODELS_DIR` | Quant | Size |
+| -------- | ---- | -------- | ---------------- | ---------------------- | ----- | ---- |
+| `granite-4.0-h-350m-q8` | `ibm-granite/granite-4.0-h-350m-GGUF` | `a864f823cce6e6048b5752e2816fe7a23987d790` | `granite-4.0-h-350m-Q8_0.gguf` | `granite-4.0-h-350m/granite-4.0-h-350m-Q8_0.gguf` | `Q8_0` | 366,195,616 B (0.34 GiB) |
+
+sha256:
+
+```
+granite-4.0-h-350m-q8   c7d9873640dc303b6773dcc44e72e5bdf533e1c95ca8421e6191fbff5c94c942
+```
+
+Download it at its pinned revision:
+
+```powershell
+# Windows
+hf download ibm-granite/granite-4.0-h-350m-GGUF granite-4.0-h-350m-Q8_0.gguf `
+  --revision a864f823cce6e6048b5752e2816fe7a23987d790 `
+  --local-dir <SLM_MODELS_DIR>\granite-4.0-h-350m
+```
+
+```sh
+# POSIX
+hf download ibm-granite/granite-4.0-h-350m-GGUF granite-4.0-h-350m-Q8_0.gguf \
+  --revision a864f823cce6e6048b5752e2816fe7a23987d790 \
+  --local-dir <SLM_MODELS_DIR>/granite-4.0-h-350m
+```
+
+Verify the checksum:
+
+```powershell
+# Windows -- .ToLower() matters: the roster stores lowercase hex.
+(Get-FileHash -Algorithm SHA256 "<SLM_MODELS_DIR>\granite-4.0-h-350m\granite-4.0-h-350m-Q8_0.gguf").Hash.ToLower()
+```
+
+```sh
+# POSIX
+sha256sum <SLM_MODELS_DIR>/granite-4.0-h-350m/granite-4.0-h-350m-Q8_0.gguf
+```
+
+The model does not reason, so its entry declares `thinking_control: "none"`
+(the gate verified it with one generation that returned no reasoning): a
+`thinking_policy: disabled` batch sends no switch for it.
 
 ## 4. Configure `.env` and run
 
