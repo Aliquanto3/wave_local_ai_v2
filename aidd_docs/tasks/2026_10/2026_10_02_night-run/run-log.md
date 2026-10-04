@@ -2,6 +2,91 @@
 
 Branch `feat/night-run-2026-10-02` (worktree `wave_local_ai_v2-night`), cut from `main` at `c68b23e` (equal to `origin/main` after a fetch). Nothing pushed, no PR, no paid API call.
 
+## Final report
+
+Written 2026-10-04 at the end of the run. Branch `feat/night-run-2026-10-02`, pushed (owner decision D6) and open as draft PR #56 (https://github.com/Aliquanto3/wave_local_ai_v2/pull/56). Paid calls: 40 Mistral completions for story 18 only (D6); nothing else.
+
+### Final gates
+
+Run from the worktree root on `f373f06`, the last code commit:
+- `uv run pytest` => `3183 passed, 20 skipped, 2 warnings in 282.28s`, `Total coverage: 98.53%` (floor 95%).
+- `uv run pre-commit run --all-files` => ruff check, ruff format, mypy, detect-secrets Passed; the staged-file secrets scan (hook's own exclude) exit 0 on every commit.
+- `uv run python scripts/audit_dependencies.py` => "no blocking findings", exit 0.
+- `uv run wave-local-ai-v2-validate` => quality-reference "checked 926 row(s)", runtime-reference "checked 6 row(s)", exit 0.
+- `uv run wave-local-ai-v2-merge-bundle --check` => "committed bundle equals the merge (6 runtime, 926 quality, 0 refusals)".
+- Release-group tests, isolated: `67 passed` (reviewer of the last story).
+- CI on PR #56: green at `7cd02c4`; `3b2fc5a` failed on ubuntu (`test_token_counts_come_from_the_served_tokenizer`, a Windows path read with a POSIX `Path`), fixed in `c830e6e`; the run on the final push is listed in the PR.
+
+### Done (`status: done`)
+
+| Story | Commits |
+| ----- | ------- |
+| a-gpu-run-and-a-cpu-only-run-never-share-a-fiche (D1) | `085190b` feat, `70c3f09` done |
+| a-campaign-is-declared-as-data-and-an-empty-cell-fails-it (D1) | `4747cb2`, `7724b69` |
+| each-model-machine-and-mode-runs-under-its-own-named-profile (D1, D4) | `fec3bae`, `d2353fc` |
+| a-model-below-its-declared-minimum-refuses-and-the-refusal-is-published (D1) | `777778b`, `2eb9eac` |
+| each-machine-returns-its-rows-by-pull-request-and-a-hash-collision-is-refused (D1) | `7f500bd`, `c7420aa` |
+| the-terse-output-variant-runs-every-item-and-meets-baseline-in-a-paired-test (D1) | `357bfdd`, `62e25a9` |
+| the-constrained-output-variant-runs-under-a-llama-cpp-grammar-and-names-its-mechanism (D1) | `9dedbde`, `faa7920` |
+| each-client-showing-is-logged-as-a-record-someone-who-was-not-there-can-read-back (D5) | `e1e768f`, `6b42066` |
+| a-challenge-no-named-evidence-resolved-is-sustained-and-points-at-its-follow-up-item (D5) | `76caf9f`, `f224eb3` |
+| each-release-reads-its-credibility-verdict-from-its-records-in-its-changelog-entry (D5) | `c59bf67`, `db4f2d5` |
+| the-half-billion-class-spans-two-families-or-is-published-as-a-searched-single-family-ladder (D7) | `8852bf0` + `9a0c7af`, `e4fc393` |
+| the-two-billion-class-spans-two-families-or-is-published-as-a-searched-single-family-ladder (D7) | `5fc6901` + `7627d0a`, `9d0d055` |
+| the-four-billion-class-spans-two-families-or-is-published-as-a-searched-single-family-ladder (D7) | `3008ef9` + `3ef6359`, `51f95cb` |
+| a-publication-level-classification-suite-stands-beside-the-hand-written-one | `95040a7` + `cf4c224`, `a6bd44a` |
+| a-publication-level-translation-suite-stands-beside-the-hand-written-one | `0f69b60` + `9146e86`, `4ee8e9f` |
+
+Spikes resolved from local captures (owner instruction 2026-10-03): the Ollama v0.35.1 execution spike and its three parents (`760c48a`, `9090c06`, `118dd04`, `bfff14d`), the LLMLingua-2 compressor spike (`7956d63`).
+
+### Code done, waiting on the owner, an operator or a paid call (status kept `ready`)
+
+| Story | Commit(s) | What it needs |
+| ----- | --------- | ------------- |
+| every-view-names-the-machine-and-mode-and-cpu-only-vram-reads-not-applicable | `e1a33a9` (returned to `ready` at `85ebb43`) | One dashboard screenshot per view (browser session + service TLS pair). |
+| a-run-started-from-the-browser-streams-until-its-row-lands | `36e8307` | Second-laptop `aidd-dev:11-browser-qa` videos, a console row beside a terminal row, the key search. |
+| a-client-types-to-a-local-roster-model-and-nothing-is-recorded | `a12092c` | Second-laptop QA videos, then the prompt search in output and stores. |
+| the-playground-reaches-a-cloud-subject-only-when-configured-and-says-so-first | `32f51e2` | QA video; one real provider exchange (paid, owner key). |
+| a-cloud-subject-re-run-is-decided-per-item-under-its-suites-declared-tolerance | `90115fc` | A classification@5 cloud reference batch, then a re-run (two paid batches); the translation tolerance is provisional. |
+| generated-code-is-scored-by-its-tests-in-a-sandbox-or-not-run-at-all | `536e2f0` | A local Node image (never pulled here), the local batch and the MoE vs tiny-dense side-by-side; cloud rows (paid). |
+| one-citation-names-the-release-and-is-the-attribution-a-reuser-copies | `80058f9` | The owner's identity in `CITATION.cff` (four `PLACEHOLDER-OWNER-*` fields), then the README string regenerated; GitHub rendering after push. |
+| each-release-attaches-one-archive-that-needs-no-clone | `3cd5cc7` | The first `v*` tag, the Release URL, opening the tables with no clone and no Python. |
+| parquet-copies-ship-beside-the-csv-and-never-disagree-with-it | `48858aa` | One `workflow_dispatch` run on GitHub, its `release-build` log and artifact kept. |
+| the-zenodo-deposit-is-a-written-optional-procedure-proven-once | `e4ccf56` | One walk on sandbox.zenodo.org (owner account), its corrections, the deposit-log row. |
+| the-laptop-proves-both-modes-and-republishes-the-bundle-once (D6, D8) | `de62f0e` | PR #56 merged into `main` with CI green; owner acceptance of the asserted (not operator-confirmed) quiet window and of landing in this PR. |
+| the-top-class-spans-two-families-with-dense-and-moe-or-says-why-not (D7) | `6de6888` + `d6bf6fd` | Owner decision on the one line not met as written: the `IQ4_XS` vs `UD-IQ4_XS` difference is not in the candidate record (it is in the README, setup.md and evidence); accept, or re-gate with a `quant_note`. |
+| a-drawn-item-reaches-the-download-under-its-own-terms-or-as-a-visible-hole | `f373f06` | The first `v*` tag with a drawn subset (its published evidence); share-alike and no-redistribution rungs proven on constructed bundles only. |
+
+### Skipped
+
+- the-threshold-review-is-written-from-the-first-publication-run: needs the owner's Methodology 4 decision.
+- does-one-local-session-capture-the-tool-call-probes-and-harness-driver-runs (optional spike): not run (2.5 to 4 h of GPU, PyPI installs); time spent on the queue instead.
+- Out of scope by instruction: the-professional-pc-is-confirmed..., the-tower-walks-the-fresh-clone..., the-no-gpu-professional-pc-publishes..., the-second-laptop-walks-the-pitch..., the-first-real-client-session-..., the-roster-ranks-the-same-way-..., every proposed story, the other new spikes.
+
+### Owner decisions and backlog contradictions to settle
+
+- Story 7 acceptance line 4 ("names exactly the variant fields") read as "only variant fields differ"; amend or confirm.
+- Order 6 (Ollama runtime rows): its acceptance needs a full prefill per repetition; every captured Ollama rep reused 60 of 61 prompt tokens and no request field turns that off.
+- Order 9 (input compression): payload-only compression still drops content words and mBERT drops negations; whether translation is an applicable family is open.
+- The browser console inherits `QUALITY_PROVIDERS` (default includes cloud providers): pin `local` for console children or show the enabled providers.
+- Release archive `PATHS_NOT_SHIPPED`: accept that shipped files name repository paths, or reword the roster `read_from` notes.
+- Campaign quality runs refuse an enabled cloud provider, so a campaign's local batch and its cloud reference take two `run_id`s.
+- `model_not_served` (cloud re-run) is reported on stderr only; the PRD AC says its row is marked.
+- Stale story text noted per row (schema numbers, `quality_cli` suite table, "four tables", `roster_version 4`, suite `@3`/`@4`, "first live run" heading).
+- Order 12's and order 6's text outside the synced `Blocked:` lines is stale.
+
+### Run notes
+
+- The "stalls" of the first night were the laptop's Modern Standby, not agent hangs (System log 506/507 pairs); a hidden keep-awake process (`SetThreadExecutionState`) blocked idle sleep from 2026-10-03 18:45.
+- Size-class and publication-suite rows were run in two stages so every published row comes from a committed tree (`tree_dirty: false`); the first half-billion run from an uncommitted tree was discarded after review and re-run clean with identical outputs.
+- Downloads (D7): 366 MB + 2.67 GB + 2.02 GB + 6.38 GB of pinned GGUFs; MInDS-14 and WMT24++ fetched read-only at pinned revisions; Ollama v0.35.1 portable and the LLMLingua-2 checkpoints for the spikes (owner-approved).
+
+### Housekeeping for the owner
+
+1. Merge or close PR #56; then remove the worktree: `git worktree remove ../wave_local_ai_v2-night` from the main repo.
+2. Run `uv run pre-commit install` in the main repo (an earlier worktree's install rewrote the shared hooks to its venv).
+3. Optional cleanup on `D:`: `D:\ia\ollama-v0.35.1`, `D:\ia\ollama-v0.35.1-models`, `D:\ia\ollama-v0.35.1-captures`, `D:\ia\llmlingua-captures`, the LLMLingua-2 checkpoints under `D:\ia\models`, and `%TEMP%\llmlingua-env`; keep the new roster GGUFs (Granite 350M, LFM2.5 1.2B, Granite 1B-A400M, Granite 3B-A800M, Gemma 4 12B).
+
 ## Owner decisions (2026-10-02)
 
 - D1 Professional PC gate waived: a-gpu-run-and-a-cpu-only-run-never-share-a-fiche and the stories after it are implemented although the-professional-pc-is-confirmed-able-to-take-part-before-code-depends-on-it stays open. A waived story marked done is noted "depends_on waived by owner 2026-10-02 (D1)" here. `depends_on` and acceptance are never edited.
@@ -100,3 +185,5 @@ Story 18 runs before the four size-class stories, reversing the planned order. R
 | 5 (revert) | every-view-names-the-machine-and-mode-and-cpu-only-vram-reads-not-applicable | returned to `ready`: its published evidence (one dashboard screenshot per view) is still owed, the same reason stories 9 to 11 stay `ready` | `85ebb43` docs | Consistency fix; no code change. |
 | P1 | a-publication-level-classification-suite-stands-beside-the-hand-written-one | done (13/13 acceptance lines proven); depends_on story 18 is code-done and `ready` pending PR #56 (its schema move to "30" landed at `de62f0e`, which the acceptance needs). Two-stage. Review round 1 PASS; three follow-up fixes (pairing key with `commit_sha`, a covering slice for the 300-item variant test, `suite_id` in reference selection), round 2 PASS. The orchestrator had the implementer revert a broadened secrets exclude (all of `suite_data/*.json`) in favour of baselining the suite file's 299 public hashes | `95040a7` feat (suite), `cf4c224` feat (rows), `a6bd44a` done | Gates before the rows commit: `3122 passed, 20 skipped, 2 warnings in 297.58s`, coverage 98.51%; pre-commit passed; staged-file secrets scan exit 0 (original exclude); audit exit 0; validate quality 605 rows, runtime 6 rows, exit 0; merge-bundle `--check` "(6 runtime, 605 quality, 0 refusals)"; export + `recompute_from_export.py` "320 values recomputed (interval), 0 differ". Source: `PolyAI/minds14` @ `40ce77cb...` fetched read-only (no login), source table SHA-256 `9172eba3...1dc06` (1713 rows); draw seed 20261004, 300 items, 100 per language, 7-8 per intent; replay reproduced. One session on `granite-4.0-h-350m-q8` from `95040a7`: publication batch `7b8f2569...` 0.227 [0.180, 0.277] (300 items, 6 unparseable; 143 answers on `app_error`), development batch `1c5a5471...` 0.50 [0.30, 0.70]; same fiche `5ce2bf21...`, engine b10537. New non-default dependency group `loaders` pins `pyarrow==25.0.1` (same pin as `release`) for the fetch script. Follow-ups: the read model groups both classification suites under one use case; the release-archive README says "the data is CC-BY 4.0" although `quality_items.csv` now holds PolyAI-licensed items (attribution only via `LICENSE-DATA` §2). |
 | P2 | a-publication-level-translation-suite-stands-beside-the-hand-written-one | done (14/14 acceptance lines proven); depends_on story 18 code-done, `ready` pending PR #56. Two-stage. Review round 1 CHANGES-REQUIRED (`aidd_docs/results/machines/NOTICE.md` claimed all per-machine rows under CC-BY 4.0 though the laptop store now holds 300 Apache-2.0 WMT24++ rows), round 2 PASS | `0f69b60` feat (suite), `9146e86` feat (rows), `4ee8e9f` done | Gates before the rows commit: `3149 passed, 20 skipped, 2 warnings in 260.05s`, coverage 98.51%; pre-commit passed; staged-file secrets scan exit 0 (exclude unchanged; 305 public hashes baselined); audit exit 0; validate quality 926 rows, runtime 6 rows, exit 0; merge-bundle `--check` "(6 runtime, 926 quality, 0 refusals)"; export + recompute "360 values recomputed (interval), 0 differ"; release-group archive/parquet tests 58 passed (reviewer). Source `google/wmt24pp` @ `fd7405c0...` read-only, 38 `is_bad_source` rows dropped, source table SHA-256 `db57a8a4...f4ed` (960 rows); 300 segments, 100 per direction; replay reproduced; reviewer rebuilt the definition byte-equal offline. Output cap 608 = 2 x the longest drawn reference (304 tokens by the subject's own tokenizer through b10537 `/tokenize`). One session on `granite-4.0-h-350m-q8` from `0f69b60`: publication batch `525734d8...` chrF 0.367 [0.347, 0.387] (0 truncated, 1 empty output), development batch `da873724...` 0.484 [0.358, 0.614] (identical to the earlier `be0dda5e`). The archive README now states the drawn items' own terms (MInDS-14 CC BY 4.0 with attribution, WMT24++ Apache-2.0), closing the classification twin's follow-up. Follow-ups: the tokenizer-basis test needs a suite@2 or a multi-tokenizer basis when another roster entry runs this suite; the archive README does not repeat the model-output exception (LICENSE-DATA §1.3; pre-existing); the read model groups both levels under one use case. |
+| D1 | a-drawn-item-reaches-the-download-under-its-own-terms-or-as-a-visible-hole | code done, status stays `ready` (its published evidence needs the owner's first `v*` tag). Review round 1 PASS | `f373f06` feat | Gates before commit: `3183 passed, 20 skipped, 2 warnings in 282.28s`, coverage 98.53%; release-group tests 67 passed; pre-commit passed; secrets scan exit 0; audit exit 0; validate 926 + 6 rows; merge-bundle `--check` exit 0. Live archive built twice into a temp dir, byte-identical (reviewer: 46 entries without Parquet, 51 with), no code file; both live sources permissive. Share-alike and no-redistribution rungs proven on constructed bundles (`tests/drawn_bundle_fixtures.py`). Follow-ups: on a correct redacted classification row `predicted_label` still reveals the withheld label; the README join instruction gives no URL; an absolute `--share-alike-dir` would leak a machine path into `item_licence_file`. |
+| fix | CI on PR #56 | ubuntu leg failed at `3b2fc5a`: `test_token_counts_come_from_the_served_tokenizer` (the WMT24++ loader reduced a Windows server path with a POSIX `Path`) | `c830e6e` fix | `PureWindowsPath` splits on both separators; the loader's 16 tests pass. |
