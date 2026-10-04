@@ -4,10 +4,13 @@ holds no real session until one is shown."""
 
 from __future__ import annotations
 
+import datetime as datetime_module
 import hashlib
 import json
 import os
+import re
 import subprocess
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +21,7 @@ from wave_local_ai_v2.client_sessions import (
     DEFAULT_SESSIONS_PATH,
     ShallowHistory,
     append_only_violations,
+    changelog_verdict_mismatches,
     check_file,
     check_records,
     git_commit_exists,
@@ -765,3 +769,369 @@ def test_an_unreadable_item_reads_as_missing(tmp_path: Path) -> None:
     read = client_sessions.repo_item_reader(tmp_path)
 
     assert read("binary.md") is None and read("absent.md") is None
+
+
+# --- each release's credibility verdict -----------------------------------
+
+
+def _sid(n: int) -> str:
+    return f"session-{n:012x}"
+
+
+def _cid(n: int) -> str:
+    return f"client-{n:012x}"
+
+
+def _any_item(path: str) -> str:
+    # One defect that names every planted session and client, so any
+    # sustained challenge's follow-up resolves.
+    return _item("defect", *(f"{_sid(n)} {_cid(n)}" for n in range(1, 30)))
+
+
+def _clean(n: int, client: int | None = None, **overrides: Any) -> dict[str, Any]:
+    """An accepted, complete, outside-audience session of release 0.2.0."""
+    fields: dict[str, Any] = {"outcome": "accepted", "challenges": [], **overrides}
+    return _record(
+        session_id=_sid(n), client_id=_cid(n if client is None else client), **fields
+    )
+
+
+def _blocking(n: int, *claims: str, **overrides: Any) -> dict[str, Any]:
+    challenge = _sustained(claims=list(claims or ["fiche_disclosure"]))
+    return _clean(n, outcome="challenged", challenges=[challenge], **overrides)
+
+
+def _commits(sha: str) -> bool:
+    return sha == KNOWN_COMMIT
+
+
+def _verdicts(
+    *records: dict[str, Any], changelog: str = CHANGELOG
+) -> dict[str, client_sessions.Verdict]:
+    report = check_records(_text(*records), changelog, _commits, _any_item)
+    assert report.passed, report.refusals
+    return report.verdicts
+
+
+def _line(*records: dict[str, Any], release: str = "0.2.0") -> str:
+    return _verdicts(*records)[release].line()
+
+
+def _counts(n: int, clients: int, backfilled: int = 0, dismissals: int = 0) -> str:
+    return (
+        f"({n} of 3 qualifying sessions, {clients} distinct "
+        f"client{'' if clients == 1 else 's'}, {backfilled} backfilled, "
+        f"{dismissals} dismissal{'' if dismissals == 1 else 's'})"
+    )
+
+
+NOT_YET = "Credibility: not yet validated "
+VALIDATED = "Credibility: validated "
+
+
+def test_no_record_reads_not_yet_validated_zero_of_three_for_every_release() -> None:
+    verdicts = _verdicts()
+
+    assert list(verdicts) == ["0.2.0", "0.1.0"]
+    assert {v.line() for v in verdicts.values()} == {NOT_YET + _counts(0, 0)}
+
+
+def test_two_qualifying_sessions_are_not_yet_validated_and_a_third_validates() -> None:
+    assert _line(_clean(1), _clean(2)) == NOT_YET + _counts(2, 2)
+    assert _line(_clean(1), _clean(2), _clean(3)) == VALIDATED + _counts(3, 3)
+
+
+def test_a_resolved_challenge_leaves_the_session_qualifying() -> None:
+    assert _line(_record(session_id=_sid(1))) == NOT_YET + _counts(1, 1)
+
+
+def test_an_incomplete_record_does_not_count() -> None:
+    incomplete = _record(session_id=_sid(3), challenges=[_challenge(role=ABSENT)])
+
+    assert _line(_clean(1), _clean(2), incomplete) == NOT_YET + _counts(2, 2)
+
+
+def test_an_internal_session_neither_counts_nor_blocks() -> None:
+    internal = _blocking(3, audience="internal")
+
+    assert _line(_clean(1), _clean(2), internal) == NOT_YET + _counts(2, 2)
+
+
+def test_an_unreleased_record_belongs_to_no_release() -> None:
+    unreleased = _clean(1, release="unreleased", release_commit=KNOWN_COMMIT)
+    blocking = _blocking(2, release="unreleased", release_commit=KNOWN_COMMIT)
+
+    verdicts = _verdicts(unreleased, blocking)
+
+    assert {v.line() for v in verdicts.values()} == {NOT_YET + _counts(0, 0)}
+
+
+def test_three_sessions_with_one_client_count_three_with_one_client() -> None:
+    line = _line(_clean(1, 7), _clean(2, 7), _clean(3, 7))
+
+    assert line == VALIDATED + _counts(3, 1)
+
+
+def test_a_backfilled_complete_record_counts_and_an_incomplete_one_does_not() -> None:
+    backfilled = _clean(2, backfilled=True)
+    incomplete = _record(
+        session_id=_sid(3),
+        backfilled=True,
+        challenges=[_challenge(evidence_offered="")],
+    )
+
+    assert _line(_clean(1), backfilled, incomplete) == NOT_YET + _counts(2, 2, 1)
+
+
+def test_a_blocking_challenge_among_three_clean_sessions_reads_blocked() -> None:
+    line = _line(_clean(1), _blocking(2), _clean(3), _clean(4))
+
+    assert line == (
+        f"Credibility: blocked by {_sid(2)} on fiche_disclosure " + _counts(3, 3)
+    )
+
+
+def test_a_block_appended_after_validation_revokes_it_whatever_its_date() -> None:
+    clean = [_clean(1), _clean(2), _clean(3)]
+    revoked = (
+        f"Credibility: blocked by {_sid(4)} on fiche_disclosure, validation revoked "
+    )
+    earlier = _blocking(4, session_date="2026-09-22", logged_date="2026-10-02")
+
+    assert _line(*clean, _blocking(4)) == revoked + _counts(3, 3)
+    assert _line(*clean, earlier) == revoked + _counts(3, 3)
+    assert _line(*clean, earlier, _clean(5), _clean(6)) == revoked + _counts(5, 5)
+
+
+def test_a_challenge_on_other_alone_qualifies_and_other_with_judge_blocks() -> None:
+    other = _blocking(3, "other")
+    mixed = _blocking(3, "other", "judge_agreement")
+
+    assert _line(_clean(1), _clean(2), other) == VALIDATED + _counts(3, 3)
+    assert _line(_clean(1), _clean(2), mixed) == (
+        f"Credibility: blocked by {_sid(3)} on judge_agreement " + _counts(2, 2)
+    )
+
+
+def test_a_block_names_every_blocking_claim_of_its_session() -> None:
+    line = _line(_blocking(1, "judge_agreement", "fiche_disclosure", "other"))
+
+    assert line.startswith(
+        f"Credibility: blocked by {_sid(1)} on fiche_disclosure and judge_agreement ("
+    )
+
+
+def test_an_incomplete_or_backfilled_session_still_blocks() -> None:
+    challenge = _sustained(role=ABSENT)
+    incomplete = _clean(1, outcome="challenged", challenges=[challenge])
+
+    assert _line(incomplete).startswith(f"Credibility: blocked by {_sid(1)}")
+    assert _line(_blocking(1, backfilled=True)).startswith("Credibility: blocked")
+
+
+def test_a_dismissed_session_counts_and_is_reported_as_a_dismissal() -> None:
+    dismissed = _clean(2, outcome="dismissed")
+
+    assert _line(_clean(1), dismissed) == NOT_YET + _counts(2, 2, dismissals=1)
+
+
+def test_a_corrected_record_is_read_as_its_correction() -> None:
+    internal = _clean(1, audience="internal")
+    to_external = _clean(2, client=1, corrects=_sid(1))
+    to_internal = _clean(3, client=1, audience="internal", corrects=_sid(2))
+
+    assert _line(internal) == NOT_YET + _counts(0, 0)
+    assert _line(internal, to_external) == NOT_YET + _counts(1, 1)
+    assert _line(internal, to_external, to_internal) == NOT_YET + _counts(0, 0)
+
+
+def test_a_correction_moving_a_session_to_another_release_moves_its_count() -> None:
+    moved = _clean(2, client=1, corrects=_sid(1), release="0.1.0")
+
+    verdicts = _verdicts(_clean(1), moved)
+
+    assert verdicts["0.2.0"].qualifying == 0 and verdicts["0.1.0"].qualifying == 1
+
+
+def test_a_correction_adding_a_block_after_validation_revokes_it() -> None:
+    correction = _blocking(4, "table_separation", corrects=_sid(3))
+    correction["client_id"] = _cid(3)
+
+    line = _line(_clean(1), _clean(2), _clean(3), correction)
+
+    assert line == (
+        f"Credibility: blocked by {_sid(4)} on table_separation, validation "
+        "revoked " + _counts(2, 2)
+    )
+
+
+@pytest.mark.parametrize(
+    "challenge",
+    [
+        _challenge(claims=["other"], resolving_evidence=""),
+        _challenge(resolving_evidence="opened the fiche the row cites"),
+    ],
+    ids=["blocking-claim-removed", "resolving-evidence-added"],
+)
+def test_a_correction_never_removes_a_block(challenge: dict[str, Any]) -> None:
+    challenge = {**challenge, "follow_up": DEFECT}
+    correction = _clean(
+        2, client=1, outcome="challenged", challenges=[challenge], corrects=_sid(1)
+    )
+
+    line = _line(_blocking(1), correction, _clean(3), _clean(4), _clean(5))
+
+    assert line == (
+        f"Credibility: blocked by {_sid(1)} on fiche_disclosure " + _counts(4, 4)
+    )
+
+
+def _shift(text: str, years: int) -> str:
+    return re.sub(
+        r"(\d{4})(-\d{2}-\d{2})", lambda m: f"{int(m[1]) + years}{m[2]}", text
+    )
+
+
+def test_shifting_every_date_by_the_same_years_leaves_the_verdict_unchanged() -> None:
+    records = _text(_clean(1), _clean(2), _clean(3), _blocking(4), _clean(5))
+
+    now = check_records(records, CHANGELOG, _commits, _any_item)
+    later = check_records(_shift(records, 7), _shift(CHANGELOG, 7), _commits, _any_item)
+
+    assert now.passed and later.passed
+    assert now.verdicts == later.verdicts
+    assert now.verdicts["0.2.0"].blocked_by == _sid(4)
+
+
+@pytest.mark.parametrize("today", [date(2026, 10, 4), date(2031, 1, 1)])
+def test_the_verdict_reads_no_clock(
+    monkeypatch: pytest.MonkeyPatch, today: date
+) -> None:
+    utc = datetime_module.UTC
+    moment = datetime_module.datetime(
+        today.year, today.month, today.day, 12, tzinfo=utc
+    )
+
+    class Frozen(date):
+        @classmethod
+        def today(cls) -> Frozen:
+            return cls(today.year, today.month, today.day)
+
+    class FrozenMoment(datetime_module.datetime):
+        @classmethod
+        def now(cls, tz: datetime_module.tzinfo | None = None) -> FrozenMoment:
+            return cls.fromtimestamp(moment.timestamp(), tz)
+
+        @classmethod
+        def today(cls) -> FrozenMoment:
+            return cls.now()
+
+    # Every clock the module could read: its own `date`, and the `datetime`
+    # module's `date` and `datetime` for any call made through them.
+    monkeypatch.setattr(client_sessions, "date", Frozen)
+    monkeypatch.setattr(datetime_module, "date", Frozen)
+    monkeypatch.setattr(datetime_module, "datetime", FrozenMoment)
+    assert datetime_module.datetime.now(utc).date() == today
+
+    assert _line(_clean(1), _clean(2)) == NOT_YET + _counts(2, 2)
+    assert _line(_clean(1), _clean(2), _clean(3)) == VALIDATED + _counts(3, 3)
+
+
+# --- the verdict line in each dated CHANGELOG.md section -------------------
+
+
+def _flat(text: str) -> str:
+    return " ".join(text.split())
+
+
+def test_the_module_and_the_procedure_state_the_same_verdict_forms() -> None:
+    module = _flat(client_sessions.Verdict.__doc__ or "")
+    procedure = _flat(PROCEDURE.read_text(encoding="utf-8"))
+
+    for form in client_sessions.VERDICT_FORMS:
+        assert form in module, form
+        assert form in procedure, form
+
+
+@pytest.mark.parametrize(
+    "records",
+    [
+        (),
+        (_clean(1), _clean(2), _clean(3)),
+        (_clean(1), _blocking(2, "other", "judge_agreement", "fiche_disclosure")),
+    ],
+    ids=["not-yet", "validated", "blocked"],
+)
+def test_every_printed_line_has_one_of_the_documented_forms(
+    records: tuple[dict[str, Any], ...],
+) -> None:
+    counts = (
+        r"\d+ of 3 qualifying sessions, \d+ distinct clients?, "
+        r"\d+ backfilled, \d+ dismissals?"
+    )
+    states = (
+        r"validated|not yet validated|blocked by session-[0-9a-f]{12} "
+        r"on \w+( and \w+)*(, validation revoked)?"
+    )
+
+    line = _line(*records)
+
+    assert re.fullmatch(rf"Credibility: ({states}) \({counts}\)", line), line
+
+
+def _planted_changelog(line_020: list[str], line_010: list[str]) -> str:
+    return (
+        "## [Unreleased]\n\n## [0.2.0] - 2026-09-22\n\n"
+        + "".join(f"{line}\n" for line in line_020)
+        + "\n### Added\n\n- a feature\n\n## [0.1.0] - 2026-08-22\n\n"
+        + "".join(f"{line}\n" for line in line_010)
+    )
+
+
+ZERO = NOT_YET + _counts(0, 0)
+
+
+def test_the_committed_changelog_carries_the_checks_verdict_for_every_release() -> None:
+    report = check_file(REPO / DEFAULT_SESSIONS_PATH, REPO / "CHANGELOG.md")
+    changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
+
+    assert report.verdicts, "CHANGELOG.md has no dated release"
+    assert changelog_verdict_mismatches(changelog, report.verdicts) == []
+
+
+def test_a_planted_changelog_agreeing_with_the_check_passes() -> None:
+    changelog = _planted_changelog([ZERO], [ZERO])
+
+    assert changelog_verdict_mismatches(changelog, _verdicts()) == []
+
+
+@pytest.mark.parametrize(
+    ("line_020", "reason"),
+    [
+        ([VALIDATED + _counts(0, 0)], "reads 'Credibility: validated"),
+        ([], "no verdict line"),
+        ([ZERO, ZERO], "2 verdict lines"),
+    ],
+    ids=["disagrees", "missing", "doubled"],
+)
+def test_a_planted_changelog_line_that_is_wrong_fails_naming_the_release(
+    line_020: list[str], reason: str
+) -> None:
+    changelog = _planted_changelog(line_020, [ZERO])
+
+    mismatches = changelog_verdict_mismatches(changelog, _verdicts())
+
+    assert len(mismatches) == 1
+    assert mismatches[0].startswith("0.2.0: ") and reason in mismatches[0]
+    assert repr(ZERO) in mismatches[0]
+
+
+def test_the_command_prints_the_expected_line_for_each_release(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(_files(tmp_path, _text(_clean(1)))) == 0
+
+    out = capsys.readouterr().out
+    assert "Verdicts (2): each dated release's CHANGELOG.md line" in out
+    assert f"  0.2.0: {NOT_YET}{_counts(1, 1)}" in out
+    assert f"  0.1.0: {ZERO}" in out

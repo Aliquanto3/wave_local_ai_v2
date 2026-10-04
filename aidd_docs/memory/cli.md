@@ -367,7 +367,13 @@ The command-line interface for running benchmarks.
   `spikes/`, no such file, frontmatter `type` not matching its folder, or an
   item lacking the record's `client_id` or a `session_id` of its correction
   chain; a `follow_up` on a resolved challenge meets the same rules). Item
-  files are read from the changelog's repository. Exit `2` when a file
+  files are read from the changelog's repository. Then a `Verdicts` block:
+  each dated release's exact `CHANGELOG.md` line, `Credibility: validated`,
+  `not yet validated` or `blocked by session-<id> on <claims>[, validation
+  revoked]`, each with `(N of 3 qualifying sessions, D distinct clients, B
+  backfilled, M dismissals)`, replayed in append order, never by date; the
+  block does not change the exit code, and the test suite fails when a dated
+  section's line is missing, doubled or different. Exit `2` when a file
   cannot be read. `tests/test_client_sessions.py` also walks the file's
   committed versions along `git log --first-parent` and fails on any edited
   or removed line (a shallow clone fails under `CI`; the `test` job checks out

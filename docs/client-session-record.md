@@ -175,8 +175,8 @@ field before you commit.
    It prints one summary line per record it accepted (session id, date,
    audience, release, outcome, number of challenges, and the markings
    backfilled, corrects and corrected by), then the incomplete fields, then
-   the refusals, then `PASS` or `FAIL`. It does not echo the free text:
-   step 6 re-reads your line itself.
+   the refusals, then each dated release's verdict line, then `PASS` or
+   `FAIL`. It does not echo the free text: step 7 re-reads your line itself.
 
    - `Refusals`: each line names the record's line number and field, such as
      `line 3: release: '0.3.0' is neither a dated section of CHANGELOG.md
@@ -196,12 +196,39 @@ field before you commit.
    - `nothing checked` on stderr (exit `2`): the record file or `CHANGELOG.md`
      could not be read; run the command from the repository root.
 
-6. **Re-read the line** you wrote, every free-text field of it, and every
+6. **Update the release's verdict line.** Under `Verdicts`, the check
+   prints the exact `Credibility:` line each dated release carries in
+   `CHANGELOG.md`, directly under its `## [x.y.z] - YYYY-MM-DD` heading.
+   Replace the named release's line with the one printed. A record naming
+   `unreleased` belongs to no release's verdict and changes no line. The
+   line takes one of three fixed forms:
+
+   - `Credibility: validated (<counts>)`: at least three qualifying
+     sessions (complete, an outside audience, no sustained challenge on
+     `fiche_disclosure`, `table_separation` or `judge_agreement`) and no
+     blocking challenge;
+   - `Credibility: not yet validated (<counts>)`: fewer than three, however
+     long ago they were logged;
+   - `Credibility: blocked by session-<id> on <claim>[ and <claim>][, validation revoked] (<counts>)`:
+     the first record, in the order records were appended, with such a
+     sustained challenge before an outside audience, and its blocking
+     claims; permanent for that release, whatever is appended after. A
+     block added by a correction names the correction's `session_id`.
+     `validation revoked` is stated when the records appended before it
+     already read `validated`.
+
+   `<counts>` is `N of 3 qualifying sessions, D distinct clients, B
+   backfilled, M dismissals`, with `client` and `dismissal` singular at
+   one. The verdict is a count over the record, never a date. A test on
+   every push fails when a line differs from the check's.
+
+7. **Re-read the line** you wrote, every free-text field of it, and every
    follow-up item you filed, for client names, client material and deal
-   outcomes, then commit the record and its items together:
+   outcomes, then commit the record, its items and the verdict line
+   together:
 
    ```bash
-   git add aidd_docs/results/client-sessions.jsonl aidd_docs/backlog/defects/<slug>.md
+   git add aidd_docs/results/client-sessions.jsonl aidd_docs/backlog/defects/<slug>.md CHANGELOG.md
    git commit -m "docs(results): log client session session-<id>"
    ```
 

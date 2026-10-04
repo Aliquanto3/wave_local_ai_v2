@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A release is called credible only by its logged client sessions** --
+  `aidd_docs/results/client-sessions.jsonl` is the tracked, append-only
+  record of each showing to a client (procedure:
+  `docs/client-session-record.md`), checked by
+  `wave-local-ai-v2-client-sessions`, which refuses a malformed line naming
+  the line and the field, reports incomplete records, and is run on the
+  committed file on every push together with a walk of its history that
+  fails on any edited or removed line. A challenge with no resolving
+  evidence named reads as sustained and must point at a defect or spike
+  carrying the record's client and session ids. Each dated release section
+  now carries one `Credibility:` line the check computes from the record:
+  `validated` at three qualifying sessions, `not yet validated (n of 3)`
+  otherwise, or `blocked` for good by a sustained challenge on fiche
+  disclosure, table separation or judge agreement before an outside
+  audience, with the distinct clients, backfilled sessions and dismissals
+  behind the count; elapsed time never validates a release, and a test
+  fails when a section's line differs from the check's.
 - **Each release attaches one archive that needs no clone** -- on a `v*`
   tag, once `test`, `build` and `verify-tag` pass, a new `release` job (the
   only job holding `contents: write`) runs `scripts/assemble_release_archive.py`
@@ -483,6 +500,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--suite` is unchanged.
 
 ## [0.2.0] - 2026-09-22
+
+Credibility: not yet validated (0 of 3 qualifying sessions, 0 distinct clients, 0 backfilled, 0 dismissals)
 
 ### Added
 
@@ -1023,6 +1042,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `"2"`; quality rows move with it since the constant is shared.
 
 ## [0.1.0] - 2026-08-22
+
+Credibility: not yet validated (0 of 3 qualifying sessions, 0 distinct clients, 0 backfilled, 0 dismissals)
 
 ### Added
 

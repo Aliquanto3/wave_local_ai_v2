@@ -1,0 +1,8 @@
+Client-session record: aidd_docs/results/client-sessions.jsonl
+Records (0)
+Incomplete (0): reported, does not fail the check
+Refusals (0)
+Verdicts (2): each dated release's CHANGELOG.md line
+  0.2.0: Credibility: not yet validated (0 of 3 qualifying sessions, 0 distinct clients, 0 backfilled, 0 dismissals)
+  0.1.0: Credibility: not yet validated (0 of 3 qualifying sessions, 0 distinct clients, 0 backfilled, 0 dismissals)
+PASS: 0 record(s), 0 incomplete field(s)

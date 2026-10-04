@@ -23,6 +23,16 @@ whose text carries the record's `client_id` and the `session_id` of a record
 of its correction chain. A `follow_up` given on a resolved challenge is held
 to the same rules and leaves the challenge resolved.
 
+Each dated release of `CHANGELOG.md` gets one credibility verdict, read from
+the accepted records alone (`release_verdicts`, fixed line forms on `Verdict`):
+a session qualifies when it is complete, before an outside audience, and has
+no sustained challenge on `fiche_disclosure`, `table_separation` or
+`judge_agreement`; three qualifying sessions validate; one such sustained
+challenge before an outside audience blocks the release for good. Records are
+replayed in append order, a correction at its own position, and no clock or
+date difference is read. `changelog_verdict_mismatches` names every dated
+section whose `Credibility:` line is not the one its verdict prints.
+
 `append_only_violations` walks the record's committed versions along the
 first-parent line and names every version that is not a line-for-line prefix
 of the next: a committed line is never edited or removed.
@@ -36,7 +46,7 @@ import re
 import subprocess
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -84,6 +94,21 @@ CONTENT_FIELDS = ("role", "criterion", "evidence_offered")
 AUDIENCES = ("external", "internal")
 OUTCOMES = ("challenged", "dismissed", "accepted")
 CLAIMS = ("fiche_disclosure", "table_separation", "judge_agreement", "other")
+# The claims whose sustained challenge blocks a release; `other` never does.
+BLOCKING_CLAIMS = CLAIMS[:3]
+QUALIFYING_SESSIONS = 3
+VERDICT_PREFIX = "Credibility: "
+# The fixed forms of a verdict line, as `Verdict` and the record procedure
+# (docs/client-session-record.md) state them.
+VERDICT_FORMS = (
+    "Credibility: validated (<counts>)",
+    "Credibility: not yet validated (<counts>)",
+    (
+        "Credibility: blocked by session-<id> on <claim>[ and <claim>]"
+        "[, validation revoked] (<counts>)"
+    ),
+    "N of 3 qualifying sessions, D distinct clients, B backfilled, M dismissals",
+)
 # Each folder a follow-up item may live in, and the frontmatter `type` its
 # items carry (Q65: a defect when a claim was shown wrong, a spike when it was
 # left unresolved).
@@ -119,6 +144,7 @@ class SessionRecord:
 
     line: int
     session_id: str
+    client_id: str
     session_date: str
     release: str
     release_commit: str | None
@@ -128,6 +154,10 @@ class SessionRecord:
     sustained: int
     backfilled: bool
     corrects: str | None
+    complete: bool = True
+    # The release-blocking claims (BLOCKING_CLAIMS order) of its sustained
+    # challenges.
+    blocking_claims: tuple[str, ...] = ()
 
 
 @dataclass
@@ -136,6 +166,7 @@ class CheckReport:
     refusals: list[Finding] = field(default_factory=list)
     incomplete: list[Finding] = field(default_factory=list)
     corrected_by: dict[str, str] = field(default_factory=dict)
+    verdicts: dict[str, Verdict] = field(default_factory=dict)
 
     @property
     def passed(self) -> bool:
@@ -481,9 +512,16 @@ def _check_line(
         return None
     assert session_id and session_day and release and audience and outcome
     assert isinstance(challenges, list)
+    sustained_claims = {
+        claim
+        for challenge in challenges
+        if is_sustained(challenge)
+        for claim in challenge["claims"]
+    }
     return SessionRecord(
         line=line.number,
         session_id=session_id,
+        client_id=record["client_id"],
         session_date=session_day.isoformat(),
         release=release,
         release_commit=commit,
@@ -493,6 +531,8 @@ def _check_line(
         sustained=sum(map(is_sustained, challenges)),
         backfilled=record["backfilled"],
         corrects=corrects,
+        complete=not line.incomplete,
+        blocking_claims=tuple(c for c in BLOCKING_CLAIMS if c in sustained_claims),
     )
 
 
@@ -550,6 +590,7 @@ def check_records(
         report.incomplete.extend(line.incomplete)
         if read is not None and not line.refusals:
             report.records.append(read)
+    report.verdicts = release_verdicts(report.records, releases)
     return report
 
 
@@ -561,6 +602,151 @@ def check_file(sessions: Path, changelog: Path) -> CheckReport:
         git_commit_exists(changelog.resolve().parent),
         repo_item_reader(changelog.resolve().parent),
     )
+
+
+@dataclass(frozen=True)
+class Verdict:
+    """One dated release's credibility verdict, read from the record alone.
+
+    Its line takes one of three fixed forms (`VERDICT_FORMS`):
+
+    - `Credibility: validated (<counts>)`: at least three qualifying sessions
+      and no blocking challenge (more than three print as `N of 3`);
+    - `Credibility: not yet validated (<counts>)`: fewer than three, however
+      long ago they were logged;
+    - `Credibility: blocked by session-<id> on <claim>[ and <claim>][, validation revoked] (<counts>)`:
+      the first record, in append order, with a sustained challenge on
+      `fiche_disclosure`, `table_separation` or `judge_agreement` before an
+      outside audience, and its blocking claims. A block added by a
+      correction is named by the correction's own `session_id`.
+      `validation revoked` is stated when the replay state just before that
+      record read `validated` (Q64, read literally: a release that dropped
+      back below three before its block reads no revocation).
+
+    `<counts>` is `N of 3 qualifying sessions, D distinct clients, B
+    backfilled, M dismissals`, over the release's qualifying sessions;
+    `client`/`clients` and `dismissal`/`dismissals` follow the count. The
+    verdict reads no clock and no date.
+    """
+
+    qualifying: int
+    clients: int
+    backfilled: int
+    dismissals: int
+    blocked_by: str | None = None
+    blocking_claims: tuple[str, ...] = ()
+    revoked: bool = False
+
+    @property
+    def validated(self) -> bool:
+        return self.blocked_by is None and self.qualifying >= QUALIFYING_SESSIONS
+
+    def line(self) -> str:
+        counts = (
+            f"{self.qualifying} of {QUALIFYING_SESSIONS} qualifying sessions, "
+            f"{self.clients} distinct client{'' if self.clients == 1 else 's'}, "
+            f"{self.backfilled} backfilled, "
+            f"{self.dismissals} dismissal{'' if self.dismissals == 1 else 's'}"
+        )
+        if self.blocked_by is not None:
+            state = f"blocked by {self.blocked_by} on " + " and ".join(
+                self.blocking_claims
+            )
+            if self.revoked:
+                state += ", validation revoked"
+        elif self.validated:
+            state = "validated"
+        else:
+            state = "not yet validated"
+        return f"{VERDICT_PREFIX}{state} ({counts})"
+
+
+def _qualifies(record: SessionRecord) -> bool:
+    """Complete, before an outside audience, and no blocking challenge."""
+    return (
+        record.complete and record.audience == "external" and not record.blocking_claims
+    )
+
+
+def _counted(release: str, current: dict[str, SessionRecord]) -> Verdict:
+    counted = [
+        record
+        for record in current.values()
+        if record.release == release and _qualifies(record)
+    ]
+    return Verdict(
+        qualifying=len(counted),
+        clients=len({record.client_id for record in counted}),
+        backfilled=sum(record.backfilled for record in counted),
+        dismissals=sum(record.outcome == "dismissed" for record in counted),
+    )
+
+
+def release_verdicts(
+    records: list[SessionRecord], releases: dict[str, date]
+) -> dict[str, Verdict]:
+    """Each dated release's verdict, replaying the accepted records in append
+    order: a correction replaces its chain's record at its own position, and a
+    release once blocked stays blocked whatever is appended after."""
+    current: dict[str, SessionRecord] = {}
+    blocks: dict[str, tuple[SessionRecord, bool]] = {}
+    for record in records:
+        release = record.release
+        if (
+            release in releases
+            and release not in blocks
+            and record.audience == "external"
+            and record.blocking_claims
+        ):
+            blocks[release] = (record, _counted(release, current).validated)
+        if record.corrects is not None:
+            current.pop(record.corrects, None)
+        current[record.session_id] = record
+    verdicts = {}
+    for release in releases:
+        verdict = _counted(release, current)
+        if release in blocks:
+            blocker, revoked = blocks[release]
+            verdict = replace(
+                verdict,
+                blocked_by=blocker.session_id,
+                blocking_claims=blocker.blocking_claims,
+                revoked=revoked,
+            )
+        verdicts[release] = verdict
+    return verdicts
+
+
+_SECTION_END = re.compile(r"^## ", re.MULTILINE)
+
+
+def changelog_verdict_mismatches(
+    changelog_text: str, verdicts: dict[str, Verdict]
+) -> list[str]:
+    """Every dated `CHANGELOG.md` section whose `Credibility:` lines are not
+    exactly the one line its verdict prints, naming the release."""
+    mismatches = []
+    for heading in DATED_RELEASE.finditer(changelog_text):
+        version = heading["version"]
+        end = _SECTION_END.search(changelog_text, heading.end())
+        section = changelog_text[heading.end() : end.start() if end else None]
+        found = [
+            line.strip()
+            for line in section.splitlines()
+            if line.startswith(VERDICT_PREFIX)
+        ]
+        expected = verdicts[version].line()
+        if not found:
+            mismatches.append(f"{version}: no verdict line; expected {expected!r}")
+        elif len(found) > 1:
+            mismatches.append(
+                f"{version}: {len(found)} verdict lines; expected only {expected!r}"
+            )
+        elif found[0] != expected:
+            mismatches.append(
+                f"{version}: reads {found[0]!r}; the check computes {expected!r}"
+            )
+    return mismatches
 
 
 def _record_line(record: SessionRecord, corrected_by: dict[str, str]) -> str:
@@ -593,6 +779,8 @@ def render_report(report: CheckReport, source: str) -> str:
         *(f"  {item}" for item in report.incomplete),
         f"Refusals ({len(report.refusals)})",
         *(f"  {item}" for item in report.refusals),
+        f"Verdicts ({len(report.verdicts)}): each dated release's CHANGELOG.md line",
+        *(f"  {version}: {item.line()}" for version, item in report.verdicts.items()),
     ]
     if report.passed:
         lines.append(
