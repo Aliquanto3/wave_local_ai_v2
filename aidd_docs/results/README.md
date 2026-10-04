@@ -713,7 +713,7 @@ which names that same suite. That refusal is the current coverage reading
 the record appears here once the last entry resolves, and until then the
 overview's coverage absence above stays true.
 
-## Roster composition: two unlabelled single-family classes (2026-10-04)
+## Roster composition: one unlabelled single-family class (2026-10-04)
 
 Methodology 13's composition rule is a command, not prose:
 `uv run wave-local-ai-v2-composition-check [--roster <models.json>]`
@@ -757,18 +757,19 @@ three dense classes with no MoE searched for and no reason recorded. The
 roster is deliberately not labelled here: the search that would justify a
 ladder label or a MoE absence is the per-class stories' work. A check that
 passed on this roster would not be checking the rule. Since `roster_version` 7
-the `~0.5B` class passes, and since `roster_version` 8 the `~2B` class (their
-sections below); the two other classes still fail as they did.
+the `~0.5B` class passes, since `roster_version` 8 the `~2B` class, and since
+`roster_version` 9 the `~4B` class (their sections below); the top class still
+fails as it did.
 `tests/test_composition_check.py` fails when the block below drifts from the
 command's output.
 
 <!-- composition-check:start -->
 ```text
-Roster composition: aidd_docs/roster/models.json (roster_version 8)
+Roster composition: aidd_docs/roster/models.json (roster_version 9)
 Size classes, banded on total parameters: ~0.5B < 1,000,000,000 <= ~2B < 3,000,000,000 <= ~4B < 6,000,000,000 <= ~8B-and-up
   ~0.5B: 2 entries; families: ibm, qwen; dense: yes; MoE: no; label: none; MoE sought: yes; MoE absence reason: sought, none found: no MoE GGUF below 1B total parameters in the epic's candidate families (Granite, LFM2, Gemma 4, Ministral, Phi); the smallest MoE the search found is Granite 3.1 1B-A400M (1,334,628,352 total, ~2B) (GGUF spike which-candidate-ggufs-exist-per-size-class-and-does-the-pinned-build-load-them, read 2026-10-02)
   ~2B: 3 entries; families: ibm, liquid, qwen; dense: yes; MoE: yes (granite-3.1-1b-a400m-instruct-q8); label: none; MoE sought: yes; MoE absence reason: n/a
-  ~4B: 1 entry; families: qwen; dense: yes; MoE: no; label: none; MoE sought: no; MoE absence reason: none
+  ~4B: 2 entries; families: ibm, qwen; dense: yes; MoE: yes (granite-3.1-3b-a800m-instruct-q4km); label: none; MoE sought: yes; MoE absence reason: n/a
   ~8B-and-up: 1 entry; families: qwen; dense: no; MoE: yes (qwen3.6-35b-a3b-ud-iq4xs); label: none; MoE sought: yes; MoE absence reason: n/a
 Entries
   qwen3.6-35b-a3b-ud-iq4xs: ~8B-and-up; family qwen; moe; 34,660,610,688 total params; 17,730,509,792 bytes on disk; licence Apache-2.0, client commercial use yes, read 2026-10-02
@@ -778,11 +779,10 @@ Entries
   granite-4.0-h-350m-q8: ~0.5B; family ibm; dense; 340,332,224 total params; 366,195,616 bytes on disk; licence apache-2.0, client commercial use yes, read 2026-10-04
   lfm2.5-1.2b-instruct-q8: ~2B; family liquid; dense; 1,170,340,608 total params; 1,246,253,888 bytes on disk; licence lfm1.0, client commercial use no, read 2026-10-04
   granite-3.1-1b-a400m-instruct-q8: ~2B; family ibm; moe; 1,334,628,352 total params; 1,422,239,776 bytes on disk; licence apache-2.0, client commercial use yes, read 2026-10-04
-Failures (3)
-  size class ~4B: spans one family (qwen) without the single-family-ladder label
-  size class ~4B: has no MoE represented and no reason recorded
+  granite-3.1-3b-a800m-instruct-q4km: ~4B; family ibm; moe; 3,298,793,472 total params; 2,016,888,384 bytes on disk; licence apache-2.0, client commercial use yes, read 2026-10-04
+Failures (1)
   size class ~8B-and-up: spans one family (qwen) without the single-family-ladder label
-FAIL: 3 failure(s)
+FAIL: 1 failure(s)
 ```
 <!-- composition-check:end -->
 
@@ -954,6 +954,56 @@ German for FR->DE, English for DE->EN); Granite's `fr-de-07` keeps one English
 compound ("signed-document") inside a German sentence. The weakest reading is
 Granite's French classification, 0.40 on five items, an indicative figure rather
 than a contradiction. The claims stay on the entries either way, as the epic decides.
+
+### The ~4B class: Granite 3.1 3B-A800M beside Qwen3-4B (2026-10-04)
+
+**The class spans two families, dense and MoE.** `granite-3.1-3b-a800m-instruct-q4km`
+(IBM, `granitemoe`, MoE of 40 experts, 3,298,793,472 total parameters, 2,016,888,384
+bytes on disk) entered the roster at `roster_version` 9 from its candidate-gate pass
+record (`aidd_docs/roster/candidate-records.jsonl`, 2026-10-04) beside `qwen3-4b-q4km`.
+It was the first candidate in gate order (smallest download first) and is non-Qwen and
+MoE at once, so its pass ends the search (owner answers Q127 (a) and Q128 (a)): no
+further candidate was tried, and `mistral3`, `phi3` and `phimoe` were not reached.
+Ministral and Phi stay the families Q12 names for the shortlist, not a requirement on
+the class.
+
+| Candidate, in gate order | Pin | Outcome |
+| --- | --- | --- |
+| Granite 3.1 3B-A800M Instruct (`granitemoe`, MoE) | `bartowski/granite-3.1-3b-a800m-instruct-GGUF@be9a36f042806cb586bc65556c527079782b78e0`, `granite-3.1-3b-a800m-instruct-Q4_K_M.gguf` | **passed** every step; entered as the class's second family and its MoE |
+| Ministral 3 3B Instruct 2512 (`mistral3`) | `mistralai/Ministral-3-3B-Instruct-2512-GGUF@eb599d408350ea2bb60452cb86be7c7b2fc28227`, `Ministral-3-3B-Instruct-2512-Q4_K_M.gguf` | not tried: a non-Qwen MoE had passed, which answers both stop conditions |
+| Phi-4-mini-instruct (`phi3`) | `unsloth/Phi-4-mini-instruct-GGUF@78eb92a46fc37e6b524df991ed9aca9bc6aa7b80`, `Phi-4-mini-instruct-Q4_K_M.gguf` | not tried: as above |
+| Phi-tiny-MoE-instruct (`phimoe`, MoE) | `tripathyShaswata/Phi-tiny-MoE-instruct-GGUF@873ccb08cd3380ee2c08573d45267fac9a6cc81b`, `Phi-tiny-MoE-instruct-Q8_0.gguf` | not tried: the class's MoE question was already answered |
+
+No candidate was refused or deferred, so the pinned build `b10537` held and no
+build-upgrade question arises.
+
+**Quant.** Both entries are `Q4_K_M`: bartowski ships the class's Qwen quant, so the
+class compares families, not quants. IBM ships no GGUF of Granite 3.1 3B-A800M; the
+file is bartowski's quantization of IBM's weights, a packager difference stated here
+rather than a quant one.
+
+**Licence.** `apache-2.0` (the hub's identifier, read off bartowski's card at its
+pinned revision, which carries no LICENSE file), client-side commercial use permitted.
+
+**MoE.** Present: the gate read `granitemoe.expert_count` 40 off the file's header, so
+the entry is `moe`, and the class's declaration names it (`moe_sought: true`,
+`moe_entry: granite-3.1-3b-a800m-instruct-q4km`). Its gate load ran with the declared
+launch block (`-ngl 99`, 32,768-token context, no `--n-cpu-moe`) on the laptop's 6 GB
+GPU.
+
+**The GGUF spike's architectures at this class** (owner answer Q125 (a)):
+
+- `granitemoe`: already closed at `~2B` (pass record of
+  `granite-3.1-1b-a400m-instruct-q8`); loaded again here (pass record of
+  `granite-3.1-3b-a800m-instruct-q4km`: `llama_cpp_build` `b10537`,
+  `chat_template_hash` `22da301945ac6b617a8835d435cbbdc780c0ac08d69c07e1e17e6c6799eed800`,
+  `thinking` `{"declared": "none", "verified": true}`).
+- `mistral3`: not reached: class stopped at `granite-3.1-3b-a800m-instruct-q4km`.
+- `phi3`: not reached: class stopped at `granite-3.1-3b-a800m-instruct-q4km`.
+- `phimoe`: not reached: class stopped at `granite-3.1-3b-a800m-instruct-q4km`.
+
+**The new rows.** Pending: both suites run for the entry from the commit that adds it,
+on a clean tree.
 
 Every quality row written from schema `"19"` on carries `family` (its
 subject's: the local entry's, or a cloud model's own) and `size_class` (the

@@ -446,8 +446,9 @@ def test_the_shipped_moe_entry_still_loads_with_no_family_of_its_own() -> None:
     # a version the file has moved past. 5: `validated_host` moved into the
     # run profile registry. 6: the per-mode `requirements`. 7: Granite 4.0 H
     # 350M entered the ~0.5B class from its candidate-gate pass record. 8:
-    # LFM2.5-1.2B-Instruct and Granite 3.1 1B-A400M entered the ~2B class.
-    assert loaded.roster_version == 8
+    # LFM2.5-1.2B-Instruct and Granite 3.1 1B-A400M entered the ~2B class. 9:
+    # Granite 3.1 3B-A800M entered the ~4B class.
+    assert loaded.roster_version == 9
     assert entry.family is None
     assert roster.family_of(entry.display_id, entry) == "qwen"
 
@@ -601,7 +602,7 @@ def test_load_roster_refuses_a_block_that_is_not_an_object_or_lacks_a_field(
 def test_every_shipped_entry_carries_a_licence_and_a_language_claim() -> None:
     loaded = roster.load_roster(REAL_ROSTER_PATH)
 
-    assert len(loaded.entries) == 7
+    assert len(loaded.entries) == 8
     for entry in loaded.entries.values():
         assert entry.licence is not None, entry.entry_id
         assert entry.language_claim is not None, entry.entry_id
@@ -671,7 +672,7 @@ SHIPPED_DENSE_ENTRIES: dict[str, dict[str, object]] = {
 }
 
 
-# The non-Qwen families of the ~0.5B and ~2B classes, entered from their
+# The non-Qwen families of the ~0.5B, ~2B and ~4B classes, entered from their
 # candidate-gate pass records; written out for the same reason as the Qwen
 # ladder above.
 SHIPPED_SECOND_FAMILY_ENTRIES: dict[str, dict[str, object]] = {
@@ -711,6 +712,18 @@ SHIPPED_SECOND_FAMILY_ENTRIES: dict[str, dict[str, object]] = {
         "kind": "moe",
         "expert_count": 32,
     },
+    "granite-3.1-3b-a800m-instruct-q4km": {
+        "repo": "bartowski/granite-3.1-3b-a800m-instruct-GGUF",
+        "revision": "be9a36f042806cb586bc65556c527079782b78e0",  # pragma: allowlist secret
+        "file": "granite-3.1-3b-a800m-instruct/granite-3.1-3b-a800m-instruct-Q4_K_M.gguf",
+        "display_id": "Granite-3.1-3B-A800M-Instruct",
+        "quant": "Q4_K_M",
+        "sha256": "48e0edcd578fd4462f26127f04c651d0e650741110185297741089aea01a82b3",  # pragma: allowlist secret
+        "active_params_b": 0.8,
+        "family": "ibm",
+        "kind": "moe",
+        "expert_count": 40,
+    },
 }
 
 # The GGUF repository's card states no languages, so the claim is read off the
@@ -727,6 +740,10 @@ LANGUAGE_CLAIM_FROM_BASE_CARD = {
     "granite-3.1-1b-a400m-instruct-q8": (
         "https://huggingface.co/ibm-granite/granite-3.1-1b-a400m-instruct/blob/"
         "0da7a48b0276d500ce5922fd2b33944091fc6c09/"  # pragma: allowlist secret
+    ),
+    "granite-3.1-3b-a800m-instruct-q4km": (
+        "https://huggingface.co/ibm-granite/granite-3.1-3b-a800m-instruct/blob/"
+        "a02780686e08a03fe0d2679a293b5c74a90efa89/"  # pragma: allowlist secret
     ),
 }
 
@@ -976,6 +993,7 @@ SHIPPED_FIGURES = {
     "granite-4.0-h-350m-q8": ("~0.5B", 340_332_224, 366_195_616),
     "lfm2.5-1.2b-instruct-q8": ("~2B", 1_170_340_608, 1_246_253_888),
     "granite-3.1-1b-a400m-instruct-q8": ("~2B", 1_334_628_352, 1_422_239_776),
+    "granite-3.1-3b-a800m-instruct-q4km": ("~4B", 3_298_793_472, 2_016_888_384),
 }
 
 
@@ -994,8 +1012,8 @@ def test_each_shipped_entry_carries_its_class_and_the_figures_read_off_its_file(
 
 def test_the_shipped_roster_declares_every_class_and_labels_none() -> None:
     # No class is a labelled ladder. The ~0.5B class spans two families and
-    # records its MoE search, the ~2B class holds its MoE; the other classes'
-    # searches belong to their own per-class stories (orders 7-8).
+    # records its MoE search, the ~2B and ~4B classes hold their MoE; the top
+    # class's search belongs to its own per-class story (order 8).
     loaded = roster.load_roster(REAL_ROSTER_PATH)
 
     assert tuple(loaded.size_classes) == roster.SIZE_CLASSES
@@ -1038,3 +1056,21 @@ def test_the_two_billion_class_spans_three_families_and_holds_its_moe() -> None:
     assert declaration.moe_entry == "granite-3.1-1b-a400m-instruct-q8"
     assert declaration.moe_absent_reason is None
     assert {entry.architecture.kind for entry in members} == {"dense", "moe"}
+
+
+def test_the_four_billion_class_spans_two_families_and_holds_its_moe() -> None:
+    loaded = roster.load_roster(REAL_ROSTER_PATH)
+    declaration = loaded.size_classes["~4B"]
+    members = [entry for entry in loaded.entries.values() if entry.size_class == "~4B"]
+
+    assert {roster.family_of(entry.display_id, entry) for entry in members} == {
+        "ibm",
+        "qwen",
+    }
+    # Granite 3.1 3B-A800M entered as `moe` off its GGUF header, at the Qwen
+    # entry's quant, so the declaration names it rather than an absence reason.
+    assert declaration.moe_sought is True
+    assert declaration.moe_entry == "granite-3.1-3b-a800m-instruct-q4km"
+    assert declaration.moe_absent_reason is None
+    assert {entry.architecture.kind for entry in members} == {"dense", "moe"}
+    assert {entry.quant for entry in members} == {"Q4_K_M"}

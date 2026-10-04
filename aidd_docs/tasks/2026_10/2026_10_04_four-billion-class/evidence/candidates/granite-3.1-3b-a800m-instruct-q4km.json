@@ -1,0 +1,41 @@
+{
+  "entry_id": "granite-3.1-3b-a800m-instruct-q4km",
+  "repo": "bartowski/granite-3.1-3b-a800m-instruct-GGUF",
+  "revision": "be9a36f042806cb586bc65556c527079782b78e0",
+  "repo_file": "granite-3.1-3b-a800m-instruct-Q4_K_M.gguf",
+  "file": "granite-3.1-3b-a800m-instruct/granite-3.1-3b-a800m-instruct-Q4_K_M.gguf",
+  "display_id": "Granite-3.1-3B-A800M-Instruct",
+  "quant": "Q4_K_M",
+  "family": "ibm",
+  "thinking_control": "none",
+  "active_params_b": 0.8,
+  "client_commercial_use": true,
+  "language_claim": {
+    "languages": [
+      "en",
+      "fr",
+      "de"
+    ],
+    "source_url": "https://huggingface.co/ibm-granite/granite-3.1-3b-a800m-instruct/blob/a02780686e08a03fe0d2679a293b5c74a90efa89/README.md",
+    "statement": "English, German, Spanish, French, Japanese, Portuguese, Arabic, Czech, Italian, Korean, Dutch, and Chinese."
+  },
+  "server_flags": {
+    "n_gpu_layers": 99,
+    "context_size": 32768,
+    "flash_attention": "on",
+    "jinja": true,
+    "parallel_slots": 1,
+    "load_mode": "auto",
+    "sampler": {
+      "temperature": 0.6,
+      "top_p": 0.95,
+      "top_k": 20,
+      "min_p": 0,
+      "presence_penalty": 1.5
+    }
+  },
+  "load_profile": {
+    "n_cpu_moe": null,
+    "threads": 8
+  }
+}

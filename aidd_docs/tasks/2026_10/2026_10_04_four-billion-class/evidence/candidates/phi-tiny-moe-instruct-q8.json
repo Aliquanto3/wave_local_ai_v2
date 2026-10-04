@@ -1,0 +1,39 @@
+{
+  "entry_id": "phi-tiny-moe-instruct-q8",
+  "repo": "tripathyShaswata/Phi-tiny-MoE-instruct-GGUF",
+  "revision": "873ccb08cd3380ee2c08573d45267fac9a6cc81b",
+  "repo_file": "Phi-tiny-MoE-instruct-Q8_0.gguf",
+  "file": "Phi-tiny-MoE-instruct/Phi-tiny-MoE-instruct-Q8_0.gguf",
+  "display_id": "Phi-tiny-MoE-instruct",
+  "quant": "Q8_0",
+  "family": "microsoft",
+  "thinking_control": "none",
+  "active_params_b": 1.1,
+  "client_commercial_use": true,
+  "language_claim": {
+    "languages": [
+      "en"
+    ],
+    "source_url": "https://huggingface.co/microsoft/Phi-tiny-MoE-instruct/blob/2fe50e88d0e2a5a132563815686ea0dcc8e252b5/README.md",
+    "statement": "The model is intended for commercial and research use in English."
+  },
+  "server_flags": {
+    "n_gpu_layers": 99,
+    "context_size": 4096,
+    "flash_attention": "on",
+    "jinja": true,
+    "parallel_slots": 1,
+    "load_mode": "auto",
+    "sampler": {
+      "temperature": 0.6,
+      "top_p": 0.95,
+      "top_k": 20,
+      "min_p": 0,
+      "presence_penalty": 1.5
+    }
+  },
+  "load_profile": {
+    "n_cpu_moe": null,
+    "threads": 8
+  }
+}

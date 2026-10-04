@@ -89,6 +89,8 @@ the `cpu_only` profile that exists for the same machine and runs nothing.
 | `LFM2.5-1.2B-Instruct` `Q8_0` | `cpu_only` | 1.25 | n/a | 1.25 | RAM: lower bound, as for `gpu` |
 | `Granite-3.1-1B-A400M-Instruct` `Q8_0` | `gpu` | 1.42 | not yet declared | 1.42 | RAM: lower bound, the weights' size (no runtime peak published) |
 | `Granite-3.1-1B-A400M-Instruct` `Q8_0` | `cpu_only` | 1.42 | n/a | 1.42 | RAM: lower bound, as for `gpu` |
+| `Granite-3.1-3B-A800M-Instruct` `Q4_K_M` | `gpu` | 2.02 | not yet declared | 2.02 | RAM: lower bound, the weights' size (no runtime peak published) |
+| `Granite-3.1-3B-A800M-Instruct` `Q4_K_M` | `cpu_only` | 2.02 | n/a | 2.02 | RAM: lower bound, as for `gpu` |
 
 The `gpu` RAM peaks are the side-by-side runtime table of
 `aidd_docs/results/README.md`; each declaration's full source is its
@@ -518,6 +520,59 @@ is under the LFM Open License v1.0 and its entry declares
 `client_commercial_use: false`: section 5 conditions commercial use on a legal
 entity below USD 10M annual revenue. Granite 3.1 1B-A400M fits a 6 GB GPU
 whole, so it launches with no `--n-cpu-moe`.
+
+### 3.5 The second family at ~4B: Granite 3.1 3B-A800M
+
+The ~4B class holds a second family beside `Qwen3-4B`: IBM's Granite 3.1
+3B-A800M Instruct (`granitemoe`, a MoE of 40 experts, 8 active), entered from
+its candidate gate pass record (`aidd_docs/roster/candidate-records.jsonl`). It
+is taken at `Q4_K_M`, the quant of the class's Qwen entry, so the rows of this
+class compare families, not quants. IBM ships no GGUF of Granite 3.1 3B-A800M,
+so the file is bartowski's quantization of IBM's weights. As above, the roster
+file is the source of truth and a mismatch with this section is a bug.
+
+| Entry id | Repo | Revision | File in the repo | Under `SLM_MODELS_DIR` | Quant | Size |
+| -------- | ---- | -------- | ---------------- | ---------------------- | ----- | ---- |
+| `granite-3.1-3b-a800m-instruct-q4km` | `bartowski/granite-3.1-3b-a800m-instruct-GGUF` | `be9a36f042806cb586bc65556c527079782b78e0` | `granite-3.1-3b-a800m-instruct-Q4_K_M.gguf` | `granite-3.1-3b-a800m-instruct/granite-3.1-3b-a800m-instruct-Q4_K_M.gguf` | `Q4_K_M` | 2,016,888,384 B (1.88 GiB) |
+
+sha256:
+
+```
+granite-3.1-3b-a800m-instruct-q4km   48e0edcd578fd4462f26127f04c651d0e650741110185297741089aea01a82b3
+```
+
+Download it at its pinned revision:
+
+```powershell
+# Windows
+hf download bartowski/granite-3.1-3b-a800m-instruct-GGUF granite-3.1-3b-a800m-instruct-Q4_K_M.gguf `
+  --revision be9a36f042806cb586bc65556c527079782b78e0 `
+  --local-dir <SLM_MODELS_DIR>\granite-3.1-3b-a800m-instruct
+```
+
+```sh
+# POSIX
+hf download bartowski/granite-3.1-3b-a800m-instruct-GGUF granite-3.1-3b-a800m-instruct-Q4_K_M.gguf \
+  --revision be9a36f042806cb586bc65556c527079782b78e0 \
+  --local-dir <SLM_MODELS_DIR>/granite-3.1-3b-a800m-instruct
+```
+
+Verify the checksum:
+
+```powershell
+# Windows -- .ToLower() matters: the roster stores lowercase hex.
+(Get-FileHash -Algorithm SHA256 "<SLM_MODELS_DIR>\granite-3.1-3b-a800m-instruct\granite-3.1-3b-a800m-instruct-Q4_K_M.gguf").Hash.ToLower()
+```
+
+```sh
+# POSIX
+sha256sum <SLM_MODELS_DIR>/granite-3.1-3b-a800m-instruct/granite-3.1-3b-a800m-instruct-Q4_K_M.gguf
+```
+
+The model does not reason, so its entry declares `thinking_control: "none"`
+(the gate verified it with one generation that returned no reasoning): a
+`thinking_policy: disabled` batch sends no switch for it. Granite 3.1 3B-A800M
+fits a 6 GB GPU whole, so it launches with no `--n-cpu-moe`.
 
 ## 4. Configure `.env` and run
 

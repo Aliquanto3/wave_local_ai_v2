@@ -353,13 +353,13 @@ def test_an_entry_without_a_licence_prints_no_licence_terms(tmp_path, capsys) ->
 # Calibration: the shipped roster, before any new entry is authored.
 
 
-def test_the_shipped_roster_passes_the_two_smallest_classes_and_fails_two(
+def test_the_shipped_roster_passes_the_three_smallest_classes_and_fails_one(
     capsys,
 ) -> None:
     code = composition_check.main(["--roster", REAL_ROSTER_PATH.as_posix()])
     out = capsys.readouterr().out
 
-    # The two single-family Qwen classes still fail, unlabelled.
+    # The top class, single-family Qwen, still fails, unlabelled.
     assert code == 1
     report = composition_check.check_composition(
         composition_check.roster.load_roster(REAL_ROSTER_PATH),
@@ -382,6 +382,12 @@ def test_the_shipped_roster_passes_the_two_smallest_classes_and_fails_two(
             # Qwen3-1.7B, the MoE named by the declaration.
             assert item.families == ("ibm", "liquid", "qwen")
             assert not [f for f in report.failures if f.subject == "size class ~2B"]
+            continue
+        if item.size_class == "~4B":
+            # The Granite 3.1 3B-A800M MoE beside Qwen3-4B, named by the
+            # declaration.
+            assert item.families == ("ibm", "qwen")
+            assert not [f for f in report.failures if f.subject == "size class ~4B"]
             continue
         assert item.families == ("qwen",), item.size_class
         assert (

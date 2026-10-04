@@ -1,5 +1,5 @@
 {
-  "roster_version": 8,
+  "roster_version": 9,
   "size_classes": {
     "~0.5B": {
       "single_family_ladder": false,
@@ -15,8 +15,8 @@
     },
     "~4B": {
       "single_family_ladder": false,
-      "moe_sought": false,
-      "moe_entry": null,
+      "moe_sought": true,
+      "moe_entry": "granite-3.1-3b-a800m-instruct-q4km",
       "moe_absent_reason": null
     },
     "~8B-and-up": {
@@ -568,6 +568,86 @@
         "expert_count": 32,
         "active_params_b": 0.4,
         "total_params": 1334628352
+      },
+      "server_flags": {
+        "n_gpu_layers": 99,
+        "context_size": 32768,
+        "flash_attention": "on",
+        "jinja": true,
+        "parallel_slots": 1,
+        "load_mode": "auto",
+        "sampler": {
+          "temperature": 0.6,
+          "top_p": 0.95,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5
+        }
+      }
+    },
+    "granite-3.1-3b-a800m-instruct-q4km": {
+      "repo": "bartowski/granite-3.1-3b-a800m-instruct-GGUF",
+      "revision": "be9a36f042806cb586bc65556c527079782b78e0",
+      "file": "granite-3.1-3b-a800m-instruct/granite-3.1-3b-a800m-instruct-Q4_K_M.gguf",
+      "display_id": "Granite-3.1-3B-A800M-Instruct",
+      "quant": "Q4_K_M",
+      "sha256": "48e0edcd578fd4462f26127f04c651d0e650741110185297741089aea01a82b3",
+      "size_class": "~4B",
+      "bytes_on_disk": 2016888384,
+      "requirements": {
+        "gpu": {
+          "ram_gb": {
+            "value": 2.02,
+            "source": "declared",
+            "read_from": "lower bound: the weights' size, bytes_on_disk 2016888384 (no runtime peak of this model is published yet)"
+          },
+          "vram_gb": {
+            "value": null,
+            "source": "not_yet_declared",
+            "read_from": "awaits a per-process VRAM peak, as for every roster entry"
+          },
+          "disk_gb": {
+            "value": 2.02,
+            "source": "declared",
+            "read_from": "bytes_on_disk 2016888384 (the weights file), checked only when the weights are not yet on disk"
+          }
+        },
+        "cpu_only": {
+          "ram_gb": {
+            "value": 2.02,
+            "source": "declared",
+            "read_from": "lower bound: the weights' size, bytes_on_disk 2016888384 (no runtime peak of this model is published yet)"
+          },
+          "disk_gb": {
+            "value": 2.02,
+            "source": "declared",
+            "read_from": "bytes_on_disk 2016888384 (the weights file), checked only when the weights are not yet on disk"
+          }
+        }
+      },
+      "family": "ibm",
+      "thinking_control": "none",
+      "licence": {
+        "id": "apache-2.0",
+        "client_commercial_use": true,
+        "read_on": "2026-10-04",
+        "source_url": "https://huggingface.co/bartowski/granite-3.1-3b-a800m-instruct-GGUF/blob/be9a36f042806cb586bc65556c527079782b78e0/README.md"
+      },
+      "language_claim": {
+        "languages": [
+          "en",
+          "fr",
+          "de"
+        ],
+        "source_url": "https://huggingface.co/ibm-granite/granite-3.1-3b-a800m-instruct/blob/a02780686e08a03fe0d2679a293b5c74a90efa89/README.md",
+        "read_on": "2026-10-04",
+        "statement": "English, German, Spanish, French, Japanese, Portuguese, Arabic, Czech, Italian, Korean, Dutch, and Chinese."
+      },
+      "architecture": {
+        "kind": "moe",
+        "expert_count": 40,
+        "active_params_b": 0.8,
+        "total_params": 3298793472
       },
       "server_flags": {
         "n_gpu_layers": 99,
