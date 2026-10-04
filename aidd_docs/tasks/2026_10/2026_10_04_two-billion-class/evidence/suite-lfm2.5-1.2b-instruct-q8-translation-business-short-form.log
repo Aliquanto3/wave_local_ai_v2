@@ -1,0 +1,19 @@
+# preconditions 2026-10-04T04:49:53+02:00 HEAD 5fc6901d573ad10848e03309ad1d6c44e1179f4b
+?? aidd_docs/tasks/2026_10/2026_10_04_two-billion-class/evidence/fiches/
+?? aidd_docs/tasks/2026_10/2026_10_04_two-billion-class/evidence/quality.jsonl
+?? aidd_docs/tasks/2026_10/2026_10_04_two-billion-class/evidence/suite-lfm2.5-1.2b-instruct-q8-classification-support-routing.log
+?? aidd_docs/tasks/2026_10/2026_10_04_two-billion-class/evidence/suite-lfm2.5-1.2b-instruct-q8-translation-business-short-form.log
+0 MiB
+Informationÿ: aucune tƒche en service ne correspond aux critŠres sp‚cifi‚s.
+listeners on 8080: 0
+e6acc5a1051745ae80c325b3ce61fb32
+pre-flight: vram_gb not checked under gpu: roster entry 'lfm2.5-1.2b-instruct-q8' declares no minimum yet (awaits a per-process VRAM peak, as for every roster entry)
+[codecarbon INFO @ 04:49:56] offline tracker init
+[codecarbon WARNING @ 04:49:56] Multiple instances of codecarbon are allowed to run at the same time.
+mistral skipped: not enabled in QUALITY_PROVIDERS
+google skipped: not enabled in QUALITY_PROVIDERS
+model=LFM2.5-1.2B-Instruct provider=local suite_score=0.72
+exit 0
+# after
+0 MiB
+InformationÂ : aucune tÃ¢che en service ne correspond aux critÃ¨res spÃ©cifiÃ©s.

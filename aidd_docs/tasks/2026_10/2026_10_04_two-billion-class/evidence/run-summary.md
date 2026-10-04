@@ -32,4 +32,24 @@ No `src/` change.
 
 ## Stage B: the suites
 
-Pending: both suites per entry from the commit that adds the entries.
+| Step | Command | Outcome | Log |
+| --- | --- | --- | --- |
+| LFM2.5 classification | `wave-local-ai-v2-quality --suite classification-support-routing` | `02d855b6b1b24edab26b6e32e59a9e26`, 20 rows, accuracy 0.85 [0.70, 1.00] | `suite-lfm2.5-1.2b-instruct-q8-classification-support-routing.log` |
+| LFM2.5 translation | `wave-local-ai-v2-quality --suite translation-business-short-form` | `e6acc5a1051745ae80c325b3ce61fb32`, 21 rows, chrF 0.723 [0.647, 0.799] | `suite-lfm2.5-1.2b-instruct-q8-translation-business-short-form.log` |
+| Granite MoE classification | as above | `7122bd3e67624735aad92dbcdb82f5be`, 20 rows, accuracy 0.60 [0.40, 0.80] | `suite-granite-3.1-1b-a400m-instruct-q8-classification-support-routing.log` |
+| Granite MoE translation | as above | `4db0b4be4cb54e43a16e2ecffa927387`, 21 rows, chrF 0.561 [0.497, 0.631] | `suite-granite-3.1-1b-a400m-instruct-q8-translation-business-short-form.log` |
+| Promote | `wave-local-ai-v2-promote --run-id <the four> --machine laptop-mobile-gpu` | 82 quality rows added; 2 fiches copied (`53fa3307...`, `add6a317...`) | `promote.log` |
+| Merge | `wave-local-ai-v2-merge-bundle`, then `--check` | 6 runtime, 203 quality, 0 refusals; check exit 0 | `merge.log` |
+
+Every run started from commit `5fc6901d573ad10848e03309ad1d6c44e1179f4b` (the entries
+committed) with no tracked change (`git status --porcelain` at the top of each log lists
+untracked paths only), so all 82 rows carry `tree_dirty: false` and that sha. No item
+failed (`failure_counts` all 0). Environment: `MACHINE_ID=laptop-mobile-gpu`,
+`COMPUTE_MODE=gpu`, `QUALITY_PROVIDERS=local`, `ROSTER_ENTRY_ID=<entry>`, live store
+`quality.jsonl` and fiche registry `fiches/` in this folder. No paid call, no judge, no
+`.env`.
+
+Diff of the tracked stores: one hunk `@@ -121,0 +122,82 @@` per file, no line removed.
+`wave-local-ai-v2-validate` with `FICHE_REGISTRY_DIR` unset: `checked 203 row(s)` on
+`quality-reference.jsonl` and the laptop store, `checked 6 row(s)` on
+`runtime-reference.jsonl`, each exit 0.

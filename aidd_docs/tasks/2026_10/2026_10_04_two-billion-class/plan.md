@@ -1,6 +1,6 @@
 ---
 objective: "The ~2B class holds a second family beside Qwen3-1.7B, admitted through the candidate gate and run through both suites on the laptop from a committed tree, with its MoE question answered, or is labelled a single-family ladder citing every refusal; the composition check passes for the class."
-status: in-progress
+status: implemented
 ---
 
 # Plan: The ~2B class spans two families, or is published as a searched single-family ladder

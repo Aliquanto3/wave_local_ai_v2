@@ -922,8 +922,38 @@ and launches with no `--n-cpu-moe`.
 - `granitehybrid`: already closed at `~0.5B` (pass record of `granite-4.0-h-350m-q8`).
 - `granite`: not reached: class stopped at `granite-3.1-1b-a400m-instruct-q8`.
 
-**The new rows.** Pending: both suites run per entry from the commit that adds these
-entries, on a clean tree.
+**The new rows.** All four runs on `laptop-mobile-gpu`, `compute_mode` `gpu`, each
+under its entry's profile (`<entry_id>@laptop-mobile-gpu/gpu`: `-ngl 99`, the declared
+value, launched; `-t 8`; no override; no `--n-cpu-moe` for the MoE),
+`thinking_policy` `disabled` with each entry's `none` control (no switch sent). They
+ran from the commit that added the entries, on a clean tree: every row carries
+`commit_sha` `5fc6901d573ad10848e03309ad1d6c44e1179f4b` (`tree_dirty: false`) and
+`roster_version` 8. Fiches `53fa3307...` (LFM2.5) and `add6a317...` (Granite). Both
+entries completed both suites with no failed item, so the search's stop condition
+(owner answer Q127 (a)) holds.
+
+| Entry | Suite | `run_id` | Rows | Score [95% interval] | `en` | `fr` | `de` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `lfm2.5-1.2b-instruct-q8` | `classification-support-routing@5` | `02d855b6b1b24edab26b6e32e59a9e26` | 20 | accuracy **0.85** [0.70, 1.00] | 0.80 (n=10) | 1.00 * (n=5) | 0.80 * (n=5) |
+| `lfm2.5-1.2b-instruct-q8` | `translation-business-short-form@4` | `e6acc5a1051745ae80c325b3ce61fb32` | 21 | chrF **0.723** [0.647, 0.799] | 0.777 * (EN->FR) | 0.602 * (FR->DE) | 0.791 * (DE->EN) |
+| `granite-3.1-1b-a400m-instruct-q8` | `classification-support-routing@5` | `7122bd3e67624735aad92dbcdb82f5be` | 20 | accuracy **0.60** [0.40, 0.80] | 0.70 (n=10) | 0.40 * (n=5) | 0.60 * (n=5) |
+| `granite-3.1-1b-a400m-instruct-q8` | `translation-business-short-form@4` | `4db0b4be4cb54e43a16e2ecffa927387` | 21 | chrF **0.561** [0.497, 0.631] | 0.547 * (EN->FR) | 0.432 * (FR->DE) | 0.703 * (DE->EN) |
+
+`*` = `indicative`. The bundle now holds 203 quality rows: the 121 before and these
+82, promoted into `machines/laptop-mobile-gpu/` and merged. Every classification
+answer parsed. LFM2.5-1.2B-Instruct misrouted three items (`billing-03` as
+`account`, `technical-03` and `account-de-01` as `other`); Granite 3.1 1B-A400M
+misrouted eight, four of them as `account`. No `Qwen3-1.7B` quality row at these
+suite versions is in the bundle, so the class's side-by-side reading rests on the
+earlier, superseded tables below (classification `@3` 0.60, translation `@2` 0.7107),
+not on rows of the same suite version.
+
+**No row contradicts the EN/FR/DE claims.** Both entries claim `en`, `fr` and `de`.
+Every translation output of both is in its target language (French for EN->FR,
+German for FR->DE, English for DE->EN); Granite's `fr-de-07` keeps one English
+compound ("signed-document") inside a German sentence. The weakest reading is
+Granite's French classification, 0.40 on five items, an indicative figure rather
+than a contradiction. The claims stay on the entries either way, as the epic decides.
 
 Every quality row written from schema `"19"` on carries `family` (its
 subject's: the local entry's, or a cloud model's own) and `size_class` (the
