@@ -355,6 +355,7 @@ WMT24PP_DIRECTORIES = (
     "src/wave_local_ai_v2/suite_data",
     "aidd_docs/results/suite-definitions",
     "aidd_docs/results",
+    "aidd_docs/results/machines",
 )
 
 
@@ -392,3 +393,15 @@ def test_section_two_names_wmt24pp_and_section_three_its_research_use_origin() -
     third = declarations.split("\n3. ", 1)[1]
     for needle in ("WMT24", "research purposes", "Apache-2.0 label"):
         assert needle in third, needle
+
+
+def test_every_notice_over_drawn_rows_names_each_drawn_source() -> None:
+    """The directories holding rows that carry drawn items name each drawn
+    source's terms, so no NOTICE claims those items under CC-BY 4.0."""
+    for directory in ("aidd_docs/results", "aidd_docs/results/machines"):
+        notice = _read(REPO / directory / NOTICE)
+        assert "drawn from a public" in notice, directory
+        assert "`LICENSE-DATA` section 2" in notice, directory
+    machines = _read(REPO / "aidd_docs/results/machines" / NOTICE)
+    for needle in ("PolyAI/minds14", "CC BY 4.0", "google/wmt24pp", APACHE_TEXT):
+        assert needle in machines, needle

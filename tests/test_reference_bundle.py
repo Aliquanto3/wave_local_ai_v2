@@ -22,6 +22,7 @@ from wave_local_ai_v2 import (
     roster,
     row_contract,
     settings,
+    suite_registry,
     suite_snapshot,
 )
 from wave_local_ai_v2.read_model import (
@@ -395,20 +396,31 @@ def test_every_row_of_a_superseded_file_lands_in_unreadable() -> None:
         )
 
 
-def test_the_publication_batch_has_a_development_pair_on_the_same_subject() -> None:
-    """Every published classification batch over a publication suite stands
-    beside a development-level batch of the hand-written classification suite
-    with the same roster entry, fiche, engine build and commit. Rows carry no
-    session id, so that key is the pair's definition, checkable from the rows
-    alone; the commit is in it so that an earlier batch of the same subject on
-    the same fiche never stands in for the one run beside it."""
+# Each use case with a publication-level suite, and the hand-written
+# development-level suite its publication batches stand beside.
+_DEVELOPMENT_SUITE = {
+    "classification": "classification-support-routing",
+    "translation": "translation-business-short-form",
+}
+
+
+@pytest.mark.parametrize("task_suite", sorted(_DEVELOPMENT_SUITE))
+def test_the_publication_batch_has_a_development_pair_on_the_same_subject(
+    task_suite: str,
+) -> None:
+    """Every published batch over a publication suite stands beside a
+    development-level batch of the use case's hand-written suite with the
+    same roster entry, fiche, engine build and commit. Rows carry no session
+    id, so that key is the pair's definition, checkable from the rows alone;
+    the commit is in it so that an earlier batch of the same subject on the
+    same fiche never stands in for the one run beside it."""
     batches: dict[str, dict[str, object]] = {}
     for row in results.read_rows(QUALITY_REFERENCE_PATH):
         batches.setdefault(str(row["run_id"]), row)
     publication = [
         row
         for row in batches.values()
-        if row["suite_level"] == "publication" and row["task_suite"] == "classification"
+        if row["suite_level"] == "publication" and row["task_suite"] == task_suite
     ]
 
     def pair_key(row: dict[str, object]) -> tuple[object, ...]:
@@ -422,7 +434,7 @@ def test_the_publication_batch_has_a_development_pair_on_the_same_subject() -> N
     development = {
         pair_key(row)
         for row in batches.values()
-        if row["suite_id"] == "classification-support-routing"
+        if row["suite_id"] == _DEVELOPMENT_SUITE[task_suite]
         and row["suite_level"] == "development"
         and row["score_interval"] is not None
     }
@@ -430,3 +442,38 @@ def test_the_publication_batch_has_a_development_pair_on_the_same_subject() -> N
     for row in publication:
         assert row["score_interval"] is not None
         assert pair_key(row) in development, pair_key(row)
+
+
+def test_every_use_case_with_a_publication_suite_names_its_development_suite() -> None:
+    """A use case gaining a publication-level suite must enter
+    `_DEVELOPMENT_SUITE`, or its batches would go unpaired unchecked."""
+    publication_use_cases = {
+        suite.task_suite
+        for suite in map(suite_registry.resolve, suite_registry.registered_ids())
+        if suite.level == "publication"
+    }
+    assert publication_use_cases == set(_DEVELOPMENT_SUITE)
+    for task_suite, suite_id in _DEVELOPMENT_SUITE.items():
+        development = suite_registry.resolve(suite_id)
+        assert (development.task_suite, development.level) == (
+            task_suite,
+            "development",
+        )
+
+
+def test_a_published_wmt24pp_batch_ran_the_model_its_cap_was_counted_for() -> None:
+    """The drawn translation suite's cap is twice its longest reference under
+    one model's tokenizer (`max_output_tokens_basis`); every published batch
+    over it ran that model, and states how many items the cap truncated."""
+    suite = suite_registry.resolve("translation-mixed-domain-wmt24pp")
+    tokenizer = suite.extra["max_output_tokens_basis"]["tokenizer"]
+    rows = [
+        row
+        for row in results.read_rows(QUALITY_REFERENCE_PATH)
+        if row["suite_id"] == suite.suite_id
+    ]
+
+    assert rows
+    for row in rows:
+        assert f"the tokenizer of {row['roster_entry_id']} (" in tokenizer
+        assert "truncated_max_tokens" in row["failure_counts"]

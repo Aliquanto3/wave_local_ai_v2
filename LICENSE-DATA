@@ -152,7 +152,8 @@ its items and rows, and the attribution it requires.
   revision ships no licence or NOTICE file. A copy of the Apache-2.0 text,
   `LICENSE-APACHE-2.0.txt`, ships in each directory holding drawn WMT24++
   items: `src/wave_local_ai_v2/suite_data/`,
-  `aidd_docs/results/suite-definitions/` and `aidd_docs/results/`. A licence
+  `aidd_docs/results/suite-definitions/`, `aidd_docs/results/` and
+  `aidd_docs/results/machines/`. A licence
   file at that revision naming anything other than Apache-2.0 would reopen
   the licence decision.
 - Rung: permissive. The drawn items and the rows carrying them ship

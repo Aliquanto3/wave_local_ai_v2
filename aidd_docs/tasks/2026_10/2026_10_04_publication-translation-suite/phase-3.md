@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 ---
 
 # Instruction: Stage B: the two published batches, promotion, merge and evidence

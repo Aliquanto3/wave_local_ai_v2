@@ -1,6 +1,6 @@
 ---
 objective: "A 300-item publication-level translation suite drawn from WMT24++ by the recorded sampler rule stands beside the hand-written 21-item suite, its output cap derived from its references under the subject's tokenizer, licensed on the permissive rung with the Apache-2.0 text beside its items, and published in the reference bundle with one development-level batch of the hand-written suite on the same subject in the same session."
-status: in_progress
+status: implemented
 ---
 
 # Plan: A publication-level translation suite stands beside the hand-written one
@@ -38,3 +38,10 @@ status: in_progress
 | The cap: `count-tokens` asks a running `llama-server` (`/tokenize`, `add_special` false) for every pool reference's token count with the subject's GGUF; `draw` sets `max_output_tokens` to twice the longest drawn reference's count and records `max_output_tokens_basis` {`tokenizer`, `longest_reference_item_id`, `longest_reference_tokens`, `factor`, `reason`}; each item carries `reference_tokens`. | Q118 (a): the reason names the tokenizer of the model the published batches run (`granite-4.0-h-350m-q8`). CI cannot run that tokenizer, so it checks the arithmetic over the recorded counts and bounds each count by the reference's UTF-8 byte length (a byte-level BPE token covers at least one byte). |
 | Prompt shell identical to the hand-written suite's ("Translate the following {source} text into {target}. Reply with only the translation, nothing else.\n\nText: ..."). | The two levels differ by their items, not by their instruction. |
 | The Apache-2.0 text ships as `LICENSE-APACHE-2.0.txt` in `src/wave_local_ai_v2/suite_data/`, `aidd_docs/results/suite-definitions/` and `aidd_docs/results/`, byte-equal (LF) to https://www.apache.org/licenses/LICENSE-2.0.txt (SHA-256 `cfc7749b...`), taken from a locally installed package's copy (no download); each NOTICE states the change made. | Q106 (a) and spike assumption A2; no other download is allowed. |
+
+## Follow-ups
+
+| Follow-up | Why |
+| --------- | --- |
+| When another roster entry runs `translation-mixed-domain-wmt24pp`, the suite needs a version 2 whose cap basis counts that model's tokenizer too, or a basis recording several tokenizers (the cap then twice the longest count under any of them). | `max_output_tokens_basis` names one tokenizer, `granite-4.0-h-350m-q8`'s, and `tests/test_reference_bundle.py` requires every published batch over the suite to have run that model, so a second subject's batch fails it as designed. |
+| The read model groups both translation suites under one use case (as both classification suites since the twin story). | Not averaged, but a reader of the per-run comparator list sees both levels mixed. |

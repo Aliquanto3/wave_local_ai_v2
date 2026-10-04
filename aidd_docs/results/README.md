@@ -131,7 +131,8 @@ selection rule its definition records.
   (`license: apache-2.0`); the revision ships no licence or NOTICE file
   (`source_table.licence_file_at_revision` is `false`). A copy of the Apache-2.0 text,
   `LICENSE-APACHE-2.0.txt`, sits in each directory holding drawn WMT24++ items: this one
-  (the rows), `suite-definitions/` and `src/wave_local_ai_v2/suite_data/`. The change
+  (the bundle rows), `machines/` (the per-machine rows), `suite-definitions/` and
+  `src/wave_local_ai_v2/suite_data/`. The change
   made: each segment's source text is wrapped in the suite's prompt template, the
   hand-written suite's instruction shell; the reference is unchanged.
 - **The English sources are WMT24's**, which WMT released for research use; the items
@@ -180,6 +181,43 @@ definition by `tests/test_wmt24pp_suite.py`:
 | social | 55 | 53 | 50 | 158 |
 | speech | 14 | 10 | 8 | 32 |
 | all | 100 | 100 | 100 | 300 |
+
+### Both levels on one subject: Granite 4.0 H 350M, translation (2026-10-04)
+
+One bench session on `laptop-mobile-gpu` (`gpu`), from commit `0f69b60` with no tracked
+change, so every row carries `tree_dirty: false`: one publication-level batch over
+WMT24++ and one development-level batch of the hand-written suite, on the same subject.
+Rows carry no session id, so the pair is defined by the fields both batches share,
+checkable from the rows (`tests/test_reference_bundle.py`): `roster_entry_id`
+`granite-4.0-h-350m-q8`, `fiche_hash` `5ce2bf21...` (the fiche its earlier batches cite),
+`engine_build` `b10537` and `commit_sha` `0f69b60`. The development score leads; the
+publication score sits beside it as the scale check. The two are never averaged, and they
+are not on one scale: one business sentence against paragraph-level segments in four
+domains, with two directions translating translations.
+
+| Level | Suite | run_id | Items | chrF | 95% interval | Minimum detectable effect |
+| ----- | ----- | ------ | ----- | ---- | ------------ | ------------------------- |
+| development (leads) | `translation-business-short-form@4` | `da8737246ed54cbf88ddce02e1d1d26b` | 21 | 0.484 | [0.358, 0.614] | 0.128 |
+| publication (beside it) | `translation-mixed-domain-wmt24pp@1` | `525734d8b1a44d3681a77aed5b3baee2` | 300 | 0.367 | [0.347, 0.387] | 0.020 |
+
+Per direction, the publication batch holds 100 items in each cell: EN->FR [0.32, 0.40],
+FR->DE [0.28, 0.34], DE->EN [0.40, 0.46], each with a minimum detectable effect of 0.030
+to 0.039; the development batch's cells hold 7 items each, with minimum detectable effects
+of 0.14 to 0.15. At 21 items nothing under about 13 chrF points is resolvable; at 300,
+about 2 points is. The development batch repeats this subject's earlier published 0.484
+on the same suite version (`be0dda5e...`), interval for interval.
+
+Read the publication score with its failure shape. The cap held: 0 rows failed
+`truncated_max_tokens` (the longest completion was 320 tokens against the cap of 608),
+and one row failed `empty` (`google/wmt24pp:118`, FR->DE), scored 0. By domain, the mean
+item chrF is social 0.339 (158 items), literary 0.385 (61), news 0.410 (49) and speech
+0.408 (32); these are descriptive means, not intervals.
+
+The heading "The translation suite's first live run (2026-09-06)" further down predates
+this bundle: its statement that the committed `quality-reference.jsonl` holds no
+translation row is no longer true, and the section stands as the record of that day.
+
+Commands, logs and the live stores: `aidd_docs/tasks/2026_10/2026_10_04_publication-translation-suite/evidence/`.
 
 ## The client-session record (`client-sessions.jsonl`)
 
