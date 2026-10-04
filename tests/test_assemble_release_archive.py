@@ -7,9 +7,15 @@ copies of it, so every refusal the job relies on is exercised here.
 
 from __future__ import annotations
 
+import csv
+import hashlib
+import io
+import json
 import subprocess
 import sys
+import unicodedata
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -17,6 +23,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 import assemble_release_archive as release
+import drawn_bundle_fixtures as drawn
 
 from wave_local_ai_v2 import build_info, bundle_export
 
@@ -367,3 +374,226 @@ def test_the_manifest_versions_read_a_quoted_cell() -> None:
         "runtime_rows": "6;7",
         "quality_rows": "7",
     }
+
+
+# --------------------------------------------------------------------------
+# Drawn items: each rung over a constructed bundle (`drawn_bundle_fixtures`).
+# --------------------------------------------------------------------------
+
+FAKE_COMMIT = "f" * 40
+CLOSED_SNAPSHOT = (
+    "aidd_docs/results/suite-definitions/classification-banking-intents-minds14@1.json"
+)
+Built = dict[str, tuple[drawn.Constructed, dict[str, bytes]]]
+
+
+def _drawn_section_of(root: Path) -> str:
+    return release.drawn_section((root / "LICENSE-DATA").read_text(encoding="utf-8"))
+
+
+@pytest.fixture(scope="module")
+def rung_archives(tmp_path_factory: pytest.TempPathFactory) -> Built:
+    """One archive per rung, built and verified from its constructed root."""
+    built = {}
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(release, "head_commit", lambda _root: FAKE_COMMIT)
+        for rung in (drawn.PERMISSIVE, drawn.SHARE_ALIKE, drawn.NO_REDISTRIBUTION):
+            base = tmp_path_factory.mktemp(rung.replace(" ", "-"))
+            constructed = drawn.build_repo(base / "repo", rung)
+            path, _ = release.build(TAG, FAKE_COMMIT, base / "dist", constructed.root)
+            built[rung] = (constructed, release.read_zip(path, TOP))
+    return built
+
+
+def _table(files: dict[str, bytes]) -> list[dict[str, str]]:
+    text = files[f"{bundle_export.QUALITY_TABLE}.csv"].decode("utf-8")
+    return list(csv.DictReader(io.StringIO(text, newline="")))
+
+
+def test_the_readme_repeats_licence_data_section_two(
+    files: dict[str, bytes], rung_archives: Built
+) -> None:
+    assert _drawn_section_of(REPO) in files["README.md"].decode("utf-8")
+    for constructed, built in rung_archives.values():
+        section = _drawn_section_of(constructed.root)
+        assert section in built["README.md"].decode("utf-8")
+
+
+def test_a_permissive_archive_holds_each_source_s_notices(
+    rung_archives: Built,
+) -> None:
+    _, built = rung_archives[drawn.PERMISSIVE]
+    paths = bundle_export.default_bundle_paths()
+    apache = (REPO / paths.suite_definitions / drawn.APACHE_TEXT).read_bytes()
+    for directory in (paths.suite_definitions, paths.quality_rows.parent):
+        assert built[f"{directory.as_posix()}/{drawn.APACHE_TEXT}"] == apache
+    readme = built["README.md"].decode("utf-8")
+    minds = readme.split("### 2.1 MInDS-14", 1)[1].split("### 2.2", 1)[0]
+    for element in (
+        "Creator: PolyAI",
+        "Copyright notice",
+        "https://creativecommons.org/licenses/by/4.0/",
+        "https://huggingface.co/datasets/PolyAI/minds14",
+        "40ce77cb32a384e4d50a568e1ec39ac804019d33",  # pragma: allowlist secret
+        "prompt template",
+    ):
+        assert element in minds, element
+    wmt = readme.split("### 2.2 WMT24++", 1)[1]
+    assert drawn.APACHE_TEXT in wmt
+    assert "Changes made" in wmt
+    for row in _table(built):
+        if row["provenance"] == "public":
+            assert row["item_licence"] in ("CC-BY-4.0", "Apache-2.0")
+            assert row["item_source"] in ("PolyAI/minds14", "google/wmt24pp")
+            assert len(row["item_content_hash"]) == 64
+        assert row["item_redaction"] == bundle_export.NOT_REDACTED
+        assert row["item_licence_file"] == ""
+
+
+def test_a_share_alike_set_ships_apart_under_its_own_licence_file(
+    rung_archives: Built,
+) -> None:
+    _, built = rung_archives[drawn.SHARE_ALIKE]
+    paths = bundle_export.default_bundle_paths()
+    assert paths.share_alike_dir is not None
+    directory = f"{paths.share_alike_dir.as_posix()}/{drawn.SHARE_ALIKE_LICENCE}"
+    licence_file = f"{directory}/LICENSE"
+    assert built[licence_file] == drawn.SHARE_ALIKE_TEXT.encode("utf-8")
+    shipped_rows = built[f"{directory}/quality-reference.jsonl"].decode("utf-8")
+    assert drawn.SHARE_ALIKE_SOURCE in shipped_rows
+    snapshot = f"{directory}/suite-definitions/translation-mixed-domain-wmt24pp@1.json"
+    assert drawn.SHARE_ALIKE_SOURCE in built[snapshot].decode("utf-8")
+    # None of it in the CC-BY 4.0 files.
+    for name in (
+        paths.quality_rows.as_posix(),
+        f"{paths.suite_definitions.as_posix()}/translation-mixed-domain-wmt24pp@1.json",
+    ):
+        assert drawn.SHARE_ALIKE_SOURCE.encode() not in built.get(name, b"")
+    rows = _table(built)
+    marked = [r for r in rows if r["item_licence_file"]]
+    assert {r["item_licence_file"] for r in marked} == {licence_file}
+    assert {r["item_source"] for r in marked} == {drawn.SHARE_ALIKE_SOURCE}
+    assert all(r["item_licence"] == drawn.SHARE_ALIKE_LICENCE for r in marked)
+    assert len(marked) == 2
+    assert len(rows) == 5
+    readme = built["README.md"].decode("utf-8")
+    assert f"- `{licence_file}` governs the items drawn from" in readme
+    assert f"`{licence_file}` | The full text of licence" in readme
+
+
+def _recompute(readme: str, source_row: dict[str, Any], rule: dict[str, Any]) -> str:
+    """The content hash, following the recipe the archive README states."""
+    assert "SHA-256 hex digest of the UTF-8 bytes of the JSON object" in readme
+    assert "NFC-normalised with every whitespace run collapsed" in readme
+    (benchmark,) = rule["benchmarks"]
+    text = [
+        " ".join(unicodedata.normalize("NFC", str(source_row[name])).split())
+        for name in rule["content_fields"]
+    ]
+    payload = {
+        "licence": benchmark["licence"],
+        "source": benchmark["source"],
+        "source_revision": benchmark["source_revision"],
+        "text": text,
+    }
+    serialised = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    )
+    return hashlib.sha256(serialised.encode("utf-8")).hexdigest()
+
+
+def test_a_redacted_item_is_a_visible_hole_its_reader_can_fill_by_hand(
+    rung_archives: Built,
+) -> None:
+    constructed, built = rung_archives[drawn.NO_REDISTRIBUTION]
+    # No file carries the withheld text, the suite-definition snapshots included.
+    assert constructed.withheld_text
+    for text in constructed.withheld_text:
+        assert all(text.encode("utf-8") not in data for data in built.values())
+    rows = [r for r in _table(built) if r["item_source"] == drawn.CLOSED_SOURCE]
+    assert len(rows) == 2
+    snapshot = json.loads(built[CLOSED_SNAPSHOT])
+    readme = built["README.md"].decode("utf-8")
+    for row, source_row in zip(rows, constructed.source_rows, strict=True):
+        assert row["item_redaction"] == bundle_export.NO_REDISTRIBUTION
+        assert row["item_source_revision"] == drawn.CLOSED_REVISION
+        assert row["item_source_key"] == source_row["path"]
+        assert row["prompt"] == row["expected_label"] == ""
+        assert row["item_content_hash"] == _recompute(
+            readme, source_row, snapshot["selection_rule"]
+        )
+    for item in snapshot["items"]:
+        assert set(item) <= {
+            *bundle_export.REDACTED_ITEM_KEPT,
+            "provenance",
+            "contamination_risk",
+        }
+    instructions = readme.split("### Obtaining the text", 1)[1]
+    assert instructions.count(f"- `{drawn.CLOSED_SOURCE}` at revision") == 1
+    assert "find the source row whose `path` equals `item_source_key`" in instructions
+
+
+def test_no_archive_ships_code(files: dict[str, bytes], rung_archives: Built) -> None:
+    assert release.code_entries(files) == []
+    for _, built in rung_archives.values():
+        assert release.code_entries(built) == []
+    assert release.code_entries({"fetch.py": b"", "a.csv": b""}) == ["fetch.py"]
+
+
+def test_a_shipped_script_or_an_unredacted_snapshot_fails_verify(
+    rung_archives: Built, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    constructed, built = rung_archives[drawn.NO_REDISTRIBUTION]
+    snapshot = json.loads(built[CLOSED_SNAPSHOT])
+    snapshot["items"][0]["prompt"] = constructed.withheld_text[0]
+    path = _tampered(
+        built,
+        tmp_path,
+        {
+            CLOSED_SNAPSHOT: json.dumps(snapshot).encode(),
+            "fetch_corpus.py": b"import requests\n",
+        },
+    )
+    monkeypatch.setattr(release, "head_commit", lambda _root: FAKE_COMMIT)
+    with pytest.raises(release.ArchiveError) as error:
+        release.verify(path, TAG, FAKE_COMMIT, constructed.root)
+    assert "ships code, not data: fetch_corpus.py" in str(error.value)
+    assert "still carries ['prompt'], which may hold its text" in str(error.value)
+
+
+def test_a_drawn_source_licence_data_does_not_name_at_its_rung_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(release, "head_commit", lambda _root: FAKE_COMMIT)
+    constructed = drawn.build_repo(tmp_path / "repo", drawn.NO_REDISTRIBUTION)
+    licence = constructed.root / "LICENSE-DATA"
+    text = licence.read_text(encoding="utf-8")
+    licence.write_text(
+        text.replace("- Rung: no redistribution.", "- Rung: permissive."),
+        encoding="utf-8",
+    )
+    with pytest.raises(release.ArchiveError, match="the no redistribution rung"):
+        release.build(TAG, FAKE_COMMIT, tmp_path / "dist", constructed.root)
+    licence.write_text(
+        text.replace(f"- Source: `{drawn.CLOSED_SOURCE}`", "- Source: elsewhere"),
+        encoding="utf-8",
+    )
+    with pytest.raises(release.ArchiveError, match="names no subsection with source"):
+        release.build(TAG, FAKE_COMMIT, tmp_path / "dist", constructed.root)
+    assert not (tmp_path / "dist").exists()
+
+
+def test_licence_data_without_section_two_or_a_refused_bundle_is_refused(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(release.ArchiveError, match="no section 2"):
+        release.drawn_section("## 1. Scope\n")
+    with pytest.raises(release.ArchiveError, match="export refused"):
+        release.drawn_sources(tmp_path)
+
+
+def test_a_snapshot_that_is_not_a_suite_definition_is_named() -> None:
+    name = "aidd_docs/results/suite-definitions/x@1.json"
+    assert release.redaction_problems({name: b"[]"}) == [
+        f"{name} is not a suite definition"
+    ]

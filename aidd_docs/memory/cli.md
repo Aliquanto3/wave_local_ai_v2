@@ -231,7 +231,17 @@ The command-line interface for running benchmarks.
   the rows carry, not the live constant. A row field the dictionary does not
   describe refuses the export; see `aidd_docs/results/README.md`. The record
   columns' meaning, unit and null reasons are read from `comparison.py` and
-  `leader_set.py`, never defined in the export.
+  `leader_set.py`, never defined in the export. Each quality row's item terms
+  (LICENSE-DATA section 2) end the quality table: `item_content_hash` and
+  `item_source_key` (from the row, else its suite definition's item joined by
+  `item_id`; a disagreement refuses), `item_redaction` (`not_redacted`, or
+  `no_redistribution` on a row whose item text is withheld and checked null)
+  and `item_licence_file` (a share-alike row's licence file). Share-alike sets
+  are read from `--share-alike-dir` (default
+  `aidd_docs/results/share-alike/<licence id>/`: `LICENSE`,
+  `quality-reference.jsonl`, `suite-definitions/`); a set without its
+  licence, a row filed under the wrong licence, a redacted row or item short
+  of its shape, or an unnamed `provenance` value refuses the export.
 - `uv run python scripts/recompute_from_export.py <export-dir>` — the
   third-party check over an export directory alone (standard library, imports
   nothing from the package): recomputes every interval block, every
@@ -244,10 +254,15 @@ The command-line interface for running benchmarks.
   (`workflow_dispatch`), and `release-publish` (the only `contents: write`
   job, tag push only, no project code) attaches to the Release: the export
   regenerated from the committed bundle, the bundle parts at their repository
-  paths, both licences, `CITATION.cff` stamped with the commit and a README.
-  Refuses a tag, packaged version, citation version or `HEAD` that disagree,
-  a table that differs from the regenerated export, and a file naming a
-  repository path the archive does not hold outside `PATHS_NOT_SHIPPED`.
+  paths (each share-alike set included), both licences, `CITATION.cff`
+  stamped with the commit and a README that repeats `LICENSE-DATA` section 2
+  and adds each share-alike set's licence file and one join instruction per
+  no-redistribution source. Refuses a tag, packaged version, citation version
+  or `HEAD` that disagree, a table that differs from the regenerated export,
+  a file naming a repository path the archive does not hold outside
+  `PATHS_NOT_SHIPPED`, a drawn source `LICENSE-DATA` section 2 does not name
+  at the rung the bundle's layout shows, a redacted suite item still carrying
+  a text field, and any code file.
   `--parquet` (always passed by the job; needs the `release` dependency
   group's pinned `pyarrow`, `uv sync --locked --group release`) adds one typed
   Parquet copy per table (`scripts/release_parquet.py`, types from the

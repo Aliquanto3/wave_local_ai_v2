@@ -9,10 +9,14 @@ import csv
 import dataclasses
 import hashlib
 import json
+import shutil
 import sys
 from collections import Counter, defaultdict
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
+import drawn_bundle_fixtures as drawn
 import pytest
 from published_bundle_fixtures import SCHEMA_7
 
@@ -1303,3 +1307,258 @@ def test_the_interval_columns_agree_with_the_block_they_describe() -> None:
             for reason in score_interval.NULL_REASONS
             if reason not in doc.meaning
         ]
+
+
+# --------------------------------------------------------------------------
+# Each item's terms (LICENSE-DATA section 2), one constructed bundle per rung.
+# --------------------------------------------------------------------------
+
+
+def _exported(
+    tmp_path: Path, rung: str
+) -> tuple[drawn.Constructed, list[dict[str, str]], dict[str, dict[str, str]]]:
+    constructed = drawn.build_repo(tmp_path / "repo", rung)
+    bundle_export.export_bundle(constructed.paths, tmp_path / "out")
+    rows = _read_csv(tmp_path / "out" / "quality_items.csv")
+    dictionary = {
+        entry["column"]: entry
+        for entry in _read_csv(tmp_path / "out" / DICTIONARY_FILE)
+        if entry["table"] == bundle_export.QUALITY_TABLE
+    }
+    return constructed, rows, dictionary
+
+
+def test_a_drawn_item_exports_its_terms_and_a_hand_written_one_its_named_hole(
+    tmp_path: Path,
+) -> None:
+    constructed, rows, dictionary = _exported(tmp_path, drawn.PERMISSIVE)
+    items = {}
+    for path in constructed.paths.suite_definitions.glob("*.json"):
+        for item in json.loads(path.read_text(encoding="utf-8"))["items"]:
+            items[item["item_id"]] = item
+    for row in rows:
+        item = items[row["item_id"]]
+        if row["provenance"] == "hand_written":
+            assert row["item_licence"] == "CC-BY-4.0"
+            assert row["item_content_hash"] == ""
+        else:
+            assert row["item_licence"] == item["licence"]
+            assert row["item_source"] == item["source"]
+            assert row["item_source_revision"] == item["source_revision"]
+            assert row["item_content_hash"] == item["content_hash"]
+        assert row["item_redaction"] == bundle_export.NOT_REDACTED
+        assert row["item_licence_file"] == row["item_source_key"] == ""
+        assert "item_content_hash" not in row["fields_not_carried"]
+    assert {row["provenance"] for row in rows} == {"hand_written", "public"}
+    reason = dictionary["item_content_hash"]["empty_cell"]
+    assert "hand-written item carries no content hash" in reason
+    assert "prompt_set_hash" in reason
+    assert "share-alike" in dictionary["item_licence_file"]["empty_cell"]
+
+
+def test_a_share_alike_row_names_its_licence_file(tmp_path: Path) -> None:
+    constructed, rows, _ = _exported(tmp_path, drawn.SHARE_ALIKE)
+    directory = constructed.paths.share_alike_dir
+    assert directory is not None
+    licence_file = (directory / drawn.SHARE_ALIKE_LICENCE / "LICENSE").as_posix()
+    by_source = defaultdict(set)
+    for row in rows:
+        by_source[row["item_source"]].add(row["item_licence_file"])
+    assert by_source[drawn.SHARE_ALIKE_SOURCE] == {licence_file}
+    assert by_source["PolyAI/minds14"] == by_source[""] == {""}
+    manifest = _read_csv(tmp_path / "out" / MANIFEST_FILE)
+    parts = {entry["part"]: entry for entry in manifest}
+    assert parts["share_alike_quality_rows"]["entries_read"] == "2"
+    assert parts["share_alike_suite_definitions"]["versions_read"] == (
+        "translation-mixed-domain-wmt24pp@1"
+    )
+
+
+def test_a_redacted_row_exports_its_absence_never_an_empty_prompt_alone(
+    tmp_path: Path,
+) -> None:
+    constructed, rows, dictionary = _exported(tmp_path, drawn.NO_REDISTRIBUTION)
+    redacted = [r for r in rows if r["item_redaction"] == "no_redistribution"]
+    assert len(redacted) == 2
+    for row, source_row in zip(redacted, constructed.source_rows, strict=True):
+        assert row["prompt"] == row["prompt_before_template"] == ""
+        assert row["expected_label"] == ""
+        assert row["item_source"] == drawn.CLOSED_SOURCE
+        assert row["item_source_revision"] == drawn.CLOSED_REVISION
+        assert row["item_source_key"] == source_row["path"]
+        assert len(row["item_content_hash"]) == 64
+    meaning = dictionary["item_redaction"]["meaning"]
+    assert "cannot be recomputed from the download alone" in meaning
+    for column in ("prompt", "expected_label"):
+        assert "no_redistribution" in dictionary[column]["empty_cell"]
+    [source] = [
+        s
+        for s in bundle_export.drawn_sources(
+            bundle_export.read_bundle(constructed.paths)
+        )
+        if s.source == drawn.CLOSED_SOURCE
+    ]
+    assert source.rung == bundle_export.RUNG_NO_REDISTRIBUTION
+    assert source.stable_source_key == "path"
+    assert source.content_fields == ("transcription", "intent_class")
+
+
+def test_every_provenance_value_exported_is_named_in_its_entry(
+    tmp_path: Path,
+) -> None:
+    bundle_export.export_bundle(bundle_export.default_bundle_paths(), tmp_path)
+    values = {row["provenance"] for row in _read_csv(tmp_path / "quality_items.csv")}
+    [entry] = [
+        e
+        for e in _read_csv(tmp_path / DICTIONARY_FILE)
+        if (e["table"], e["column"]) == (bundle_export.QUALITY_TABLE, "provenance")
+    ]
+    assert values == {"hand_written", "public"}
+    for value in bundle_export.PROVENANCE_VALUES:
+        assert value in entry["meaning"]
+
+
+def _edit_rows(path: Path, edit: Callable[[list[dict[str, Any]]], None]) -> None:
+    rows = _committed_rows(path)
+    edit(rows)
+    path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+
+
+def _edit_json(path: Path, edit: Callable[[dict[str, Any]], None]) -> None:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    edit(value)
+    path.write_text(json.dumps(value), encoding="utf-8")
+
+
+def _closed(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    return next(r for r in rows if r.get("item_source") == drawn.CLOSED_SOURCE)
+
+
+def _set(**changes: Any) -> Callable[[list[dict[str, Any]]], None]:
+    return lambda rows: _closed(rows).update(changes)
+
+
+_MINDS14_SNAPSHOT = "classification-banking-intents-minds14@1.json"
+_WMT_SNAPSHOT = "translation-mixed-domain-wmt24pp@1.json"
+
+
+@pytest.mark.parametrize(
+    ("rung", "case", "expected"),
+    [
+        (drawn.NO_REDISTRIBUTION, "prompt", "prompt is not null"),
+        (drawn.NO_REDISTRIBUTION, "no source", "names no item_source"),
+        (drawn.NO_REDISTRIBUTION, "no key", "lacks ['source_key']"),
+        (drawn.NO_REDISTRIBUTION, "hash", "disagrees with its suite definition"),
+        (drawn.NO_REDISTRIBUTION, "value", "item_redaction 'partial' is none of"),
+        (drawn.NO_REDISTRIBUTION, "unmarked", "withholds the item's text but"),
+        (drawn.NO_REDISTRIBUTION, "snapshot", "still carries ['prompt']"),
+        (drawn.NO_REDISTRIBUTION, "marker", "is not 'no_redistribution'"),
+        (drawn.NO_REDISTRIBUTION, "published", "still publishes the item's text"),
+        (drawn.NO_REDISTRIBUTION, "mixed", "more than one set of terms"),
+        (drawn.NO_REDISTRIBUTION, "no rule", "records no stable_source_key"),
+        (drawn.PERMISSIVE, "provenance", "provenance 'scraped' is none of"),
+        (drawn.PERMISSIVE, "unknown item", "holds no such item"),
+        (drawn.PERMISSIVE, "items", "`items` is not a list of objects"),
+        (drawn.SHARE_ALIKE, "no licence", "has no LICENSE"),
+        (drawn.SHARE_ALIKE, "misfiled set row", "but declares item_licence"),
+        (drawn.SHARE_ALIKE, "misfiled main row", "sits among the CC-BY 4.0 rows"),
+        (drawn.SHARE_ALIKE, "both", "cited from both the CC-BY 4.0 rows"),
+        (drawn.SHARE_ALIKE, "two sets", "cited from two share-alike sets"),
+        (drawn.SHARE_ALIKE, "not a directory", "is not a share-alike directory"),
+    ],
+)
+def test_item_terms_the_export_cannot_state_faithfully_are_refused(
+    tmp_path: Path, rung: str, case: str, expected: str
+) -> None:
+    constructed = drawn.build_repo(tmp_path / "repo", rung)
+    paths = constructed.paths
+    rows = paths.quality_rows
+    snapshots = paths.suite_definitions
+    assert paths.share_alike_dir is not None
+    share = paths.share_alike_dir / drawn.SHARE_ALIKE_LICENCE
+
+    def redact_snapshot_item(**changes: Any) -> Callable[[dict[str, Any]], None]:
+        return lambda definition: definition["items"][0].update(changes)
+
+    def mixed(rows: list[dict[str, Any]]) -> None:
+        other = [r for r in rows if r.get("item_source") == drawn.CLOSED_SOURCE][1]
+        other.update(item_redaction="not_redacted", item_source_key=None)
+
+    if case == "prompt":
+        _edit_rows(rows, _set(prompt="the text"))
+    elif case == "no source":
+        _edit_rows(rows, _set(item_source=None))
+    elif case == "no key":
+        _edit_json(
+            snapshots / _MINDS14_SNAPSHOT,
+            lambda d: d["items"][0].pop("source_key"),
+        )
+    elif case == "hash":
+        _edit_rows(rows, _set(item_content_hash="0" * 64))
+    elif case == "value":
+        _edit_rows(rows, _set(item_redaction="partial"))
+    elif case == "unmarked":
+        _edit_rows(
+            rows,
+            lambda rs: [
+                r.pop("item_redaction")
+                for r in rs
+                if r.get("item_source") == drawn.CLOSED_SOURCE
+            ],
+        )
+    elif case == "snapshot":
+        _edit_json(snapshots / _MINDS14_SNAPSHOT, redact_snapshot_item(prompt="x"))
+    elif case == "marker":
+        _edit_json(snapshots / _MINDS14_SNAPSHOT, redact_snapshot_item(redaction="yes"))
+    elif case == "published":
+        _edit_json(
+            snapshots / _MINDS14_SNAPSHOT,
+            lambda d: [item.pop("redaction") for item in d["items"]],
+        )
+    elif case == "mixed":
+        _edit_rows(rows, mixed)
+        _edit_json(
+            snapshots / _MINDS14_SNAPSHOT,
+            lambda d: d["items"][1].pop("redaction"),
+        )
+    elif case == "no rule":
+        _edit_json(snapshots / _MINDS14_SNAPSHOT, lambda d: d.pop("selection_rule"))
+    elif case == "provenance":
+        _edit_rows(rows, lambda rs: rs[0].update(provenance="scraped"))
+    elif case == "unknown item":
+        _edit_rows(rows, lambda rs: rs[0].update(item_id="no-such-item"))
+    elif case == "items":
+        _edit_json(snapshots / _MINDS14_SNAPSHOT, lambda d: d.update(items={}))
+    elif case == "no licence":
+        (share / "LICENSE").unlink()
+    elif case == "misfiled set row":
+        _edit_rows(
+            share / "quality-reference.jsonl",
+            lambda rs: rs[0].update(item_licence="CC-BY-4.0"),
+        )
+    elif case == "misfiled main row":
+        _edit_rows(
+            rows, lambda rs: rs[-1].update(item_licence=drawn.SHARE_ALIKE_LICENCE)
+        )
+    elif case == "both":
+        moved = _committed_rows(share / "quality-reference.jsonl")[0]
+        moved["item_licence"] = "Apache-2.0"
+        _edit_rows(rows, lambda rs: rs.append(moved))
+        (snapshots / _WMT_SNAPSHOT).write_bytes(
+            (share / "suite-definitions" / _WMT_SNAPSHOT).read_bytes()
+        )
+    elif case == "two sets":
+        twin = paths.share_alike_dir / "CC-BY-SA-3.0"
+        shutil.copytree(share, twin)
+        _edit_rows(
+            twin / "quality-reference.jsonl",
+            lambda rs: [r.update(item_licence="CC-BY-SA-3.0") for r in rs],
+        )
+    elif case == "not a directory":
+        shutil.rmtree(paths.share_alike_dir)
+        paths.share_alike_dir.write_text("", encoding="utf-8")
+
+    with pytest.raises(ExportError) as error:
+        bundle_export.build_export(paths)
+        bundle_export.drawn_sources(bundle_export.read_bundle(paths))
+    assert expected in str(error.value)

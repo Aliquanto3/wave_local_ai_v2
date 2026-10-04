@@ -237,7 +237,8 @@ plus the comparison and leader-set records), a typed Parquet copy of each
 table (the CSV is normative; the build fails if a copy differs from its CSV in
 any cell), `LICENSE`, `LICENSE-DATA`,
 `CITATION.cff` stamped with the release's commit, and a README naming the
-release, the commit, the bundle schema version and what each file is. The
+release, the commit, the bundle schema version and what each file is, with
+the drawn items' terms repeated from `LICENSE-DATA` section 2. The
 release build regenerates the tables from the bundle at the tagged commit
 and refuses to publish an archive whose tables differ, or whose files point
 at a path only a clone holds (`scripts/assemble_release_archive.py`).

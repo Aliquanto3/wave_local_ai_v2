@@ -12,13 +12,23 @@ that file from the checked-out commit and refuses it when it would mislead:
   `NOTICE.md`;
 - `LICENSE`, `LICENSE-DATA`, `CITATION.cff` with the commit stamped in, and a
   README naming the release, the commit, the bundle schema version read, what
-  each file is and how to cite the release.
+  each file is, how to cite the release, and the drawn items' terms:
+  `LICENSE-DATA` section 2 repeated, each share-alike set's licence file, and
+  for each source whose items may not be redistributed, how to obtain their
+  text and join it to the rows.
+
+`build` refuses a drawn source `LICENSE-DATA` section 2 does not name at the
+rung the bundle's layout puts it on (a share-alike set, redacted items, or
+neither: permissive).
 
 `verify` reopens the zip and fails on any of: a missing or extra file, a
 bundle file that differs from the repository's, a table that differs from the
 export regenerated from the repository (a hand-edited table), a version or
-commit that disagrees with the tag, and a file naming a repository path the
-archive does not hold. `build` runs `verify` on what it wrote.
+commit that disagrees with the tag, a file naming a repository path the
+archive does not hold, a suite-definition item marked redacted that still
+carries a field that could hold its text, and any code file (the archive ships
+no script that fetches a third party's corpus). `build` runs `verify` on what
+it wrote.
 
 With `--parquet` (the `release-build` job always passes it; it needs the `release`
 dependency group's `pyarrow`), the archive also holds one typed Parquet copy
@@ -37,6 +47,7 @@ import argparse
 import contextlib
 import csv
 import io
+import json
 import re
 import subprocess
 import sys
@@ -62,6 +73,17 @@ NOTICE_FILE = "NOTICE.md"
 # The licence text a directory holding drawn items carries beside them
 # (LICENSE-DATA section 2.2): it ships with the directory, as NOTICE.md does.
 DRAWN_LICENCE_TEXT = "LICENSE-APACHE-2.0.txt"
+# The archive ships data and documents only: no script, in particular none
+# that downloads a third party's corpus (owner answer to Q41).
+CODE_SUFFIXES = (".py", ".sh", ".ps1", ".bat", ".cmd", ".js", ".ipynb", ".exe")
+DRAWN_SECTION_START = "\n## 2. Drawn items\n"
+DRAWN_SECTION_END = "\n## 3."
+SUBSECTION = "\n### "
+SECTION_SOURCE_RE = re.compile(r"^- Source: `(?P<source>[^`]+)`", re.MULTILINE)
+SECTION_RUNG_RE = re.compile(
+    r"^- Rung: (?P<rung>permissive|share-alike|no redistribution)(?![\w-])",
+    re.MULTILINE,
+)
 ATTRIBUTION_START = "<!-- attribution:start -->"
 ATTRIBUTION_END = "<!-- attribution:end -->"
 
@@ -129,6 +151,8 @@ class NotShipped(NamedTuple):
 # is reachable only from a clone. Any other file naming them, and any file
 # naming any other path the archive does not hold, fails `verify`.
 _LICENCE = ("LICENSE-DATA",)
+# The paths LICENSE-DATA section 2 names, which the README repeats verbatim.
+_DRAWN_SECTION = ("LICENSE-DATA", README_FILE)
 # The roster's free-text `read_from` provenance notes, and their projection.
 _ROSTER_NOTES = ("aidd_docs/roster/models.json", "roster.csv")
 PATHS_NOT_SHIPPED: Mapping[str, NotShipped] = {
@@ -165,7 +189,7 @@ PATHS_NOT_SHIPPED: Mapping[str, NotShipped] = {
         "the bundle's refusal records; no table reads them yet",
     ),
     "aidd_docs/results/machines/": NotShipped(
-        _LICENCE,
+        _DRAWN_SECTION,
         "the per-machine locations the bundle is derived from; the bundle rows "
         "beside the tables are the same lines",
     ),
@@ -176,7 +200,7 @@ PATHS_NOT_SHIPPED: Mapping[str, NotShipped] = {
         "version on the repository's main branch",
     ),
     "src/wave_local_ai_v2/suite_data/": NotShipped(
-        _LICENCE,
+        _DRAWN_SECTION,
         "the suite definitions as stored in the source tree; their "
         "published snapshots are aidd_docs/results/suite-definitions/",
     ),
@@ -191,7 +215,7 @@ PATHS_NOT_SHIPPED: Mapping[str, NotShipped] = {
     ),
     "scripts/wmt24pp_suite.py": NotShipped(
         (
-            "LICENSE-DATA",
+            *_DRAWN_SECTION,
             "aidd_docs/results/suite-definitions/translation-mixed-domain-wmt24pp@1.json",
             f"{bundle_export.QUALITY_TABLE}.csv",
         ),
@@ -307,10 +331,84 @@ def bundle_files(repo_root: Path) -> list[str]:
     ):
         for path in (repo_root / directory).glob("*.json"):
             files.add(_relative(directory / path.name))
+    files |= _share_alike_files(repo_root, paths.share_alike_dir)
     missing = [name for name in sorted(files) if not (repo_root / name).is_file()]
     if missing:
         raise ArchiveError(f"bundle part(s) missing from the checkout: {missing}")
     return sorted(files)
+
+
+def _share_alike_files(repo_root: Path, share_alike_dir: Path | None) -> set[str]:
+    """Each share-alike set's licence file, rows, suite definitions and notice."""
+    if share_alike_dir is None or not (repo_root / share_alike_dir).is_dir():
+        return set()
+    files = set()
+    for child in sorted((repo_root / share_alike_dir).iterdir()):
+        if not child.is_dir():
+            continue
+        directory = share_alike_dir / child.name
+        for name in (
+            bundle_export.SHARE_ALIKE_LICENCE,
+            bundle_export.SHARE_ALIKE_ROWS,
+            NOTICE_FILE,
+        ):
+            if (child / name).is_file():
+                files.add(_relative(directory / name))
+        suites = directory / bundle_export.SHARE_ALIKE_SUITES
+        for path in (repo_root / suites).glob("*.json"):
+            files.add(_relative(suites / path.name))
+    return files
+
+
+def drawn_sources(repo_root: Path) -> list[bundle_export.DrawnSource]:
+    """The drawn sources the committed bundle holds, each at its layout's rung."""
+    try:
+        with contextlib.chdir(repo_root):
+            bundle = bundle_export.read_bundle(bundle_export.default_bundle_paths())
+            return bundle_export.drawn_sources(bundle)
+    except bundle_export.ExportError as error:
+        raise ArchiveError(f"export refused: {error}") from error
+
+
+def drawn_section(licence_data: str) -> str:
+    """`LICENSE-DATA` section 2's body, below its heading, as written."""
+    start = licence_data.find(DRAWN_SECTION_START)
+    end = licence_data.find(DRAWN_SECTION_END, start + 1)
+    if start < 0 or end < 0:
+        raise ArchiveError("LICENSE-DATA has no section 2 (Drawn items)")
+    return licence_data[start + len(DRAWN_SECTION_START) : end].strip()
+
+
+def declared_rungs(section: str) -> dict[str, str]:
+    """Each source a section 2 subsection names, keyed to the rung it states."""
+    rungs = {}
+    for part in section.split(SUBSECTION)[1:]:
+        source = SECTION_SOURCE_RE.search(part)
+        rung = SECTION_RUNG_RE.search(part)
+        if source is not None and rung is not None:
+            rungs[source.group("source")] = rung.group("rung")
+    return rungs
+
+
+def rung_problems(
+    section: str, sources: Sequence[bundle_export.DrawnSource]
+) -> list[str]:
+    """Each drawn source `LICENSE-DATA` section 2 does not name at its rung."""
+    declared = declared_rungs(section)
+    problems = []
+    for source in sources:
+        rung = declared.get(source.source)
+        if rung is None:
+            problems.append(
+                f"LICENSE-DATA section 2 names no subsection with source "
+                f"{source.source} and its rung, yet the bundle draws from it"
+            )
+        elif rung != source.rung:
+            problems.append(
+                f"LICENSE-DATA section 2 puts {source.source} on the {rung} rung, "
+                f"the bundle's layout on the {source.rung} rung"
+            )
+    return problems
 
 
 def export_files(repo_root: Path) -> dict[str, bytes]:
@@ -447,6 +545,23 @@ def _bundle_part_description(path: str) -> str:
         return "The licence notice for the directory it sits in."
     if path.rsplit("/", 1)[-1] == DRAWN_LICENCE_TEXT:
         return "The Apache-2.0 text of the drawn WMT24++ items the directory holds."
+    share_alike = paths.share_alike_dir
+    if share_alike is not None and path.startswith(f"{_relative(share_alike)}/"):
+        licence_id, rest = path[len(_relative(share_alike)) + 1 :].split("/", 1)
+        if rest == bundle_export.SHARE_ALIKE_LICENCE:
+            return (
+                f"The full text of licence {licence_id}, which governs this "
+                "share-alike set's suite definitions and rows."
+            )
+        if rest == bundle_export.SHARE_ALIKE_ROWS:
+            return (
+                f"Quality rows of items drawn under {licence_id}, one JSON object "
+                "per line, under that licence."
+            )
+        return (
+            f"A suite definition of items drawn under {licence_id}, under that "
+            "licence; rows cite it by suite_id and suite_version."
+        )
     described = {
         _relative(paths.runtime_rows): "The runtime rows, one JSON object per line.",
         _relative(paths.quality_rows): "The quality rows, one JSON object per line.",
@@ -472,6 +587,8 @@ def build_readme(
     bundle: Sequence[str],
     parquet: Sequence[str] = (),
     pyarrow_version: str | None = None,
+    drawn: str = "",
+    sources: Sequence[bundle_export.DrawnSource] = (),
 ) -> str:
     versions = manifest_versions(exports[bundle_export.MANIFEST_FILE])
     rows = [f"| `{name}` | {TABLE_DESCRIPTIONS[name]} |" for name in sorted(exports)]
@@ -531,12 +648,12 @@ def build_readme(
         "",
         "The code is MIT (`LICENSE`); the data is CC-BY 4.0 (`LICENSE-DATA`),",
         "except the items drawn from public benchmarks, which carry their own",
-        "terms (`LICENSE-DATA` section 2): MInDS-14's under CC BY 4.0 with its",
-        "attribution, WMT24++'s under Apache-2.0, whose text ships beside them",
-        "as `LICENSE-APACHE-2.0.txt`. Each row names its item's licence in",
-        "`item_licence`. `LICENSE-DATA` names the parts it covers by repository",
-        "path; the ones this archive holds sit at those same paths.",
+        "terms, stated source by source in `LICENSE-DATA` section 2 and",
+        "repeated below. Each row names its item's licence in `item_licence`.",
+        "`LICENSE-DATA` names the parts it covers by repository path; the ones",
+        "this archive holds sit at those same paths.",
         "",
+        *_drawn_items_section(drawn, sources),
         "## Repository paths named here but not shipped",
         "",
         "A file in this archive names each path below; none is needed to read",
@@ -551,6 +668,58 @@ def build_readme(
 # --------------------------------------------------------------------------
 # Building and verifying.
 # --------------------------------------------------------------------------
+
+
+def _drawn_items_section(
+    drawn: str, sources: Sequence[bundle_export.DrawnSource]
+) -> list[str]:
+    """`LICENSE-DATA` section 2 repeated, then what this archive's layout does
+    under it: each share-alike set's licence file, and one instruction per
+    source whose items' text this archive withholds."""
+    lines = [
+        "## Drawn items and their terms",
+        "",
+        "Repeated from `LICENSE-DATA` section 2, as written there:",
+        "",
+        drawn,
+        "",
+    ]
+    share_alike = [s for s in sources if s.rung == bundle_export.RUNG_SHARE_ALIKE]
+    if share_alike:
+        lines += ["### The share-alike sets in this archive", ""]
+        lines += [
+            f"- `{s.licence_file}` governs the items drawn from `{s.source}` at "
+            f"revision `{s.revision}` (`{s.licence}`): the suite definitions and "
+            "the rows beside it, and every row of "
+            f"`{bundle_export.QUALITY_TABLE}.csv` whose `item_licence_file` "
+            "names it."
+            for s in share_alike
+        ]
+        lines.append("")
+    withheld = [s for s in sources if s.rung == bundle_export.RUNG_NO_REDISTRIBUTION]
+    if withheld:
+        lines += [
+            "### Obtaining the text of the items this archive withholds",
+            "",
+            "This archive holds neither these items' text nor any code that",
+            "downloads it; you obtain each source yourself, under its terms,",
+            "and join it to the rows by hand:",
+            "",
+        ]
+        lines += [
+            f"- `{s.source}` at revision `{s.revision}` (`{s.licence}`): obtain "
+            "it from its publisher. For each row of "
+            f"`{bundle_export.QUALITY_TABLE}.csv` whose `item_source` is "
+            f"`{s.source}` and whose `item_redaction` is "
+            f"`{bundle_export.NO_REDISTRIBUTION}`, find the source row whose "
+            f"`{s.stable_source_key}` equals `item_source_key`. Its "
+            + ", ".join(f"`{field}`" for field in s.content_fields)
+            + " fields, hashed by the content-hash recipe above, give "
+            "`item_content_hash` when it is the row that was scored."
+            for s in withheld
+        ]
+        lines.append("")
+    return lines
 
 
 def _parquet_section(parquet: Sequence[str], pyarrow_version: str | None) -> list[str]:
@@ -579,6 +748,11 @@ def expected_files(
     readme = (repo_root / README_FILE).read_text(encoding="utf-8")
     exports = export_files(repo_root)
     bundle = bundle_files(repo_root)
+    drawn = drawn_section((repo_root / "LICENSE-DATA").read_text(encoding="utf-8"))
+    sources = drawn_sources(repo_root)
+    problems = rung_problems(drawn, sources)
+    if problems:
+        raise ArchiveError("; ".join(problems))
     files: dict[str, bytes] = dict(exports)
     copies = release_parquet.build_copies(exports) if parquet else {}
     files.update(copies)
@@ -595,6 +769,8 @@ def expected_files(
         bundle=bundle,
         parquet=sorted(copies),
         pyarrow_version=release_parquet.pyarrow_version() if parquet else None,
+        drawn=drawn,
+        sources=sources,
     ).encode("utf-8")
     return files
 
@@ -650,6 +826,36 @@ def clone_only_references(files: Mapping[str, bytes]) -> list[str]:
     return sorted(set(found))
 
 
+def redaction_problems(files: Mapping[str, bytes]) -> list[str]:
+    """Each suite-definition item marked redacted that is not shaped as one,
+    in every shipped snapshot (cited or not, share-alike sets included)."""
+    problems = []
+    for name in sorted(files):
+        if f"/{bundle_export.SHARE_ALIKE_SUITES}/" not in name or not name.endswith(
+            ".json"
+        ):
+            continue
+        try:
+            items = json.loads(files[name].decode("utf-8")).get("items", [])
+        except (ValueError, AttributeError):
+            problems.append(f"{name} is not a suite definition")
+            continue
+        for item in items if isinstance(items, list) else []:
+            problem = (
+                bundle_export.redacted_item_problem(item)
+                if isinstance(item, dict)
+                else None
+            )
+            if problem is not None:
+                problems.append(f"{name}: {problem}")
+    return problems
+
+
+def code_entries(files: Mapping[str, bytes]) -> list[str]:
+    """Each entry that is code: the archive ships data and documents only."""
+    return sorted(name for name in files if name.lower().endswith(CODE_SUFFIXES))
+
+
 def _identity_problems(files: Mapping[str, bytes], tag: str, commit: str) -> list[str]:
     version = tag[1:]
     readme = files.get(README_FILE, b"").decode("utf-8")
@@ -702,6 +908,8 @@ def verify(
         f"names a path only a clone holds: {ref}"
         for ref in clone_only_references(actual)
     ]
+    problems += redaction_problems(actual)
+    problems += [f"ships code, not data: {name}" for name in code_entries(actual)]
     compared: list[str] = []
     if parquet:
         found, compared = release_parquet.compare_copies(actual)

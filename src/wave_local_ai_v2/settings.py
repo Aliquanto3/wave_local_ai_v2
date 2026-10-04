@@ -23,6 +23,9 @@ DEFAULT_FICHE_REGISTRY_DIR = "aidd_docs/results/fiches"
 DEFAULT_SUITE_DEFINITIONS_DIR = "aidd_docs/results/suite-definitions"
 DEFAULT_COMPARISONS_DIR = "aidd_docs/results/comparisons"
 DEFAULT_LEADER_SETS_DIR = "aidd_docs/results/leader-sets"
+# Where items drawn from a share-alike source and their rows travel apart,
+# one `<licence id>/` per licence (LICENSE-DATA section 2, `bundle_export.py`).
+DEFAULT_SHARE_ALIKE_DIR = "aidd_docs/results/share-alike"
 # Where campaign declarations live, one `<campaign_id>.json` each: beside the
 # results, outside the committed stores (`campaigns.py`).
 DEFAULT_CAMPAIGNS_DIR = "aidd_docs/campaigns"

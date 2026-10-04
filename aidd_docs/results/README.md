@@ -258,7 +258,7 @@ uses the standard library alone.
 
 | File | One row per | What it holds |
 | ---- | ----------- | ------------- |
-| `quality_items.csv` | quality row | every row field, nested blocks as named columns (`sampling_seed`, `language_breakdown_en_accuracy`, `failure_counts_unparseable`, `verdict_verdict`, ...), the cited fiche as `fiche_*`, the cited roster entry's model fields as `roster_entry_*` plus `roster_file_version`, and the cited suite definition as `suite_definition_*` |
+| `quality_items.csv` | quality row | every row field, nested blocks as named columns (`sampling_seed`, `language_breakdown_en_accuracy`, `failure_counts_unparseable`, `verdict_verdict`, ...), the cited fiche as `fiche_*`, the cited roster entry's model fields as `roster_entry_*` plus `roster_file_version`, the cited suite definition as `suite_definition_*`, and each item's terms (`item_content_hash`, `item_source_key`, `item_redaction`, `item_licence_file`; `LICENSE-DATA` section 2) |
 | `runtime_aggregates.csv` | runtime row | the same, minus the suite; the per-repetition arrays (`repetitions`, `warmup_repetitions`, `verdict.reference_repetitions`) stay in the bundle |
 | `fiches.csv` | stored fiche | `fiche_hash` (the file name) and every fiche field |
 | `roster.csv` | roster entry | every entry field, launch flags, validated host, licence block and language claim included |

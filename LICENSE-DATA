@@ -97,6 +97,45 @@ Each drawn source is named below with its terms, the rung its licence puts
 it on (permissive, share-alike or no-redistribution), what that rung does to
 its items and rows, and the attribution it requires.
 
+What each rung does to a source's items and to the rows carrying them:
+
+- Permissive: the items and their rows ship unchanged beside the
+  hand-written ones, in the same files, under their source's licence and
+  with the notices that licence requires on redistribution.
+- Share-alike: the items and their rows ship apart, under their source's
+  licence. In the published results directory, the suite-definition
+  snapshots of a source under licence <licence id> sit in
+  `share-alike/<licence id>/suite-definitions/`, its rows in
+  `share-alike/<licence id>/quality-reference.jsonl`, and that licence's
+  full text in `share-alike/<licence id>/LICENSE`, none of them in the
+  CC-BY 4.0 `suite-definitions/` or `quality-reference.jsonl`. The exported
+  quality table names that licence file on each such row, in
+  `item_licence_file`.
+- No redistribution: the items' text is published nowhere. Each row
+  carrying such an item records its item text fields (`prompt`,
+  `prompt_before_template`, `expected_label`, `reference_output`) as null
+  and carries `item_redaction` `no_redistribution`, `item_content_hash`,
+  `item_source`, `item_source_revision` and `item_source_key`; its
+  suite-definition snapshot keeps the item's `item_id`, `language`,
+  `licence`, `source`, `source_revision`, `content_hash` and `source_key`
+  and drops its text. A reader obtains the text from the source, under its
+  terms, and joins it to the rows by `item_source_key`; such a row's score
+  cannot be recomputed from the published data alone. No script or other
+  code that downloads a source's corpus ships with the data.
+
+Every drawn item carries a content hash (`content_hash` on the item,
+`item_content_hash` in the exported quality table), with which a reader
+proves that a source row they fetched is the one that was scored. It is
+the SHA-256 hex digest of the UTF-8 bytes of the JSON object with keys
+`licence`, `source`, `source_revision` and `text`, serialised with sorted
+keys, separators `,` and `:` and non-ASCII characters written as
+themselves. `licence`, `source` and `source_revision` are the source's as
+the suite's selection rule records them (`selection_rule.benchmarks`);
+`text` lists, in the rule's `content_fields` order, each of those fields
+of the source row, NFC-normalised with every whitespace run collapsed to
+one space and leading and trailing whitespace dropped. It hashes the source
+row as the suite's loader wrote it, not the prompt the model was sent.
+
 ### 2.1 MInDS-14
 
 - Source: `PolyAI/minds14` on the Hugging Face Hub, at revision

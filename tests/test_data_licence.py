@@ -405,3 +405,33 @@ def test_every_notice_over_drawn_rows_names_each_drawn_source() -> None:
     machines = _read(REPO / "aidd_docs/results/machines" / NOTICE)
     for needle in ("PolyAI/minds14", "CC BY 4.0", "google/wmt24pp", APACHE_TEXT):
         assert needle in machines, needle
+
+
+def test_section_two_states_what_each_rung_does_and_the_content_hash_recipe() -> None:
+    """The release archive repeats this section verbatim, so a reader of the
+    download finds the share-alike layout, the redacted row's shape and the
+    recipe that proves a fetched source row is the one scored."""
+    section = _read(REPO / "LICENSE-DATA").split("## 2. Drawn items", 1)[1]
+    rules = section.split("\n### 2.1", 1)[0]
+    for needle in (
+        "- Permissive:",
+        "- Share-alike:",
+        "`share-alike/<licence id>/LICENSE`",
+        "`item_licence_file`",
+        "- No redistribution:",
+        "`item_redaction` `no_redistribution`",
+        "`item_source_key`",
+        "cannot be recomputed from the published data alone",
+        "No script or other\n  code that downloads",
+        "SHA-256 hex digest",
+        "`content_fields` order",
+        "NFC-normalised",
+    ):
+        assert needle in rules, needle
+    for subsection in section.split("\n## 3.", 1)[0].split("\n### ")[1:]:
+        assert re.search(r"^- Source: `[^`]+`", subsection, re.MULTILINE), subsection
+        assert re.search(
+            r"^- Rung: (permissive|share-alike|no redistribution)\.",
+            subsection,
+            re.MULTILINE,
+        ), subsection

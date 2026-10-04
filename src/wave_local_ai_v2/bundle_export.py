@@ -2,8 +2,9 @@
 
 `wave-local-ai-v2-export` reads the bundle parts -- the two
 `*-reference.jsonl` row files, `fiches/`, the roster file,
-`suite-definitions/`, and the analysis records in `comparisons/` and
-`leader-sets/` -- and writes, into a directory it is told:
+`suite-definitions/`, the analysis records in `comparisons/` and
+`leader-sets/`, and each share-alike set under `share-alike/<licence id>/`
+(LICENSE-DATA section 2) -- and writes, into a directory it is told:
 
 - `quality_items.csv`: one row per quality row;
 - `runtime_aggregates.csv`: one row per runtime row;
@@ -50,6 +51,7 @@ import math
 import sys
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from pathlib import Path
 from typing import Any
 
@@ -144,6 +146,13 @@ _ROW_EMPTY = (
     "The row records null for this field; if the row does not carry the field "
     "at all, the column name is also listed in its fields_not_carried."
 )
+# An item text field a row withholds because its source may not be
+# redistributed (LICENSE-DATA section 2): never an unexplained empty cell.
+_REDACTED_EMPTY = (
+    "the item may not be redistributed: item_redaction reads no_redistribution, "
+    "and the row names the item's source, revision, source key and content hash "
+    "in place of its text."
+)
 _RESOLVED_EMPTY = (
     "The cited record does not carry this field (the column name is then listed "
     "in the row's fields_not_carried), or records it as null."
@@ -237,7 +246,9 @@ _COMMON_FIELDS: dict[tuple[str, ...], FieldDoc] = {
         _ID,
     ),
     ("prompt_before_template",): FieldDoc(
-        "The prompt as the variant left it, before the engine's templating.", _TEXT
+        "The prompt as the variant left it, before the engine's templating.",
+        _TEXT,
+        f"The row records null or does not carry the field, or {_REDACTED_EMPTY}",
     ),
     ("engine_id",): FieldDoc(
         "Inference engine that produced the row, as the engine registry names "
@@ -284,7 +295,11 @@ _COMMON_FIELDS: dict[tuple[str, ...], FieldDoc] = {
         "Hardware and run fiche the row cites. Resolved into the fiche_* columns.",
         _SHA,
     ),
-    ("prompt",): FieldDoc("The prompt text the row was produced from.", _TEXT),
+    ("prompt",): FieldDoc(
+        "The prompt text the row was produced from.",
+        _TEXT,
+        f"The row records null or does not carry the field, or {_REDACTED_EMPTY}",
+    ),
     # Reproduction verdict.
     ("verdict", "verdict"): FieldDoc(
         "Reproduction verdict against a reference run: reproduced, "
@@ -525,7 +540,7 @@ _QUALITY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     ("expected_label",): FieldDoc(
         "Label the item should be routed to (exact-match suites).",
         _TEXT,
-        "Not an exact-match item.",
+        f"Not an exact-match item, or {_REDACTED_EMPTY}",
     ),
     ("predicted_label",): FieldDoc(
         "Label extracted from the model's answer.",
@@ -670,7 +685,12 @@ _QUALITY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
         "Content hash of the suite's item set, as the row states it.", _SHA
     ),
     ("language",): FieldDoc("Language of the item.", "ISO 639-1 code"),
-    ("provenance",): FieldDoc("Where the item comes from (hand_written).", _ID),
+    ("provenance",): FieldDoc(
+        "Where the item comes from: hand_written (written for this project, "
+        "CC-BY 4.0) or public (drawn from a public benchmark under its own "
+        "terms, which item_licence and item_source name).",
+        _ID,
+    ),
     ("contamination_risk",): FieldDoc(
         "Whether the item may appear in public training data.", _BOOL
     ),
@@ -891,7 +911,9 @@ _GRADED_FIELDS: dict[tuple[str, ...], FieldDoc] = {
         f"Not a graded row, {_PARTIAL_SCORE_DOC}",
     ),
     ("reference_output",): FieldDoc(
-        "Reference text the score was computed against.", _TEXT, _GRADED_DOC
+        "Reference text the score was computed against.",
+        _TEXT,
+        f"Not a graded row, or {_REDACTED_EMPTY}",
     ),
 }
 
@@ -1472,6 +1494,94 @@ ROSTER_FILE_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     ),
 }
 
+# --------------------------------------------------------------------------
+# Each quality row's item terms (LICENSE-DATA section 2): what a third party
+# may republish, item by item. Read from the row, else from the item its
+# suite definition holds (joined by `item_id`); a row and its item that
+# disagree refuse the export, which chooses neither.
+# --------------------------------------------------------------------------
+
+PROVENANCE_VALUES: tuple[str, ...] = ("hand_written", "public")
+NOT_REDACTED = "not_redacted"
+NO_REDISTRIBUTION = "no_redistribution"
+REDACTION_VALUES: tuple[str, ...] = (NOT_REDACTED, NO_REDISTRIBUTION)
+# The row fields that carry an item's text: null on a redacted row.
+ITEM_TEXT_ROW_FIELDS: tuple[str, ...] = (
+    "prompt",
+    "prompt_before_template",
+    "expected_label",
+    "reference_output",
+)
+# A redacted suite-definition item keeps these, and nothing else: its text
+# fields are dropped (an allow-list, so an unforeseen text field is refused).
+REDACTED_ITEM_KEPT: tuple[str, ...] = (
+    "item_id",
+    "language",
+    "licence",
+    "source",
+    "source_revision",
+    "content_hash",
+    "source_key",
+    "redaction",
+)
+_REDACTED_ITEM_METADATA = frozenset(
+    {"provenance", "contamination_risk", "target_language", "domain"}
+)
+# The row-file copies of the item terms; the item-terms source reads them.
+_ITEM_TERM_ROW_PATHS: frozenset[tuple[str, ...]] = frozenset(
+    {("item_content_hash",), ("item_source_key",), ("item_redaction",)}
+)
+SHARE_ALIKE_ROWS = "quality-reference.jsonl"
+SHARE_ALIKE_LICENCE = "LICENSE"
+SHARE_ALIKE_SUITES = "suite-definitions"
+
+ITEM_TERMS_FIELDS: dict[tuple[str, ...], FieldDoc] = {
+    ("content_hash",): FieldDoc(
+        "Content hash of the drawn item's source row: the SHA-256 over its "
+        "normalised text fields with its licence, source and revision, whose "
+        "recipe LICENSE-DATA section 2 states. As the row, else its suite "
+        "definition's item, records it; it proves a fetched source row is the "
+        "one scored.",
+        _SHA,
+        "A hand-written item carries no content hash: its text is published "
+        "whole in the row and the suite definition and covered by "
+        "prompt_set_hash.",
+    ),
+    ("source_key",): FieldDoc(
+        "Stable key of the item's row in its source (the field the suite's "
+        "selection rule names in stable_source_key), as the row, else its suite "
+        "definition's item, records it; a redacted row is joined to its source "
+        "by it.",
+        _ID,
+        "The item is not redacted: a hand-written item has no source, and a "
+        "drawn item's item_id names its source and key as <source>:<key>.",
+    ),
+    ("redaction",): FieldDoc(
+        f"{NOT_REDACTED}: the item's text is in the row and its suite "
+        f"definition. {NO_REDISTRIBUTION}: the item's source may not be "
+        "redistributed, so the row's item text fields ("
+        + ", ".join(ITEM_TEXT_ROW_FIELDS)
+        + ") and its suite definition's item text are withheld, and the row "
+        "names item_source, item_source_revision, item_source_key and "
+        "item_content_hash instead; the archive README says how to obtain the "
+        "text and join it by item_source_key. Such a row's score cannot be "
+        "recomputed from the download alone. A row that does not carry the "
+        f"field predates redaction and carries its text: {NOT_REDACTED}.",
+        _ID,
+        _NEVER_EMPTY,
+    ),
+    ("licence_file",): FieldDoc(
+        "Path, in the archive and the repository, of the licence file "
+        "governing this row and its item: the row and its item are drawn from a "
+        "share-alike source and travel under share-alike/<licence id>/ in the "
+        "results directory, outside the CC-BY 4.0 files.",
+        _ID,
+        "The row is not share-alike: its item is hand-written (CC-BY 4.0, "
+        "LICENSE-DATA) or drawn from a permissive or no-redistribution source, "
+        "whose terms item_licence names and LICENSE-DATA section 2 states.",
+    ),
+}
+
 # The roster-entry fields a row table resolves `roster_entry_id` into: the
 # model's identity. Launch flags and the validated host are the roster
 # table's, one join away by design of what a row cites.
@@ -1805,6 +1915,10 @@ class BundlePaths:
     suite_definitions: Path
     comparisons_dir: Path
     leader_sets_dir: Path
+    # One `<licence id>/` per share-alike licence, each holding that
+    # licence's `LICENSE`, its rows and its suite definitions; None or a
+    # missing directory holds no share-alike set.
+    share_alike_dir: Path | None = None
 
 
 def default_bundle_paths() -> BundlePaths:
@@ -1817,7 +1931,20 @@ def default_bundle_paths() -> BundlePaths:
         suite_definitions=Path(settings.DEFAULT_SUITE_DEFINITIONS_DIR),
         comparisons_dir=Path(settings.DEFAULT_COMPARISONS_DIR),
         leader_sets_dir=Path(settings.DEFAULT_LEADER_SETS_DIR),
+        share_alike_dir=Path(settings.DEFAULT_SHARE_ALIKE_DIR),
     )
+
+
+@dataclass(frozen=True)
+class ShareAlikeSet:
+    """Items drawn from share-alike sources under one licence, with their rows:
+    shipped apart from the CC-BY 4.0 files, under their own licence file."""
+
+    licence_id: str
+    directory: Path
+    licence_file: str
+    rows: list[dict[str, Any]]
+    suite_definitions: dict[tuple[str, str], dict[str, Any]]
 
 
 @dataclass(frozen=True)
@@ -1833,6 +1960,14 @@ class Bundle:
     suite_definitions: dict[tuple[str, str], dict[str, Any]]
     family_records: dict[str, dict[str, Any]]
     leader_set_records: dict[str, dict[str, Any]]
+    # Aligned with `quality_rows`: the licence file governing each row (a
+    # share-alike set's `LICENSE`), or None.
+    licence_files: tuple[str | None, ...] = ()
+    share_alike_sets: tuple[ShareAlikeSet, ...] = ()
+    # Each cited suite definition's items, keyed by `item_id`.
+    suite_items: dict[tuple[str, str], dict[str, dict[str, Any]]] = dataclass_field(
+        default_factory=dict
+    )
 
 
 def _read_row_file(path: Path) -> list[dict[str, Any]]:
@@ -1976,9 +2111,132 @@ def _check_record_pointers(
             )
 
 
+def redacted_item_problem(item: Mapping[str, Any]) -> str | None:
+    """Why a suite-definition item marked redacted is not shaped as one, or None.
+
+    A redacted item keeps `REDACTED_ITEM_KEPT` (every one present) and its
+    non-text metadata, and nothing else: no field that could hold its text.
+    An item not marked redacted is not this check's.
+    """
+    if "redaction" not in item:
+        return None
+    name = repr(item.get("item_id"))
+    if item["redaction"] != NO_REDISTRIBUTION:
+        return (
+            f"item {name}: redaction {item['redaction']!r} is not "
+            f"{NO_REDISTRIBUTION!r}, the only value a suite definition records"
+        )
+    missing = [key for key in REDACTED_ITEM_KEPT if item.get(key) in (None, "")]
+    extra = sorted(set(item) - set(REDACTED_ITEM_KEPT) - _REDACTED_ITEM_METADATA)
+    problems = []
+    if missing:
+        problems.append(f"lacks {missing}")
+    if extra:
+        problems.append(f"still carries {extra}, which may hold its text")
+    if not problems:
+        return None
+    return f"redacted item {name} " + " and ".join(problems)
+
+
+def _index_items(
+    definitions: Mapping[tuple[str, str], Mapping[str, Any]],
+) -> dict[tuple[str, str], dict[str, dict[str, Any]]]:
+    """Each definition's items keyed by `item_id`, refusing a malformed or a
+    badly redacted item."""
+    index: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}
+    for pair, definition in definitions.items():
+        items = definition.get("items", [])
+        if not isinstance(items, list) or not all(
+            isinstance(item, dict) for item in items
+        ):
+            raise ExportError(
+                f"suite {pair[0]}@{pair[1]}: `items` is not a list of objects"
+            )
+        index[pair] = {}
+        for item in items:
+            problem = redacted_item_problem(item)
+            if problem is not None:
+                raise ExportError(f"suite {pair[0]}@{pair[1]}: {problem}")
+            index[pair][str(item.get("item_id"))] = item
+    return index
+
+
+def _read_share_alike(directory: Path | None) -> tuple[ShareAlikeSet, ...]:
+    """Each `<licence id>/` set under `directory`, in name order; a set
+    without its licence file, or holding a row under another licence, refuses."""
+    if directory is None or not directory.exists():
+        return ()
+    if not directory.is_dir():
+        raise ExportError(f"{directory.as_posix()} is not a share-alike directory")
+    sets = []
+    for path in sorted(child for child in directory.iterdir() if child.is_dir()):
+        licence = path / SHARE_ALIKE_LICENCE
+        if not licence.is_file():
+            raise ExportError(
+                f"share-alike set {path.as_posix()} has no {SHARE_ALIKE_LICENCE}: "
+                "its items would travel without their licence"
+            )
+        rows = _read_row_file(path / SHARE_ALIKE_ROWS)
+        for row in rows:
+            if row.get("item_licence") != path.name:
+                raise ExportError(
+                    f"{_row_context('quality', row)} sits in share-alike set "
+                    f"{path.name} but declares item_licence "
+                    f"{row.get('item_licence')!r}"
+                )
+        sets.append(
+            ShareAlikeSet(
+                path.name,
+                path,
+                licence.as_posix(),
+                rows,
+                _read_suite_definitions(rows, path / SHARE_ALIKE_SUITES),
+            )
+        )
+    return tuple(sets)
+
+
+def _check_share_alike_filing(
+    main_rows: Iterable[Mapping[str, Any]],
+    main_definitions: Mapping[tuple[str, str], Any],
+    sets: Sequence[ShareAlikeSet],
+) -> None:
+    """Refuse a share-alike row or suite filed among the CC-BY 4.0 ones."""
+    licences = {entry.licence_id: entry for entry in sets}
+    for row in main_rows:
+        if row.get("item_licence") in licences:
+            raise ExportError(
+                f"{_row_context('quality', row)} declares share-alike licence "
+                f"{row['item_licence']!r} but sits among the CC-BY 4.0 rows, not "
+                f"in {licences[row['item_licence']].directory.as_posix()}"
+            )
+    for entry in sets:
+        shared = sorted(set(entry.suite_definitions) & set(main_definitions))
+        if shared:
+            raise ExportError(
+                f"suite {shared[0][0]}@{shared[0][1]} is cited from both the "
+                f"CC-BY 4.0 rows and share-alike set {entry.licence_id}"
+            )
+
+
 def read_bundle(paths: BundlePaths) -> Bundle:
     """Read every part, refusing anything that would leave a hole."""
-    quality_rows = _read_row_file(paths.quality_rows)
+    main_rows = _read_row_file(paths.quality_rows)
+    sets = _read_share_alike(paths.share_alike_dir)
+    quality_rows = [*main_rows, *(row for entry in sets for row in entry.rows)]
+    licence_files = (None,) * len(main_rows) + tuple(
+        entry.licence_file for entry in sets for _ in entry.rows
+    )
+    suite_definitions = _read_suite_definitions(main_rows, paths.suite_definitions)
+    _check_share_alike_filing(main_rows, suite_definitions, sets)
+    for entry in sets:
+        shared = sorted(set(entry.suite_definitions) & set(suite_definitions))
+        if shared:
+            raise ExportError(
+                f"suite {shared[0][0]}@{shared[0][1]} is cited from two "
+                f"share-alike sets, the second {entry.licence_id}"
+            )
+        suite_definitions.update(entry.suite_definitions)
     roster_version, roster_entries = _read_roster(paths.roster)
     family_records = _read_records(paths.comparisons_dir, KIND_FAMILY)
     leader_set_records = _read_records(paths.leader_sets_dir, KIND_LEADER_SET)
@@ -1989,11 +2247,12 @@ def read_bundle(paths: BundlePaths) -> Bundle:
         fiches=_read_fiches(paths.fiche_dir),
         roster_version=roster_version,
         roster_entries=roster_entries,
-        suite_definitions=_read_suite_definitions(
-            quality_rows, paths.suite_definitions
-        ),
+        suite_definitions=suite_definitions,
         family_records=family_records,
         leader_set_records=leader_set_records,
+        licence_files=licence_files,
+        share_alike_sets=sets,
+        suite_items=_index_items(suite_definitions),
     )
 
 
@@ -2026,7 +2285,9 @@ def _model_fields(entry: Mapping[str, Any]) -> dict[str, Any]:
     return {key: entry[key] for key in _MODEL_FIELD_KEYS if key in entry}
 
 
-def _row_sources(kind: str, row: dict[str, Any], bundle: Bundle) -> list[Source]:
+def _row_sources(
+    kind: str, row: dict[str, Any], bundle: Bundle, licence_file: str | None = None
+) -> list[Source]:
     context = _row_context(kind, row)
     fiche = _resolve(
         row, "fiche_hash", bundle.fiches.get(str(row.get("fiche_hash"))), context
@@ -2045,7 +2306,7 @@ def _row_sources(kind: str, row: dict[str, Any], bundle: Bundle) -> list[Source]
             ROW_FIELDS,
             row,
             _ROW_EMPTY,
-            _EXCLUDED_ROW_PATHS,
+            _EXCLUDED_ROW_PATHS | _ITEM_TERM_ROW_PATHS,
             _JSON_CELL_ROW_FIELDS,
         ),
         Source("fiche_", "fiche via fiche_hash", FICHE_FIELDS, fiche, _RESOLVED_EMPTY),
@@ -2066,7 +2327,112 @@ def _row_sources(kind: str, row: dict[str, Any], bundle: Bundle) -> list[Source]
     ]
     if kind == "quality":
         sources.append(_suite_source(row, bundle))
+        sources.append(
+            Source(
+                "item_",
+                "item terms via the row and its suite definition",
+                ITEM_TERMS_FIELDS,
+                _item_terms(row, bundle, licence_file, context),
+                _NEVER_EMPTY,
+            )
+        )
     return sources
+
+
+def _suite_item(
+    row: Mapping[str, Any], bundle: Bundle, context: str
+) -> Mapping[str, Any] | None:
+    """The item the row scores, as its suite definition holds it; None when
+    the row cites no suite."""
+    if row.get("suite_id") is None or row.get("suite_version") is None:
+        return None
+    items = bundle.suite_items.get((str(row["suite_id"]), str(row["suite_version"])))
+    item = None if items is None else items.get(str(row.get("item_id")))
+    if item is None:
+        raise ExportError(
+            f"{context}: suite {row['suite_id']}@{row['suite_version']} holds no "
+            "such item"
+        )
+    return item
+
+
+def _agreed(
+    row: Mapping[str, Any],
+    item: Mapping[str, Any] | None,
+    row_key: str,
+    item_key: str,
+    context: str,
+) -> Any:
+    """The value the row records, else its item: refused when the two differ."""
+    from_row = row.get(row_key)
+    from_item = None if item is None else item.get(item_key)
+    if from_row is not None and from_item is not None and from_row != from_item:
+        raise ExportError(
+            f"{context}: {row_key} {from_row!r} disagrees with its suite "
+            f"definition's {item_key} {from_item!r}"
+        )
+    return from_row if from_row is not None else from_item
+
+
+def _item_terms(
+    row: Mapping[str, Any],
+    bundle: Bundle,
+    licence_file: str | None,
+    context: str,
+) -> dict[str, Any]:
+    """The row's item terms, read from the row and its suite item; a provenance
+    the dictionary does not name, or a redaction short of its shape, refuses."""
+    if "provenance" in row and row["provenance"] not in PROVENANCE_VALUES:
+        raise ExportError(
+            f"{context}: provenance {row['provenance']!r} is none of "
+            f"{list(PROVENANCE_VALUES)}"
+        )
+    item = _suite_item(row, bundle, context)
+    redaction = row.get("item_redaction", NOT_REDACTED)
+    if redaction not in REDACTION_VALUES:
+        raise ExportError(
+            f"{context}: item_redaction {redaction!r} is none of "
+            f"{list(REDACTION_VALUES)}"
+        )
+    terms = {
+        "content_hash": _agreed(
+            row, item, "item_content_hash", "content_hash", context
+        ),
+        "source_key": _agreed(row, item, "item_source_key", "source_key", context),
+        "redaction": redaction,
+        "licence_file": licence_file,
+    }
+    item_redacted = item is not None and item.get("redaction") == NO_REDISTRIBUTION
+    if redaction == NOT_REDACTED:
+        if item_redacted:
+            raise ExportError(
+                f"{context}: its suite definition withholds the item's text but "
+                "the row is not marked item_redaction no_redistribution"
+            )
+        return terms
+    problems = [
+        f"{name} is not null"
+        for name in ITEM_TEXT_ROW_FIELDS
+        if row.get(name) is not None
+    ]
+    problems += [
+        f"names no {name}"
+        for name, value in (
+            ("item_content_hash", terms["content_hash"]),
+            ("item_source_key", terms["source_key"]),
+            ("item_source", row.get("item_source")),
+            ("item_source_revision", row.get("item_source_revision")),
+        )
+        if value in (None, "")
+    ]
+    if item is not None and not item_redacted:
+        problems.append("its suite definition still publishes the item's text")
+    if problems:
+        raise ExportError(
+            f"{context}: marked item_redaction no_redistribution but "
+            + "; ".join(problems)
+        )
+    return terms
 
 
 def _suite_source(row: dict[str, Any], bundle: Bundle) -> Source:
@@ -2168,7 +2534,14 @@ def build_tables(bundle: Bundle) -> dict[str, Table]:
     """The five tables, keyed by table name, in `TABLES` order."""
     quality = build_table(
         QUALITY_TABLE,
-        [_row_sources("quality", row, bundle) for row in bundle.quality_rows],
+        [
+            _row_sources("quality", row, bundle, licence_file)
+            for row, licence_file in zip(
+                bundle.quality_rows,
+                bundle.licence_files or (None,) * len(bundle.quality_rows),
+                strict=True,
+            )
+        ],
     )
     runtime = build_table(
         RUNTIME_TABLE,
@@ -2450,7 +2823,128 @@ def build_manifest(paths: BundlePaths, bundle: Bundle) -> list[tuple[str, ...]]:
             "record_version",
             _record_versions(bundle.leader_set_records.values()),
         ),
+        *_share_alike_manifest(bundle.share_alike_sets),
     ]
+
+
+def _share_alike_manifest(sets: Iterable[ShareAlikeSet]) -> list[tuple[str, ...]]:
+    """Two parts per share-alike set: its rows and its suite definitions."""
+    entries: list[tuple[str, ...]] = []
+    for entry in sets:
+        entries += [
+            (
+                "share_alike_quality_rows",
+                (entry.directory / SHARE_ALIKE_ROWS).as_posix(),
+                str(len(entry.rows)),
+                "schema_version",
+                declared_versions(entry.rows),
+            ),
+            (
+                "share_alike_suite_definitions",
+                (entry.directory / SHARE_ALIKE_SUITES).as_posix(),
+                str(len(entry.suite_definitions)),
+                "suite_id@suite_version",
+                ";".join(f"{a}@{b}" for a, b in sorted(entry.suite_definitions)),
+            ),
+        ]
+    return entries
+
+
+# --------------------------------------------------------------------------
+# The drawn sources a bundle holds, each with the rung its layout puts it on.
+# --------------------------------------------------------------------------
+
+RUNG_PERMISSIVE = "permissive"
+RUNG_SHARE_ALIKE = "share-alike"
+RUNG_NO_REDISTRIBUTION = "no redistribution"
+
+
+@dataclass(frozen=True)
+class DrawnSource:
+    """One public source the bundle's rows draw items from, as they record it."""
+
+    source: str
+    revision: str
+    licence: str
+    rung: str
+    licence_file: str | None
+    stable_source_key: str | None
+    content_fields: tuple[str, ...]
+
+
+def drawn_sources(bundle: Bundle) -> list[DrawnSource]:
+    """Each (source, revision) the quality rows draw from, in name order.
+
+    The rung is read from the layout, never from the licence name: rows in a
+    share-alike set are share-alike, redacted rows are no redistribution, the
+    rest permissive. One source holding two licences, two licence files, or
+    redacted and unredacted items refuses; so does a no-redistribution source
+    whose suite records no stable source key or content fields to join by.
+    """
+    seen: dict[tuple[str, str], list[tuple[Any, Any, Any, Any]]] = {}
+    for row, licence_file in zip(
+        bundle.quality_rows,
+        bundle.licence_files or (None,) * len(bundle.quality_rows),
+        strict=True,
+    ):
+        if row.get("item_source") is None:
+            continue
+        key = (str(row["item_source"]), str(row.get("item_source_revision")))
+        rule = bundle.suite_definitions.get(
+            (str(row.get("suite_id")), str(row.get("suite_version"))), {}
+        ).get("selection_rule")
+        seen.setdefault(key, []).append(
+            (
+                row.get("item_licence"),
+                licence_file,
+                row.get("item_redaction", NOT_REDACTED),
+                rule if isinstance(rule, dict) else None,
+            )
+        )
+    sources = []
+    for (source, revision), facts in sorted(seen.items()):
+        licences = {fact[0] for fact in facts}
+        files = {fact[1] for fact in facts}
+        redactions = {fact[2] for fact in facts}
+        rules = [fact[3] for fact in facts if fact[3] is not None]
+        name = f"source {source} at {revision}"
+        if len(licences) > 1 or len(files) > 1 or len(redactions) > 1:
+            raise ExportError(
+                f"{name} is published under more than one set of terms "
+                f"(licences {sorted(map(str, licences))}, licence files "
+                f"{sorted(map(str, files))}, redaction {sorted(redactions)}): "
+                "one source, one rung"
+            )
+        licence_file = files.pop()
+        redacted = redactions.pop() == NO_REDISTRIBUTION
+        if licence_file is not None and redacted:
+            raise ExportError(f"{name} is both share-alike and redacted")
+        rule = rules[0] if rules else {}
+        stable_key = rule.get("stable_source_key")
+        content_fields = rule.get("content_fields") or []
+        if redacted and not (stable_key and content_fields):
+            raise ExportError(
+                f"{name} is redacted but its suite records no stable_source_key "
+                "and content_fields to join it back by"
+            )
+        sources.append(
+            DrawnSource(
+                source=source,
+                revision=revision,
+                licence=str(licences.pop()),
+                rung=(
+                    RUNG_SHARE_ALIKE
+                    if licence_file is not None
+                    else RUNG_NO_REDISTRIBUTION
+                    if redacted
+                    else RUNG_PERMISSIVE
+                ),
+                licence_file=licence_file,
+                stable_source_key=stable_key,
+                content_fields=tuple(str(field) for field in content_fields),
+            )
+        )
+    return sources
 
 
 def _record_versions(records: Iterable[Mapping[str, Any]]) -> str:
@@ -2545,6 +3039,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--leader-sets-dir", type=Path, default=defaults.leader_sets_dir
     )
+    parser.add_argument(
+        "--share-alike-dir", type=Path, default=defaults.share_alike_dir
+    )
     return parser
 
 
@@ -2559,6 +3056,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         suite_definitions=args.suite_definitions,
         comparisons_dir=args.comparisons_dir,
         leader_sets_dir=args.leader_sets_dir,
+        share_alike_dir=args.share_alike_dir,
     )
     try:
         counts = export_bundle(paths, args.output_dir)
