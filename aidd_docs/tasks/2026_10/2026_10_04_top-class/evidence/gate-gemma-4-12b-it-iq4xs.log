@@ -1,0 +1,12 @@
+# preconditions 2026-10-04T05:53:05+02:00 HEAD 49f46068fa3ce91b64fc01d15d9449861f7e8a08
+0 MiB
+Informationÿ: aucune tƒche en service ne correspond aux critŠres sp‚cifi‚s.
+D:             1000186310656 929917730816 70268579840  93% /d
+listeners on 8080: 0
+free if downloaded: 63892845760 bytes
+gemma-4-12b-it-iq4xs: passed; record appended to aidd_docs\roster\candidate-records.jsonl
+free after: 63892844544 bytes
+exit 0
+# after 2026-10-04T05:54:54+02:00
+0 MiB
+InformationÂ : aucune tÃ¢che en service ne correspond aux critÃ¨res spÃ©cifiÃ©s.

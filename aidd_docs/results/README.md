@@ -713,7 +713,7 @@ which names that same suite. That refusal is the current coverage reading
 the record appears here once the last entry resolves, and until then the
 overview's coverage absence above stays true.
 
-## Roster composition: one unlabelled single-family class (2026-10-04)
+## Roster composition: every class spans two families (2026-10-04)
 
 Methodology 13's composition rule is a command, not prose:
 `uv run wave-local-ai-v2-composition-check [--roster <models.json>]`
@@ -758,19 +758,19 @@ roster is deliberately not labelled here: the search that would justify a
 ladder label or a MoE absence is the per-class stories' work. A check that
 passed on this roster would not be checking the rule. Since `roster_version` 7
 the `~0.5B` class passes, since `roster_version` 8 the `~2B` class, and since
-`roster_version` 9 the `~4B` class (their sections below); the top class still
-fails as it did.
+`roster_version` 9 the `~4B` class, and since `roster_version` 10 the top
+class (their sections below): the check now passes on the shipped roster.
 `tests/test_composition_check.py` fails when the block below drifts from the
 command's output.
 
 <!-- composition-check:start -->
 ```text
-Roster composition: aidd_docs/roster/models.json (roster_version 9)
+Roster composition: aidd_docs/roster/models.json (roster_version 10)
 Size classes, banded on total parameters: ~0.5B < 1,000,000,000 <= ~2B < 3,000,000,000 <= ~4B < 6,000,000,000 <= ~8B-and-up
   ~0.5B: 2 entries; families: ibm, qwen; dense: yes; MoE: no; label: none; MoE sought: yes; MoE absence reason: sought, none found: no MoE GGUF below 1B total parameters in the epic's candidate families (Granite, LFM2, Gemma 4, Ministral, Phi); the smallest MoE the search found is Granite 3.1 1B-A400M (1,334,628,352 total, ~2B) (GGUF spike which-candidate-ggufs-exist-per-size-class-and-does-the-pinned-build-load-them, read 2026-10-02)
   ~2B: 3 entries; families: ibm, liquid, qwen; dense: yes; MoE: yes (granite-3.1-1b-a400m-instruct-q8); label: none; MoE sought: yes; MoE absence reason: n/a
   ~4B: 2 entries; families: ibm, qwen; dense: yes; MoE: yes (granite-3.1-3b-a800m-instruct-q4km); label: none; MoE sought: yes; MoE absence reason: n/a
-  ~8B-and-up: 1 entry; families: qwen; dense: no; MoE: yes (qwen3.6-35b-a3b-ud-iq4xs); label: none; MoE sought: yes; MoE absence reason: n/a
+  ~8B-and-up: 2 entries; families: google, qwen; dense: yes; MoE: yes (qwen3.6-35b-a3b-ud-iq4xs); label: none; MoE sought: yes; MoE absence reason: n/a
 Entries
   qwen3.6-35b-a3b-ud-iq4xs: ~8B-and-up; family qwen; moe; 34,660,610,688 total params; 17,730,509,792 bytes on disk; licence Apache-2.0, client commercial use yes, read 2026-10-02
   qwen3-0.6b-q8: ~0.5B; family qwen; dense; 596,049,920 total params; 639,446,688 bytes on disk; licence Apache-2.0, client commercial use yes, read 2026-10-02
@@ -780,16 +780,17 @@ Entries
   lfm2.5-1.2b-instruct-q8: ~2B; family liquid; dense; 1,170,340,608 total params; 1,246,253,888 bytes on disk; licence lfm1.0, client commercial use no, read 2026-10-04
   granite-3.1-1b-a400m-instruct-q8: ~2B; family ibm; moe; 1,334,628,352 total params; 1,422,239,776 bytes on disk; licence apache-2.0, client commercial use yes, read 2026-10-04
   granite-3.1-3b-a800m-instruct-q4km: ~4B; family ibm; moe; 3,298,793,472 total params; 2,016,888,384 bytes on disk; licence apache-2.0, client commercial use yes, read 2026-10-04
-Failures (1)
-  size class ~8B-and-up: spans one family (qwen) without the single-family-ladder label
-FAIL: 1 failure(s)
+  gemma-4-12b-it-iq4xs: ~8B-and-up; family google; dense; 11,907,350,576 total params; 6,375,734,080 bytes on disk; licence apache-2.0, client commercial use yes, read 2026-10-04
+PASS: every published size class spans two families or says it does not
 ```
 <!-- composition-check:end -->
 
 **When to run it.** Before a roster table is published, run the check and
 publish its output beside the table; a class it names is either fixed in the
 roster or published with the failure stated. It is not part of the merge gate
-or CI while the shipped roster is expected to fail it.
+or CI: it was kept out while the shipped roster was expected to fail it, and
+wiring it in now that it passes (`roster_version` 10) is open work, not done
+here.
 
 ### The ~0.5B class: Granite 4.0 H 350M beside Qwen3-0.6B (2026-10-04)
 
@@ -1032,6 +1033,79 @@ opens its German sentence with the French article "Un", and `en-fr-05` writes
 "L'bureau". The weakest reading is FR->DE at 0.566 on seven items, an indicative figure
 rather than a contradiction. The claim stays on the entry either way, as the epic
 decides.
+
+### The top class: Gemma 4 12B beside Qwen3.6-35B-A3B (2026-10-04)
+
+**The class spans two families, dense and MoE.** `gemma-4-12b-it-iq4xs` (Google,
+`gemma4`, dense, 11,907,350,576 total parameters, 6,375,734,080 bytes on disk) entered
+the roster at `roster_version` 10 from its candidate-gate pass record
+(`aidd_docs/roster/candidate-records.jsonl`, 2026-10-04) beside the MoE flagship
+`qwen3.6-35b-a3b-ud-iq4xs`. It was the first candidate in gate order (smallest download
+first). It is non-Qwen and dense, and the flagship already represents MoE, so its pass
+ends the search (owner answers Q127 (a) and Q129 (a)): the Gemma 4 26B-A4B was not
+tried.
+
+| Candidate, in gate order | Pin | Outcome |
+| --- | --- | --- |
+| Gemma 4 12B it (`gemma4`, dense) | `unsloth/gemma-4-12b-it-GGUF@fc034cfff751157913579611efad8462ac1be606`, `gemma-4-12b-it-IQ4_XS.gguf` | **passed** every step; entered as the class's second family and its dense model |
+| Gemma 4 26B-A4B it (`gemma4`, MoE) | `unsloth/gemma-4-26B-A4B-it-GGUF@c099eb48e663fd284577b04978a94ffccb261841`, `gemma-4-26B-A4B-it-UD-IQ4_XS.gguf` | not tried: a non-Qwen dense model had passed and the flagship represents MoE (Q129 (a)) |
+
+No candidate was refused or deferred, so the pinned build `b10537` held and no
+build-upgrade question arises. GPT-OSS 20B, Qwen3-Coder-30B-A3B and Mellum2-12B-A2.5B
+stay out of the shortlist, being outside the epic's families (Q12).
+
+**Quant: not the flagship's.** The flagship is `UD-IQ4_XS`; no packager ships
+`UD-IQ4_XS` for the Gemma 4 12B (unsloth's repository at its pinned revision lists
+`IQ4_XS`, `IQ4_NL` and `UD-*` files at other bit widths only), so the 12B is taken at
+`IQ4_XS`, the nearest: the same `IQ4_XS` base type without Unsloth Dynamic's per-layer
+upcasting. A gap between the two entries is therefore a family, size and dense-versus-MoE
+difference read through a small quant difference, not a family difference alone.
+Google ships no `IQ4_XS` GGUF; the file is unsloth's quantization of Google's weights.
+
+**Licence.** `apache-2.0` (the hub's identifier, read off unsloth's card at its pinned
+revision, which carries no LICENSE file; the card links Google's Gemma 4 licence page,
+Apache 2.0), client-side commercial use permitted.
+
+**Dense and MoE.** Dense: the gate found no `gemma4.expert_count` key in the file's
+header, so the entry is `dense` and launches with no `--n-cpu-moe` and `load_mode`
+`auto`, as the dense Qwen entries do. MoE: the flagship, so the class's declaration is
+unchanged (`moe_sought: true`, `moe_entry: qwen3.6-35b-a3b-ud-iq4xs`). The flagship's
+entry is untouched: it keeps its `revision: "main"` pin and its byte-identical launch
+(the tech-debt row owns that fix), and its hand-written `expert_count: 40` (its layer
+count; its header says 256 experts) stays the open point it was.
+
+**Launch on the laptop's 6 GB GPU: the declared value launched, on a full GPU.** The
+gate's load ran the declared block (`-ngl 99`, 32,768-token context, `-t 8`, no
+`--n-cpu-moe`) and the server came up and answered `/props` and the thinking probe, so
+no load refusal occurred and no stepped-down `-ngl` was needed: 99 is the value that
+launched. The weights alone (6.38 GB) exceed the GPU's 6,144 MiB, and the dedicated
+memory nvidia-smi reported while the server was up was 5,959 MiB (sampled every 2 s,
+`gate-gemma-4-12b-it-iq4xs.vram.csv` in the story's evidence), so part of the model
+necessarily sits outside dedicated VRAM, in the shared system memory the Windows driver
+falls back to. The model loads and answers; its speed on this laptop is not a
+full-offload figure.
+
+**The GGUF spike's architecture at this class** (owner answer Q125 (a)):
+
+- `gemma4`: loaded, closed by the pass record of `gemma-4-12b-it-iq4xs`
+  (`llama_cpp_build` `b10537`, `chat_template_hash`
+  `aa3185dfc65051046349995de1cfc2fbb275491b9a3832b71595f1ff5b31d61b`, `thinking`
+  declared `{"chat_template_kwargs": {"enable_thinking": false}}` and verified: the
+  template renders differently with and without it). The 12B also exercised the
+  `gemma4_unified` conversion path.
+
+**Untested: whether the tower holds a Gemma-4-class 26B-A4B MoE at a usable quant.**
+The 26B-A4B was not run (owner answer Q129 (a)), so the epic's closing record lists
+that dependency as untested; the epic asks it of the tower, not of this laptop.
+
+**Language claim.** Gemma 4's card names no language, only counts ("Out-of-the-box
+support for 35+ languages, pre-trained on 140+ languages.", unsloth's card l.157 at the
+pinned revision), so the entry's claim lists none, as the flagship's does. A row cannot
+contradict a claim that names no language; the per-language scores below are the
+measurement.
+
+**The new rows.** Pending: both suites run for the entry from the commit that adds it,
+on a clean tree.
 
 Every quality row written from schema `"19"` on carries `family` (its
 subject's: the local entry's, or a cloud model's own) and `size_class` (the

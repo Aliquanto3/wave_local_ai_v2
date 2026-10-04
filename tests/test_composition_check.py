@@ -353,14 +353,12 @@ def test_an_entry_without_a_licence_prints_no_licence_terms(tmp_path, capsys) ->
 # Calibration: the shipped roster, before any new entry is authored.
 
 
-def test_the_shipped_roster_passes_the_three_smallest_classes_and_fails_one(
-    capsys,
-) -> None:
+def test_the_shipped_roster_passes_every_class(capsys) -> None:
     code = composition_check.main(["--roster", REAL_ROSTER_PATH.as_posix()])
     out = capsys.readouterr().out
 
-    # The top class, single-family Qwen, still fails, unlabelled.
-    assert code == 1
+    # Every class spans two families, so the check passes.
+    assert code == 0
     report = composition_check.check_composition(
         composition_check.roster.load_roster(REAL_ROSTER_PATH),
         REAL_ROSTER_PATH.as_posix(),
@@ -389,11 +387,15 @@ def test_the_shipped_roster_passes_the_three_smallest_classes_and_fails_one(
             assert item.families == ("ibm", "qwen")
             assert not [f for f in report.failures if f.subject == "size class ~4B"]
             continue
-        assert item.families == ("qwen",), item.size_class
-        assert (
-            f"size class {item.size_class}: spans one family (qwen) without the "
-            "single-family-ladder label"
-        ) in out
+        # The dense Gemma 4 12B beside the MoE flagship.
+        assert item.size_class == "~8B-and-up"
+        assert item.families == ("google", "qwen")
+        assert item.dense_present is True
+        assert item.moe_entry_ids == ("qwen3.6-35b-a3b-ud-iq4xs",)
+    assert report.failures == ()
+    assert out.endswith(
+        "PASS: every published size class spans two families or says it does not\n"
+    )
     # The flagship resolves its family through the in-code fallback, with no
     # exception carved out for it.
     flagship = next(

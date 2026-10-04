@@ -201,6 +201,7 @@ def test_the_options_name_the_declared_sets_and_the_caps(client: TestClient) -> 
         "lfm2.5-1.2b-instruct-q8",
         "granite-3.1-1b-a400m-instruct-q8",
         "granite-3.1-3b-a800m-instruct-q4km",
+        "gemma-4-12b-it-iq4xs",
     ]
     assert body["thinking_policies"] == ["allowed", "disabled"]
     assert body["max_prompt_chars"] == 200

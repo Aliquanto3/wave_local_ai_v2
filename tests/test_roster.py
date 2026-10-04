@@ -447,8 +447,9 @@ def test_the_shipped_moe_entry_still_loads_with_no_family_of_its_own() -> None:
     # run profile registry. 6: the per-mode `requirements`. 7: Granite 4.0 H
     # 350M entered the ~0.5B class from its candidate-gate pass record. 8:
     # LFM2.5-1.2B-Instruct and Granite 3.1 1B-A400M entered the ~2B class. 9:
-    # Granite 3.1 3B-A800M entered the ~4B class.
-    assert loaded.roster_version == 9
+    # Granite 3.1 3B-A800M entered the ~4B class. 10: Gemma 4 12B entered the
+    # top class.
+    assert loaded.roster_version == 10
     assert entry.family is None
     assert roster.family_of(entry.display_id, entry) == "qwen"
 
@@ -602,7 +603,7 @@ def test_load_roster_refuses_a_block_that_is_not_an_object_or_lacks_a_field(
 def test_every_shipped_entry_carries_a_licence_and_a_language_claim() -> None:
     loaded = roster.load_roster(REAL_ROSTER_PATH)
 
-    assert len(loaded.entries) == 8
+    assert len(loaded.entries) == 9
     for entry in loaded.entries.values():
         assert entry.licence is not None, entry.entry_id
         assert entry.language_claim is not None, entry.entry_id
@@ -672,7 +673,7 @@ SHIPPED_DENSE_ENTRIES: dict[str, dict[str, object]] = {
 }
 
 
-# The non-Qwen families of the ~0.5B, ~2B and ~4B classes, entered from their
+# The non-Qwen families of every class, entered from their
 # candidate-gate pass records; written out for the same reason as the Qwen
 # ladder above.
 SHIPPED_SECOND_FAMILY_ENTRIES: dict[str, dict[str, object]] = {
@@ -724,6 +725,20 @@ SHIPPED_SECOND_FAMILY_ENTRIES: dict[str, dict[str, object]] = {
         "kind": "moe",
         "expert_count": 40,
     },
+    "gemma-4-12b-it-iq4xs": {
+        "repo": "unsloth/gemma-4-12b-it-GGUF",
+        "revision": "fc034cfff751157913579611efad8462ac1be606",  # pragma: allowlist secret
+        "file": "gemma-4-12b-it/gemma-4-12b-it-IQ4_XS.gguf",
+        "display_id": "Gemma-4-12B-it",
+        "quant": "IQ4_XS",
+        "sha256": "b0037d0e0de0290177045ca214b2a0fb1079d18bde57842b3ca32f5b0cd76774",  # pragma: allowlist secret
+        "active_params_b": 11.91,
+        "family": "google",
+        "kind": "dense",
+        "expert_count": 0,
+        # Its template carries a switch, verified by the gate's two renders.
+        "thinking_control": {"chat_template_kwargs": {"enable_thinking": False}},
+    },
 }
 
 # The GGUF repository's card states no languages, so the claim is read off the
@@ -772,8 +787,11 @@ def test_each_second_family_entry_matches_docs_setup_and_its_gguf_kind(
     # Declared in the file, so it resolves without the in-code fallback.
     assert entry.family == expected["family"]
     assert roster.family_of(entry.display_id, entry) == expected["family"]
-    # A model that does not reason: verified by the gate's one generation.
-    assert entry.thinking_control == roster.THINKING_CONTROL_NONE
+    # A model that does not reason (verified by the gate's one generation),
+    # unless the entry names the switch its template carries.
+    assert entry.thinking_control == expected.get(
+        "thinking_control", roster.THINKING_CONTROL_NONE
+    )
     # The kind and expert count the gate read off the GGUF header.
     assert entry.architecture.kind == expected["kind"]
     assert entry.architecture.expert_count == expected["expert_count"]
@@ -994,6 +1012,7 @@ SHIPPED_FIGURES = {
     "lfm2.5-1.2b-instruct-q8": ("~2B", 1_170_340_608, 1_246_253_888),
     "granite-3.1-1b-a400m-instruct-q8": ("~2B", 1_334_628_352, 1_422_239_776),
     "granite-3.1-3b-a800m-instruct-q4km": ("~4B", 3_298_793_472, 2_016_888_384),
+    "gemma-4-12b-it-iq4xs": ("~8B-and-up", 11_907_350_576, 6_375_734_080),
 }
 
 
@@ -1012,8 +1031,8 @@ def test_each_shipped_entry_carries_its_class_and_the_figures_read_off_its_file(
 
 def test_the_shipped_roster_declares_every_class_and_labels_none() -> None:
     # No class is a labelled ladder. The ~0.5B class spans two families and
-    # records its MoE search, the ~2B and ~4B classes hold their MoE; the top
-    # class's search belongs to its own per-class story (order 8).
+    # records its MoE search, the ~2B and ~4B classes hold their MoE, and the
+    # top class's MoE is still the flagship.
     loaded = roster.load_roster(REAL_ROSTER_PATH)
 
     assert tuple(loaded.size_classes) == roster.SIZE_CLASSES
@@ -1074,3 +1093,36 @@ def test_the_four_billion_class_spans_two_families_and_holds_its_moe() -> None:
     assert declaration.moe_absent_reason is None
     assert {entry.architecture.kind for entry in members} == {"dense", "moe"}
     assert {entry.quant for entry in members} == {"Q4_K_M"}
+
+
+def test_the_top_class_spans_two_families_with_dense_and_moe() -> None:
+    loaded = roster.load_roster(REAL_ROSTER_PATH)
+    declaration = loaded.size_classes["~8B-and-up"]
+    members = [
+        entry for entry in loaded.entries.values() if entry.size_class == "~8B-and-up"
+    ]
+
+    assert {roster.family_of(entry.display_id, entry) for entry in members} == {
+        "google",
+        "qwen",
+    }
+    # Gemma 4 12B entered as `dense` off its GGUF header; the flagship stays the
+    # class's MoE, so the declaration is unchanged (owner answer Q129 (a)).
+    assert {entry.entry_id: entry.architecture.kind for entry in members} == {
+        "qwen3.6-35b-a3b-ud-iq4xs": "moe",
+        "gemma-4-12b-it-iq4xs": "dense",
+    }
+    assert declaration.moe_sought is True
+    assert declaration.moe_entry == "qwen3.6-35b-a3b-ud-iq4xs"
+    assert declaration.moe_absent_reason is None
+    # The dense entry declares no expert offload anywhere: a dense model's
+    # profile resolves no `--n-cpu-moe`.
+    gemma = loaded.entries["gemma-4-12b-it-iq4xs"]
+    profile = profiles.resolve(
+        profiles.tracked_registry(), gemma, "laptop-mobile-gpu", "gpu"
+    )
+    assert profile.n_cpu_moe is None
+    # The gate's load launched at the declared `-ngl 99` on the laptop, so no
+    # stepped-down value overrides it in the profile.
+    assert profile.n_gpu_layers == 99
+    roster.validate_host_fit(gemma, profile)

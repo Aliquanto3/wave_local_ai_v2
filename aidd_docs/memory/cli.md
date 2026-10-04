@@ -299,11 +299,12 @@ The command-line interface for running benchmarks.
   the class or entry when a class spans one family unlabelled, has no MoE and
   no reason, or an entry lacks a resolvable family, class, figures or licence,
   or its class disagrees with its total parameters; `2` when the roster does
-  not load. Run before a roster table is published; not in the merge gate
-  while the shipped roster fails it (one unlabelled `qwen` class, the top
-  one; `~0.5B` spans `ibm` and `qwen`, `~2B` spans `ibm`, `liquid` and `qwen`
-  with a MoE, `~4B` spans `ibm` and `qwen` with a MoE, and all three pass;
-  quoted in `aidd_docs/results/README.md`).
+  not load. Run before a roster table is published; not in the merge gate,
+  kept out while the shipped roster failed it. Since `roster_version` 10 it
+  passes: `~0.5B` spans `ibm` and `qwen`, `~2B` spans `ibm`, `liquid` and
+  `qwen` with a MoE, `~4B` spans `ibm` and `qwen` with a MoE, and
+  `~8B-and-up` spans `google` and `qwen`, dense and MoE (quoted in
+  `aidd_docs/results/README.md`).
 - `wave-local-ai-v2-promote --run-id <id> [--run-id <id> ...] [--machine
   <machine_id>]` — copies the named runs' rows from the live stores
   (`RUNTIME_RESULTS_PATH`, `QUALITY_RESULTS_PATH`) line-for-line into the
@@ -502,8 +503,8 @@ stores are never merged (see `architecture.md`).
 
 Both commands resolve the model to launch through the tracked roster
 (`ROSTER_PATH`, default `aidd_docs/roster/models.json`) and select which
-entry to use via `ROSTER_ENTRY_ID`. The roster holds eight entries at
-`roster_version` 9:
+entry to use via `ROSTER_ENTRY_ID`. The roster holds nine entries at
+`roster_version` 10:
 
 | Entry id | Model | Arch | Quant |
 | -------- | ----- | ---- | ----- |
@@ -515,10 +516,11 @@ entry to use via `ROSTER_ENTRY_ID`. The roster holds eight entries at
 | `lfm2.5-1.2b-instruct-q8` | LFM2.5-1.2B-Instruct (`liquid`) | dense (`lfm2`) | `Q8_0` |
 | `granite-3.1-1b-a400m-instruct-q8` | Granite-3.1-1B-A400M-Instruct (`ibm`) | MoE (`granitemoe`, 32 experts) | `Q8_0` |
 | `granite-3.1-3b-a800m-instruct-q4km` | Granite-3.1-3B-A800M-Instruct (`ibm`) | MoE (`granitemoe`, 40 experts) | `Q4_K_M` |
+| `gemma-4-12b-it-iq4xs` | Gemma-4-12B-it (`google`) | dense (`gemma4`) | `IQ4_XS` |
 
 Each entry declares its `thinking_control`: the request arguments that
-disable reasoning under its own chat template (the four Qwen entries:
-`{"chat_template_kwargs": {"enable_thinking": false}}`), or `"none"` for a
+disable reasoning under its own chat template (the four Qwen entries and
+Gemma 4 12B: `{"chat_template_kwargs": {"enable_thinking": false}}`), or `"none"` for a
 model that does not reason (Granite 4.0 H 350M, LFM2.5-1.2B-Instruct, Granite 3.1
 1B-A400M and 3B-A800M). A `thinking_policy: disabled` batch sends exactly
 that, refuses an entry declaring neither before launch, and, for an object

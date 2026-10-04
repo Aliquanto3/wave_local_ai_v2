@@ -91,6 +91,8 @@ the `cpu_only` profile that exists for the same machine and runs nothing.
 | `Granite-3.1-1B-A400M-Instruct` `Q8_0` | `cpu_only` | 1.42 | n/a | 1.42 | RAM: lower bound, as for `gpu` |
 | `Granite-3.1-3B-A800M-Instruct` `Q4_K_M` | `gpu` | 2.02 | not yet declared | 2.02 | RAM: lower bound, the weights' size (no runtime peak published) |
 | `Granite-3.1-3B-A800M-Instruct` `Q4_K_M` | `cpu_only` | 2.02 | n/a | 2.02 | RAM: lower bound, as for `gpu` |
+| `Gemma-4-12B-it` `IQ4_XS` | `gpu` | 6.38 | not yet declared | 6.38 | RAM: lower bound, the weights' size (no runtime peak published) |
+| `Gemma-4-12B-it` `IQ4_XS` | `cpu_only` | 6.38 | n/a | 6.38 | RAM: lower bound, as for `gpu` |
 
 The `gpu` RAM peaks are the side-by-side runtime table of
 `aidd_docs/results/README.md`; each declaration's full source is its
@@ -573,6 +575,64 @@ The model does not reason, so its entry declares `thinking_control: "none"`
 (the gate verified it with one generation that returned no reasoning): a
 `thinking_policy: disabled` batch sends no switch for it. Granite 3.1 3B-A800M
 fits a 6 GB GPU whole, so it launches with no `--n-cpu-moe`.
+
+### 3.6 The second family and the dense model at ~8B-and-up: Gemma 4 12B
+
+The top class holds a second family and a dense model beside the
+`Qwen3.6-35B-A3B` MoE flagship: Google's Gemma 4 12B it (`gemma4`, dense),
+entered from its candidate gate pass record
+(`aidd_docs/roster/candidate-records.jsonl`). No packager ships it at the
+flagship's `UD-IQ4_XS`, so it is taken at `IQ4_XS`, the nearest quant: the same
+`IQ4_XS` base type without Unsloth Dynamic's per-layer upcasting. The file is
+unsloth's quantization of Google's weights. As above, the roster file is the
+source of truth and a mismatch with this section is a bug.
+
+| Entry id | Repo | Revision | File in the repo | Under `SLM_MODELS_DIR` | Quant | Size |
+| -------- | ---- | -------- | ---------------- | ---------------------- | ----- | ---- |
+| `gemma-4-12b-it-iq4xs` | `unsloth/gemma-4-12b-it-GGUF` | `fc034cfff751157913579611efad8462ac1be606` | `gemma-4-12b-it-IQ4_XS.gguf` | `gemma-4-12b-it/gemma-4-12b-it-IQ4_XS.gguf` | `IQ4_XS` | 6,375,734,080 B (5.94 GiB) |
+
+sha256:
+
+```
+gemma-4-12b-it-iq4xs   b0037d0e0de0290177045ca214b2a0fb1079d18bde57842b3ca32f5b0cd76774
+```
+
+Download it at its pinned revision:
+
+```powershell
+# Windows
+hf download unsloth/gemma-4-12b-it-GGUF gemma-4-12b-it-IQ4_XS.gguf `
+  --revision fc034cfff751157913579611efad8462ac1be606 `
+  --local-dir <SLM_MODELS_DIR>\gemma-4-12b-it
+```
+
+```sh
+# POSIX
+hf download unsloth/gemma-4-12b-it-GGUF gemma-4-12b-it-IQ4_XS.gguf \
+  --revision fc034cfff751157913579611efad8462ac1be606 \
+  --local-dir <SLM_MODELS_DIR>/gemma-4-12b-it
+```
+
+Verify the checksum:
+
+```powershell
+# Windows -- .ToLower() matters: the roster stores lowercase hex.
+(Get-FileHash -Algorithm SHA256 "<SLM_MODELS_DIR>\gemma-4-12b-it\gemma-4-12b-it-IQ4_XS.gguf").Hash.ToLower()
+```
+
+```sh
+# POSIX
+sha256sum <SLM_MODELS_DIR>/gemma-4-12b-it/gemma-4-12b-it-IQ4_XS.gguf
+```
+
+Its chat template carries a thinking switch, so its entry declares
+`thinking_control: {"chat_template_kwargs": {"enable_thinking": false}}`, as the
+Qwen entries do; the gate verified it renders a different prompt with and
+without the switch. The model is dense, so it launches with no `--n-cpu-moe`.
+On the laptop's 6 GB GPU it launched at the declared `-ngl 99`, but its weights
+(6.38 GB) exceed the GPU's memory: the dedicated memory fills and the Windows
+driver keeps the rest in shared system memory, so the model runs, more slowly
+than a full offload would.
 
 ## 4. Configure `.env` and run
 

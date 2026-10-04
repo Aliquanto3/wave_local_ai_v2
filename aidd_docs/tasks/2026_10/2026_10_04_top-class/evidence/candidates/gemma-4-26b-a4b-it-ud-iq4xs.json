@@ -1,0 +1,41 @@
+{
+  "entry_id": "gemma-4-26b-a4b-it-ud-iq4xs",
+  "repo": "unsloth/gemma-4-26B-A4B-it-GGUF",
+  "revision": "c099eb48e663fd284577b04978a94ffccb261841",
+  "repo_file": "gemma-4-26B-A4B-it-UD-IQ4_XS.gguf",
+  "file": "gemma-4-26B-A4B-it/gemma-4-26B-A4B-it-UD-IQ4_XS.gguf",
+  "display_id": "Gemma-4-26B-A4B-it",
+  "quant": "UD-IQ4_XS",
+  "family": "google",
+  "thinking_control": {
+    "chat_template_kwargs": {
+      "enable_thinking": false
+    }
+  },
+  "active_params_b": 3.8,
+  "client_commercial_use": true,
+  "language_claim": {
+    "languages": [],
+    "source_url": "https://huggingface.co/unsloth/gemma-4-26B-A4B-it-GGUF/blob/c099eb48e663fd284577b04978a94ffccb261841/README.md",
+    "statement": "Out-of-the-box support for 35+ languages, pre-trained on 140+ languages."
+  },
+  "server_flags": {
+    "n_gpu_layers": 99,
+    "context_size": 32768,
+    "flash_attention": "on",
+    "jinja": true,
+    "parallel_slots": 1,
+    "load_mode": "auto",
+    "sampler": {
+      "temperature": 0.6,
+      "top_p": 0.95,
+      "top_k": 20,
+      "min_p": 0,
+      "presence_penalty": 1.5
+    }
+  },
+  "load_profile": {
+    "n_cpu_moe": 28,
+    "threads": 8
+  }
+}
