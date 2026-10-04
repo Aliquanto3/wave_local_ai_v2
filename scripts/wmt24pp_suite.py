@@ -50,7 +50,7 @@ import sys
 import tempfile
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 import hub_source
@@ -454,7 +454,9 @@ def count_tokens(
     props = requests.get(f"{base}/props", timeout=30)
     props.raise_for_status()
     served = props.json()
-    model = Path(str(served.get("model_path", "unknown model"))).name
+    # PureWindowsPath splits on both separators, so a Windows server path
+    # reduces to its file name on any OS (a POSIX Path keeps the backslashes).
+    model = PureWindowsPath(str(served.get("model_path", "unknown model"))).name
     build = served.get("build_info", "unknown build")
     counts: dict[str, int] = {}
     for row in rows:
