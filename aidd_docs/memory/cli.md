@@ -322,8 +322,8 @@ The command-line interface for running benchmarks.
   sorted machine order (`bundle_merge.py`). Exits `1`, writing nothing, on a
   fiche-hash collision (two rows, two machine ids, one hash: both named,
   neither chosen), an undeclared machine id or location, a misfiled row or
-  refusal, a row with no `run_id`, or one `run_id` in two locations; refuses
-  to overwrite the pinned schema-"7" snapshot. `--check` writes nothing and exits `1` when the
+  refusal, a row with no `run_id`, or one `run_id` in two locations.
+  `--check` writes nothing and exits `1` when the
   committed bundle differs (line endings normalised); CI runs it.
 - `wave-local-ai-v2-campaign-completeness --campaign <id> [--campaigns-dir
   <dir>] [--rows <jsonl> ...]` — Methodology 22's completeness check

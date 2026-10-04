@@ -1,14 +1,21 @@
 """A bundle that publishes an interval and a tested comparison, built from the
-committed rows by the writers' own code.
+superseded schema-"7" rows by the writers' own code, and that superseded
+bundle itself.
 
-The committed bundle publishes neither: its rows predate schema "21" and its
-four family records all refuse on `thinking_policy`, which those rows lack.
-So the rows here are the committed ones with the one generation constraint
-they lack set, and each batch's `score_interval` block computed the way the
-quality writer computes it (`score_interval.interval_block` over the batch's
-items); the family record is written by `comparison` itself. The committed
-files are read, never written. Lives beside the tests because the
-recomputation evidence builds the same bundle.
+The schema-"7" rows predate schema "21" and their four family records all
+refuse on `thinking_policy`, which those rows lack. So the rows here are those
+rows with the one generation constraint they lack set, and each batch's
+`score_interval` block computed the way the quality writer computes it
+(`score_interval.interval_block` over the batch's items); the family record is
+written by `comparison` itself. The committed files are read, never written.
+Lives beside the tests because the recomputation evidence builds the same
+bundle.
+
+`SCHEMA_7` is the bundle as published before the 2026-10-04 republication:
+its rows `git mv`-renamed to `*-reference.schema-7.jsonl` and the records
+computed over them kept in `comparisons.schema-7/` and `leader-sets.schema-7/`.
+Tests whose subject is a known, fixed set of real rows read it; the current
+bundle is `bundle_export.default_bundle_paths()`.
 """
 
 from __future__ import annotations
@@ -20,7 +27,17 @@ from typing import Any
 
 from wave_local_ai_v2 import bundle_export, comparison, score_interval
 
-COMMITTED = bundle_export.default_bundle_paths()
+_CURRENT = bundle_export.default_bundle_paths()
+_RESULTS = _CURRENT.runtime_rows.parent
+SCHEMA_7 = bundle_export.BundlePaths(
+    runtime_rows=_RESULTS / "runtime-reference.schema-7.jsonl",
+    quality_rows=_RESULTS / "quality-reference.schema-7.jsonl",
+    fiche_dir=_CURRENT.fiche_dir,
+    roster=_CURRENT.roster,
+    suite_definitions=_CURRENT.suite_definitions,
+    comparisons_dir=_RESULTS / "comparisons.schema-7",
+    leader_sets_dir=_RESULTS / "leader-sets.schema-7",
+)
 LOCAL_MODEL = "Qwen3.6-35B-A3B"
 CLOUD_MODEL = "mistral-small-2603"
 ROWS_SOURCE = "rows/quality.jsonl"
@@ -30,7 +47,7 @@ def published_rows() -> list[dict[str, Any]]:
     """The committed quality rows, each batch carrying its interval block."""
     rows = [
         json.loads(line)
-        for line in COMMITTED.quality_rows.read_text(encoding="utf-8").splitlines()
+        for line in SCHEMA_7.quality_rows.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
     batches: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
@@ -57,7 +74,7 @@ def build_bundle(directory: Path) -> bundle_export.BundlePaths:
     quality = rows_dir / "quality.jsonl"
     quality.write_text("".join(json.dumps(row) + "\n" for row in rows), "utf-8")
     runtime = rows_dir / "runtime.jsonl"
-    runtime.write_bytes(COMMITTED.runtime_rows.read_bytes())
+    runtime.write_bytes(SCHEMA_7.runtime_rows.read_bytes())
     members = []
     for run_id in sorted({row["run_id"] for row in rows}):
         reference = comparison.Side(run_id, {"model_id": LOCAL_MODEL})
@@ -79,9 +96,9 @@ def build_bundle(directory: Path) -> bundle_export.BundlePaths:
     return bundle_export.BundlePaths(
         runtime_rows=runtime,
         quality_rows=quality,
-        fiche_dir=COMMITTED.fiche_dir,
-        roster=COMMITTED.roster,
-        suite_definitions=COMMITTED.suite_definitions,
+        fiche_dir=SCHEMA_7.fiche_dir,
+        roster=SCHEMA_7.roster,
+        suite_definitions=SCHEMA_7.suite_definitions,
         comparisons_dir=comparisons_dir,
         leader_sets_dir=directory / "leader-sets",
     )

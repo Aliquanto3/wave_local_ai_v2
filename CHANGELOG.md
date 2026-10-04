@@ -472,12 +472,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The export reads a current-schema cloud row and suite** --
+  `wave-local-ai-v2-export` refused the republished bundle: a cloud row's
+  `retry_budget` (keyed by provider) is now one JSON cell, and a suite
+  definition's `level` and `divergence_tolerance` are described columns.
+  The release's Parquet copy types `runtime_aggregates.vram_used_mib` as a
+  string (unit "MiB (2^20 bytes), or the identifier not_applicable"), so a
+  `cpu_only` row's `not_applicable` stays itself instead of failing the
+  float parse or folding into the null a failed read produces.
+
 - **A batch interval is no longer a comparison confound** -- `comparison.py`
   exempts `score_interval` (schema "21") with the other batch outcomes: two
   batches that score differently always publish different intervals, so
   every real pair was published as an observation naming it.
 
 ### Changed
+
+- **The bundle is republished from the laptop's own location (schema "30")**
+  -- one bench session from a fresh clone: the flagship runtime pair, the
+  flagship and `mistral-small-2603` quality pair on
+  `classification-support-routing@5`, and Qwen3-0.6B under the laptop's
+  `gpu` and `cpu_only` profiles, each second run `reproduced` against its own
+  first. The rows sit in `aidd_docs/results/machines/laptop-mobile-gpu/` and
+  the bundle is derived from it. The schema-"7" snapshot is kept unedited as
+  `*-reference.schema-7.jsonl`, with the comparison and leader-set records
+  computed over it in `comparisons.schema-7/` and `leader-sets.schema-7/`;
+  `bundle_merge.PRE_MERGE_SNAPSHOT` and its pin are gone. `docs/setup.md`
+  gains the two steps the walk needed (empty the placeholder cloud keys;
+  decide a second run against its own first).
 
 - The pre-flight's refusal records move from
   `aidd_docs/results/refusals/<machine_id>.jsonl` (`REFUSALS_DIR`, removed) to

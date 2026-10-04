@@ -26,12 +26,13 @@ a run promoted by two machines. CI runs `wave-local-ai-v2-merge-bundle --check` 
 when the committed bundle differs from what the merge derives. The loop, and the
 operator-carried fallback for a machine that cannot push, are `docs/setup.md` section 6.
 
-Until the bundle republication story, the two committed `*-reference.jsonl` files are
-still the schema-"7" curated snapshot of 2026-08-27, whose rows predate `machine_id` and
-so cannot be derived. `bundle_merge.PRE_MERGE_SNAPSHOT` pins their bytes: `--check`
-accepts exactly them while no location holds a record, and the merge refuses to
-overwrite them. The republication `git mv`s them to `*-reference.schema-7.jsonl`, runs
-the merge, and deletes the pin.
+The first bundle derived this way is the laptop's republication of 2026-10-04 (see
+"This regeneration (the laptop, both modes, 2026-10-04)" below), from
+`machines/laptop-mobile-gpu/`. The schema-"7" curated snapshot of 2026-08-27 it replaced,
+whose rows predate `machine_id` and so could never be derived, is kept unedited as
+`runtime-reference.schema-7.jsonl` and `quality-reference.schema-7.jsonl`, and the
+comparison and leader-set records computed over it as `comparisons.schema-7/` and
+`leader-sets.schema-7/`.
 
 The two files the CLIs actually append to, `runtime.jsonl` and `quality.jsonl`, are
 per-machine output and stay untracked (`.gitignore`). Tracking them instead would dirty
@@ -52,21 +53,18 @@ field and reporting an incomplete one. The procedure that takes a consultant fro
 end of a session to a committed record, with a worked example, is
 [`docs/client-session-record.md`](../../docs/client-session-record.md).
 
-## The published bundle is one schema behind the code
+## The published bundle's schema, and why it can lag the code
 
-The bundle's rows carry `schema_version` `"7"`; `row_contract.SCHEMA_VERSION` is `"8"`
-(`retries` and `resumed` became required on quality rows). The bytes are **not**
-back-filled to `"8"`: adding two fields to eighty rows produced on 2026-08-27 would make
+The bundle's rows carry `schema_version` `"30"`, the code's own since the 2026-10-04
+republication. Before it, they carried `"7"` while the code moved to `"30"`: the bytes
+were **not** back-filled, because adding fields to rows produced on 2026-08-27 would make
 them rows no harness ever wrote, which is the discipline this file states twice below and
 which Story 19's acceptance requires. `tests/test_reference_bundle.py` therefore asserts
 the bundle against its own `PUBLISHED_BUNDLE_SCHEMA_VERSION` rather than the live
-constant, and separately that the published version is never *ahead* of the code.
-
-A row of this bundle read beside a row a current CLI writes is short those two fields.
-Regenerating it under `"8"` is a bench-time job on the Story 19 protocol (two runtime
-runs in a quiet thermal window, two quality runs, the validator proof, this README's
-tables rebuilt), filed in `aidd_docs/backlog/tech-debt.md`, not something a schema bump
-does to the published bytes on its way past.
+constant, and separately that the published version is never *ahead* of the code. The
+next schema bump puts the bundle behind again until a bench-time regeneration on the same
+protocol (two runtime runs in a quiet thermal window, two quality runs, the validator
+proof, this README's tables rebuilt) moves that constant.
 
 ## The bundle as five flat tables (`wave-local-ai-v2-export`)
 
@@ -487,6 +485,11 @@ bundle is republished under this epic's final schema; it is not back-filled.
 
 ## Paired comparisons: both committed pairs are refused (2026-10-02)
 
+Superseded on 2026-10-04 with the schema-"7" rows they compare: the records named here
+are now in `comparisons.schema-7/`, unedited, and their rows in
+`quality-reference.schema-7.jsonl` (the `rows_source` they record,
+`aidd_docs/results/quality-reference.jsonl`, is where those rows were published then).
+
 `comparisons/` holds the comparison records `wave-local-ai-v2-compare` writes over this
 bundle. They are derived artifacts, not a sixth input, and none is ever rewritten. The two
 records below are `record_version` `"1"`: each is a family of one comparison (its
@@ -568,6 +571,10 @@ file and requires identical bytes.
 
 ## The leader set: the local models not distinguishable from the best (2026-10-02)
 
+Superseded on 2026-10-04 with the schema-"7" rows it was derived from: the records named
+here are now in `leader-sets.schema-7/` and `comparisons.schema-7/`, unedited. No leader
+set has been derived from the republished bundle yet.
+
 The leader set of a suite on a machine class is a published derived output (PRD Non-goals,
 owner answer Q42 (a)): the best local subject plus every local subject the paired tests
 cannot tell from it. It is its own record in `leader-sets/`, written by the analysis
@@ -598,8 +605,8 @@ comparison ran. A changed group is a new record superseding the old by
 
 | Record | Group | Reference | Members | Excluded | Not compared | Family |
 | --- | --- | --- | --- | --- | --- | --- |
-| `leader-sets/classification-support-routing@2.053c65354ff8.json` | `classification-support-routing@2`, the RTX 3060 laptop (`machine_id`, `compute_mode` not recorded) | `5e13166d` `Qwen3.6-35B-A3B`, 0.8 (tied with `d20afbda`) | 1 | 0 | 1 (`thinking_policy` absent) | `837e5355b954` |
-| `comparisons/classification-support-routing@2.model.837e5355b954.json` | the family grown by the leader comparison: 3 members, 0 tested, 3 refused | | | | | supersedes `1e1658cbe073` |
+| `leader-sets.schema-7/classification-support-routing@2.053c65354ff8.json` | `classification-support-routing@2`, the RTX 3060 laptop (`machine_id`, `compute_mode` not recorded) | `5e13166d` `Qwen3.6-35B-A3B`, 0.8 (tied with `d20afbda`) | 1 | 0 | 1 (`thinking_policy` absent) | `837e5355b954` |
+| `comparisons.schema-7/classification-support-routing@2.model.837e5355b954.json` | the family grown by the leader comparison: 3 members, 0 tested, 3 refused | | | | | supersedes `1e1658cbe073` |
 
 The bundle's two local batches are the same model at the same score, and their comparison
 is refused on `thinking_policy` like both committed pairs, so the first real leader set
@@ -799,7 +806,143 @@ the item's own rendered prompt with its tool definitions, or `null` with a
 the engine count's own reason). Only `direct` is written today. Rows below
 `"20"` are not back-filled.
 
-## This regeneration (Story 19 + Story 20, 2026-08-27)
+## This regeneration (the laptop, both modes, 2026-10-04)
+
+The bundle was regenerated under the code's schema (`schema_version` `"30"`) in one bench
+session on the laptop (`machine_id` `laptop-mobile-gpu`), from a fresh clone that followed
+`docs/setup.md` alone, and returned the way every machine returns rows: the eight runs
+were promoted into `machines/laptop-mobile-gpu/` (`wave-local-ai-v2-promote`) and the
+bundle derived from it (`wave-local-ai-v2-merge-bundle`, then `--check`). Every row carries
+`commit_sha` `32da6f9709738426f3a7d34abdcf79275c4091ec` with `tree_dirty: false` (the
+clone's tree was clean), engine `llama.cpp` build `b10537`, and its run's declared profile
+with no operator override. The quality pair runs `classification-support-routing@5`.
+
+**The quiet thermal window was asserted, not confirmed.** No operator was present (an
+unattended run under the owner's instruction), so the window rests on the machine state
+captured before the session
+(`aidd_docs/tasks/2026_10/2026_10_04_laptop-republishes-bundle/evidence/machine-state.txt`):
+on mains power, power plan "Turbo", GPU at 0 MiB used and 40 C, no `llama-server`
+running, 19.3 GB of 32.9 GB RAM free, total CPU load 6%. Other user processes were
+running. Each step ran alone, with no `llama-server` process and the GPU at 0 MiB before
+it. The GPU was not unthrottled: the capture's active clock-event reasons read `0x24`
+(`sw_power_cap` and `sw_thermal_slowdown`) at idle, and every repetition of every `gpu`
+run in this bundle (and some repetitions of both `cpu_only` runs) records the same two in
+`machine_state.gpu_throttle_reasons`, where both schema-7 runtime rows record only
+`gpu_idle`. An owner who does not accept the asserted window re-runs the session.
+
+### `runtime-reference.jsonl`: the flagship pair and Qwen3-0.6B in both modes
+
+| Model | Mode | Run | `run_id` | `gen_tok_per_s` | `prompt_tok_per_s` | `ttft_ms` | `vram_used_mib` | `verdict` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `Qwen3.6-35B-A3B` | `gpu` | 1 | `78e5d7ef9a6f4743b5c4985d9a79b590` | 21.200 | 264.917 | 5624.4 | 4548.7 | `not_comparable` (no reference) |
+| `Qwen3.6-35B-A3B` | `gpu` | 2 | `12d19a0cdede4fda9512c57885d826d2` | 21.118 | 260.446 | 5721.0 | 4548.7 | `reproduced` against run 1 |
+| `Qwen3-0.6B` | `gpu` | 1 | `49d99f73e09e4291be3ca78bcd324082` | 125.168 | 4070.779 | 364.8 | 4526.7 | `not_comparable` (no reference) |
+| `Qwen3-0.6B` | `gpu` | 2 | `a05834da5c31407db755bdd6d0223387` | 127.865 | 3741.374 | 396.9 | 4526.7 | `reproduced` against `gpu` run 1 |
+| `Qwen3-0.6B` | `cpu_only` | 1 | `e4a0ef9fb77b474b9b81c0f729d22a5a` | 32.048 | 202.670 | 7327.2 | `not_applicable` | `not_comparable` (no reference) |
+| `Qwen3-0.6B` | `cpu_only` | 2 | `1212b9b15c68476ea95a449eeeb8137d` | 32.159 | 203.346 | 7302.8 | `not_applicable` | `reproduced` against `cpu_only` run 1 |
+
+The throughput figures are the medians over each run's five counted repetitions. Each run 1
+was decided against an empty reference file and each run 2 against a file holding only its
+own run 1 (`docs/setup.md` section 4.2), so no second run was decided against the
+superseded bundle or the other mode. The `gen_tok_per_s` deltas the verdicts judge against
+the 10% tolerance: flagship **0.39%**, Qwen3-0.6B `gpu` **2.15%**, Qwen3-0.6B `cpu_only`
+**0.35%**; every run's own `unreliable` is `false`. The three configurations are three
+fiches (`1463d39d...`, `73ec536e...`, `d8524577...`): the `gpu` and the `cpu_only` runs of
+Qwen3-0.6B do not share one, so no verdict reads one mode against the other. A `cpu_only`
+row's `vram_used_mib` is `not_applicable` on the row and on every repetition, never a
+number; the GPU fields stay on its fiche, since the laptop has a GPU and the run chose not
+to use it.
+
+**Observation, not a verdict: `cpu_only` against `gpu` on the laptop, Qwen3-0.6B.** Over
+the two runs of each mode, `cpu_only` generates at **0.254x** the `gpu` rate (32.10 against
+126.52 tok/s, the GPU 3.9x faster) and processes the prompt at **0.052x** (203.0 against
+3906.1 tok/s, 19.2x), and its first token arrives 19.2x later (7315 against 381 ms). The
+two modes are different measurements of one model on one machine, not a reproduction of
+each other, and this ratio is never a verdict.
+
+Two further observations. The flagship's `gen_tok_per_s` (21.2) sits below the schema-7
+bundle's 25.4 of 2026-08-27; the two runs share no fiche (the identity now carries the
+engine, the machine and the mode), so nothing decides between them. The throttle
+reasons above differ too: `sw_power_cap` and `sw_thermal_slowdown` on every repetition
+now, `gpu_idle` alone then. This pair cannot say which difference, if either, is the
+cause. The `cpu_only` peak `process_rss_bytes` (4872921088 and 4873011200,
+4.87 GB) sits above the `cpu_only` RAM minimum the roster declares for Qwen3-0.6B (4.77
+GB, `docs/setup.md` section 1.2): the declaration is about 2% low, filed in
+`aidd_docs/backlog/tech-debt.md`.
+
+### `quality-reference.jsonl`: two runs, local + mistral each, second against the first
+
+| Model | Provider | `run_id` | Accuracy | `de` accuracy | `verdict` |
+| --- | --- | --- | --- | --- | --- |
+| `Qwen3.6-35B-A3B` | local | `acb6e89475f740508b3e07b6707d2930` | 1.00 | 1.00 | `not_comparable` (run 1) |
+| `mistral-small-2603` | mistral | `acb6e89475f740508b3e07b6707d2930` | 0.90 | 0.60 | `not_comparable` (run 1) |
+| `Qwen3.6-35B-A3B` | local | `68ac4f21b11d4e4fad5675bba7fb8836` | 1.00 | 1.00 | `reproduced` against run 1, identical on every item |
+| `mistral-small-2603` | mistral | `68ac4f21b11d4e4fad5675bba7fb8836` | 0.95 | 0.80 | `reproduced` against run 1, divergence 0.05 (`account-de-01`) within the suite's 0.10 |
+
+Both subjects score 1.00 on `en` and `fr` in both runs. The local flagship now answers all
+20 items: the four `unparseable` EN completions of the schema-7 runs are gone (the local
+writers have since moved to the chat endpoint under `thinking_policy: disabled`; this
+pair does not isolate which change did it). The Mistral batches are seeded
+(`random_seed` 20260821, `temperature` 0), took no retry, and cost 0.000231 USD each
+(`cost_currency` `USD`, never converted against the local rows' EUR). They are this
+bundle's only paid calls: 40 chat completions, plus one model-catalog pre-flight per
+batch; no Google and no judge call was made.
+
+**The German routing item, deferred again by name.** The 2026-08-27 tech-debt row defers
+rewording `account-de-01` "to the next regeneration", which this is. It is **not**
+reworded here: rewording moves `prompt_set_hash` and forces
+`classification-support-routing@6`, outside the owner's paid scope for this session (two
+Mistral batches on `@5`) and under every record and campaign that cites `@5`. The new runs
+sharpen the finding instead of closing it: `mistral-small-2603` routed `account-de-01` to
+`technical` in run 1 and to `account` in run 2, and `other-de-01` to `technical` in both,
+so both German items the schema-7 rows flagged still misroute, one of them only in one
+run. The rewording of both items, with the re-run it forces, is deferred again to the
+first regeneration that bumps the suite.
+
+### Superseded files and records: kept, not edited
+
+| Superseded | Replaced by | Why kept |
+| --- | --- | --- |
+| `runtime-reference.schema-7.jsonl` (2 rows, schema `"7"`) | `runtime-reference.jsonl` (6 rows, schema `"30"`) | a reader following an old citation still finds the row |
+| `quality-reference.schema-7.jsonl` (80 rows, schema `"7"`) | `quality-reference.jsonl` (80 rows, schema `"30"`) | same |
+| `comparisons.schema-7/` (4 family records) | none yet over the new rows | computed over the schema-7 rows; the export reads only records whose runs the bundle holds |
+| `leader-sets.schema-7/` (1 leader-set record) | none yet over the new rows | same |
+
+Unlike `.schema-1` (a count of bundle generations, see below), `.schema-7` is the
+`schema_version` the superseded rows carry. All are `git mv`-renamed, never back-filled.
+`refusals-reference.jsonl` is new and empty: no run of this session was refused. The
+export (`wave-local-ai-v2-export`) refused the republished bundle at first, because a
+cloud row's `retry_budget` (keyed by provider) and a suite definition's `level` and
+`divergence_tolerance` had no column-dictionary entry; both are now described, and the
+interval blocks the new rows carry recompute from the tables alone
+(`scripts/recompute_from_export.py`, every value equal).
+
+### Validator proof (this regeneration)
+
+`uv run wave-local-ai-v2-validate aidd_docs/results/runtime-reference.jsonl
+aidd_docs/results/quality-reference.jsonl`:
+
+| Run | Result |
+| --- | --- |
+| Clean pass over the merged bundle | `checked 86 row(s)`, exit **0** |
+| One fiche field hand-edited (`gpu_name` of the Qwen3-0.6B `gpu` fiche `73ec536e...`) | exit **1**, `edited (2)` naming both rows citing it (`49d99f73...`, `a05834da...`); `changed_fields` reads "unavailable" because the fiche was not yet committed for `git show HEAD:` to diff against |
+| Edit reverted (byte-identical to the live fiche) | `checked 86 row(s)`, exit **0** again |
+
+### Setup gaps the fresh-clone walk found
+
+Both are now in `docs/setup.md`; the walk is logged in
+`aidd_docs/tasks/2026_10/2026_10_04_laptop-republishes-bundle/evidence/setup-walk.md`.
+
+- `.env.example` ships placeholder cloud keys that the quality CLI reads as real keys, so a
+  key-less walk sends them to the providers: section 4 now says to empty both lines until
+  real keys are set.
+- Deciding a second run against its own first needs the reference path pointed at the
+  first run's rows (and the first run at an empty file): section 4.2 now says how.
+
+## The schema-7 regeneration (Story 19 + Story 20, 2026-08-27)
+
+Superseded on 2026-10-04: these rows are now `runtime-reference.schema-7.jsonl` and
+`quality-reference.schema-7.jsonl`, unedited.
 
 Both files were regenerated from scratch under the current schema (`schema_version` `"7"`),
 against the 20-item suite (`suite_version` `"2"`, `en`/`fr`/`de` all >=25% share) Story 20

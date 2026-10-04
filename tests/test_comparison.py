@@ -27,7 +27,11 @@ from wave_local_ai_v2.comparison import (
     wilcoxon_signed_rank,
 )
 
-REFERENCE_BUNDLE = Path("aidd_docs/results/quality-reference.jsonl")
+# The superseded schema-"7" rows: a fixed set of real rows no later run
+# changes, and the rows the records in `comparisons.schema-7/` were computed
+# over (their `rows_source` names the path those rows were published at).
+REFERENCE_BUNDLE = Path("aidd_docs/results/quality-reference.schema-7.jsonl")
+PUBLISHED_ROWS_SOURCE = "aidd_docs/results/quality-reference.jsonl"
 RUN_5E = "5e13166da0654390a7d63f346ea5d4f1"  # pragma: allowlist secret
 REFERENCE = Side("run-ref", {"model_id": "model-a"})
 CANDIDATE = Side("run-cand", {"model_id": "model-b"})
@@ -696,6 +700,8 @@ def test_a_family_of_one_states_its_adjusted_p_and_is_deterministic() -> None:
 
 def _bundle_args(run_id: str, output: Path, *extra: str) -> list[str]:
     return [
+        "--rows",
+        str(REFERENCE_BUNDLE),
         "--reference",
         run_id,
         "--reference-where",
@@ -831,7 +837,7 @@ def test_a_record_over_mixed_suites_is_named_as_such() -> None:
     assert comparison.default_output_path(record).name.startswith("mixed-suites.model.")
 
 
-PUBLISHED_DIR = Path("aidd_docs/results/comparisons")
+PUBLISHED_DIR = Path("aidd_docs/results/comparisons.schema-7")
 PUBLISHED_RECORDS = sorted(PUBLISHED_DIR.glob("*.json"))
 
 
@@ -855,7 +861,7 @@ def _declaration(members: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 @pytest.mark.parametrize("published", PUBLISHED_RECORDS, ids=lambda path: path.name)
 def test_a_published_record_recomputes_or_is_unedited(
-    published: Path, tmp_path: Path
+    published: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     record = _load(published)
     if record["record_version"] == "1":
@@ -876,6 +882,14 @@ def test_a_published_record_recomputes_or_is_unedited(
     declaration = tmp_path / "comparisons.json"
     declaration.write_text(json.dumps(_declaration(record["members"])), "utf-8")
     output = tmp_path / published.name
+    # Its rows now live in the superseded file: put them back at the path the
+    # record names, relative to a working directory of their own.
+    assert record["rows_source"] == PUBLISHED_ROWS_SOURCE
+    rows = tmp_path / PUBLISHED_ROWS_SOURCE
+    rows.parent.mkdir(parents=True)
+    rows.write_bytes(REFERENCE_BUNDLE.read_bytes())
+    expected = published.read_text(encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
     args = [
         "--rows",
         record["rows_source"],
@@ -891,10 +905,10 @@ def test_a_published_record_recomputes_or_is_unedited(
         str(output),
     ]
     assert comparison.main(args) == 0
-    assert output.read_text(encoding="utf-8") == published.read_text(encoding="utf-8")
+    assert output.read_text(encoding="utf-8") == expected
 
 
-def test_the_bundle_publishes_one_current_family_holding_every_pair() -> None:
+def test_the_schema_7_records_hold_one_current_family_with_every_pair() -> None:
     # Both committed pairs, then grown by the leader set's comparison of the
     # two local batches (order 10): each growth supersedes the last head.
     records = [_load(path) for path in PUBLISHED_RECORDS]

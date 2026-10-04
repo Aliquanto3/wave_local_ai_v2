@@ -114,7 +114,7 @@ def test_the_readme_names_release_commit_schema_files_and_citation(
     readme = files["README.md"].decode("utf-8")
     assert f"- Release: `{TAG}` (packaged version {VERSION})" in readme
     assert f"- Commit: `{commit}`" in readme
-    assert "Bundle schema version read: runtime rows 7, quality rows 7" in readme
+    assert "Bundle schema version read: runtime rows 30, quality rows 30" in readme
     for name in files:
         if name != "README.md":
             assert f"`{name}`" in readme, name

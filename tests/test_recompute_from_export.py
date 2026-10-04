@@ -18,7 +18,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 import recompute_from_export as reader
-from published_bundle_fixtures import build_bundle
+from published_bundle_fixtures import SCHEMA_7, build_bundle
 
 from wave_local_ai_v2 import bundle_export
 
@@ -166,6 +166,19 @@ def test_the_command_reports_each_value_and_its_exit_code(
 def test_an_export_without_published_statistics_has_nothing_to_recompute(
     tmp_path: Path,
 ) -> None:
-    bundle_export.export_bundle(bundle_export.default_bundle_paths(), tmp_path)
+    # The superseded schema-7 rows predate the interval block and their
+    # family records refuse every pair: nothing is published to recompute.
+    bundle_export.export_bundle(SCHEMA_7, tmp_path)
 
     assert reader.recompute(tmp_path) == []
+
+
+def test_the_committed_bundle_recomputes_to_every_published_value(
+    tmp_path: Path,
+) -> None:
+    bundle_export.export_bundle(bundle_export.default_bundle_paths(), tmp_path)
+
+    checks = reader.recompute(tmp_path)
+
+    assert checks
+    assert [check for check in checks if not check.matches] == []

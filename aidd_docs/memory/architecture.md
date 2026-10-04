@@ -87,8 +87,8 @@ flowchart LR
   not any one file alone: `runtime-reference.jsonl` + `quality-reference.jsonl`
   + `refusals-reference.jsonl` (derived by `wave-local-ai-v2-merge-bundle`
   from each machine's tracked location `machines/<machine_id>/`, never
-  hand-edited, checked in CI; the schema-"7" snapshot stays pinned by digest
-  until its republication) + `fiches/` (cited by
+  hand-edited, checked in CI; the schema-"7" curated snapshot it replaced is
+  kept as `*-reference.schema-7.jsonl`) + `fiches/` (cited by
   `fiche_hash`) + `aidd_docs/roster/models.json` (cited by `roster_entry_id`)
   + `suite-definitions/` (cited by `suite_id`/`suite_version` on quality
   rows, `suite_snapshot.py` — see `cli.md`). `tests/test_reference_bundle.py`

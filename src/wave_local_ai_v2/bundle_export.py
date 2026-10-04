@@ -118,9 +118,10 @@ EXCLUDED_NOTE = (
 )
 
 # Nested records kept whole as one JSON cell: their shape is a list of
-# records or a record of records, with no fixed column set.
+# records, a record of records, or a record keyed by provider, with no fixed
+# column set.
 _JSON_CELL_ROW_FIELDS: frozenset[str] = frozenset(
-    {"judges", "judge_egress", "judge_cost", "profile_overrides"}
+    {"judges", "judge_egress", "judge_cost", "profile_overrides", "retry_budget"}
 )
 
 
@@ -157,6 +158,10 @@ _PRICE_EMPTY = (
 )
 
 _ID = field_doc.ID
+# A number on a gpu row, an identifier on a cpu_only row: one unit naming
+# both, so a typed copy of the table keeps the two apart instead of turning
+# the identifier into a null a failed read also produces.
+VRAM_UNIT = f"MiB (2^20 bytes), or the identifier {row_contract.VRAM_NOT_APPLICABLE}"
 _TEXT = field_doc.TEXT
 _BOOL = field_doc.BOOL
 _COUNT = field_doc.COUNT
@@ -1055,8 +1060,9 @@ _RUNTIME_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     ("ttft_source",): FieldDoc("Where time to first token was read from.", _ID),
     ("vram_used_mib",): FieldDoc(
         "GPU memory used; aggregation_vram_used_mib states the statistic. "
-        "'not_applicable' on a cpu_only row (schema 25+): the run used no VRAM.",
-        "MiB (2^20 bytes)",
+        "'not_applicable' on a cpu_only row (schema 25+): the run used no VRAM. "
+        "Read it as a number only where it is not that identifier.",
+        VRAM_UNIT,
     ),
     ("process_rss_bytes",): FieldDoc(
         "Server process resident memory; aggregation_process_rss_bytes states "
@@ -1278,6 +1284,10 @@ ROSTER_ENTRY_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     **_requirement_field_docs(),
 }
 
+_NO_TOLERANCE = (
+    "This suite version declares no divergence tolerance (the column name is "
+    "then listed in fields_not_carried)."
+)
 SUITE_DEFINITION_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     ("context_length",): FieldDoc("Context window the suite declares.", "tokens"),
     ("max_output_tokens",): FieldDoc("Output token cap the suite declares.", "tokens"),
@@ -1290,6 +1300,26 @@ SUITE_DEFINITION_FIELDS: dict[tuple[str, ...], FieldDoc] = {
         _ID,
         "This suite version declares no thinking policy (the column name is "
         "then listed in fields_not_carried).",
+    ),
+    ("level",): FieldDoc(
+        "Level the suite definition declares: development or publication.",
+        _ID,
+        "This suite version declares no level (the column name is then listed "
+        "in fields_not_carried).",
+    ),
+    ("divergence_tolerance", "value"): FieldDoc(
+        "Share of a cloud re-run's items allowed to differ from the reference "
+        "batch while the re-run still reads as reproduced.",
+        _RATIO,
+        _NO_TOLERANCE,
+    ),
+    ("divergence_tolerance", "unit"): FieldDoc(
+        "Unit of the declared tolerance (fraction_of_items).", _ID, _NO_TOLERANCE
+    ),
+    ("divergence_tolerance", "reason"): FieldDoc(
+        "Why the suite declares that tolerance, as its definition states it.",
+        _TEXT,
+        _NO_TOLERANCE,
     ),
 }
 

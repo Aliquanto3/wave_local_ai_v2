@@ -836,10 +836,11 @@ def test_the_committed_mistral_rerun_is_reproduced_under_the_declared_tolerance(
 ):
     """The one observed cloud re-run: the two committed mistral-small-2603
     batches, which the identical rule published as not_reproduced on one
-    item, read back under the classification suite's declared tolerance."""
+    item, read back under the classification suite's declared tolerance.
+    Superseded with the schema-7 bundle on 2026-10-04 and kept unedited."""
     rows = [
         json.loads(line)
-        for line in Path("aidd_docs/results/quality-reference.jsonl")
+        for line in Path("aidd_docs/results/quality-reference.schema-7.jsonl")
         .read_text(encoding="utf-8")
         .splitlines()
         if line.strip()

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 from pathlib import Path
 from typing import Any
 
@@ -183,41 +182,6 @@ def test_crlf_line_endings_do_not_fail_the_check(tmp_path: Path) -> None:
     assert bundle_merge.check(bundle, paths) == []
 
 
-def _snapshot_copy(tmp_path: Path) -> BundlePaths:
-    paths = _paths(tmp_path / "bundle")
-    paths.runtime.parent.mkdir(parents=True)
-    shutil.copy(settings.DEFAULT_RUNTIME_REFERENCE_PATH, paths.runtime)
-    shutil.copy(settings.DEFAULT_QUALITY_REFERENCE_PATH, paths.quality)
-    return paths
-
-
-def test_the_pinned_snapshot_passes_only_while_no_location_holds_a_record(
-    tmp_path: Path,
-) -> None:
-    paths = _snapshot_copy(tmp_path)
-    empty = bundle_merge.collect(tmp_path / "no-locations", DECLARED)
-    assert bundle_merge.check(empty, paths) == []
-
-    root = tmp_path / "machines"
-    _two_machines(root)
-    assert bundle_merge.check(bundle_merge.collect(root, DECLARED), paths) != []
-
-
-def test_a_hand_edit_of_the_pinned_snapshot_fails_the_check(tmp_path: Path) -> None:
-    paths = _snapshot_copy(tmp_path)
-    paths.quality.write_bytes(paths.quality.read_bytes().replace(b"0", b"1", 1))
-    empty = bundle_merge.collect(tmp_path / "no-locations", DECLARED)
-    assert bundle_merge.check(empty, paths) != []
-
-
-def test_the_merge_never_overwrites_the_pinned_snapshot(tmp_path: Path) -> None:
-    paths = _snapshot_copy(tmp_path)
-    before = paths.runtime.read_bytes()
-    with pytest.raises(MergeRefusal, match="git mv"):
-        bundle_merge.write(bundle_merge.collect(tmp_path / "none", DECLARED), paths)
-    assert paths.runtime.read_bytes() == before
-
-
 def test_unresolved_refusals_names_entry_machine_and_profile() -> None:
     registry = profiles.tracked_registry()
     good = _refusal(LAPTOP)
@@ -265,22 +229,6 @@ def test_the_cli_writes_then_checks_then_refuses(
         bundle_merge.main(["--bundle-dir", bundle_dir])
     assert exited.value.code == 1
     assert "fiche hash collision" in capsys.readouterr().err
-
-
-def test_the_cli_reports_the_pinned_snapshot_and_refuses_to_overwrite_it(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    _snapshot_copy(tmp_path)
-    monkeypatch.setenv("MACHINE_RESULTS_ROOT", str(tmp_path / "machines"))
-    bundle_dir = str(tmp_path / "bundle")
-
-    bundle_merge.main(["--check", "--bundle-dir", bundle_dir])
-    assert "pinned schema-7 snapshot" in capsys.readouterr().out
-    with pytest.raises(SystemExit):
-        bundle_merge.main(["--bundle-dir", bundle_dir])
-    assert "git mv" in capsys.readouterr().err
 
 
 def test_paths_come_from_the_environment_without_a_bundle_dir(

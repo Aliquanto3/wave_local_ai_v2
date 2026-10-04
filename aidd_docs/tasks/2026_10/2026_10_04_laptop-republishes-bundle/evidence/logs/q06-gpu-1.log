@@ -1,0 +1,5 @@
+49d99f73e09e4291be3ca78bcd324082
+pre-flight: vram_gb not checked under gpu: roster entry 'qwen3-0.6b-q8' declares no minimum yet (awaits a per-process VRAM peak: the published vram_used_mib is NVML's device-wide used memory (4527 MiB for the 0.6B, whose weights are 0.64 GB), not this model's own need)
+[codecarbon INFO @ 02:23:32] offline tracker init
+[codecarbon WARNING @ 02:23:32] Multiple instances of codecarbon are allowed to run at the same time.
+gen_tok_per_s=125.2 prompt_tok_per_s=4070.8 ttft_ms=364.8 repetitions_n=5 unreliable=False emissions_kg=9.083802935958162e-06 cost_total=3.1446988161385526e-05 -> C:\Users\Anael\AppData\Local\Temp\claude\C--Users-Anael-dev-wave-local-ai-v2\2554606c-a87d-454f-a374-f2d0c622109e\scratchpad\bench\runtime.jsonl

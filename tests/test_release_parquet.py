@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import assemble_release_archive as release
 import release_parquet as rp
 
-from wave_local_ai_v2 import build_info, bundle_export
+from wave_local_ai_v2 import build_info, bundle_export, row_contract
 
 REPO = release.REPO_ROOT
 TAG = f"v{build_info.version()}"
@@ -62,9 +62,11 @@ def test_every_unit_the_dictionary_states_has_a_parquet_type(
     exports: dict[str, bytes],
 ) -> None:
     # A new unit fails the release build; this catches it on every pull
-    # request, long before a tag.
+    # request, long before a tag. A record kind the bundle does not hold is
+    # named on a row stating no unit (it is no column); a table column
+    # stating none fails `test_every_table_column_is_typed` below.
     header, *rows = _rows(exports[bundle_export.DICTIONARY_FILE])
-    units = {row[header.index("unit")] for row in rows}
+    units = {row[header.index("unit")] for row in rows} - {""}
     assert sorted(units - set(rp.UNIT_KINDS)) == []
 
 
@@ -73,6 +75,25 @@ def test_every_table_column_is_typed(exports: dict[str, bytes]) -> None:
     for table in bundle_export.TABLES:
         header = _rows(exports[f"{table}.csv"])[0]
         assert len(rp.column_kinds(table, header, dictionary)) == len(header)
+
+
+def test_a_cpu_only_vram_cell_keeps_its_identifier_apart_from_a_failed_read(
+    exports: dict[str, bytes],
+) -> None:
+    # The committed bundle holds cpu_only rows: their VRAM column is typed so
+    # `not_applicable` stays itself, a number stays its text, and only an
+    # empty cell (a failed read) becomes a null.
+    table = "runtime_aggregates"
+    header, *rows = _rows(exports[f"{table}.csv"])
+    kinds = rp.column_kinds(table, header, exports[bundle_export.DICTIONARY_FILE])
+    at = header.index("vram_used_mib")
+    assert kinds[at] == rp.STRING
+    cells = {row[at] for row in rows}
+    assert row_contract.VRAM_NOT_APPLICABLE in cells
+    for cell in cells:
+        parsed = rp.parse_cell(kinds[at], cell, "vram_used_mib")
+        assert parsed == (cell or None)
+    assert rp.parse_cell(kinds[at], "", "vram_used_mib") is None
 
 
 def test_a_column_without_an_entry_or_with_an_untyped_unit_is_refused() -> None:

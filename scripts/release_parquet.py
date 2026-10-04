@@ -67,7 +67,10 @@ UNIT_KINDS: Mapping[str, str] = {
     "currency per million tokens": FLOAT,
     "GB": FLOAT,
     "GB (10^9 bytes)": FLOAT,
-    "MiB (2^20 bytes)": FLOAT,
+    # A cpu_only row's VRAM is the identifier `not_applicable`, never a number
+    # and never empty (empty is a failed read on a gpu row): a string column
+    # keeps the three apart, where a float column would fold it into null.
+    bundle_export.VRAM_UNIT: STRING,
     "billions of parameters": FLOAT,
     "date, YYYY-MM-DD": DATE,
     "ISO 8601 date": DATE,

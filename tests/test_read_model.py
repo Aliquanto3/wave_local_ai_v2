@@ -37,16 +37,18 @@ from wave_local_ai_v2.read_model import (
     Absent,
 )
 
-# The committed reference bundle, entirely schema "7" -- see
-# tests/test_reference_bundle.py's own PUBLISHED_BUNDLE_SCHEMA_VERSION for why
-# this is pinned rather than read from row_contract.SCHEMA_VERSION.
+# The schema-"7" reference bundle, superseded on 2026-10-04 and kept unedited
+# under its `.schema-7` names: a fixed set of real rows these tests read the
+# views over. The current bundle's views are asserted in
+# tests/test_reference_bundle.py.
 REFERENCE_BUNDLE_SCHEMA_VERSION = "7"
-QUALITY_REFERENCE_PATH = Path(settings.DEFAULT_QUALITY_REFERENCE_PATH)
-RUNTIME_REFERENCE_PATH = Path(settings.DEFAULT_RUNTIME_REFERENCE_PATH)
+_RESULTS_DIR = Path(settings.DEFAULT_QUALITY_REFERENCE_PATH).parent
+QUALITY_REFERENCE_PATH = _RESULTS_DIR / "quality-reference.schema-7.jsonl"
+RUNTIME_REFERENCE_PATH = _RESULTS_DIR / "runtime-reference.schema-7.jsonl"
 SUITE_DEFINITIONS_DIR = Path(settings.DEFAULT_SUITE_DEFINITIONS_DIR)
 FICHE_REGISTRY_DIR = Path(settings.DEFAULT_FICHE_REGISTRY_DIR)
 ROSTER_PATH = Path(settings.DEFAULT_ROSTER_PATH)
-LEADER_SETS_DIR = Path(settings.DEFAULT_LEADER_SETS_DIR)
+LEADER_SETS_DIR = _RESULTS_DIR / "leader-sets.schema-7"
 MACHINES_PATH = Path(machines.DEFAULT_REGISTRY_PATH)
 
 
@@ -1068,9 +1070,14 @@ def test_the_reference_bundle_quality_row_carries_the_storys_named_fields() -> N
     for field in ("contamination_risk", "indicative_reasons", "failure_counts"):
         assert not isinstance(entry[field], Absent), f"{field} is unexpectedly absent"
 
-    assert entry["thinking_policy"] == Absent(
-        ABSENT_PREDATES_SCHEMA, {"row_schema_version": "7"}
-    )
+
+# `retries`/`resumed` arrived at schema "8", `thinking_policy` at "11": over
+# the real schema-7 rows each reads as an absence naming "7", never a default.
+@pytest.mark.parametrize("field", ["thinking_policy", "retries", "resumed"])
+def test_a_field_the_schema_7_rows_predate_reads_as_absent(field: str) -> None:
+    entry = reference_bundle_quality_view()["entries"][0]
+
+    assert entry[field] == Absent(ABSENT_PREDATES_SCHEMA, {"row_schema_version": "7"})
 
 
 def test_the_reference_bundle_suite_definition_carries_the_suites_own_caps() -> None:

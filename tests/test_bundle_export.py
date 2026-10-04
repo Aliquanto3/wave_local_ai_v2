@@ -14,6 +14,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 import pytest
+from published_bundle_fixtures import SCHEMA_7
 
 from wave_local_ai_v2 import (
     bundle_export,
@@ -34,10 +35,13 @@ from wave_local_ai_v2.bundle_export import (
     Source,
 )
 
-# Pinned here, like `tests/test_reference_bundle.py` pins it, rather than read
-# from `row_contract.SCHEMA_VERSION`: the export must declare what it read.
+# The export's mechanics are pinned over a fixed set of real rows: the
+# superseded schema-"7" bundle (`published_bundle_fixtures.SCHEMA_7`), which
+# no later run changes. The schema is pinned rather than read from
+# `row_contract.SCHEMA_VERSION`: the export must declare what it read. The
+# current bundle's own export is asserted in `test_the_current_bundle_exports`.
 PUBLISHED_BUNDLE_SCHEMA_VERSION = "7"
-COMMITTED = bundle_export.default_bundle_paths()
+COMMITTED = SCHEMA_7
 
 
 def _read_csv(path: Path) -> list[dict[str, str]]:
@@ -106,6 +110,22 @@ def test_the_manifest_declares_the_schema_the_bundle_carries(
         assert manifest[part]["version_field"] == "schema_version"
         assert manifest[part]["versions_read"] == PUBLISHED_BUNDLE_SCHEMA_VERSION
     assert manifest["quality_rows"]["versions_read"] != row_contract.SCHEMA_VERSION
+
+
+def test_the_current_bundle_exports(tmp_path: Path) -> None:
+    # The republished bundle carries what the schema-7 fixture never did: a
+    # cloud batch's retry budget keyed by provider, kept as one JSON cell,
+    # and a suite definition declaring its level and divergence tolerance.
+    bundle_export.export_bundle(bundle_export.default_bundle_paths(), tmp_path)
+    manifest = {row["part"]: row for row in _read_csv(tmp_path / MANIFEST_FILE)}
+    quality = _read_csv(tmp_path / "quality_items.csv")
+
+    for part in ("runtime_rows", "quality_rows"):
+        assert manifest[part]["versions_read"] == "30"
+    assert {row["retry_budget"] for row in quality} == {"{}", '{"mistral":4}'}
+    assert {row["suite_definition_divergence_tolerance_value"] for row in quality} == {
+        "0.1"
+    }
 
 
 def test_each_row_carries_its_own_schema_version_column(

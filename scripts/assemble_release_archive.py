@@ -137,6 +137,35 @@ PATHS_NOT_SHIPPED: Mapping[str, NotShipped] = {
         _LICENCE,
         "superseded quality rows, retained in the repository; no table reads them",
     ),
+    "aidd_docs/results/runtime-reference.schema-7.jsonl": NotShipped(
+        _LICENCE,
+        "superseded schema-7 runtime rows, retained in the repository; no table "
+        "reads them",
+    ),
+    "aidd_docs/results/quality-reference.schema-7.jsonl": NotShipped(
+        _LICENCE,
+        "superseded schema-7 quality rows, retained in the repository; no table "
+        "reads them",
+    ),
+    "aidd_docs/results/comparisons.schema-7/": NotShipped(
+        _LICENCE,
+        "superseded comparison family records over the schema-7 rows, retained "
+        "in the repository; no table reads them",
+    ),
+    "aidd_docs/results/leader-sets.schema-7/": NotShipped(
+        _LICENCE,
+        "superseded leader-set records over the schema-7 rows, retained in the "
+        "repository; no table reads them",
+    ),
+    "aidd_docs/results/refusals-reference.jsonl": NotShipped(
+        _LICENCE,
+        "the bundle's refusal records; no table reads them yet",
+    ),
+    "aidd_docs/results/machines/": NotShipped(
+        _LICENCE,
+        "the per-machine locations the bundle is derived from; the bundle rows "
+        "beside the tables are the same lines",
+    ),
     "aidd_docs/results/client-sessions.jsonl": NotShipped(
         _LICENCE,
         "the client-session reception record, appended by hand after a release "

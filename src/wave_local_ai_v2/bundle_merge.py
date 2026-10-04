@@ -26,7 +26,6 @@ locations always produce a byte-identical bundle.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import sys
@@ -41,17 +40,6 @@ from wave_local_ai_v2 import machine_results, machines, profiles, results, setti
 from wave_local_ai_v2.row_contract import RowKind
 
 ROW_KINDS: tuple[RowKind, ...] = ("runtime", "quality")
-
-# The committed bundle before any machine promoted a row: the schema-"7"
-# curated snapshot of 2026-08-27, whose rows predate `machine_id` and so can
-# never be derived by this merge. `--check` accepts exactly these bytes (line
-# endings normalised) while every location is empty, and write mode refuses
-# to overwrite them. The bundle republication story `git mv`s them to
-# `*-reference.schema-7.jsonl` before its first merge, then deletes this pin.
-PRE_MERGE_SNAPSHOT: dict[str, str] = {
-    "runtime": "9fb5882ee4249dba0a6b208dc9dd8f05b53b01a0da73d92a21e14f6165ac1c57",  # pragma: allowlist secret
-    "quality": "6a7d72432d88adad7455c938b6adc693c483a202b9896b27e59f55475e6ba9a7",  # pragma: allowlist secret
-}
 
 
 class MergeRefusal(ValueError):
@@ -78,10 +66,6 @@ class Bundle:
 
     def text(self, kind: str) -> str:
         return "".join(line + "\n" for line in self.lines[kind])
-
-    @property
-    def empty(self) -> bool:
-        return not any(self.lines.values())
 
 
 @dataclass(frozen=True)
@@ -252,23 +236,8 @@ def _normalised(path: Path) -> bytes | None:
     return path.read_bytes().replace(b"\r\n", b"\n")
 
 
-def is_pre_merge_snapshot(paths: BundlePaths) -> bool:
-    """Whether the committed runtime and quality files are the pinned snapshot."""
-    for kind, digest in PRE_MERGE_SNAPSHOT.items():
-        content = _normalised(paths.for_kind(kind))
-        if content is None or hashlib.sha256(content).hexdigest() != digest:
-            return False
-    return True
-
-
 def check(bundle: Bundle, paths: BundlePaths) -> list[str]:
-    """Every way the committed bundle differs from `bundle`; empty when equal.
-
-    The pinned pre-merge snapshot passes only while no location holds a
-    record and no refusals file has been published beside it.
-    """
-    if bundle.empty and is_pre_merge_snapshot(paths) and not paths.refusals.exists():
-        return []
+    """Every way the committed bundle differs from `bundle`; empty when equal."""
     problems = []
     for kind, expected in bundle.lines.items():
         path = paths.for_kind(kind)
@@ -284,13 +253,7 @@ def check(bundle: Bundle, paths: BundlePaths) -> list[str]:
 
 
 def write(bundle: Bundle, paths: BundlePaths) -> None:
-    """Write the three bundle files, refusing to overwrite the pinned snapshot."""
-    if is_pre_merge_snapshot(paths):
-        raise MergeRefusal(
-            f"{paths.runtime} and {paths.quality} are the schema-7 curated "
-            "snapshot; supersede them first (git mv to *-reference.schema-7.jsonl), "
-            "never overwrite them"
-        )
+    """Write the three bundle files."""
     for kind in bundle.lines:
         path = paths.for_kind(kind)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -355,17 +318,7 @@ def main(argv: list[str] | None = None) -> None:
             print(f"error: {problem}", file=sys.stderr)
         if problems:
             sys.exit(1)
-        if bundle.empty and is_pre_merge_snapshot(paths):
-            print(
-                "bundle check: no location holds a record yet and the committed "
-                "bundle is the pinned schema-7 snapshot, unchanged"
-            )
-        else:
-            print(f"bundle check: committed bundle equals the merge ({counts})")
+        print(f"bundle check: committed bundle equals the merge ({counts})")
         return
-    try:
-        write(bundle, paths)
-    except MergeRefusal as exc:
-        print(f"error: merge refused: {exc}", file=sys.stderr)
-        sys.exit(1)
+    write(bundle, paths)
     print(f"bundle written from {root}: {counts}")

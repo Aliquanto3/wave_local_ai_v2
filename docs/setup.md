@@ -404,6 +404,13 @@ copy .env.example .env     # Windows
 Fill `SLM_MODELS_DIR` (the parent directory from step 3) and
 `LLAMA_SERVER_PATH` (the binary path from step 2).
 
+`.env.example` ships placeholder values for `MISTRAL_API_KEY`
+(`sk-replace-me`) and `GOOGLE_API_KEY` (`AIza-replace-me`). The quality CLI
+reads any non-empty value as a key, so a placeholder left in place is sent to
+that provider, which rejects it. Until you set real keys at step 4.3, empty
+both lines (`MISTRAL_API_KEY=`, `GOOGLE_API_KEY=`): an empty key skips its
+provider with one stderr line and makes no call.
+
 Then name the machine and the compute mode. Both are required and have no
 default: every runtime and quality run refuses before any server starts
 until they are set, and every fiche and row records them.
@@ -581,6 +588,17 @@ comparison). A reference fiche written before the engine fields carries
 neither, so it never matches a current run.
 Point `RUNTIME_REFERENCE_PATH` at an empty or absent file to opt out: that
 is `not_comparable`, not a failure.
+
+To decide a re-run against a run of your own (the republication protocol: two
+runs, the second against the first), point the reference path at a file that
+holds only the first run's rows. The first run reads an empty file, so it is
+not compared with the committed bundle; before the second, copy the first
+run's rows from the live store into a file of their own (a runtime run writes
+one line, the store's last; a quality run writes one line per item and
+provider, every line carrying its `run_id`) and set `RUNTIME_REFERENCE_PATH`
+or `QUALITY_REFERENCE_PATH` to it for that invocation only. With the
+committed bundle left as the reference instead, a second run can be decided
+against a published row rather than against its own first.
 
 A quality batch is decided per item against the matching reference batch.
 A `local` subject must reproduce every item's `predicted_label` (or
@@ -772,13 +790,12 @@ pull requests add different file names and never conflict.
    `main`, take `main`'s bundle files, re-run step 5 (`merge-bundle`, then
    `--check`), amend or add the regenerated bundle, and push again.
 
-**Until the bundle republication story.** The committed `*-reference.jsonl`
-files are still the schema-"7" snapshot, pinned by digest
-(`aidd_docs/results/README.md`). While it stands, committing any location
-record, a promoted row or a pre-flight refusal alike, turns the **Derived
-bundle** step red, and the merge in write mode refuses to overwrite the
-snapshot. The loop starts with the republication story, which supersedes the
-snapshot (`git mv` to `*-reference.schema-7.jsonl`) and runs the first merge.
+The bundle this loop derives replaced the schema-"7" curated snapshot on
+2026-10-04, when the laptop promoted its runs and ran the merge (steps 1 to
+5); that republication lands on `main` inside the night-run's draft pull
+request rather than a laptop branch of its own. The snapshot is kept, never
+edited, as `aidd_docs/results/*-reference.schema-7.jsonl`
+(`aidd_docs/results/README.md`).
 
 ### 6.2 Fallback: a machine that cannot push
 
