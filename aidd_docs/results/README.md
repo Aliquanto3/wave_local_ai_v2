@@ -1002,8 +1002,36 @@ GPU.
 - `phi3`: not reached: class stopped at `granite-3.1-3b-a800m-instruct-q4km`.
 - `phimoe`: not reached: class stopped at `granite-3.1-3b-a800m-instruct-q4km`.
 
-**The new rows.** Pending: both suites run for the entry from the commit that adds it,
-on a clean tree.
+**The new rows.** Both runs on `laptop-mobile-gpu`, `compute_mode` `gpu`, under the
+entry's profile (`granite-3.1-3b-a800m-instruct-q4km@laptop-mobile-gpu/gpu`: `-ngl 99`,
+the declared value, launched; `-c 32768`; `-t 8`; no override; no `--n-cpu-moe`),
+`thinking_policy` `disabled` with the entry's `none` control (no switch sent). They ran
+from the commit that added the entry, on a clean tree: every row carries `commit_sha`
+`3008ef92fa86b203d633815f154f2d329b8f1d66` (`tree_dirty: false`) and `roster_version`
+9. Fiche `6159f6b5...`. The entry completed both suites with no failed item, so the
+search's stop condition (owner answers Q127 (a), Q128 (a)) holds.
+
+| Entry | Suite | `run_id` | Rows | Score [95% interval] | `en` | `fr` | `de` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `granite-3.1-3b-a800m-instruct-q4km` | `classification-support-routing@5` | `6630e70b3bf842d2820b8dfa5acab5dd` | 20 | accuracy **0.75** [0.55, 0.90] | 0.70 (n=10) | 0.80 * (n=5) | 0.80 * (n=5) |
+| `granite-3.1-3b-a800m-instruct-q4km` | `translation-business-short-form@4` | `316508c8f6ad4ff3a899b4341f481a9a` | 21 | chrF **0.710** [0.627, 0.792] | 0.659 * (EN->FR) | 0.566 * (FR->DE) | 0.904 * (DE->EN) |
+
+`*` = `indicative`. The bundle now holds 244 quality rows: the 203 before and these
+41, promoted into `machines/laptop-mobile-gpu/` and merged. Every classification
+answer parsed. Granite 3.1 3B-A800M misrouted five items: `account-01`,
+`billing-03` and `account-de-01` as `technical`, `technical-03` and `account-fr-01`
+as `other`. No `Qwen3-4B` quality row at these suite versions is in the bundle, so the
+class's side-by-side reading rests on the earlier, superseded tables below
+(chat-templated classification `@3` 0.70, translation `@2` 0.7252), not on rows of the
+same suite version.
+
+**No row contradicts the EN/FR/DE claim.** The entry claims `en`, `fr` and `de`. Every
+translation output is in its target language (French for EN->FR, German for FR->DE,
+English for DE->EN). Two outputs carry errors inside the right language: `fr-de-06`
+opens its German sentence with the French article "Un", and `en-fr-05` writes
+"L'bureau". The weakest reading is FR->DE at 0.566 on seven items, an indicative figure
+rather than a contradiction. The claim stays on the entry either way, as the epic
+decides.
 
 Every quality row written from schema `"19"` on carries `family` (its
 subject's: the local entry's, or a cloud model's own) and `size_class` (the
