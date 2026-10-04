@@ -1,6 +1,6 @@
 ---
 type: story
-status: done
+status: ready
 source: aidd_docs/backlog/epics/the-same-suite-runs-on-three-machines-or-names-why-it-cannot.md
 parent: aidd_docs/backlog/epics/the-same-suite-runs-on-three-machines-or-names-why-it-cannot.md
 depends_on:
