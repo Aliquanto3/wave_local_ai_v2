@@ -1,4 +1,3 @@
-# SUPERSEDED: dirty-tree run (tree_dirty true, commit 4cf22a17), not published; see run-summary.md and clean-rerun/
 bundle written from aidd_docs\results\machines: 6 runtime, 121 quality, 0 refusals
 exit 0
 bundle check: committed bundle equals the merge (6 runtime, 121 quality, 0 refusals)

@@ -839,14 +839,14 @@ class is dense-only by nature, not by omission.
 **The new rows.** Both runs on `laptop-mobile-gpu`, `compute_mode` `gpu`, profile
 `granite-4.0-h-350m-q8@laptop-mobile-gpu/gpu` (`-ngl 99`, the declared value,
 launched; `-t 8`; no override), `thinking_policy` `disabled` with the entry's `none`
-control (no switch sent), fiche `5ce2bf21...`. They were run from the working tree
-that added the entry, before it was committed, so they carry `tree_dirty: true`
-beside `commit_sha` `4cf22a17f4d3801cd9b871210511dccaea64c74b`.
+control (no switch sent), fiche `5ce2bf21...`. They ran from the commit that added
+the entry, on a clean tree: every row carries `commit_sha`
+`8852bf0252cd90ca08a6e0473d998c282b60dc34` (`tree_dirty: false`).
 
 | Suite | `run_id` | Rows | Score [95% interval] | `en` | `fr` | `de` |
 | --- | --- | --- | --- | --- | --- | --- |
-| `classification-support-routing@5` | `29295f9be29f4901998e6958de0cfa65` | 20 | accuracy **0.50** [0.30, 0.70] | 0.50 (n=10) | 0.40 * (n=5) | 0.60 * (n=5) |
-| `translation-business-short-form@4` | `d8c5b24b38194c34b42f225ad44af0f9` | 21 | chrF **0.484** [0.358, 0.614] | 0.328 * (EN->FR) | 0.326 * (FR->DE) | 0.799 * (DE->EN) |
+| `classification-support-routing@5` | `cb8cb4ffa7754de4b567e3f901953706` | 20 | accuracy **0.50** [0.30, 0.70] | 0.50 (n=10) | 0.40 * (n=5) | 0.60 * (n=5) |
+| `translation-business-short-form@4` | `be0dda5eeaa24862ad4ffbd11d10d61e` | 21 | chrF **0.484** [0.358, 0.614] | 0.328 * (EN->FR) | 0.326 * (FR->DE) | 0.799 * (DE->EN) |
 
 `*` = `indicative`. The bundle now holds 121 quality rows: the 80 of the 2026-10-04
 regeneration and these 41, promoted into `machines/laptop-mobile-gpu/` and merged.

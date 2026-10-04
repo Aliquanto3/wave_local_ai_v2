@@ -25,3 +25,21 @@ Non-blocking:
 - Narrowed tests (`test_roster.py` base-card language-claim exception, qwen-only thinking-control test, `test_bundle_export.py` bare `none` cell) match documented behaviour (`bundle_export.py:1207-1213`).
 
 Reviewer note: the `aidd-dev:05-review` skill was not invoked; the three axes were reviewed directly. One accidental `git add -N .` was reverted at once with `git reset -- <paths>` (index only; working tree untouched; index now empty).
+
+## Round 2 (2026-10-04)
+
+VERDICT: PASS
+
+Blocking finding 1 of round 1 is resolved:
+- All 41 appended rows (`quality-reference.jsonl:81-121`, identical to `machines/laptop-mobile-gpu/quality.jsonl:81-121` and to `evidence/clean-rerun/quality.jsonl`) carry `tree_dirty: false` and `commit_sha` `8852bf0252cd90ca08a6e0473d998c282b60dc34`, run_ids `cb8cb4ff...` (20) and `be0dda5e...` (21), `roster_version` 7, fiche `5ce2bf21...`; `8852bf0`'s roster holds the entry.
+- Additions only: `git diff -U0` => one hunk `@@ -80,0 +81,41 @@` per file, 0 removed lines.
+- `merge-bundle --check` exit 0 (6 runtime, 121 quality); `wave-local-ai-v2-validate` with `FICHE_REGISTRY_DIR` unset, on both reference files and the machine store: `checked 248 row(s)`, exit 0.
+- Reproduction claim verified: the clean rows equal the superseded dirty rows on every item's `subject_output`, `item_score`, `correct`, `predicted_label`, suite scores, intervals, language breakdowns, fiche and template hash (0 differences over 41 items).
+- README lines 842-849 match the rows (accuracy 0.50 [0.30, 0.70], en 0.50 n=10, fr 0.40*, de 0.60*; chrF 0.484 [0.358, 0.614], 0.328 / 0.326 / 0.799); no stale run_id left in the README; findings unchanged and still true.
+- Superseded logs labelled (`suite-classification.log`, `suite-translation.log`, `promote.log`, `merge.log` first line "SUPERSEDED: dirty-tree run ..."); `run-summary.md` and `plan.md` name the superseded pair.
+
+Tests: `timeout 900 uv run pytest -q` => `3054 passed, 20 skipped, 2 warnings in 213.65s`, coverage 98.51%.
+
+Non-blocking:
+- `run-summary.md` says `git status --porcelain` was "empty" at the top of each log; the clean-rerun logs show two untracked (`??`) paths, no tracked change. `tree_dirty: false` is still correct (it counts tracked files only); reword to "no tracked change".
+- The untracked `aidd_docs/results/fiches/5ce2bf21...json` must be committed with the rows, or the validator fails with `missing` on a clean clone.
