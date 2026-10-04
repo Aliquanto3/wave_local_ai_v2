@@ -275,7 +275,12 @@ def install_graceful_stop() -> None:
     through `running_server`'s teardown -- once the current blocking call (a
     cooldown `time.sleep`, an HTTP request) returns, not at delivery time.
     """
-    stop_signal = signal.SIGBREAK if sys.platform == "win32" else signal.SIGTERM
+    # An `if` rather than a conditional expression: mypy narrows `sys.platform`
+    # only in statements, and `SIGBREAK` does not exist off Windows.
+    if sys.platform == "win32":
+        stop_signal = signal.SIGBREAK
+    else:
+        stop_signal = signal.SIGTERM
 
     def _raise(signum: int, _frame: object) -> None:
         raise StopRequested(f"run stopped by signal {signum}")
