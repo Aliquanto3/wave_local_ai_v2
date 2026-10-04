@@ -1,0 +1,5 @@
+$ llama-server.exe (b10537) -m D:\ia\models\granite-4.0-h-350m\granite-4.0-h-350m-Q8_0.gguf --port 8097 -ngl 0 -c 4096 -t 4   (PID 33604, stopped by PID after the count)
+$ uv run python scripts/wmt24pp_suite.py count-tokens --table <scratch>/table.jsonl --server http://127.0.0.1:8097 --roster-entry granite-4.0-h-350m-q8 --out <scratch>/token-counts.json
+<scratch>\wmt24pp\token-counts.json: 960 references counted (copied here as token-counts.json; longest 304)
+$ uv run python scripts/wmt24pp_suite.py draw --table <scratch>/table.jsonl --record <scratch>/fetch-record.json --token-counts <scratch>/token-counts.json --out src/wave_local_ai_v2/suite_data/translation-mixed-domain-wmt24pp.json
+src\wave_local_ai_v2\suite_data\translation-mixed-domain-wmt24pp.json: 300 items, max_output_tokens 608, per domain {'literary': {'en->fr': 12, 'fr->de': 21, 'de->en': 28}, 'news': {'en->fr': 19, 'fr->de': 16, 'de->en': 14}, 'social': {'en->fr': 55, 'fr->de': 53, 'de->en': 50}, 'speech': {'en->fr': 14, 'fr->de': 10, 'de->en': 8}}

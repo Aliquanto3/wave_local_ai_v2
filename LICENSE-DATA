@@ -23,7 +23,9 @@ Each path in this list is covered. A path ending in "/" is a directory:
 the data files in it are covered, and it holds a NOTICE.md stating these
 terms, so that a copy of the directory carries them. The README.md and
 NOTICE.md files in a covered directory are documentation, not data, and
-this file does not license them. A path ending in ".py" is a code module:
+this file does not license them; a LICENSE-APACHE-2.0.txt file in one is
+the licence text of the drawn items it holds (section 2.2), not data
+either. A path ending in ".py" is a code module:
 only the hand-written item literals it names are covered, the code around
 them is MIT, and the module's header says so.
 
@@ -131,10 +133,54 @@ its items and rows, and the attribution it requires.
   (https://creativecommons.org/licenses/by/4.0/); each item wrapped in a
   prompt template."
 
+### 2.2 WMT24++
+
+- Source: `google/wmt24pp` on the Hugging Face Hub, at revision
+  `fd7405c06494bc66a57b25f55d217a72f96e60dc`
+  (https://huggingface.co/datasets/google/wmt24pp/tree/fd7405c06494bc66a57b25f55d217a72f96e60dc),
+  pair files `en-fr_FR.jsonl` and `en-de_DE.jsonl`.
+- Creator: Google (Deutsch et al., "WMT24++: Expanding the Language
+  Coverage of WMT24 to 55 Languages & Dialects", 2025,
+  https://arxiv.org/abs/2502.12404, as the dataset card cites it). The
+  English sources are the WMT24 general test set's (see section 3,
+  declaration 3).
+- Copyright notice: the dataset card states none; the work is attributed to
+  its creator.
+- Licence: Apache License, Version 2.0 (Apache-2.0),
+  https://www.apache.org/licenses/LICENSE-2.0. The dataset card at the
+  pinned revision is the licence of record (`license: apache-2.0`): the
+  revision ships no licence or NOTICE file. A copy of the Apache-2.0 text,
+  `LICENSE-APACHE-2.0.txt`, ships in each directory holding drawn WMT24++
+  items: `src/wave_local_ai_v2/suite_data/`,
+  `aidd_docs/results/suite-definitions/` and `aidd_docs/results/`. A licence
+  file at that revision naming anything other than Apache-2.0 would reopen
+  the licence decision.
+- Rung: permissive. The drawn items and the rows carrying them ship
+  unchanged inside this repository and its bundle, with no segregation and
+  no redaction.
+- What is drawn: 300 segments, 100 per direction (English to French,
+  French to German, German to English), each with its reference
+  translation, published as the suite `translation-mixed-domain-wmt24pp` in
+  `src/wave_local_ai_v2/suite_data/` and
+  `aidd_docs/results/suite-definitions/`, and in the item fields (`item_id`,
+  `prompt`, `reference_output`) of the rows citing that suite. The French
+  and German source texts are themselves translations from English.
+- Changes made, as Apache-2.0 Section 4(b) requires: each segment's source
+  text is wrapped in the suite's prompt template, an instruction naming the
+  source and target languages; the reference is unchanged. The two pair
+  files are joined on `segment_id`, segments marked `is_bad_source` are
+  dropped, and each segment is assigned to one direction
+  (`scripts/wmt24pp_suite.py`).
+- Attribution: "WMT24++ by Google
+  (https://huggingface.co/datasets/google/wmt24pp, revision
+  fd7405c06494bc66a57b25f55d217a72f96e60dc), licensed under the Apache
+  License, Version 2.0; each source text wrapped in a prompt template, the
+  references unchanged."
+
 
 ## 3. Assumptions this licence rests on
 
-Two statements in this file are the author's declarations, not verified
+Three statements in this file are the author's declarations, not verified
 facts. They are disclosed here so that a reuser can weigh them.
 
 1. The hand-written items are the owner's to license. The CC-BY 4.0 grant
@@ -145,6 +191,15 @@ facts. They are disclosed here so that a reuser can weigh them.
 2. The model outputs in the rows may be redistributed (1.3). This is
    unverified against any model's licence or provider's terms until the
    spike named in 1.3 concludes.
+3. The WMT24++ items may be redistributed under Apache-2.0 (2.2). Their
+   English sources are the WMT24 general test set's, which WMT released
+   "for research purposes" only
+   (https://www2.statmt.org/wmt24/translation-task.html); the items rest on
+   Google's Apache-2.0 label over the dataset, taken at face value over
+   source text Google did not author. If that label is ever withdrawn, the
+   items move to the no-redistribution rung under the
+   supersede-don't-backfill discipline: their rows are superseded, not
+   edited.
 
 
 ## 4. Attribution

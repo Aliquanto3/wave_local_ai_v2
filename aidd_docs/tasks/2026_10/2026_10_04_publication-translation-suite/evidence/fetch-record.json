@@ -1,0 +1,20 @@
+{
+  "git_blob_sha1": {
+    "en-de_DE.jsonl": "c9364c8e1e089e848b674b9990c0c7ec903e4847",
+    "en-fr_FR.jsonl": "19bdea5813055003b7cd04ccf0d40ecdaaa89afc"
+  },
+  "licence_files_at_revision": [],
+  "loader": {
+    "library": "CPython json",
+    "version": "3.12"
+  },
+  "pool_per_direction": {
+    "de->en": 323,
+    "en->fr": 315,
+    "fr->de": 322
+  },
+  "row_count": 960,
+  "source": "google/wmt24pp",
+  "source_revision": "fd7405c06494bc66a57b25f55d217a72f96e60dc",
+  "table_sha256": "db57a8a457dce9ae2f38e0b4595a582bf9bf471475dc545b3b4bc89e2546f4ed"
+}

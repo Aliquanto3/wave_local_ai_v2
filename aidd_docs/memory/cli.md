@@ -186,6 +186,23 @@ The command-line interface for running benchmarks.
   its definition with `source_table.sha256`; `verify` is the operator
   replay (re-fetch, hash check, `subset_replay`). pyarrow is in the locked
   `loaders` group only; the network is touched by `fetch` and `verify`.
+- `uv run python scripts/wmt24pp_suite.py (fetch --out <table.jsonl> --record
+  <record.json> | count-tokens --table <table.jsonl> --server <url>
+  --roster-entry <id> --out <counts.json> | draw --table <table.jsonl> --record
+  <record.json> --token-counts <counts.json> --out <definition.json> | verify)
+  [--cache <dir>]` — the WMT24++ loader (`google/wmt24pp` at its pinned
+  revision, pair files `en-fr_FR`/`en-de_DE`, standard library only):
+  `fetch` downloads both files, checks each against the Hub's git object id,
+  joins them on `segment_id`, drops `is_bad_source` segments, assigns each
+  segment to one direction (`segment_id % 3`: EN->FR, FR->DE, DE->EN) and
+  writes the source table and a record (table hash, pool per direction);
+  `count-tokens` counts every reference with a running `llama-server`'s
+  `/tokenize` (the published subject's GGUF, started and stopped by the
+  operator); `draw` draws the 300-item publication suite and sets
+  `max_output_tokens` to twice the longest drawn reference
+  (`max_output_tokens_basis`); `verify` is the operator replay. The helpers
+  both loaders share (Hub tree, hashes, table text, table check) are
+  `scripts/hub_source.py`.
 - `wave-local-ai-v2-validate` — invalidation validator: checks every row of
   one or more results files (default: the two live stores,
   `RUNTIME_RESULTS_PATH`/`QUALITY_RESULTS_PATH`) against the stored fiche

@@ -345,3 +345,50 @@ def test_neither_suite_notice_claims_a_drawn_item_under_cc_by() -> None:
         assert "carries its\nown source's licence, recorded on the item" in text
         for needle in ("CC-BY 4.0", "LICENSE-DATA", "MIT"):
             assert needle in text
+
+
+# sha256 of https://www.apache.org/licenses/LICENSE-2.0.txt, the canonical
+# Apache-2.0 text: each copy beside drawn WMT24++ items is carried verbatim.
+APACHE_SHA256 = "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"  # pragma: allowlist secret
+APACHE_TEXT = "LICENSE-APACHE-2.0.txt"
+WMT24PP_DIRECTORIES = (
+    "src/wave_local_ai_v2/suite_data",
+    "aidd_docs/results/suite-definitions",
+    "aidd_docs/results",
+)
+
+
+def test_every_directory_holding_drawn_wmt24pp_items_carries_the_apache_text() -> None:
+    for directory in WMT24PP_DIRECTORIES:
+        # Read as text, so a checkout's platform newlines fold back to the
+        # canonical file's.
+        text = _read(REPO / directory / APACHE_TEXT)
+        assert hashlib.sha256(text.encode("utf-8")).hexdigest() == APACHE_SHA256
+        notice = _read(REPO / directory / NOTICE)
+        assert APACHE_TEXT in notice, directory
+        assert "prompt template" in notice, directory
+        assert "unchanged" in notice, directory
+
+
+def test_section_two_names_wmt24pp_and_section_three_its_research_use_origin() -> None:
+    licence_data = _read(REPO / "LICENSE-DATA")
+    section = licence_data.split("### 2.2 WMT24++", 1)[1].split("\n## 3.", 1)[0]
+    declarations = licence_data.split("\n## 3.", 1)[1].split("\n## 4.", 1)[0]
+
+    for needle in (
+        "google/wmt24pp",
+        "fd7405c06494bc66a57b25f55d217a72f96e60dc",  # pragma: allowlist secret
+        "Apache-2.0",
+        "https://www.apache.org/licenses/LICENSE-2.0",
+        "Rung: permissive",
+        APACHE_TEXT,
+        "prompt template",
+        "the reference is unchanged",
+        "translations from English",
+        "Copyright notice",
+    ):
+        assert needle in section, needle
+    assert "Three statements" in declarations
+    third = declarations.split("\n3. ", 1)[1]
+    for needle in ("WMT24", "research purposes", "Apache-2.0 label"):
+        assert needle in third, needle

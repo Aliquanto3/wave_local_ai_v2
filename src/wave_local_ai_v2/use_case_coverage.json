@@ -8,7 +8,7 @@
     {
       "use_case": "translation",
       "state": "exercised",
-      "suite_ids": ["translation-business-short-form"]
+      "suite_ids": ["translation-business-short-form", "translation-mixed-domain-wmt24pp"]
     },
     {
       "use_case": "document-comparison",

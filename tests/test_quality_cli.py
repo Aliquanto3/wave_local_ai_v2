@@ -3321,13 +3321,15 @@ _VARIANT_CHECK_MAX_ITEMS = 50
 
 def _covering_slice(items):
     """The suite's items, in suite order, keeping each one that brings a
-    language, an expected label or an item shape (its key set) no earlier
-    kept item has: every kind of item the suite holds, each at least once."""
+    language, a target language, an expected label or an item shape (its key
+    set) no earlier kept item has: every kind of item the suite holds, each
+    at least once."""
     seen: set[tuple[str, object]] = set()
     kept = []
     for item in items:
         marks = {
             ("language", item["language"]),
+            ("target", item.get("target_language")),
             ("label", item.get("expected_label")),
             ("shape", frozenset(item)),
         }
@@ -3337,32 +3339,40 @@ def _covering_slice(items):
     return tuple(kept)
 
 
+def _variant_check_suite(suite_id, monkeypatch):
+    """The suite a variant check runs: itself, or its covering slice when it
+    holds more than `_VARIANT_CHECK_MAX_ITEMS` items.
+
+    A variant transforms each item's prompt on its own, by the suite's task
+    family alone (`prompt_variants.apply_variant`), and the CLI writes each
+    row's other fields from the item, the suite and the run, never from
+    another item. So what a 300-item drawn suite can add over a slice is more
+    items of kinds the slice already holds: the slice keeps every language,
+    every direction, every expected label and every item shape, and the full
+    suite is checked to hold no other kind.
+    """
+    spec = suite_registry.resolve(suite_id)
+    if len(spec.items) <= _VARIANT_CHECK_MAX_ITEMS:
+        return spec
+    sliced = _covering_slice(spec.items)
+    for kind in (
+        frozenset,
+        lambda item: item["language"],
+        lambda item: item.get("target_language"),
+        lambda item: item.get("expected_label"),
+    ):
+        assert {kind(item) for item in spec.items} == {kind(item) for item in sliced}
+    spec = dataclasses.replace(spec, items=sliced)
+    monkeypatch.setitem(suite_registry._LOADED, suite_id, spec)
+    return spec
+
+
 @pytest.mark.parametrize("suite_id", suite_registry.registered_ids())
 def test_a_variant_changes_the_prompt_and_nothing_else_on_every_suite(
     stubbed_run, suite_id, monkeypatch
 ) -> None:
     quality_results_path, _ = stubbed_run
-    spec = suite_registry.resolve(suite_id)
-    if len(spec.items) > _VARIANT_CHECK_MAX_ITEMS:
-        # A variant transforms each item's prompt on its own, by the suite's
-        # task family alone (`prompt_variants.apply_variant`), and the CLI
-        # writes each row's other fields from the item, the suite and the
-        # run, never from another item. So what a 300-item drawn suite can
-        # add over a slice is more items of kinds the slice already holds:
-        # the slice keeps every language, every expected label and every
-        # item shape, and the full suite is checked to hold no other kind.
-        sliced = _covering_slice(spec.items)
-        assert {frozenset(item) for item in spec.items} == {
-            frozenset(item) for item in sliced
-        }
-        assert {item["language"] for item in sliced} == {
-            item["language"] for item in spec.items
-        }
-        assert {item.get("expected_label") for item in sliced} == {
-            item.get("expected_label") for item in spec.items
-        }
-        spec = dataclasses.replace(spec, items=sliced)
-        monkeypatch.setitem(suite_registry._LOADED, suite_id, spec)
+    spec = _variant_check_suite(suite_id, monkeypatch)
 
     quality_cli._run(suite=suite_id)
     quality_cli._run(suite=suite_id, prompt_variant_ref=_OUTPUT_COMPRESSED)
@@ -3579,11 +3589,12 @@ def test_the_constrained_variant_on_an_engine_without_gbnf_is_refused(
 
 
 def test_a_constrained_run_changes_nothing_but_the_variant_on_every_suite(
-    stubbed_run,
+    stubbed_run, monkeypatch
 ) -> None:
     quality_results_path, started = stubbed_run
     _local_only(started)
     for suite_id in suite_registry.registered_ids():
+        _variant_check_suite(suite_id, monkeypatch)
         quality_cli._run(suite=suite_id)
         quality_cli._run(suite=suite_id, prompt_variant_ref=_CONSTRAINED)
 

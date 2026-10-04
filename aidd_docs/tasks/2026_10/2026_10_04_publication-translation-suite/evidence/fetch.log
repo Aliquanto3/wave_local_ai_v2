@@ -1,0 +1,2 @@
+$ uv run python scripts/wmt24pp_suite.py fetch --out <scratch>/table.jsonl --record <scratch>/fetch-record.json --cache <scratch>/cache
+<scratch>\wmt24pp\table.jsonl: 960 rows, SHA-256 db57a8a457dce9ae2f38e0b4595a582bf9bf471475dc545b3b4bc89e2546f4ed; pool per direction {'en->fr': 315, 'fr->de': 322, 'de->en': 323}; licence files at fd7405c06494bc66a57b25f55d217a72f96e60dc: none

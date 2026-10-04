@@ -112,6 +112,75 @@ published 0.50 on the same suite version.
 
 Commands, logs and the live stores: `aidd_docs/tasks/2026_10/2026_10_04_publication-classification-suite/evidence/`.
 
+## Drawn items: WMT24++ on the permissive rung (2026-10-04)
+
+The publication-level translation suite `translation-mixed-domain-wmt24pp` (snapshot
+`suite-definitions/translation-mixed-domain-wmt24pp@1.json`) holds 300 segments drawn from
+WMT24++, `google/wmt24pp` at revision `fd7405c06494bc66a57b25f55d217a72f96e60dc`
+(https://huggingface.co/datasets/google/wmt24pp/tree/fd7405c06494bc66a57b25f55d217a72f96e60dc), pair files `en-fr_FR.jsonl` and
+`en-de_DE.jsonl`: 100 per direction (EN->FR, FR->DE, DE->EN, the hand-written suite's
+three), each marked `provenance` `public` and contamination-risk (Methodology 5), each
+naming its licence, source, source revision, content hash and WMT24++ `domain`, under the
+selection rule its definition records.
+
+- **Rung applied: permissive.** WMT24++ is Apache-2.0 at its publisher, and the owner
+  accepted Google's label over the WMT24 source text (owner answer Q106 (a)), so its items
+  and the rows carrying them ship unchanged in this bundle: no segregation, no redaction
+  (the epic's three-rung ladder, applied as written in advance). Each item carries
+  `licence` `Apache-2.0`. The dataset card at the pinned revision is the licence of record
+  (`license: apache-2.0`); the revision ships no licence or NOTICE file
+  (`source_table.licence_file_at_revision` is `false`). A copy of the Apache-2.0 text,
+  `LICENSE-APACHE-2.0.txt`, sits in each directory holding drawn WMT24++ items: this one
+  (the rows), `suite-definitions/` and `src/wave_local_ai_v2/suite_data/`. The change
+  made: each segment's source text is wrapped in the suite's prompt template, the
+  hand-written suite's instruction shell; the reference is unchanged.
+- **The English sources are WMT24's**, which WMT released for research use; the items
+  rest on Google's Apache-2.0 label, disclosed as a declaration in `LICENSE-DATA`
+  section 3. Attribution: WMT24++ by Google (Deutsch et al., 2025,
+  https://arxiv.org/abs/2502.12404), Apache-2.0; `LICENSE-DATA` section 2.2 states the
+  terms.
+- **Two directions translate translations.** The FR->DE and DE->EN source texts are
+  themselves translations from English (WMT24++'s French and German post-edited
+  references), and DE->EN's reference is the original English. Only EN->FR translates an
+  original text (spike assumption A4).
+- **How the items were picked** is the recorded rule, checked by replaying it. The loader
+  (`scripts/wmt24pp_suite.py`, standard library only) joins the two pair files on
+  `segment_id`, drops every segment with `is_bad_source` true (the canary and 37 social
+  segments: 38 of 998), and assigns each remaining segment to exactly one direction by
+  `segment_id` modulo 3 (0 EN->FR, 1 FR->DE, 2 DE->EN), so no segment is drawn in two
+  directions and the items stay independent for the bootstrap (owner answer Q133 (a)).
+  The post-filter pool per direction: EN->FR 315, FR->DE 322, DE->EN 323 (960 segments, the
+  source table's `row_count`). The draw is stratified by language only, under sampler
+  version "1", seed 20261004, accepted on the first attempt. CI replays the draw over a
+  constructed table (`tests/test_wmt24pp_suite.py`). The operator replay re-fetches the
+  two files from the pinned revision (each checked against the git object id the Hub
+  lists), checks the table's SHA-256 against `source_table.sha256`
+  (`db57a8a457dce9ae2f38e0b4595a582bf9bf471475dc545b3b4bc89e2546f4ed`), then replays the rule over it:
+  `uv run python scripts/wmt24pp_suite.py verify` (exit 0 only when both hold).
+- **The output cap is derived from the references.** `max_output_tokens` is 608, twice
+  the longest drawn reference (304 tokens, `google/wmt24pp:805`) as the tokenizer of
+  `granite-4.0-h-350m-q8`, the model the published batches run, counts it
+  (`llama-server` b10537 `/tokenize`, no special tokens); the definition records the
+  basis (`max_output_tokens_basis`) and each item its `reference_tokens`. It does not
+  inherit the hand-written suite's 128 (owner answer Q118 (a)).
+- **Never averaged with the 21-item score.** The hand-written
+  `translation-business-short-form` stays the development-level score and leads; the
+  WMT24++ score sits beside it as the scale check, on its own suite id and level, and no
+  table here averages the two (Methodology 4). Their items differ in length and register
+  (one business sentence against paragraph-level news, social, literary and speech
+  segments), so the two chrF scores are not on one scale either.
+
+The draw's per-domain counts (owner answer Q119 (a)), recomputed from the suite
+definition by `tests/test_wmt24pp_suite.py`:
+
+| Domain | EN->FR | FR->DE | DE->EN | Total |
+| ------ | ------ | ------ | ------ | ----- |
+| literary | 12 | 21 | 28 | 61 |
+| news | 19 | 16 | 14 | 49 |
+| social | 55 | 53 | 50 | 158 |
+| speech | 14 | 10 | 8 | 32 |
+| all | 100 | 100 | 100 | 300 |
+
 ## The client-session record (`client-sessions.jsonl`)
 
 `client-sessions.jsonl` is not part of the bundle: it records how the results were

@@ -35,6 +35,10 @@ _SHIPPED = {
         "1",
         "b728719fc6db4f52e203980ae77745b36e0eaef3998ebe43417ba7b92ad934c1",  # pragma: allowlist secret
     ),
+    "translation-mixed-domain-wmt24pp": (
+        "1",
+        "842b7fc7deb5be059b89806082e544a982056b82e44ed51ebbc2e9a23b1b6e0a",  # pragma: allowlist secret
+    ),
 }
 _MINDS14_REVISION = (
     "40ce77cb32a384e4d50a568e1ec39ac804019d33"  # pragma: allowlist secret

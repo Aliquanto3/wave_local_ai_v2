@@ -188,13 +188,22 @@ def test_the_committed_bundle_recomputes_to_every_published_value(
     assert [check for check in checks if not check.matches] == []
 
 
-def _publication_batch(template: dict[str, Any]) -> list[dict[str, Any]]:
-    """A batch over the publication suite, built on a committed row's shape
+def _classification_answer(index: int, item: Any) -> str:
+    return str(item["expected_label"]) if index % 3 else "balance"
+
+
+def _publication_batch(
+    template: dict[str, Any],
+    suite_id: str = "classification-banking-intents-minds14",
+    answer: Any = _classification_answer,
+    run_id: str = "f" * 32,
+) -> list[dict[str, Any]]:
+    """A batch over a publication suite, built on a committed row's shape
     and scored by the suite's own rule, as the quality writer scores it."""
-    suite = suite_registry.resolve("classification-banking-intents-minds14")
+    suite = suite_registry.resolve(suite_id)
     completions = [
         {
-            "content": item["expected_label"] if index % 3 else "balance",
+            "content": answer(index, item),
             "truncated": False,
             "generated_tokens": 3,
             "truncation_reason": None,
@@ -209,7 +218,7 @@ def _publication_batch(template: dict[str, Any]) -> list[dict[str, Any]]:
         row.update(batch_fields)
         row.update(
             {
-                "run_id": "f" * 32,
+                "run_id": run_id,
                 "item_id": item["item_id"],
                 "prompt": item["prompt"],
                 "language": item["language"],
@@ -274,5 +283,63 @@ def test_a_bundle_holding_a_publication_batch_exports_and_recomputes(
     }
     subjects = {check.subject for check in checks}
     assert any("f" * 32 in subject for subject in subjects)
+    assert any(development[0]["run_id"] in subject for subject in subjects)
+    assert [check for check in checks if not check.matches] == []
+
+
+def test_a_bundle_holding_both_translation_levels_exports_and_recomputes(
+    tmp_path: Path,
+) -> None:
+    """A `translation-business-short-form@4` batch and a publication batch over
+    WMT24++ on one subject: graded rows, so the interval recomputes from the
+    item scores, and the drawn suite's cap basis reaches its columns."""
+    committed = bundle_export.default_bundle_paths()
+    rows = [
+        json.loads(line)
+        for line in committed.quality_rows.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    development = [
+        row
+        for row in rows
+        if row["suite_id"] == "translation-business-short-form"
+        and row["suite_version"] == "4"
+        and row["roster_entry_id"] == "granite-4.0-h-350m-q8"
+    ]
+    publication = _publication_batch(
+        development[0],
+        "translation-mixed-domain-wmt24pp",
+        lambda index, item: item["reference"] if index % 4 else item["source_text"],
+        "e" * 32,
+    )
+    quality_rows = tmp_path / "quality-reference.jsonl"
+    quality_rows.write_text(
+        "".join(json.dumps(row) + "\n" for row in [*development, *publication]),
+        encoding="utf-8",
+    )
+    paths = dataclasses.replace(
+        committed,
+        quality_rows=quality_rows,
+        comparisons_dir=tmp_path / "comparisons",
+        leader_sets_dir=tmp_path / "leader-sets",
+    )
+    output = tmp_path / "export"
+
+    bundle_export.export_bundle(paths, output)
+    checks = reader.recompute(output)
+
+    quality = _rows(output, reader.QUALITY_TABLE)
+    drawn = [row for row in quality if row["run_id"] == "e" * 32]
+    assert len(drawn) == 300
+    assert {row["metric_id"] for row in drawn} == {development[0]["metric_id"]}
+    assert {row["suite_definition_level"] for row in drawn} == {"publication"}
+    assert {
+        row["suite_definition_max_output_tokens_basis_factor"] for row in drawn
+    } == {"2"}
+    assert {row["suite_definition_level"] for row in quality if row not in drawn} == {
+        "development"
+    }
+    subjects = {check.subject for check in checks}
+    assert any("e" * 32 in subject for subject in subjects)
     assert any(development[0]["run_id"] in subject for subject in subjects)
     assert [check for check in checks if not check.matches] == []

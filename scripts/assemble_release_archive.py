@@ -59,6 +59,9 @@ CITATION_FILE = "CITATION.cff"
 README_FILE = "README.md"
 LICENCE_FILES = ("LICENSE", "LICENSE-DATA")
 NOTICE_FILE = "NOTICE.md"
+# The licence text a directory holding drawn items carries beside them
+# (LICENSE-DATA section 2.2): it ships with the directory, as NOTICE.md does.
+DRAWN_LICENCE_TEXT = "LICENSE-APACHE-2.0.txt"
 ATTRIBUTION_START = "<!-- attribution:start -->"
 ATTRIBUTION_END = "<!-- attribution:end -->"
 
@@ -186,6 +189,16 @@ PATHS_NOT_SHIPPED: Mapping[str, NotShipped] = {
         "the source table the publication classification suite was drawn "
         "from, named by that suite's source_table record",
     ),
+    "scripts/wmt24pp_suite.py": NotShipped(
+        (
+            "LICENSE-DATA",
+            "aidd_docs/results/suite-definitions/translation-mixed-domain-wmt24pp@1.json",
+            f"{bundle_export.QUALITY_TABLE}.csv",
+        ),
+        "the loader that fetches WMT24++ at its pinned revision and writes "
+        "the source table the publication translation suite was drawn from, "
+        "named by that suite's source_table record",
+    ),
     "src/wave_local_ai_v2/use_case_coverage.json": NotShipped(
         _LICENCE,
         "the declared use-case coverage record",
@@ -269,7 +282,8 @@ def _relative(path: Path) -> str:
 
 def bundle_files(repo_root: Path) -> list[str]:
     """Every bundle part the export reads, plus each shipped directory's
-    `NOTICE.md`, as repository-relative paths in name order."""
+    `NOTICE.md` and drawn-item licence text, as repository-relative paths in
+    name order."""
     paths = bundle_export.default_bundle_paths()
     files = {_relative(p) for p in (paths.runtime_rows, paths.quality_rows)}
     files.add(_relative(paths.roster))
@@ -282,8 +296,9 @@ def bundle_files(repo_root: Path) -> list[str]:
         paths.leader_sets_dir,
     }
     for directory in sorted(directories):
-        if (repo_root / directory / NOTICE_FILE).is_file():
-            files.add(_relative(directory / NOTICE_FILE))
+        for name in (NOTICE_FILE, DRAWN_LICENCE_TEXT):
+            if (repo_root / directory / name).is_file():
+                files.add(_relative(directory / name))
     for directory in (
         paths.fiche_dir,
         paths.suite_definitions,
@@ -430,6 +445,8 @@ def _bundle_part_description(path: str) -> str:
     paths = bundle_export.default_bundle_paths()
     if path.rsplit("/", 1)[-1] == NOTICE_FILE:
         return "The licence notice for the directory it sits in."
+    if path.rsplit("/", 1)[-1] == DRAWN_LICENCE_TEXT:
+        return "The Apache-2.0 text of the drawn WMT24++ items the directory holds."
     described = {
         _relative(paths.runtime_rows): "The runtime rows, one JSON object per line.",
         _relative(paths.quality_rows): "The quality rows, one JSON object per line.",

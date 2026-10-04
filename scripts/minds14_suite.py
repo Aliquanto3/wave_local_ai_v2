@@ -43,7 +43,18 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+import hub_source
 import requests
+from hub_source import (
+    RESOLVE_URL,
+    LoaderError,
+    definition_text,
+    fetch_tree,
+    licence_files,
+    sha256_hex,
+    verify_table,
+    write_text,
+)
 
 from wave_local_ai_v2 import subset_replay, subset_sampler, suite_gate, suite_registry
 
@@ -52,8 +63,6 @@ REVISION = "40ce77cb32a384e4d50a568e1ec39ac804019d33"  # pragma: allowlist secre
 # The source configs the suite draws from, and the suite language each is.
 CONFIGS = {"en-US": "en", "fr-FR": "fr", "de-DE": "de"}
 PARQUET_PATH = "{config}/train-00000-of-00001.parquet"
-TREE_URL = "https://huggingface.co/api/datasets/{repo}/tree/{revision}?recursive=true"
-RESOLVE_URL = "https://huggingface.co/datasets/{repo}/resolve/{revision}/{path}"
 CARD_URL = "https://huggingface.co/datasets/{repo}/blob/{revision}/README.md"
 
 # The card's `license: cc-by-4.0`, as the item licence identifier.
@@ -94,28 +103,9 @@ PROMPT_TEMPLATE = (
     "these intents: {labels}. Reply with only the intent label, exactly as "
     "written, nothing else.\n\nMessage: {text}"
 )
-_LICENCE_FILE_STEMS = ("license", "licence", "copying")
 _CHUNK = 1 << 20
 
-
-class LoaderError(RuntimeError):
-    """Raised when the source cannot be fetched, verified or mapped."""
-
-
 # --- pure: mapping, table, record -------------------------------------------
-
-
-def licence_files(tree: Sequence[Mapping[str, Any]]) -> list[str]:
-    """Every file in the tree listing whose name is a licence file's."""
-    return sorted(
-        str(entry["path"])
-        for entry in tree
-        if entry.get("type") == "file"
-        and str(entry["path"])
-        .rsplit("/", 1)[-1]
-        .lower()
-        .startswith(_LICENCE_FILE_STEMS)
-    )
 
 
 def parquet_sha256(tree: Sequence[Mapping[str, Any]], path: str) -> str:
@@ -170,16 +160,7 @@ def source_rows(
 
 def table_text(rows: Sequence[Mapping[str, Any]]) -> str:
     """The JSONL table: rows sorted by (source, path), compact sorted-key JSON."""
-    ordered = sorted(rows, key=lambda row: (row["source"], str(row[STABLE_KEY])))
-    return "".join(
-        json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        + "\n"
-        for row in ordered
-    )
-
-
-def sha256_hex(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
+    return hub_source.table_text(rows, STABLE_KEY)
 
 
 def fetch_record(
@@ -220,16 +201,7 @@ def prompt_for(text: str, labels: Sequence[str]) -> str:
 
 
 def _certifies_at_publication(items: list[dict[str, Any]]) -> bool:
-    try:
-        suite_gate.gate_suite(
-            items,
-            level=suite_gate.LEVEL_PUBLICATION,
-            size_target=SIZE,
-            size_target_reason=SIZE_TARGET_REASON,
-        )
-    except suite_gate.SuiteGateError:
-        return False
-    return True
+    return hub_source.certifies_at_publication(items, SIZE, SIZE_TARGET_REASON)
 
 
 def build_definition(
@@ -293,20 +265,7 @@ def build_definition(
     }
 
 
-def definition_text(definition: Mapping[str, Any]) -> str:
-    return json.dumps(definition, ensure_ascii=False, indent=2) + "\n"
-
-
 # --- I/O: the Hub, parquet, files --------------------------------------------
-
-
-def fetch_tree() -> list[dict[str, Any]]:
-    response = requests.get(
-        TREE_URL.format(repo=REPO_ID, revision=REVISION), timeout=60
-    )
-    response.raise_for_status()
-    tree: list[dict[str, Any]] = response.json()
-    return tree
 
 
 def download(path: str, dest: Path, expected_sha256: str) -> None:
@@ -351,7 +310,7 @@ def fetch(cache: Path) -> tuple[str, dict[str, Any]]:
     """Fetch, verify and map the three configs: the table text and its record."""
     import pyarrow
 
-    tree = fetch_tree()
+    tree = fetch_tree(REPO_ID, REVISION)
     rows: list[dict[str, Any]] = []
     parquet: dict[str, str] = {}
     for config in CONFIGS:
@@ -373,23 +332,6 @@ def fetch(cache: Path) -> tuple[str, dict[str, Any]]:
 
 def read_table(path: Path) -> list[dict[str, Any]]:
     return subset_replay.read_source(path)
-
-
-def _write(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(text.encode("utf-8"))
-
-
-def verify_table(table: str, recorded_sha256: str) -> str | None:
-    """Why a re-fetched table is not the recorded one, or None."""
-    actual = sha256_hex(table.encode("utf-8"))
-    if actual == recorded_sha256:
-        return None
-    return (
-        f"the re-fetched table hashes to {actual}, the suite records "
-        f"{recorded_sha256}: the source moved at its pinned revision, or the "
-        "loader maps it differently"
-    )
 
 
 # --- the command ---------------------------------------------------------------
@@ -420,8 +362,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.command == "fetch":
             table, record = fetch(args.cache)
-            _write(args.out, table)
-            _write(args.record, json.dumps(record, indent=2, sort_keys=True) + "\n")
+            write_text(args.out, table)
+            write_text(args.record, json.dumps(record, indent=2, sort_keys=True) + "\n")
             print(
                 f"{args.out}: {record['row_count']} rows, SHA-256 "
                 f"{record['table_sha256']}; licence files at {REVISION}: "
@@ -431,7 +373,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "draw":
             record = json.loads(args.record.read_text(encoding="utf-8"))
             definition = build_definition(read_table(args.table), record)
-            _write(args.out, definition_text(definition))
+            write_text(args.out, definition_text(definition))
             print(f"{args.out}: {len(definition['items'])} items")
             return 0
         return verify(args.cache)
@@ -450,7 +392,7 @@ def verify(cache: Path) -> int:
     print(f"source table SHA-256 matches: {definition.extra['source_table']['sha256']}")
     with tempfile.TemporaryDirectory() as scratch:
         source = Path(scratch) / "minds14.jsonl"
-        _write(source, table)
+        write_text(source, table)
         return subset_replay.main(["--suite", SUITE_ID, "--source", str(source)])
 
 

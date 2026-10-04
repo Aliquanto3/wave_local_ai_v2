@@ -54,9 +54,12 @@ def test_snapshot_publishes_exactly_the_keys_it_always_published() -> None:
         "items",
     }
     drawn = {"size_target", "size_target_reason", "selection_rule", "source_table"}
+    # A drawn translation suite derives its output cap from its references
+    # and publishes that basis too.
+    derived_cap = {"max_output_tokens_basis"}
     for snapshot in all_snapshots():
         if snapshot["level"] == "publication":
-            assert set(snapshot) == published | drawn
+            assert published | drawn <= set(snapshot) <= published | drawn | derived_cap
         else:
             assert set(snapshot) == published
 
@@ -91,6 +94,39 @@ def test_a_drawn_snapshots_items_carry_their_source_and_content_hash() -> None:
             "prompt",
             "expected_label",
             "language",
+            "provenance",
+            "contamination_risk",
+            "licence",
+            "source",
+            "source_revision",
+            "content_hash",
+        }
+
+
+def test_the_drawn_translation_snapshot_publishes_its_cap_basis_and_item_domains() -> (
+    None
+):
+    snapshot = build_snapshot(
+        suite_registry.resolve("translation-mixed-domain-wmt24pp")
+    )
+
+    assert set(snapshot["max_output_tokens_basis"]) == {
+        "tokenizer",
+        "longest_reference_item_id",
+        "longest_reference_tokens",
+        "factor",
+        "reason",
+    }
+    for item in snapshot["items"]:
+        assert set(item) == {
+            "item_id",
+            "prompt",
+            "source_text",
+            "reference",
+            "language",
+            "target_language",
+            "domain",
+            "reference_tokens",
             "provenance",
             "contamination_risk",
             "licence",
@@ -142,6 +178,7 @@ def test_every_registered_suite_is_exported() -> None:
         "classification-support-routing",
         "classification-banking-intents-minds14",
         "translation-business-short-form",
+        "translation-mixed-domain-wmt24pp",
         "code-generation-python-javascript",
     }
 

@@ -1302,6 +1302,10 @@ _NO_SOURCE_TABLE = (
     "from a public benchmark (the column name is then listed in "
     "fields_not_carried)."
 )
+_NO_CAP_BASIS = (
+    "This suite version declares its output cap without deriving it from "
+    "counted references (the column name is then listed in fields_not_carried)."
+)
 SUITE_DEFINITION_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     ("context_length",): FieldDoc("Context window the suite declares.", "tokens"),
     ("max_output_tokens",): FieldDoc("Output token cap the suite declares.", "tokens"),
@@ -1423,6 +1427,30 @@ SUITE_DEFINITION_FIELDS: dict[tuple[str, ...], FieldDoc] = {
         "Where the benchmark's licence is stated, as the definition records it.",
         _TEXT,
         _NO_SOURCE_TABLE,
+    ),
+    ("max_output_tokens_basis", "tokenizer"): FieldDoc(
+        "Tokenizer the drawn references were counted with to derive the output "
+        "cap: the published batches' model's, and how it was run.",
+        _TEXT,
+        _NO_CAP_BASIS,
+    ),
+    ("max_output_tokens_basis", "longest_reference_item_id"): FieldDoc(
+        "Item whose reference is the longest the suite holds under that tokenizer.",
+        _ID,
+        _NO_CAP_BASIS,
+    ),
+    ("max_output_tokens_basis", "longest_reference_tokens"): FieldDoc(
+        "Token count of that longest reference.", "tokens", _NO_CAP_BASIS
+    ),
+    ("max_output_tokens_basis", "factor"): FieldDoc(
+        "Multiple of the longest reference's token count the output cap is set to.",
+        "integer",
+        _NO_CAP_BASIS,
+    ),
+    ("max_output_tokens_basis", "reason"): FieldDoc(
+        "Why the suite declares its output cap, as its definition states it.",
+        _TEXT,
+        _NO_CAP_BASIS,
     ),
 }
 
