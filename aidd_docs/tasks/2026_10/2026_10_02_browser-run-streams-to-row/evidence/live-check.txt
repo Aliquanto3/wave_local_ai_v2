@@ -1,0 +1,13 @@
+service started pid=34044 demo_mode=False
+demo off, keyed options: 403 {"detail":"demo mode is off on this machine (SERVICE_DEMO_MODE)"}
+service pid=34044 stopped
+service started pid=33876 demo_mode=True
+keyless loopback options: 401 {"detail":"missing or invalid X-API-Key"}
+keyless loopback run: 401 {"detail":"missing or invalid X-API-Key"}
+keyed options: 200
+other machine's profile: 422 {"detail":"machine_id 'tower-desktop-gpu' is not this machine ('laptop-mobile-gpu'): a console run executes here and is never recorded under another machine's profile"}
+start: 200 {"launch_id":"d1fb795ce0a04d2ab9bebdc5a021a4bd","profile_id":"qwen3-0.6b-q8@laptop-mobile-gpu/gpu"}
+second request while running: 409 {"detail":{"message":"a run is in progress","holder":{"kind":"quality","suite":"classification-support-routing","roster_entry_id":"qwen3-0.6b-q8","profile_id":"qwen3-0.6b-q8@laptop-mobile-gpu/gpu","started_at":"2026-10-03T17:18:14.775225+00:00","run_id":null}}}
+stream: 8 lines over 9.016s; final ok=True exit=0 run_id=977f49d30dfa4abcb2e5b54d9f437512 error_line=None missing=None
+service pid=33876 stopped
+key value found in service logs, stream or rows: False

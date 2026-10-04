@@ -1,0 +1,16 @@
+# preconditions 2026-10-04T04:10:56+02:00
+?? aidd_docs/results/fiches/5ce2bf219e51b68996b81b4bc8ee97690f9c575d207c7bd5f6d60bfa3f652c74.json
+?? aidd_docs/tasks/2026_10/2026_10_04_half-billion-class/evidence/clean-rerun/
+0 MiB
+Information : aucune tâche en service ne correspond aux critères spécifiés.
+be0dda5eeaa24862ad4ffbd11d10d61e
+pre-flight: vram_gb not checked under gpu: roster entry 'granite-4.0-h-350m-q8' declares no minimum yet (awaits a per-process VRAM peak, as for every roster entry)
+[codecarbon INFO @ 04:10:58] offline tracker init
+[codecarbon WARNING @ 04:10:58] Multiple instances of codecarbon are allowed to run at the same time.
+mistral skipped: not enabled in QUALITY_PROVIDERS
+google skipped: not enabled in QUALITY_PROVIDERS
+model=Granite-4.0-H-350M provider=local suite_score=0.48
+exit 0
+# after
+0 MiB
+Information : aucune tâche en service ne correspond aux critères spécifiés.

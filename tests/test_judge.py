@@ -672,3 +672,21 @@ def test_a_judged_block_whose_judges_answered_as_bound_is_written() -> None:
     block = _judge_item("qwen", "local", [_mistral_judge(4), _google_judge(4)])
 
     row_contract.validate_row("quality", {**_baseline_probe_row(), **block})
+
+
+@pytest.mark.parametrize(
+    ("reply", "expected"),
+    [
+        ("Partial.", "partial"),
+        ("ADEQUATE, not partial", "adequate"),
+        ("in_adequate", "adequate"),
+        ("partially adequate", "adequate"),
+        ("inadequate_partial", "inadequate"),
+    ],
+)
+def test_the_categorical_parse_is_the_first_category_word(reply, expected) -> None:
+    # One-word categories parse as the first word that is one, before and
+    # after multi-word labels joined `scoring.normalize_label`.
+    record = run_judge_call(_ScriptedBackend(reply), RENDERED, CATEGORICAL_RUBRIC)
+
+    assert record["score"] == expected

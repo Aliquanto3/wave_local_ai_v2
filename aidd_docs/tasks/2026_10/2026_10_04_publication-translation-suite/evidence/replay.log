@@ -1,0 +1,3 @@
+$ uv run python -m wave_local_ai_v2.subset_replay --suite translation-mixed-domain-wmt24pp --source <scratch>/table.jsonl
+suite translation-mixed-domain-wmt24pp@1: sampler 1, seed 20261004 (attempts 1, seeds tried [20261004]), recorded loader CPython json 3.12, recorded generator CPython random.Random 3.12
+reproduced: 300 items, same ids, same order

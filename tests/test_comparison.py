@@ -27,7 +27,11 @@ from wave_local_ai_v2.comparison import (
     wilcoxon_signed_rank,
 )
 
-REFERENCE_BUNDLE = Path("aidd_docs/results/quality-reference.jsonl")
+# The superseded schema-"7" rows: a fixed set of real rows no later run
+# changes, and the rows the records in `comparisons.schema-7/` were computed
+# over (their `rows_source` names the path those rows were published at).
+REFERENCE_BUNDLE = Path("aidd_docs/results/quality-reference.schema-7.jsonl")
+PUBLISHED_ROWS_SOURCE = "aidd_docs/results/quality-reference.jsonl"
 RUN_5E = "5e13166da0654390a7d63f346ea5d4f1"  # pragma: allowlist secret
 REFERENCE = Side("run-ref", {"model_id": "model-a"})
 CANDIDATE = Side("run-cand", {"model_id": "model-b"})
@@ -495,8 +499,18 @@ def test_a_local_and_a_cloud_subject_differ_on_egress_without_a_confound() -> No
     assert member["confounds"] == []
 
 
-_LLAMA = {"engine_id": "llama.cpp", "engine_build": "b10537"}
-_NO_ENGINE = {"engine_id": "not_applicable", "engine_build": None}
+_LLAMA = {
+    "engine_id": "llama.cpp",
+    "engine_build": "b10537",
+    "machine_id": "laptop-mobile-gpu",
+    "compute_mode": "gpu",
+}
+_NO_ENGINE = {
+    "engine_id": "not_applicable",
+    "engine_build": None,
+    "machine_id": "not_applicable",
+    "compute_mode": "not_applicable",
+}
 
 
 def test_a_local_and_a_cloud_subject_differ_on_the_engine_without_a_confound() -> None:
@@ -508,13 +522,20 @@ def test_a_local_and_a_cloud_subject_differ_on_the_engine_without_a_confound() -
         _binary_rows("run-cand", "model-b", cand, provider="mistral", **_NO_ENGINE),
     )
     assert member["comparison_kind"] == comparison.KIND_TEST
-    assert {"engine_id", "engine_build"} <= set(member["differing_fields"])
+    assert {"engine_id", "engine_build", "machine_id", "compute_mode"} <= set(
+        member["differing_fields"]
+    )
     assert member["confounds"] == []
 
 
 @pytest.mark.parametrize(
     ("field", "value"),
-    [("engine_id", "ollama"), ("engine_build", "b9999")],
+    [
+        ("engine_id", "ollama"),
+        ("engine_build", "b9999"),
+        ("machine_id", "tower-desktop-gpu"),
+        ("compute_mode", "cpu_only"),
+    ],
 )
 def test_two_local_models_on_another_engine_or_build_are_confounded(
     field: str, value: str
@@ -619,6 +640,28 @@ def test_a_prompt_variant_dimension_is_a_clean_test() -> None:
     assert member["differing_fields"] == ["prompt_variant_id"]
 
 
+def test_a_batch_interval_moving_with_the_scores_is_not_a_confound() -> None:
+    # Two batches that score differently publish different intervals; the
+    # interval is an outcome of the compared quantity, not a configuration.
+    ref, cand = _pairs_outcomes(14, 1, 4, 1)
+    member = compare_sides(
+        _binary_rows("run-ref", "model-a", ref, score_interval={"lower": 0.6}),
+        _binary_rows(
+            "run-cand",
+            "model-a",
+            cand,
+            prompt_variant_id="terse",
+            score_interval={"lower": 0.7},
+        ),
+        Side("run-ref"),
+        Side("run-cand"),
+        dimension="prompt_variant",
+    )
+    assert member["comparison_kind"] == comparison.KIND_TEST
+    assert member["differing_fields"] == ["prompt_variant_id"]
+    assert member["confounds"] == []
+
+
 def test_inputs_that_cannot_make_a_record_raise() -> None:
     rows = _binary_rows("run-ref", "model-a", [True])
     with pytest.raises(ComparisonInputError, match="reference"):
@@ -657,6 +700,8 @@ def test_a_family_of_one_states_its_adjusted_p_and_is_deterministic() -> None:
 
 def _bundle_args(run_id: str, output: Path, *extra: str) -> list[str]:
     return [
+        "--rows",
+        str(REFERENCE_BUNDLE),
         "--reference",
         run_id,
         "--reference-where",
@@ -792,7 +837,7 @@ def test_a_record_over_mixed_suites_is_named_as_such() -> None:
     assert comparison.default_output_path(record).name.startswith("mixed-suites.model.")
 
 
-PUBLISHED_DIR = Path("aidd_docs/results/comparisons")
+PUBLISHED_DIR = Path("aidd_docs/results/comparisons.schema-7")
 PUBLISHED_RECORDS = sorted(PUBLISHED_DIR.glob("*.json"))
 
 
@@ -816,7 +861,7 @@ def _declaration(members: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 @pytest.mark.parametrize("published", PUBLISHED_RECORDS, ids=lambda path: path.name)
 def test_a_published_record_recomputes_or_is_unedited(
-    published: Path, tmp_path: Path
+    published: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     record = _load(published)
     if record["record_version"] == "1":
@@ -837,6 +882,14 @@ def test_a_published_record_recomputes_or_is_unedited(
     declaration = tmp_path / "comparisons.json"
     declaration.write_text(json.dumps(_declaration(record["members"])), "utf-8")
     output = tmp_path / published.name
+    # Its rows now live in the superseded file: put them back at the path the
+    # record names, relative to a working directory of their own.
+    assert record["rows_source"] == PUBLISHED_ROWS_SOURCE
+    rows = tmp_path / PUBLISHED_ROWS_SOURCE
+    rows.parent.mkdir(parents=True)
+    rows.write_bytes(REFERENCE_BUNDLE.read_bytes())
+    expected = published.read_text(encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
     args = [
         "--rows",
         record["rows_source"],
@@ -852,10 +905,10 @@ def test_a_published_record_recomputes_or_is_unedited(
         str(output),
     ]
     assert comparison.main(args) == 0
-    assert output.read_text(encoding="utf-8") == published.read_text(encoding="utf-8")
+    assert output.read_text(encoding="utf-8") == expected
 
 
-def test_the_bundle_publishes_one_current_family_holding_every_pair() -> None:
+def test_the_schema_7_records_hold_one_current_family_with_every_pair() -> None:
     # Both committed pairs, then grown by the leader set's comparison of the
     # two local batches (order 10): each growth supersedes the last head.
     records = [_load(path) for path in PUBLISHED_RECORDS]

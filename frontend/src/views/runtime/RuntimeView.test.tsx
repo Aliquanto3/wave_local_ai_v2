@@ -3,7 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as client from '../../api/client'
 import { setKey } from '../../api/keyStore'
 import { KeyGate } from '../../components/KeyGate'
-import { runtimeViewFixture } from './fixtures/runtimeView.fixture'
+import {
+  runtimeViewFixture,
+  unresolvedMachineFixture,
+} from './fixtures/runtimeView.fixture'
 import { RuntimeView } from './RuntimeView'
 
 const RUN_ID = 'f5f78c795eaa4175ac506440e597ee3e' // pragma: allowlist secret
@@ -104,5 +107,50 @@ describe('RuntimeView', () => {
     const absences = await screen.findAllByText(/not reported/i)
     expect(absences.length).toBeGreaterThan(0)
     expect(absences.some((node) => node.title.includes('cccccccc'))).toBe(true)
+  })
+})
+
+describe('RuntimeView machine and compute mode', () => {
+  beforeEach(() => {
+    sessionStorage.clear()
+    setKey('a-key')
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('renders the machine, its mode and its declared memory facts', async () => {
+    vi.spyOn(client, 'apiFetch').mockResolvedValueOnce(runtimeViewFixture)
+
+    renderWithGate()
+
+    expect(await screen.findByText('laptop-mobile-gpu')).toBeInTheDocument()
+    expect(screen.getByText('cpu_only')).toBeInTheDocument()
+    expect(screen.getByText('DDR4 (declared)')).toBeInTheDocument()
+    expect(screen.getAllByText('3200 MT/s (declared)')).toHaveLength(2)
+    expect(screen.getByText('yes (declared)')).toBeInTheDocument()
+  })
+
+  it('renders a cpu_only VRAM as "not applicable", distinct from "not reported"', async () => {
+    vi.spyOn(client, 'apiFetch').mockResolvedValueOnce(runtimeViewFixture)
+
+    renderWithGate()
+
+    const notApplicable = await screen.findAllByText('not applicable')
+    expect(notApplicable).toHaveLength(1)
+    expect(notApplicable[0].textContent).not.toMatch(/not reported/)
+    expect(screen.getAllByText(/not reported/).length).toBeGreaterThan(0)
+  })
+
+  it('names an unresolved machine id rather than leaving it blank', async () => {
+    vi.spyOn(client, 'apiFetch').mockResolvedValueOnce(unresolvedMachineFixture)
+
+    renderWithGate()
+
+    expect(await screen.findByText('my-unknown-box')).toBeInTheDocument()
+    const unresolved = screen.getByText(/reference could not be resolved/)
+    expect(unresolved.title).toContain('machine_id')
+    expect(unresolved.title).toContain('my-unknown-box')
   })
 })

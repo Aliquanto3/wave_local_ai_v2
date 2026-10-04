@@ -34,29 +34,19 @@ high/critical-severity dependency finding — see open exceptions in
 
 ## Hardware you need before downloading anything
 
-The roster holds four models: the MoE flagship and a dense Qwen3 size ladder.
-Which one you can run decides how much hardware you need.
-
-The flagship, `Qwen3.6-35B-A3B-UD-IQ4_XS` (17.7 GB GGUF), needs:
-
-- **32 GB system RAM**
-- An **NVIDIA GPU with CUDA 12.x support** — the committed evidence was
-  produced on a 6 GB laptop GPU using `--n-cpu-moe` to offload experts to CPU
-  RAM. VRAM is not the ceiling here; system RAM is.
-- **~18 GB free disk** for the model file plus the `llama-server` binary.
-
-The dense ladder — `Qwen3-0.6B`, `Qwen3-1.7B` and `Qwen3-4B` — is **4.63 GB
-for all three**, the largest single file 2.33 GB, and carries no MoE-offload
-flag at all: on the same 6 GB laptop GPU each held every layer in VRAM, and
-the 0.6B peaked at 1.1 GB of system RAM against the flagship's 15.2 GB. A
-machine that cannot host the flagship can still run every suite in this
-project. What each of the four actually scored, and what it cost, is the
+The roster holds four models: the MoE flagship, `Qwen3.6-35B-A3B-UD-IQ4_XS`
+(17.7 GB GGUF), and a dense Qwen3 size ladder (`Qwen3-0.6B`, `Qwen3-1.7B`,
+`Qwen3-4B`, 4.63 GB for all three). What each needs per compute mode (system
+RAM, VRAM, free disk) is declared in the roster and tabled, with the published
+peak each number was calibrated from, in
+[`docs/setup.md` section 1.2](docs/setup.md#12-what-each-model-needs-declared-minimums).
+A run on a machine below a declared minimum refuses before it downloads or
+loads anything, naming the requirement it failed, and the refusal is
+published. What each of the four actually scored, and what it cost, is the
 side-by-side section of
 [`aidd_docs/results/README.md`](aidd_docs/results/README.md).
 
-This is the class of the project's own laptop fiche
-([`context_input/hardware.md`](context_input/hardware.md)), not a guarantee for
-every machine. Runtime numbers are **not portable** across machines — see the
+Runtime numbers are **not portable** across machines — see the
 "Gotchas" section of
 [`aidd_docs/memory/architecture.md`](aidd_docs/memory/architecture.md).
 
@@ -235,6 +225,29 @@ built or tested by this project's CI.
   the NVIDIA path works at all. Those belong to the epic's fresh-machine
   walk, done by a human on real hardware — not to this repository's CI.
 
+## Download the results (no clone)
+
+Each release on the repository's
+[Releases page](https://github.com/Aliquanto3/wave_local_ai_v2/releases/latest)
+carries one asset, `wave-local-ai-v2-<version>.zip`. It opens with no tool to
+install and holds the five result tables and their column dictionary (the
+`wave-local-ai-v2-export` CSV files), the reference bundle they were derived
+from (the runtime and quality rows, fiches, roster and suite definitions,
+plus the comparison and leader-set records), a typed Parquet copy of each
+table (the CSV is normative; the build fails if a copy differs from its CSV in
+any cell), `LICENSE`, `LICENSE-DATA`,
+`CITATION.cff` stamped with the release's commit, and a README naming the
+release, the commit, the bundle schema version and what each file is, with
+the drawn items' terms repeated from `LICENSE-DATA` section 2. The
+release build regenerates the tables from the bundle at the tagged commit
+and refuses to publish an archive whose tables differ, or whose files point
+at a path only a clone holds (`scripts/assemble_release_archive.py`).
+
+A release has no DOI by default. When a venue asks for one, the archive is
+deposited on Zenodo by hand, following
+[`docs/zenodo-deposit.md`](docs/zenodo-deposit.md); nothing in CI deposits
+it, and no release waits for a deposit.
+
 ## Licence
 
 The code and the data are licensed separately.
@@ -265,9 +278,34 @@ The untracked per-machine `runtime.jsonl` and `quality.jsonl` are not
 published and not covered. No item is drawn from a public benchmark today; one
 that is will carry its source's licence, recorded per item, not CC-BY 4.0.
 
-The attribution string a reuser reproduces will be stated in this section,
-together with a `CITATION.cff` file. Until then, attribute as `LICENSE-DATA`
-section 4 describes.
+### Attribution and citation
+
+Cite this work, and attribute the data as CC-BY 4.0 requires, with this one
+string. It is derived from [`CITATION.cff`](CITATION.cff) (work, author, year,
+version, link, licences), and a test fails when the two disagree:
+
+<!-- attribution:start -->
+PLACEHOLDER-OWNER-FAMILY-NAMES, PLACEHOLDER-OWNER-GIVEN-NAMES (2026). wave-local-ai-v2, version 0.2.0. https://github.com/Aliquanto3/wave_local_ai_v2. Licences: code: MIT; data: CC-BY 4.0 (https://creativecommons.org/licenses/by/4.0/).
+<!-- attribution:end -->
+
+The string above names the release this branch is at. To cite another
+release, take its `version` and the year of its `date-released` from that
+release's `CITATION.cff` (at its tag), and keep the rest. A tag older than
+`CITATION.cff` has none: cite it with the tag name as the version and the
+year of its `CHANGELOG.md` heading. The copy in a release's archive also
+names the release's commit; this repository's copy cannot, since a
+committed file cannot name the commit that contains it. If you changed the
+data, say so after the string.
+
+No release has a DOI yet. Once one is deposited, its DOI is recorded in
+`CITATION.cff` and in a list that replaces this paragraph, outside the
+marked string, as [`docs/zenodo-deposit.md`](docs/zenodo-deposit.md) states.
+
+The author fields are placeholders until the owner states the identity to
+cite; a build on a release tag fails while any `PLACEHOLDER-` value remains.
+Until then, attribute the data as `LICENSE-DATA` section 4 states: name the
+licensor (Aliquanto3), the work, the licence and its link, this repository,
+and any changes made.
 
 ## Project status
 

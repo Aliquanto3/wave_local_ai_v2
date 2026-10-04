@@ -6,8 +6,9 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+from store_fixtures import ROSTER_REQUIREMENTS
 
-from wave_local_ai_v2 import engines, roster, server
+from wave_local_ai_v2 import engines, profiles, roster, server
 from wave_local_ai_v2.roster import RosterError
 
 MOE_ENTRY_ID = "fake-moe-model"
@@ -20,6 +21,7 @@ MOE_ENTRY = {
     "file": "moe.gguf",
     "quant": "UD-IQ4_XS",
     "sha256": "a" * 64,
+    "requirements": ROSTER_REQUIREMENTS,
     "architecture": {
         "kind": "moe",
         "expert_count": 40,
@@ -40,11 +42,6 @@ MOE_ENTRY = {
             "presence_penalty": 1.5,
         },
     },
-    "validated_host": {
-        "n_cpu_moe": 37,
-        "threads": 8,
-        "fiche_summary": "fake fiche",
-    },
 }
 
 DENSE_ENTRY = {
@@ -54,6 +51,7 @@ DENSE_ENTRY = {
     "file": "dense.gguf",
     "quant": "Q4_K_M",
     "sha256": "b" * 64,
+    "requirements": ROSTER_REQUIREMENTS,
     "architecture": {
         "kind": "dense",
         "expert_count": 0,
@@ -73,11 +71,6 @@ DENSE_ENTRY = {
             "min_p": 0.05,
             "presence_penalty": 0.0,
         },
-    },
-    "validated_host": {
-        "n_cpu_moe": None,
-        "threads": 8,
-        "fiche_summary": "fake fiche",
     },
 }
 
@@ -118,7 +111,23 @@ def test_resolve_entry_returns_the_entry_whose_fields_match_the_file(
     assert entry.architecture.expert_count == 40
     assert entry.architecture.active_params_b == 3.1
     assert entry.server_flags == MOE_ENTRY["server_flags"]
-    assert entry.validated_host == MOE_ENTRY["validated_host"]
+    # The host-fitted values are run profile data, not roster data.
+    assert not hasattr(entry, "validated_host")
+
+
+def _profile(
+    entry: roster.RosterEntry, n_cpu_moe: int | None, mode: str
+) -> profiles.ResolvedProfile:
+    """A resolved profile carrying `n_cpu_moe` under `mode`, for the host-fit check."""
+    return profiles.ResolvedProfile(
+        profile_id=profiles.profile_id_for(entry.entry_id, "test-machine", mode),
+        entry_id=entry.entry_id,
+        machine_id="test-machine",
+        compute_mode=mode,
+        n_gpu_layers=0 if mode == "cpu_only" else 99,
+        n_cpu_moe=n_cpu_moe,
+        threads=8,
+    )
 
 
 def test_validate_host_fit_passes_at_or_below_the_expert_ceiling(
@@ -127,7 +136,8 @@ def test_validate_host_fit_passes_at_or_below_the_expert_ceiling(
     loaded = roster.load_roster(roster_path)
     entry = roster.resolve_entry(loaded, MOE_ENTRY_ID)
 
-    roster.validate_host_fit(entry, n_cpu_moe=37)  # 37 <= expert_count (40)
+    # 37 <= expert_count (40)
+    roster.validate_host_fit(entry, _profile(entry, 37, "gpu"))
 
 
 def test_validate_host_fit_passes_when_moe_entry_gets_no_n_cpu_moe(
@@ -136,7 +146,7 @@ def test_validate_host_fit_passes_when_moe_entry_gets_no_n_cpu_moe(
     loaded = roster.load_roster(roster_path)
     entry = roster.resolve_entry(loaded, MOE_ENTRY_ID)
 
-    roster.validate_host_fit(entry, n_cpu_moe=None)
+    roster.validate_host_fit(entry, _profile(entry, None, "gpu"))
 
 
 def test_validate_host_fit_refuses_a_dense_entry_given_any_n_cpu_moe(
@@ -146,7 +156,7 @@ def test_validate_host_fit_refuses_a_dense_entry_given_any_n_cpu_moe(
     entry = roster.resolve_entry(loaded, DENSE_ENTRY_ID)
 
     with pytest.raises(RosterError, match=DENSE_ENTRY_ID):
-        roster.validate_host_fit(entry, n_cpu_moe=1)
+        roster.validate_host_fit(entry, _profile(entry, 1, "gpu"))
 
 
 def test_validate_host_fit_refuses_an_moe_entry_over_its_expert_ceiling(
@@ -156,7 +166,19 @@ def test_validate_host_fit_refuses_an_moe_entry_over_its_expert_ceiling(
     entry = roster.resolve_entry(loaded, MOE_ENTRY_ID)
 
     with pytest.raises(RosterError, match="40"):
-        roster.validate_host_fit(entry, n_cpu_moe=41)
+        roster.validate_host_fit(entry, _profile(entry, 41, "gpu"))
+
+
+def test_validate_host_fit_refuses_any_n_cpu_moe_under_cpu_only_naming_the_mode(
+    roster_path: Path,
+) -> None:
+    loaded = roster.load_roster(roster_path)
+    entry = roster.resolve_entry(loaded, MOE_ENTRY_ID)
+
+    roster.validate_host_fit(entry, _profile(entry, None, "cpu_only"))
+    for value in (0, 37):
+        with pytest.raises(RosterError, match="cpu_only"):
+            roster.validate_host_fit(entry, _profile(entry, value, "cpu_only"))
 
 
 def test_resolve_entry_raises_on_an_unknown_id(roster_path: Path) -> None:
@@ -189,7 +211,7 @@ def test_load_roster_refuses_an_entry_missing_any_other_required_field(
     [
         ("architecture", "expert_count", "architecture.expert_count"),
         ("server_flags", "context_size", "server_flags.context_size"),
-        ("validated_host", "threads", "validated_host.threads"),
+        ("server_flags", "sampler", "server_flags.sampler"),
     ],
 )
 def test_load_roster_names_the_dotted_path_of_a_missing_nested_field(
@@ -260,7 +282,7 @@ def test_load_roster_refuses_a_non_integer_roster_version(
         roster.load_roster(path)
 
 
-@pytest.mark.parametrize("block", ["architecture", "server_flags", "validated_host"])
+@pytest.mark.parametrize("block", ["architecture", "server_flags"])
 def test_load_roster_refuses_a_block_that_is_not_an_object(
     tmp_path, block: str
 ) -> None:
@@ -279,15 +301,21 @@ def test_shipped_roster_entry_matches_the_validated_baseline_flags() -> None:
     loaded = roster.load_roster(REAL_ROSTER_PATH)
     entry = roster.resolve_entry(loaded, "qwen3.6-35b-a3b-ud-iq4xs")
 
-    # server.build_flags's validated command, with the flags that are now
-    # host settings rather than roster data stripped out: the model path
-    # (-m), --n-cpu-moe, -t/threads, and --host/--port.
+    # server.build_flags's validated command under the laptop gpu run
+    # profile, with the flags that are run profile or host settings rather
+    # than roster data stripped out: the model path (-m), --n-cpu-moe,
+    # -t/threads, and --host/--port.
     dummy_model_path = Path("dummy.gguf")
-    host_n_cpu_moe = entry.validated_host["n_cpu_moe"]
-    host_threads = entry.validated_host["threads"]
-    full_flags = server.build_flags(
-        entry, host_n_cpu_moe, host_threads, dummy_model_path
+    profile = profiles.resolve_for_run(
+        entry,
+        "laptop-mobile-gpu",
+        "gpu",
+        operator_n_cpu_moe=None,
+        operator_threads=None,
     )
+    host_n_cpu_moe = profile.n_cpu_moe
+    host_threads = profile.threads
+    full_flags = server.build_flags(entry, profile, dummy_model_path)
     host_or_model_flag_pairs = {
         ("-m", str(dummy_model_path)),
         ("--n-cpu-moe", str(host_n_cpu_moe)),
@@ -326,11 +354,7 @@ def test_shipped_roster_entry_matches_docs_setup_step_3() -> None:
     )
     assert entry.architecture.kind == "moe"
     assert entry.architecture.expert_count == 40
-    assert entry.validated_host == {
-        "n_cpu_moe": 37,
-        "threads": 8,
-        "fiche_summary": entry.validated_host["fiche_summary"],
-    }
+    assert not hasattr(entry, "validated_host")
 
 
 def test_family_of_resolves_every_model_this_project_names() -> None:
@@ -419,8 +443,13 @@ def test_the_shipped_moe_entry_still_loads_with_no_family_of_its_own() -> None:
     # language-claim blocks, 4 the size classes and their figures: rows
     # already published carry the version they were produced under and are
     # not back-filled, so the assertion follows the file rather than pinning
-    # a version the file has moved past.
-    assert loaded.roster_version == 4
+    # a version the file has moved past. 5: `validated_host` moved into the
+    # run profile registry. 6: the per-mode `requirements`. 7: Granite 4.0 H
+    # 350M entered the ~0.5B class from its candidate-gate pass record. 8:
+    # LFM2.5-1.2B-Instruct and Granite 3.1 1B-A400M entered the ~2B class. 9:
+    # Granite 3.1 3B-A800M entered the ~4B class. 10: Gemma 4 12B entered the
+    # top class.
+    assert loaded.roster_version == 10
     assert entry.family is None
     assert roster.family_of(entry.display_id, entry) == "qwen"
 
@@ -574,25 +603,36 @@ def test_load_roster_refuses_a_block_that_is_not_an_object_or_lacks_a_field(
 def test_every_shipped_entry_carries_a_licence_and_a_language_claim() -> None:
     loaded = roster.load_roster(REAL_ROSTER_PATH)
 
-    assert len(loaded.entries) == 4
+    assert len(loaded.entries) == 9
     for entry in loaded.entries.values():
         assert entry.licence is not None, entry.entry_id
         assert entry.language_claim is not None, entry.entry_id
         # Each term is read at the entry's own pinned revision (the flagship's
-        # is `main`, its read date standing in for the sha).
-        for url in (entry.licence.source_url, entry.language_claim.source_url):
-            assert url.startswith(
-                f"https://huggingface.co/{entry.repo}/blob/{entry.revision}/"
-            ), (entry.entry_id, url)
+        # is `main`, its read date standing in for the sha), except a claim
+        # the GGUF repository's card does not state: that one is read off the
+        # base model's card, pinned at its own sha.
+        claim_root = LANGUAGE_CLAIM_FROM_BASE_CARD.get(
+            entry.entry_id,
+            f"https://huggingface.co/{entry.repo}/blob/{entry.revision}/",
+        )
+        assert entry.licence.source_url.startswith(
+            f"https://huggingface.co/{entry.repo}/blob/{entry.revision}/"
+        ), entry.entry_id
+        assert entry.language_claim.source_url.startswith(claim_root), entry.entry_id
 
 
-def test_every_shipped_entry_declares_the_qwen_thinking_control() -> None:
+def test_every_shipped_qwen_entry_declares_the_qwen_thinking_control() -> None:
     # The control these four entries already ran under, now declared rather
     # than assumed: every published row's rendered prompt stays reproducible.
     loaded = roster.load_roster(REAL_ROSTER_PATH)
+    qwen = [
+        entry
+        for entry in loaded.entries.values()
+        if roster.family_of(entry.display_id, entry) == "qwen"
+    ]
 
-    assert loaded.entries
-    for entry in loaded.entries.values():
+    assert len(qwen) == 4
+    for entry in qwen:
         assert entry.thinking_control == {
             "chat_template_kwargs": {"enable_thinking": False}
         }, entry.entry_id
@@ -633,13 +673,134 @@ SHIPPED_DENSE_ENTRIES: dict[str, dict[str, object]] = {
 }
 
 
-def test_the_shipped_roster_holds_the_moe_flagship_and_three_dense_entries() -> None:
+# The non-Qwen families of every class, entered from their
+# candidate-gate pass records; written out for the same reason as the Qwen
+# ladder above.
+SHIPPED_SECOND_FAMILY_ENTRIES: dict[str, dict[str, object]] = {
+    "granite-4.0-h-350m-q8": {
+        "repo": "ibm-granite/granite-4.0-h-350m-GGUF",
+        "revision": "a864f823cce6e6048b5752e2816fe7a23987d790",  # pragma: allowlist secret
+        "file": "granite-4.0-h-350m/granite-4.0-h-350m-Q8_0.gguf",
+        "display_id": "Granite-4.0-H-350M",
+        "quant": "Q8_0",
+        "sha256": "c7d9873640dc303b6773dcc44e72e5bdf533e1c95ca8421e6191fbff5c94c942",  # pragma: allowlist secret
+        "active_params_b": 0.34,
+        "family": "ibm",
+        "kind": "dense",
+        "expert_count": 0,
+    },
+    "lfm2.5-1.2b-instruct-q8": {
+        "repo": "LiquidAI/LFM2.5-1.2B-Instruct-GGUF",
+        "revision": "8ed288026e23958ad9dfa92d53ed773a8eee7125",  # pragma: allowlist secret
+        "file": "LFM2.5-1.2B-Instruct/LFM2.5-1.2B-Instruct-Q8_0.gguf",
+        "display_id": "LFM2.5-1.2B-Instruct",
+        "quant": "Q8_0",
+        "sha256": "f6b981dcb86917fa463f78a362320bd5e2dc45445df147287eedb85e5a30d26a",  # pragma: allowlist secret
+        "active_params_b": 1.17,
+        "family": "liquid",
+        "kind": "dense",
+        "expert_count": 0,
+    },
+    "granite-3.1-1b-a400m-instruct-q8": {
+        "repo": "bartowski/granite-3.1-1b-a400m-instruct-GGUF",
+        "revision": "940d2e1f9f65330615c7c8e980e6c5ac73d3360c",  # pragma: allowlist secret
+        "file": "granite-3.1-1b-a400m-instruct/granite-3.1-1b-a400m-instruct-Q8_0.gguf",
+        "display_id": "Granite-3.1-1B-A400M-Instruct",
+        "quant": "Q8_0",
+        "sha256": "724302357c718bbfb4574e4c99b27d8814c8338b0873b062bf410111d1417650",  # pragma: allowlist secret
+        "active_params_b": 0.4,
+        "family": "ibm",
+        "kind": "moe",
+        "expert_count": 32,
+    },
+    "granite-3.1-3b-a800m-instruct-q4km": {
+        "repo": "bartowski/granite-3.1-3b-a800m-instruct-GGUF",
+        "revision": "be9a36f042806cb586bc65556c527079782b78e0",  # pragma: allowlist secret
+        "file": "granite-3.1-3b-a800m-instruct/granite-3.1-3b-a800m-instruct-Q4_K_M.gguf",
+        "display_id": "Granite-3.1-3B-A800M-Instruct",
+        "quant": "Q4_K_M",
+        "sha256": "48e0edcd578fd4462f26127f04c651d0e650741110185297741089aea01a82b3",  # pragma: allowlist secret
+        "active_params_b": 0.8,
+        "family": "ibm",
+        "kind": "moe",
+        "expert_count": 40,
+    },
+    "gemma-4-12b-it-iq4xs": {
+        "repo": "unsloth/gemma-4-12b-it-GGUF",
+        "revision": "fc034cfff751157913579611efad8462ac1be606",  # pragma: allowlist secret
+        "file": "gemma-4-12b-it/gemma-4-12b-it-IQ4_XS.gguf",
+        "display_id": "Gemma-4-12B-it",
+        "quant": "IQ4_XS",
+        "sha256": "b0037d0e0de0290177045ca214b2a0fb1079d18bde57842b3ca32f5b0cd76774",  # pragma: allowlist secret
+        "active_params_b": 11.91,
+        "family": "google",
+        "kind": "dense",
+        "expert_count": 0,
+        # Its template carries a switch, verified by the gate's two renders.
+        "thinking_control": {"chat_template_kwargs": {"enable_thinking": False}},
+    },
+}
+
+# The GGUF repository's card states no languages, so the claim is read off the
+# base model's card at its own pinned sha.
+LANGUAGE_CLAIM_FROM_BASE_CARD = {
+    "granite-4.0-h-350m-q8": (
+        "https://huggingface.co/ibm-granite/granite-4.0-h-350m/blob/"
+        "3b17b717b8f2f5d305b0a92c1491e239aeda19c8/"  # pragma: allowlist secret
+    ),
+    "lfm2.5-1.2b-instruct-q8": (
+        "https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct/blob/"
+        "0f604ada3f766f9f257460c4c9f0b5d6f69d431b/"  # pragma: allowlist secret
+    ),
+    "granite-3.1-1b-a400m-instruct-q8": (
+        "https://huggingface.co/ibm-granite/granite-3.1-1b-a400m-instruct/blob/"
+        "0da7a48b0276d500ce5922fd2b33944091fc6c09/"  # pragma: allowlist secret
+    ),
+    "granite-3.1-3b-a800m-instruct-q4km": (
+        "https://huggingface.co/ibm-granite/granite-3.1-3b-a800m-instruct/blob/"
+        "a02780686e08a03fe0d2679a293b5c74a90efa89/"  # pragma: allowlist secret
+    ),
+}
+
+
+def test_the_shipped_roster_holds_the_qwen_ladder_and_the_second_family() -> None:
     loaded = roster.load_roster(REAL_ROSTER_PATH)
 
     assert set(loaded.entries) == {
         "qwen3.6-35b-a3b-ud-iq4xs",
         *SHIPPED_DENSE_ENTRIES,
+        *SHIPPED_SECOND_FAMILY_ENTRIES,
     }
+
+
+@pytest.mark.parametrize("entry_id", sorted(SHIPPED_SECOND_FAMILY_ENTRIES))
+def test_each_second_family_entry_matches_docs_setup_and_its_gguf_kind(
+    entry_id: str,
+) -> None:
+    expected = SHIPPED_SECOND_FAMILY_ENTRIES[entry_id]
+    entry = roster.resolve_entry(roster.load_roster(REAL_ROSTER_PATH), entry_id)
+    setup = Path("docs/setup.md").read_text(encoding="utf-8")
+
+    for field in ("repo", "revision", "file", "display_id", "quant", "sha256"):
+        assert getattr(entry, field) == expected[field], field
+    assert entry.architecture.active_params_b == expected["active_params_b"]
+    # Declared in the file, so it resolves without the in-code fallback.
+    assert entry.family == expected["family"]
+    assert roster.family_of(entry.display_id, entry) == expected["family"]
+    # A model that does not reason (verified by the gate's one generation),
+    # unless the entry names the switch its template carries.
+    assert entry.thinking_control == expected.get(
+        "thinking_control", roster.THINKING_CONTROL_NONE
+    )
+    # The kind and expert count the gate read off the GGUF header.
+    assert entry.architecture.kind == expected["kind"]
+    assert entry.architecture.expert_count == expected["expert_count"]
+    assert entry.entry_id not in profiles.tracked_registry().entries
+    assert entry.server_flags["load_mode"] == "auto"
+    assert entry.server_flags["context_size"] == 32768
+    # `docs/setup.md` publishes the download at the pinned sha and the hash.
+    assert f"--revision {entry.revision}" in setup
+    assert entry.sha256 in setup
 
 
 @pytest.mark.parametrize("entry_id", sorted(SHIPPED_DENSE_ENTRIES))
@@ -669,7 +830,8 @@ def test_each_shipped_dense_entry_carries_no_moe_offload(entry_id: str) -> None:
 
     assert entry.architecture.kind == "dense"
     assert entry.architecture.expert_count == 0
-    assert entry.validated_host["n_cpu_moe"] is None
+    # No profile declares an expert offload for a dense entry.
+    assert entry.entry_id not in profiles.tracked_registry().entries
     assert entry.server_flags["load_mode"] == "auto"
     # The declared family is what the judged path resolves, so a dense row
     # never falls back to MODEL_FAMILIES for a model id it does not list.
@@ -846,6 +1008,11 @@ SHIPPED_FIGURES = {
     "qwen3-0.6b-q8": ("~0.5B", 596_049_920, 639_446_688),
     "qwen3-1.7b-q8": ("~2B", 1_720_574_976, 1_834_426_016),
     "qwen3-4b-q4km": ("~4B", 4_022_468_096, 2_497_280_256),
+    "granite-4.0-h-350m-q8": ("~0.5B", 340_332_224, 366_195_616),
+    "lfm2.5-1.2b-instruct-q8": ("~2B", 1_170_340_608, 1_246_253_888),
+    "granite-3.1-1b-a400m-instruct-q8": ("~2B", 1_334_628_352, 1_422_239_776),
+    "granite-3.1-3b-a800m-instruct-q4km": ("~4B", 3_298_793_472, 2_016_888_384),
+    "gemma-4-12b-it-iq4xs": ("~8B-and-up", 11_907_350_576, 6_375_734_080),
 }
 
 
@@ -863,12 +1030,99 @@ def test_each_shipped_entry_carries_its_class_and_the_figures_read_off_its_file(
 
 
 def test_the_shipped_roster_declares_every_class_and_labels_none() -> None:
-    # Not labelled by this story: the search that would justify a ladder
-    # label or a MoE absence belongs to the per-class stories (orders 5-8).
+    # No class is a labelled ladder. The ~0.5B class spans two families and
+    # records its MoE search, the ~2B and ~4B classes hold their MoE, and the
+    # top class's MoE is still the flagship.
     loaded = roster.load_roster(REAL_ROSTER_PATH)
 
     assert tuple(loaded.size_classes) == roster.SIZE_CLASSES
-    for declaration in loaded.size_classes.values():
+    for size_class, declaration in loaded.size_classes.items():
         assert declaration.single_family_ladder is False
-        assert declaration.moe_absent_reason is None
+        if size_class != "~0.5B":
+            assert declaration.moe_absent_reason is None
     assert loaded.size_classes["~8B-and-up"].moe_entry == "qwen3.6-35b-a3b-ud-iq4xs"
+
+
+def test_the_half_billion_class_records_its_moe_search_and_spans_two_families() -> None:
+    loaded = roster.load_roster(REAL_ROSTER_PATH)
+    declaration = loaded.size_classes["~0.5B"]
+    families = {
+        roster.family_of(entry.display_id, entry)
+        for entry in loaded.entries.values()
+        if entry.size_class == "~0.5B"
+    }
+
+    assert families == {"ibm", "qwen"}
+    assert declaration.moe_sought is True
+    assert declaration.moe_entry is None
+    assert declaration.moe_absent_reason is not None
+    assert declaration.moe_absent_reason.startswith("sought, none found")
+
+
+def test_the_two_billion_class_spans_three_families_and_holds_its_moe() -> None:
+    loaded = roster.load_roster(REAL_ROSTER_PATH)
+    declaration = loaded.size_classes["~2B"]
+    members = [entry for entry in loaded.entries.values() if entry.size_class == "~2B"]
+
+    assert {roster.family_of(entry.display_id, entry) for entry in members} == {
+        "ibm",
+        "liquid",
+        "qwen",
+    }
+    # Granite 3.1 1B-A400M entered as `moe` off its GGUF header, so the
+    # declaration names it rather than an absence reason.
+    assert declaration.moe_sought is True
+    assert declaration.moe_entry == "granite-3.1-1b-a400m-instruct-q8"
+    assert declaration.moe_absent_reason is None
+    assert {entry.architecture.kind for entry in members} == {"dense", "moe"}
+
+
+def test_the_four_billion_class_spans_two_families_and_holds_its_moe() -> None:
+    loaded = roster.load_roster(REAL_ROSTER_PATH)
+    declaration = loaded.size_classes["~4B"]
+    members = [entry for entry in loaded.entries.values() if entry.size_class == "~4B"]
+
+    assert {roster.family_of(entry.display_id, entry) for entry in members} == {
+        "ibm",
+        "qwen",
+    }
+    # Granite 3.1 3B-A800M entered as `moe` off its GGUF header, at the Qwen
+    # entry's quant, so the declaration names it rather than an absence reason.
+    assert declaration.moe_sought is True
+    assert declaration.moe_entry == "granite-3.1-3b-a800m-instruct-q4km"
+    assert declaration.moe_absent_reason is None
+    assert {entry.architecture.kind for entry in members} == {"dense", "moe"}
+    assert {entry.quant for entry in members} == {"Q4_K_M"}
+
+
+def test_the_top_class_spans_two_families_with_dense_and_moe() -> None:
+    loaded = roster.load_roster(REAL_ROSTER_PATH)
+    declaration = loaded.size_classes["~8B-and-up"]
+    members = [
+        entry for entry in loaded.entries.values() if entry.size_class == "~8B-and-up"
+    ]
+
+    assert {roster.family_of(entry.display_id, entry) for entry in members} == {
+        "google",
+        "qwen",
+    }
+    # Gemma 4 12B entered as `dense` off its GGUF header; the flagship stays the
+    # class's MoE, so the declaration is unchanged (owner answer Q129 (a)).
+    assert {entry.entry_id: entry.architecture.kind for entry in members} == {
+        "qwen3.6-35b-a3b-ud-iq4xs": "moe",
+        "gemma-4-12b-it-iq4xs": "dense",
+    }
+    assert declaration.moe_sought is True
+    assert declaration.moe_entry == "qwen3.6-35b-a3b-ud-iq4xs"
+    assert declaration.moe_absent_reason is None
+    # The dense entry declares no expert offload anywhere: a dense model's
+    # profile resolves no `--n-cpu-moe`.
+    gemma = loaded.entries["gemma-4-12b-it-iq4xs"]
+    profile = profiles.resolve(
+        profiles.tracked_registry(), gemma, "laptop-mobile-gpu", "gpu"
+    )
+    assert profile.n_cpu_moe is None
+    # The gate's load launched at the declared `-ngl 99` on the laptop, so no
+    # stepped-down value overrides it in the profile.
+    assert profile.n_gpu_layers == 99
+    roster.validate_host_fit(gemma, profile)

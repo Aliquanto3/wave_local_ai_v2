@@ -19,6 +19,13 @@ import type {
   ComparisonView,
 } from '../types'
 
+// Hand-edit: these rows predate schema "23", so the live read model would
+// answer `machine` and `compute_mode` as `predates_schema` absences. Every
+// column ran on the laptop on its GPU (each fiche names the RTX 3060 Laptop
+// and `-ngl 99`), so the two dimensions are filled as a schema "23" row of
+// the same run carries them, to exercise the column header naming both.
+const ON_THE_LAPTOP_GPU = { machine: 'laptop-mobile-gpu', compute_mode: 'gpu' }
+
 const DENSE_0_6B_ROSTER_ENTRY = {
   entry_id: 'qwen3-0.6b-q8',
   display_id: 'Qwen3-0.6B',
@@ -82,7 +89,10 @@ const COLUMNS: ComparisonColumn[] = [
     prompt_set_hash: 'd41a2134274cf1c8036022d2b68396d04bfd14ff263d2f8699dbefd7a2e4596a', // pragma: allowlist secret
     thinking_policy: 'disabled',
     roster_entry: DENSE_0_6B_ROSTER_ENTRY,
-    dimensions: { architecture: DENSE_0_6B_ROSTER_ENTRY.architecture },
+    dimensions: {
+      architecture: DENSE_0_6B_ROSTER_ENTRY.architecture,
+      ...ON_THE_LAPTOP_GPU,
+    },
   },
   {
     roster_entry_id: 'qwen3-1.7b-q8',
@@ -94,7 +104,10 @@ const COLUMNS: ComparisonColumn[] = [
     prompt_set_hash: 'd41a2134274cf1c8036022d2b68396d04bfd14ff263d2f8699dbefd7a2e4596a', // pragma: allowlist secret
     thinking_policy: 'disabled',
     roster_entry: DENSE_1_7B_ROSTER_ENTRY,
-    dimensions: { architecture: DENSE_1_7B_ROSTER_ENTRY.architecture },
+    dimensions: {
+      architecture: DENSE_1_7B_ROSTER_ENTRY.architecture,
+      ...ON_THE_LAPTOP_GPU,
+    },
   },
   {
     roster_entry_id: 'qwen3-4b-q4km',
@@ -106,7 +119,10 @@ const COLUMNS: ComparisonColumn[] = [
     prompt_set_hash: 'd41a2134274cf1c8036022d2b68396d04bfd14ff263d2f8699dbefd7a2e4596a', // pragma: allowlist secret
     thinking_policy: 'disabled',
     roster_entry: DENSE_4B_ROSTER_ENTRY,
-    dimensions: { architecture: DENSE_4B_ROSTER_ENTRY.architecture },
+    dimensions: {
+      architecture: DENSE_4B_ROSTER_ENTRY.architecture,
+      ...ON_THE_LAPTOP_GPU,
+    },
   },
   {
     // Hand-edited suite_version: "2", not the live store's current "3" --
@@ -120,7 +136,7 @@ const COLUMNS: ComparisonColumn[] = [
     prompt_set_hash: 'd41a2134274cf1c8036022d2b68396d04bfd14ff263d2f8699dbefd7a2e4596a', // pragma: allowlist secret
     thinking_policy: 'disabled',
     roster_entry: MOE_ROSTER_ENTRY,
-    dimensions: { architecture: MOE_ROSTER_ENTRY.architecture },
+    dimensions: { architecture: MOE_ROSTER_ENTRY.architecture, ...ON_THE_LAPTOP_GPU },
   },
 ]
 

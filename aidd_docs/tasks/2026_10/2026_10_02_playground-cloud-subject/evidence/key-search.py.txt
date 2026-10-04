@@ -1,0 +1,170 @@
+"""Evidence: a stubbed cloud exchange through the real service; search its output for the key.
+
+No real provider is contacted (owner decision D2): `mistral_client`'s endpoint
+constant is pointed at a fake provider on loopback, which answers once with a
+completion and then with 429s. The service runs under uvicorn on loopback
+(plain HTTP: `create_app` is served without the CLI's TLS wrapper here).
+"""
+
+from __future__ import annotations
+
+import io
+import json
+import logging
+import os
+import socket
+import sys
+import tempfile
+import threading
+import time
+from contextlib import redirect_stderr, redirect_stdout
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+
+import requests
+import uvicorn
+
+KEY = "fake-provider-key-0c41d7a2"  # pragma: allowlist secret
+SERVICE_KEY = "evidence-service-key"  # pragma: allowlist secret
+PROMPT = "evidence prompt: what moves the tides?"
+out_path = Path(sys.argv[1])
+
+tmp = Path(tempfile.mkdtemp())
+(tmp / "cert.pem").write_text("x")
+(tmp / "key.pem").write_text("x")
+for name in list(os.environ):
+    if name.endswith("_API_KEY") or name.startswith("PLAYGROUND_"):
+        del os.environ[name]
+os.environ.update(
+    {
+        "SERVICE_API_KEY": SERVICE_KEY,
+        "SERVICE_TLS_CERTFILE": str(tmp / "cert.pem"),
+        "SERVICE_TLS_KEYFILE": str(tmp / "key.pem"),
+        "SERVICE_DEMO_MODE": "true",
+        "PLAYGROUND_CLOUD_SUBJECT": "mistral:mistral-small-2603",
+        "MISTRAL_API_KEY": KEY,
+        "MISTRAL_REQUEST_PACING_S": "0",
+        "CLOUD_RETRY_MIN_RETRIES": "1",
+        "CLOUD_RETRY_RETRIES_PER_ITEM": "0",
+        "RUNTIME_RESULTS_PATH": str(tmp / "runtime.jsonl"),
+        "QUALITY_RESULTS_PATH": str(tmp / "quality.jsonl"),
+        "FICHE_REGISTRY_DIR": str(tmp / "fiches"),
+    }
+)
+
+received: list[dict[str, str]] = []
+
+
+class FakeProvider(BaseHTTPRequestHandler):
+    def do_POST(self) -> None:
+        length = int(self.headers["Content-Length"])
+        body = json.loads(self.rfile.read(length))
+        received.append(
+            {
+                "path": self.path,
+                "authorization_is_bearer_key": str(
+                    self.headers["Authorization"] == f"Bearer {KEY}"
+                ),
+                "content": body["messages"][0]["content"],
+            }
+        )
+        if len(received) == 1:
+            payload = {
+                "choices": [
+                    {
+                        "message": {"content": "The moon's pull."},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"completion_tokens": 4, "prompt_tokens": 9},
+            }
+            status = 200
+        else:
+            # A provider echoing the request's credential in its error body:
+            # the worst case for a client message quoting `response.text`.
+            payload = {"message": f"rate limited for Bearer {KEY}"}
+            status = 429
+        data = json.dumps(payload).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Retry-After", "0")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def log_message(self, *args: object) -> None:
+        return None
+
+
+def free_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return int(s.getsockname()[1])
+
+
+provider = HTTPServer(("127.0.0.1", free_port()), FakeProvider)
+threading.Thread(target=provider.serve_forever, daemon=True).start()
+
+captured = io.StringIO()
+handler = logging.StreamHandler(captured)
+logging.basicConfig(level=logging.DEBUG, handlers=[handler], force=True)
+
+import wave_local_ai_v2.settings as settings_module  # noqa: E402
+from wave_local_ai_v2 import mistral_client, service  # noqa: E402
+from wave_local_ai_v2.settings import load_service_settings  # noqa: E402
+
+# Never read a `.env`: run from any checkout, only the fake key set above can
+# reach the settings, so no real provider key is ever loaded or sent.
+settings_module.load_dotenv = lambda *args, **kwargs: False
+
+mistral_client.CHAT_COMPLETIONS_URL = (
+    f"http://127.0.0.1:{provider.server_address[1]}/v1/chat/completions"
+)
+settings = load_service_settings()
+port = free_port()
+config = uvicorn.Config(
+    service.create_app(settings),
+    host="127.0.0.1",
+    port=port,
+    log_level="debug",
+    log_config=None,
+)
+server = uvicorn.Server(config)
+transcript: list[str] = []
+with redirect_stdout(captured), redirect_stderr(captured):
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    while not server.started:
+        time.sleep(0.05)
+    base = f"http://127.0.0.1:{port}"
+    headers = {"X-API-Key": SERVICE_KEY}
+    calls = [
+        ("GET", "/api/playground/options", None),
+        ("POST", "/api/playground/session", {"cloud_subject": "mistral"}),
+        ("POST", "/api/playground/chat", {"prompt": PROMPT, "thinking_policy": "disabled"}),
+        ("POST", "/api/playground/chat", {"prompt": PROMPT, "thinking_policy": "disabled"}),
+        ("DELETE", "/api/playground/session", None),
+    ]
+    for method, path, body in calls:
+        response = requests.request(method, base + path, json=body, headers=headers)
+        transcript.append(f"{method} {path} -> {response.status_code}\n{response.text}")
+    server.should_exit = True
+    thread.join(timeout=10)
+provider.shutdown()
+
+service_output = "\n".join(transcript) + "\n" + captured.getvalue()
+hits = [line for line in service_output.splitlines() if KEY in line]
+lines = [
+    "# Key search over a stubbed playground cloud exchange (no real provider contacted)",
+    "# `.env` loading disabled (settings.load_dotenv patched to a no-op): only the fake key is in scope",
+    f"# fake provider received {len(received)} request(s): {received}",
+    "",
+    "## Responses",
+    *transcript,
+    "",
+    f"## Service log lines captured: {len(captured.getvalue().splitlines())}",
+    "",
+    f"## Search for the provider key's value in responses + log: {len(hits)} hit(s)",
+    *hits,
+]
+out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+print(f"hits={len(hits)} provider_requests={len(received)}")

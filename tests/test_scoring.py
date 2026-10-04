@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 from wave_local_ai_v2.classification_suite import LABELS, ClassificationItem
@@ -34,6 +36,96 @@ def test_normalize_label_returns_none_for_unparseable_completion() -> None:
     assert normalize_label("I'm not sure how to classify this one.", LABELS) is None
 
 
+# MInDS-14's fourteen intents, as the publication classification suite's
+# items carry them; ten hold an underscore.
+MINDS14_INTENTS = frozenset(
+    {
+        "abroad",
+        "address",
+        "app_error",
+        "atm_limit",
+        "balance",
+        "business_loan",
+        "card_issues",
+        "cash_deposit",
+        "direct_debit",
+        "freeze",
+        "high_value_payment",
+        "joint_account",
+        "latest_transactions",
+        "pay_bill",
+    }
+)
+
+
+def _first_member_token(raw_completion: str, labels: frozenset[str]) -> str | None:
+    """The one-token rule `normalize_label` applied before multi-word labels."""
+    for token in re.findall(r"[a-z]+", raw_completion.lower()):
+        if token in labels:
+            return token
+    return None
+
+
+@pytest.mark.parametrize("intent", sorted(MINDS14_INTENTS))
+def test_every_minds14_intent_parses_to_itself(intent: str) -> None:
+    spaced = intent.replace("_", " ")
+    hyphenated = intent.replace("_", "-").title()
+
+    assert normalize_label(intent, MINDS14_INTENTS) == intent
+    assert normalize_label(f"Intent: {intent.upper()}.", MINDS14_INTENTS) == intent
+    assert normalize_label(spaced, MINDS14_INTENTS) == intent
+    assert normalize_label(hyphenated, MINDS14_INTENTS) == intent
+
+
+def test_a_label_holding_an_underscore_is_matched_as_a_whole() -> None:
+    assert normalize_label("app_error", MINDS14_INTENTS) == "app_error"
+    # Its words alone, or out of order, name no label.
+    assert normalize_label("app", MINDS14_INTENTS) is None
+    assert normalize_label("error app", MINDS14_INTENTS) is None
+
+
+def test_the_longer_label_wins_where_two_start_at_the_same_word() -> None:
+    labels = frozenset({"card", "card_issues"})
+
+    assert normalize_label("card issues", labels) == "card_issues"
+    assert normalize_label("card", labels) == "card"
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "billing",
+        "  Technical \n",
+        "The category is account, based on the message.",
+        "I'm not sure how to classify this one.",
+        "other_billing",
+        "technical/billing",
+        "Account-Technical",
+        "",
+        "billings",
+        "BILLING!!! no, other",
+    ],
+)
+def test_a_one_word_label_set_parses_as_the_one_token_rule_did(raw: str) -> None:
+    assert normalize_label(raw, LABELS) == _first_member_token(raw, LABELS)
+
+
+def test_score_item_parses_against_the_labels_it_is_given() -> None:
+    item = ClassificationItem(item_id="x", prompt="p", expected_label="app_error")
+
+    scored = score_item(
+        item,
+        "app_error",
+        truncated=False,
+        generated_tokens=3,
+        max_output_tokens=MAX_OUTPUT_TOKENS,
+        labels=MINDS14_INTENTS,
+    )
+
+    assert scored["predicted_label"] == "app_error"
+    assert scored["correct"] is True
+
+
 def _score(
     raw_completion: str,
     *,
@@ -50,6 +142,7 @@ def _score(
         truncated=truncated,
         generated_tokens=generated_tokens,
         max_output_tokens=max_output_tokens,
+        labels=LABELS,
         truncation_reason=truncation_reason,
     )
 

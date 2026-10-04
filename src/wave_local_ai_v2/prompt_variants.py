@@ -16,9 +16,23 @@ suite prompt is held to. Changing a definition therefore means bumping its
 version *and* recording the new hash, which leaves the old (id, version)
 naming the definition its published rows ran under.
 
-`baseline` is the only entry today. The other three variants the epic
-declares (`constrained_output`, `output_compressed`, `input_compressed`) are
-added by their own stories.
+A definition may declare the task families (a suite's `task_suite`) it
+`applies_to`, with its `applicability_reason`; one that declares none applies
+to every family. A variant never removes an item: an item of a family it does
+not apply to is still run, with the authored prompt unchanged, and its row
+records that the transformation was a no-op.
+
+A `constrain_output` definition also declares, per family it applies to,
+the output format, any instruction it appends to the prompt (`null` for
+none), and the `constraint` that expresses the format in a decoding
+mechanism (`gbnf`: a llama.cpp grammar). The grammar is part of the hashed
+definition; the engine that runs the item sends it through its own request
+field for that mechanism, and the row names the mechanism and the grammar's
+content hash (`constraint_for`).
+
+`baseline`, `output_compressed` and `constrained_output` are registered
+today. The fourth variant the epic declares (`input_compressed`) is added by
+its own story.
 """
 
 from __future__ import annotations
@@ -31,8 +45,22 @@ from types import MappingProxyType
 from typing import Any
 
 BASELINE_ID = "baseline"
+OUTPUT_COMPRESSED_ID = "output_compressed"
+CONSTRAINED_OUTPUT_ID = "constrained_output"
 
 TRANSFORMATION_IDENTITY = "identity"
+TRANSFORMATION_APPEND_INSTRUCTION = "append_instruction"
+TRANSFORMATION_CONSTRAIN_OUTPUT = "constrain_output"
+
+# Every decoding mechanism a `constrain_output` definition may express its
+# format in. `gbnf` is llama.cpp's grammar format. What a row names when no
+# constraint was applied is `CONSTRAINT_MECHANISM_NONE`.
+MECHANISM_GBNF = "gbnf"
+CONSTRAINT_MECHANISMS = frozenset({MECHANISM_GBNF})
+CONSTRAINT_MECHANISM_NONE = "none"
+
+# What separates the authored prompt from an appended instruction.
+INSTRUCTION_SEPARATOR = "\n\n"
 
 
 class PromptVariantError(ValueError):
@@ -47,6 +75,28 @@ class PromptVariant:
     version: str
     definition: Mapping[str, Any]
     definition_hash: str
+
+
+@dataclass(frozen=True)
+class VariantApplication:
+    """What a variant made of one authored prompt, and whether it skipped it.
+
+    `noop` is true when the item's task family is outside the variant's
+    declared `applies_to`: the transformation was not applied and `prompt`
+    is the authored text.
+    """
+
+    prompt: str
+    noop: bool
+
+
+@dataclass(frozen=True)
+class Constraint:
+    """The decoding constraint a variant declares for one task family."""
+
+    mechanism: str
+    grammar: str
+    grammar_hash: str
 
 
 def definition_hash(definition: Mapping[str, Any]) -> str:
@@ -72,6 +122,77 @@ REGISTERED_VARIANTS: tuple[Mapping[str, Any], ...] = (
         },
         "definition_hash": (
             "aea6cde7c1e788c7a9c47050ec7888d8dce7963b95814e5b3f2cd47d8a69ea93"  # pragma: allowlist secret
+        ),
+    },
+    {
+        "variant_id": OUTPUT_COMPRESSED_ID,
+        "version": "1",
+        "definition": {
+            "transformation": TRANSFORMATION_APPEND_INSTRUCTION,
+            "instruction": (
+                "Answer as tersely as possible: no greeting, no explanation, "
+                "no filler words, no full sentences. Output only what the task "
+                "asks for."
+            ),
+            "applies_to": ["classification"],
+            "applicability_reason": (
+                "A classification answer is one label scored by exact match, so "
+                "a terse-output instruction can only change how the label is "
+                "worded around, and the test behind the family reads the "
+                "effect. A translation's length is set by its source and its "
+                "reference, so a terse instruction could only remove content "
+                "the reference requires: the variant records a no-op there."
+            ),
+            "description": (
+                "The item's authored prompt followed by a terse-output "
+                "(Caveman-style) instruction: does telling a small model to "
+                "answer tersely help or hurt it?"
+            ),
+        },
+        "definition_hash": (
+            "f210943107058d5a9ebbbac26eee312b01f3220bfe874e56676d0fa41c69388c"  # pragma: allowlist secret
+        ),
+    },
+    {
+        "variant_id": CONSTRAINED_OUTPUT_ID,
+        "version": "1",
+        "definition": {
+            "transformation": TRANSFORMATION_CONSTRAIN_OUTPUT,
+            "applies_to": ["classification"],
+            "applicability_reason": (
+                "A classification answer is one label of a closed set, so a "
+                "grammar admitting exactly those labels expresses the whole "
+                "output format and the exact-match test behind the family "
+                "reads its effect. A translation is open text: any grammar "
+                "admitting every correct translation admits every answer, so "
+                "the variant records a no-op there."
+            ),
+            "output_formats": {
+                "classification": {
+                    "format": (
+                        "Exactly one label of the closed set (account, "
+                        "billing, other, technical), lowercase, with nothing "
+                        "before or after it."
+                    ),
+                    "instruction": None,
+                    "constraint": {
+                        "mechanism": MECHANISM_GBNF,
+                        "grammar": (
+                            'root ::= "account" | "billing" | "other" | "technical"'
+                        ),
+                    },
+                }
+            },
+            "description": (
+                "The item's authored prompt, unchanged (it already states the "
+                "format), answered under a decoding constraint that admits "
+                "only that format: the DSL technique's output-side "
+                "descendant. Does constraining a small model's output help or "
+                "hurt it?"
+            ),
+        },
+        "definition_hash": (
+            "11077b87e953b0e714f4e966d119c26ac35efd9ac6453cbe2dc651862f0a79fd"  # pragma: allowlist secret
         ),
     },
 )
@@ -107,6 +228,22 @@ def load_registry(
                 f"declares {variant.definition_hash}: its definition was edited "
                 "without a version bump"
             )
+        applies_to = variant.definition.get("applies_to")
+        if applies_to is not None and (
+            not isinstance(applies_to, list)
+            or not applies_to
+            or not all(isinstance(family, str) and family for family in applies_to)
+            or not isinstance(variant.definition.get("applicability_reason"), str)
+            or not variant.definition["applicability_reason"].strip()
+        ):
+            raise PromptVariantError(
+                f"prompt variant {variant.variant_id!r} version "
+                f"{variant.version!r} declares applies_to {applies_to!r}: it "
+                "must be a non-empty list of task families with a non-empty "
+                "applicability_reason"
+            )
+        if variant.definition.get("transformation") == TRANSFORMATION_CONSTRAIN_OUTPUT:
+            _check_output_formats(variant)
         if variant.definition.get("transformation") not in _TRANSFORMATIONS:
             raise PromptVariantError(
                 f"prompt variant {variant.variant_id!r} version "
@@ -115,6 +252,116 @@ def load_registry(
             )
         registry[key] = variant
     return MappingProxyType(registry)
+
+
+def _check_output_formats(variant: PromptVariant) -> None:
+    """Refuse a `constrain_output` definition whose formats are incomplete.
+
+    It must declare the families it applies to, and for each exactly one
+    output format: a description, an instruction (or `None`) and a
+    constraint in a known mechanism with a non-empty grammar.
+    """
+    where = f"prompt variant {variant.variant_id!r} version {variant.version!r}"
+    applies_to = variant.definition.get("applies_to")
+    formats = variant.definition.get("output_formats")
+    if applies_to is None or not isinstance(formats, Mapping):
+        raise PromptVariantError(
+            f"{where} constrains output: it must declare applies_to and an "
+            "output_formats object keyed by those task families"
+        )
+    if set(formats) != set(applies_to):
+        raise PromptVariantError(
+            f"{where} declares output formats for {sorted(formats)} but applies "
+            f"to {sorted(applies_to)}: each family it applies to declares "
+            "exactly one format"
+        )
+    for family, output_format in formats.items():
+        constraint = (
+            output_format.get("constraint")
+            if isinstance(output_format, Mapping)
+            else None
+        )
+        instruction = (
+            output_format.get("instruction")
+            if isinstance(output_format, Mapping)
+            else None
+        )
+        if (
+            not isinstance(output_format, Mapping)
+            or not isinstance(output_format.get("format"), str)
+            or not output_format["format"].strip()
+            or "instruction" not in output_format
+            or not (
+                instruction is None
+                or (isinstance(instruction, str) and instruction.strip())
+            )
+            or not isinstance(constraint, Mapping)
+            or constraint.get("mechanism") not in CONSTRAINT_MECHANISMS
+            or not isinstance(constraint.get("grammar"), str)
+            or not constraint["grammar"].strip()
+        ):
+            raise PromptVariantError(
+                f"{where} declares a malformed output format for {family!r}: it "
+                "needs a non-empty format, an instruction (null for none) and a "
+                f"constraint with a mechanism in {sorted(CONSTRAINT_MECHANISMS)} "
+                "and a non-empty grammar"
+            )
+
+
+def grammar_hash(grammar: str) -> str:
+    """SHA-256 hex digest of `grammar`'s UTF-8 bytes: what a row publishes."""
+    return hashlib.sha256(grammar.encode("utf-8")).hexdigest()
+
+
+def constraint_for(
+    variant: PromptVariant, task_family: str | None
+) -> Constraint | None:
+    """The decoding constraint `variant` declares for `task_family`, or None.
+
+    None when the variant declares no output formats, or does not apply to
+    the family: the item then runs unconstrained and its row names
+    `CONSTRAINT_MECHANISM_NONE`.
+    """
+    formats = variant.definition.get("output_formats")
+    if not isinstance(formats, Mapping) or not applies(variant, task_family):
+        return None
+    constraint = formats[task_family]["constraint"]
+    return Constraint(
+        mechanism=constraint["mechanism"],
+        grammar=constraint["grammar"],
+        grammar_hash=grammar_hash(constraint["grammar"]),
+    )
+
+
+def constraint_row_fields(
+    variant: PromptVariant, task_family: str | None
+) -> dict[str, str | None]:
+    """What a quality row publishes about the constraint its item ran under.
+
+    `constraint_mechanism` is the mechanism applied (`none` without one) and
+    `constraint_grammar_hash` the content hash of the grammar sent (null
+    without one).
+    """
+    constraint = constraint_for(variant, task_family)
+    if constraint is None:
+        return {
+            "constraint_mechanism": CONSTRAINT_MECHANISM_NONE,
+            "constraint_grammar_hash": None,
+        }
+    return {
+        "constraint_mechanism": constraint.mechanism,
+        "constraint_grammar_hash": constraint.grammar_hash,
+    }
+
+
+def constraint_mechanisms(variant: PromptVariant) -> frozenset[str]:
+    """Every mechanism `variant` expresses a constraint in (empty for none)."""
+    formats = variant.definition.get("output_formats")
+    if not isinstance(formats, Mapping):
+        return frozenset()
+    return frozenset(
+        output_format["constraint"]["mechanism"] for output_format in formats.values()
+    )
 
 
 def resolve(variant_id: str, version: str | None = None) -> PromptVariant:
@@ -138,23 +385,57 @@ def resolve(variant_id: str, version: str | None = None) -> PromptVariant:
     )
 
 
-def apply_variant(variant: PromptVariant, authored_prompt: str) -> str:
-    """The prompt `variant` makes of `authored_prompt`, before any templating.
+def applies(variant: PromptVariant, task_family: str | None) -> bool:
+    """Whether `variant` transforms a prompt of `task_family`.
+
+    A definition declaring no `applies_to` applies to every family, and to a
+    prompt that belongs to none (`None`: the runtime benchmark's fixed
+    prompt); one declaring a list applies only to the families it names.
+    """
+    applies_to = variant.definition.get("applies_to")
+    return applies_to is None or task_family in applies_to
+
+
+def apply_variant(
+    variant: PromptVariant, authored_prompt: str, task_family: str | None
+) -> VariantApplication:
+    """What `variant` makes of `authored_prompt`, before any templating.
 
     The one place a variant is applied: every writer's subject call sends
-    what this returns, and every row publishes it as `prompt_before_template`.
+    the returned `prompt`, and every row publishes it as
+    `prompt_before_template` beside the returned `noop`. Outside the
+    variant's declared families the authored text comes back unchanged and
+    `noop` is true: the item is still run, never dropped.
     """
+    if not applies(variant, task_family):
+        return VariantApplication(prompt=authored_prompt, noop=True)
     transform = _TRANSFORMATIONS[variant.definition["transformation"]]
-    return transform(authored_prompt)
+    prompt = transform(variant.definition, authored_prompt)
+    formats = variant.definition.get("output_formats")
+    if isinstance(formats, Mapping):
+        # A family's output format may add its own instruction; `None` adds
+        # nothing, and the authored prompt reaches the engine unchanged.
+        instruction = formats[task_family]["instruction"]
+        if instruction is not None:
+            prompt = f"{prompt}{INSTRUCTION_SEPARATOR}{instruction}"
+    return VariantApplication(prompt=prompt, noop=False)
 
 
-def _identity(prompt: str) -> str:
+def _identity(definition: Mapping[str, Any], prompt: str) -> str:
     return prompt
 
 
+def _append_instruction(definition: Mapping[str, Any], prompt: str) -> str:
+    return f"{prompt}{INSTRUCTION_SEPARATOR}{definition['instruction']}"
+
+
 # The transformation each definition names, by its `transformation` key.
-_TRANSFORMATIONS: dict[str, Callable[[str], str]] = {
+_TRANSFORMATIONS: dict[str, Callable[[Mapping[str, Any], str], str]] = {
     TRANSFORMATION_IDENTITY: _identity,
+    TRANSFORMATION_APPEND_INSTRUCTION: _append_instruction,
+    # The prompt side of a constraint is its format's optional instruction,
+    # appended by `apply_variant`; the constraint itself is sent by the engine.
+    TRANSFORMATION_CONSTRAIN_OUTPUT: _identity,
 }
 
 REGISTRY: Mapping[tuple[str, str], PromptVariant] = load_registry(REGISTERED_VARIANTS)

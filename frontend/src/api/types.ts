@@ -38,6 +38,23 @@ export interface RosterEntry {
   roster_version: number
 }
 
+// One declared machine fact, exactly as `aidd_docs/roster/machines.json`
+// states it: `source` is `declared` or `not_yet_declared` (value null).
+export interface MachineFact {
+  value: unknown
+  source: string
+  read_from: string
+}
+
+// `read_model.resolve_machine_entry`: the declared entry a row's
+// `machine_id` names.
+export interface MachineEntry {
+  machine_id: string
+  description: string
+  facts: Record<string, MachineFact>
+  registry_version: number
+}
+
 export interface UnreadableRows {
   schema_version: string
   count: number

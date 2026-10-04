@@ -1,0 +1,41 @@
+{
+  "entry_id": "gemma-4-12b-it-iq4xs",
+  "repo": "unsloth/gemma-4-12b-it-GGUF",
+  "revision": "fc034cfff751157913579611efad8462ac1be606",
+  "repo_file": "gemma-4-12b-it-IQ4_XS.gguf",
+  "file": "gemma-4-12b-it/gemma-4-12b-it-IQ4_XS.gguf",
+  "display_id": "Gemma-4-12B-it",
+  "quant": "IQ4_XS",
+  "family": "google",
+  "thinking_control": {
+    "chat_template_kwargs": {
+      "enable_thinking": false
+    }
+  },
+  "active_params_b": 11.91,
+  "client_commercial_use": true,
+  "language_claim": {
+    "languages": [],
+    "source_url": "https://huggingface.co/unsloth/gemma-4-12b-it-GGUF/blob/fc034cfff751157913579611efad8462ac1be606/README.md",
+    "statement": "Out-of-the-box support for 35+ languages, pre-trained on 140+ languages."
+  },
+  "server_flags": {
+    "n_gpu_layers": 99,
+    "context_size": 32768,
+    "flash_attention": "on",
+    "jinja": true,
+    "parallel_slots": 1,
+    "load_mode": "auto",
+    "sampler": {
+      "temperature": 0.6,
+      "top_p": 0.95,
+      "top_k": 20,
+      "min_p": 0,
+      "presence_penalty": 1.5
+    }
+  },
+  "load_profile": {
+    "n_cpu_moe": null,
+    "threads": 8
+  }
+}

@@ -12,11 +12,15 @@ import requests
 
 from wave_local_ai_v2 import (
     aggregation,
+    campaigns,
     cost,
     emissions,
     energy,
     engines,
     fiche_registry,
+    machines,
+    preflight,
+    profiles,
     prompt_provenance,
     prompt_variants,
     provenance,
@@ -37,7 +41,7 @@ from wave_local_ai_v2.repetitions import (
     run_repetition_set,
 )
 from wave_local_ai_v2.results import append_row, captured_at, new_run_id
-from wave_local_ai_v2.settings import SettingsError, load_settings
+from wave_local_ai_v2.settings import SettingsError, load_settings, require_run_profile
 from wave_local_ai_v2.timings import MissingTimingsError, read_process_rss
 
 # The seed is pinned in the request body, not by a server flag, so
@@ -202,11 +206,16 @@ def _is_exceed_context_refusal(response: requests.Response) -> bool:
 
 
 def main() -> None:
+    server.install_graceful_stop()
     try:
         _run()
     except (
+        server.StopRequested,
         SettingsError,
         roster.RosterError,
+        # A run outside its campaign's declaration, or a declaration that
+        # fails its own check: refused before any process spawns.
+        campaigns.CampaignError,
         server.ServerStartupError,
         # requests.RequestException subclasses OSError, so every HTTP failure is
         # still caught here and the disk failures append_row can raise now are
@@ -223,17 +232,62 @@ def main() -> None:
 
 def _run() -> None:
     settings = load_settings()
+    # The declared machine and compute mode, before anything is captured or
+    # launched: a missing or undeclared one refuses here.
+    run_profile = require_run_profile(settings)
     run_id = new_run_id()
+    # The first stdout line, flushed: a piped launcher (the demo console)
+    # reads it to find this run's row once the run lands.
+    print(run_id, flush=True)
     fiche = capture_fiche()
     provenance_fields = provenance.capture_provenance()
     # Loaded once per run, not once per row: `roster.load_roster` raises on
     # any structurally invalid entry before any HTTP call is made.
     loaded_roster = roster.load_roster(settings.roster_path)
     roster_entry = roster.resolve_entry(loaded_roster, settings.roster_entry_id)
+    # The (entry x machine x mode) run profile, with any operator override
+    # laid over it: a triple with no declared profile refuses here, before
+    # the build probe or any spawn.
+    launch_profile = profiles.resolve_for_run(
+        roster_entry,
+        run_profile.machine_id,
+        run_profile.compute_mode,
+        operator_n_cpu_moe=settings.host_n_cpu_moe,
+        operator_threads=settings.host_threads,
+    )
     # The engine that will produce the row, from the tracked registry: where it
     # listens, how its build is probed, how its launch configuration is hashed.
     engine = engines.tracked_reference_engine()
+    # The fixed prompt passes through the declared variant like every suite
+    # item does. `/completion` applies no template, so what the variant
+    # returns is also the string the engine receives and the row publishes.
+    prompt_variant = prompt_variants.resolve(PROMPT_VARIANT_ID)
+    # The fixed prompt belongs to no task family (`None`).
+    sent_prompt = prompt_variants.apply_variant(
+        prompt_variant, FIXED_PROMPT, None
+    ).prompt
+    # Under a campaign, checked against its declaration before the build
+    # probe or any spawn. The fixed prompt scores no suite, so no suite is
+    # checked; with no campaign the row records that it belongs to none.
+    campaign_id = campaigns.require_run_campaign(
+        settings,
+        engine_id=engine.engine_id,
+        prompt_variant=prompt_variant,
+        roster_entry_id=roster_entry.entry_id,
+        suite_id=None,
+        machine_id=run_profile.machine_id,
+        compute_mode=run_profile.compute_mode,
+    )
 
+    # Below the entry's declared minimum for this mode, the run refuses here,
+    # recorded, before the weights are looked for or any process starts.
+    preflight.enforce(
+        roster_entry,
+        run_profile.machine,
+        launch_profile,
+        models_dir=settings.slm_models_dir,
+        machine_results_root=settings.machine_results_root,
+    )
     model_path = settings.slm_models_dir / roster_entry.file
     if not model_path.exists():
         raise SettingsError(f"model file not found: {model_path}")
@@ -241,15 +295,8 @@ def _run() -> None:
     # Refuses (roster.RosterError) before any process spawns when the
     # resolved n_cpu_moe cannot be applied to roster_entry -- the check lives
     # inside build_flags itself (server.py's one call site), and it runs on
-    # the resolved value: settings.host_n_cpu_moe when set, the entry's own
-    # validated_host value when unset.
-    flags = server.build_flags(
-        roster_entry,
-        settings.host_n_cpu_moe,
-        settings.host_threads,
-        model_path,
-        engine=engine,
-    )
+    # the resolved profile's value, operator override included.
+    flags = server.build_flags(roster_entry, launch_profile, model_path, engine=engine)
     # The five sampler values already reach the model through `flags`; only
     # `seed` is sent per request, so a request never diverges from what the
     # server was actually launched with.
@@ -264,15 +311,12 @@ def _run() -> None:
         engine, settings.llama_server_path, flags, roster_entry.entry_id
     )
 
-    # The fixed prompt passes through the declared variant like every suite
-    # item does. `/completion` applies no template, so what the variant
-    # returns is also the string the engine receives and the row publishes.
-    prompt_variant = prompt_variants.resolve(PROMPT_VARIANT_ID)
-    sent_prompt = prompt_variants.apply_variant(prompt_variant, FIXED_PROMPT)
-
     run_fiche = build_fiche(
         fiche,
         **engine_fields,
+        machine_id=run_profile.machine_id,
+        compute_mode=run_profile.compute_mode,
+        profile_id=launch_profile.profile_id,
         roster_entry_id=roster_entry.entry_id,
         model_sha256=roster_entry.sha256,
         quant=roster_entry.quant,
@@ -340,6 +384,10 @@ def _run() -> None:
             result: dict[str, Any] = response.json()
             return result
 
+        # A `cpu_only` run reads no VRAM: NVML's figure is device-wide, so it
+        # would publish the card's own occupancy as this run's (Methodology 21).
+        vram_applies = run_profile.compute_mode == machines.COMPUTE_MODE_GPU
+
         def read_rss() -> int | None:
             # None when the server exited or the OS denied the read: the
             # repetition is still recorded, with the column null rather than
@@ -355,6 +403,7 @@ def _run() -> None:
             warmup_count=settings.runtime_warmup_count,
             count=0,
             cooldown_s=settings.runtime_cooldown_s,
+            vram_applies=vram_applies,
         )
 
         # The warm-up runs outside this tracker; each counted repetition's own
@@ -373,6 +422,7 @@ def _run() -> None:
             warmup_count=0,
             count=settings.runtime_repetitions,
             cooldown_s=settings.runtime_cooldown_s,
+            vram_applies=vram_applies,
         )
         energy_result, energy_window_method = energy_tracker.finish()
 
@@ -381,10 +431,7 @@ def _run() -> None:
     aggregated_timings = aggregation.aggregate_timings(
         counted, threshold=settings.runtime_spread_threshold
     )
-    peaks = {
-        metric: aggregation.peak([rep[metric] for rep in counted])  # type: ignore[literal-required]
-        for metric in aggregation.PEAK_METRICS
-    }
+    peaks = aggregation.aggregate_peaks(counted)
     # wall_clock_s is a sum, not a peak: AGGREGATION_LABELS declares it
     # "total_over_counted_repetitions" -- each repetition's own request time,
     # summed, excluding the cooldowns between them. Each timed call includes
@@ -435,6 +482,11 @@ def _run() -> None:
         "subject_egress": row_contract.SUBJECT_EGRESS_NONE,
         "engine_id": engine.engine_id,
         "engine_build": engine_fields["engine_build"],
+        "machine_id": run_profile.machine_id,
+        "compute_mode": run_profile.compute_mode,
+        "profile_id": launch_profile.profile_id,
+        "profile_overrides": launch_profile.overrides,
+        "campaign_id": campaign_id,
         "fiche_hash": fiche_hash_value,
         "prompt": sent_prompt,
         "max_tokens": FIXED_MAX_TOKENS,

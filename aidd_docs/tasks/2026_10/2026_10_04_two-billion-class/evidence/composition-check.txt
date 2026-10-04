@@ -1,0 +1,19 @@
+Roster composition: aidd_docs/roster/models.json (roster_version 8)
+Size classes, banded on total parameters: ~0.5B < 1,000,000,000 <= ~2B < 3,000,000,000 <= ~4B < 6,000,000,000 <= ~8B-and-up
+  ~0.5B: 2 entries; families: ibm, qwen; dense: yes; MoE: no; label: none; MoE sought: yes; MoE absence reason: sought, none found: no MoE GGUF below 1B total parameters in the epic's candidate families (Granite, LFM2, Gemma 4, Ministral, Phi); the smallest MoE the search found is Granite 3.1 1B-A400M (1,334,628,352 total, ~2B) (GGUF spike which-candidate-ggufs-exist-per-size-class-and-does-the-pinned-build-load-them, read 2026-10-02)
+  ~2B: 3 entries; families: ibm, liquid, qwen; dense: yes; MoE: yes (granite-3.1-1b-a400m-instruct-q8); label: none; MoE sought: yes; MoE absence reason: n/a
+  ~4B: 1 entry; families: qwen; dense: yes; MoE: no; label: none; MoE sought: no; MoE absence reason: none
+  ~8B-and-up: 1 entry; families: qwen; dense: no; MoE: yes (qwen3.6-35b-a3b-ud-iq4xs); label: none; MoE sought: yes; MoE absence reason: n/a
+Entries
+  qwen3.6-35b-a3b-ud-iq4xs: ~8B-and-up; family qwen; moe; 34,660,610,688 total params; 17,730,509,792 bytes on disk; licence Apache-2.0, client commercial use yes, read 2026-10-02
+  qwen3-0.6b-q8: ~0.5B; family qwen; dense; 596,049,920 total params; 639,446,688 bytes on disk; licence Apache-2.0, client commercial use yes, read 2026-10-02
+  qwen3-1.7b-q8: ~2B; family qwen; dense; 1,720,574,976 total params; 1,834,426,016 bytes on disk; licence Apache-2.0, client commercial use yes, read 2026-10-02
+  qwen3-4b-q4km: ~4B; family qwen; dense; 4,022,468,096 total params; 2,497,280,256 bytes on disk; licence Apache-2.0, client commercial use yes, read 2026-10-02
+  granite-4.0-h-350m-q8: ~0.5B; family ibm; dense; 340,332,224 total params; 366,195,616 bytes on disk; licence apache-2.0, client commercial use yes, read 2026-10-04
+  lfm2.5-1.2b-instruct-q8: ~2B; family liquid; dense; 1,170,340,608 total params; 1,246,253,888 bytes on disk; licence lfm1.0, client commercial use no, read 2026-10-04
+  granite-3.1-1b-a400m-instruct-q8: ~2B; family ibm; moe; 1,334,628,352 total params; 1,422,239,776 bytes on disk; licence apache-2.0, client commercial use yes, read 2026-10-04
+Failures (3)
+  size class ~4B: spans one family (qwen) without the single-family-ladder label
+  size class ~4B: has no MoE represented and no reason recorded
+  size class ~8B-and-up: spans one family (qwen) without the single-family-ladder label
+FAIL: 3 failure(s)

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from store_fixtures import ROSTER_REQUIREMENTS
 
 from wave_local_ai_v2 import composition_check
 
@@ -48,6 +49,7 @@ def _entry(
         "display_id": display_id,
         "quant": "Q8_0",
         "sha256": "a" * 64,
+        "requirements": ROSTER_REQUIREMENTS,
         "architecture": architecture,
         "server_flags": {
             "n_gpu_layers": 99,
@@ -64,7 +66,6 @@ def _entry(
                 "presence_penalty": 1.5,
             },
         },
-        "validated_host": {"n_cpu_moe": None, "threads": 8, "fiche_summary": "x"},
     }
     if family is not None:
         entry["family"] = family
@@ -352,14 +353,12 @@ def test_an_entry_without_a_licence_prints_no_licence_terms(tmp_path, capsys) ->
 # Calibration: the shipped roster, before any new entry is authored.
 
 
-def test_the_shipped_roster_reports_four_single_family_classes_and_fails(
-    capsys,
-) -> None:
+def test_the_shipped_roster_passes_every_class(capsys) -> None:
     code = composition_check.main(["--roster", REAL_ROSTER_PATH.as_posix()])
     out = capsys.readouterr().out
 
-    # A check that passes on today's four-Qwen roster is not checking the rule.
-    assert code == 1
+    # Every class spans two families, so the check passes.
+    assert code == 0
     report = composition_check.check_composition(
         composition_check.roster.load_roster(REAL_ROSTER_PATH),
         REAL_ROSTER_PATH.as_posix(),
@@ -371,11 +370,32 @@ def test_the_shipped_roster_reports_four_single_family_classes_and_fails(
         "~8B-and-up",
     ]
     for item in report.classes:
-        assert item.families == ("qwen",), item.size_class
-        assert (
-            f"size class {item.size_class}: spans one family (qwen) without the "
-            "single-family-ladder label"
-        ) in out
+        if item.size_class == "~0.5B":
+            # Granite 4.0 H 350M beside Qwen3-0.6B, and the MoE search recorded.
+            assert item.families == ("ibm", "qwen")
+            assert not [f for f in report.failures if f.subject == "size class ~0.5B"]
+            continue
+        if item.size_class == "~2B":
+            # LFM2.5-1.2B-Instruct and the Granite 3.1 1B-A400M MoE beside
+            # Qwen3-1.7B, the MoE named by the declaration.
+            assert item.families == ("ibm", "liquid", "qwen")
+            assert not [f for f in report.failures if f.subject == "size class ~2B"]
+            continue
+        if item.size_class == "~4B":
+            # The Granite 3.1 3B-A800M MoE beside Qwen3-4B, named by the
+            # declaration.
+            assert item.families == ("ibm", "qwen")
+            assert not [f for f in report.failures if f.subject == "size class ~4B"]
+            continue
+        # The dense Gemma 4 12B beside the MoE flagship.
+        assert item.size_class == "~8B-and-up"
+        assert item.families == ("google", "qwen")
+        assert item.dense_present is True
+        assert item.moe_entry_ids == ("qwen3.6-35b-a3b-ud-iq4xs",)
+    assert report.failures == ()
+    assert out.endswith(
+        "PASS: every published size class spans two families or says it does not\n"
+    )
     # The flagship resolves its family through the in-code fallback, with no
     # exception carved out for it.
     flagship = next(

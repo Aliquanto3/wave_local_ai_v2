@@ -1,0 +1,9 @@
+$ wave-local-ai-v2-validate aidd_docs/results/quality-reference.jsonl
+checked 926 row(s)
+exit 0
+$ wave-local-ai-v2-validate aidd_docs/results/runtime-reference.jsonl
+checked 6 row(s)
+exit 0
+$ wave-local-ai-v2-validate aidd_docs/results/machines/laptop-mobile-gpu/quality.jsonl
+checked 926 row(s)
+exit 0

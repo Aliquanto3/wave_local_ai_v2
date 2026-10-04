@@ -50,12 +50,16 @@ from typing import Any, NotRequired, TypedDict
 import requests
 
 from wave_local_ai_v2 import (
+    campaigns,
+    code_sandbox,
     cost,
     engines,
     fiche_registry,
     google_client,
     local_client,
     mistral_client,
+    preflight,
+    profiles,
     prompt_provenance,
     prompt_variants,
     provenance,
@@ -78,17 +82,22 @@ from wave_local_ai_v2.scoring import (
     FAILURE_REASON_TRUNCATED_CONTEXT,
     FAILURE_REASON_TRUNCATED_MAX_TOKENS,
 )
-from wave_local_ai_v2.settings import Settings, SettingsError, load_settings
+from wave_local_ai_v2.settings import (
+    Settings,
+    SettingsError,
+    load_settings,
+    require_run_profile,
+)
 from wave_local_ai_v2.suite_gate import SuiteGateError, SuiteGateResult
 from wave_local_ai_v2.suite_registry import SuiteDefinition, SuiteRegistryError
 
 REQUEST_TIMEOUT_S = 300
 
-# The prompt variant every row of an invocation runs under, resolved through
-# the registry once per run and applied to each item's authored prompt before
-# any provider's templating. A declaration, not a call-site choice: the
-# campaign declaration that will carry it as data is a later story.
-PROMPT_VARIANT_ID = prompt_variants.BASELINE_ID
+# The prompt variant an invocation with no `--prompt-variant` runs under. One
+# variant per invocation, resolved through the registry once and applied to
+# each item's authored prompt before any provider's templating; a campaign
+# checks it against the variants it declares.
+DEFAULT_PROMPT_VARIANT = (prompt_variants.BASELINE_ID, None)
 
 # A quality score is only meaningful if a second run reproduces it
 # (`aidd_docs/memory/architecture.md`: "quality scores are reproducible (model +
@@ -208,14 +217,40 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "id is refused naming the registered ones. Default: %(default)s."
         ),
     )
+    parser.add_argument(
+        "--prompt-variant",
+        metavar="VARIANT_ID[@VERSION]",
+        type=_prompt_variant_ref,
+        default=DEFAULT_PROMPT_VARIANT,
+        help=(
+            "The registered prompt variant every item runs under, at VERSION "
+            "or its latest version (registered: "
+            f"{', '.join(sorted({key[0] for key in prompt_variants.REGISTRY}))}"
+            "). Every item of the suite is run; outside the variant's "
+            "declared task families its rows record a no-op. An unregistered "
+            "id or version is refused naming it. Default: baseline."
+        ),
+    )
     return parser.parse_args(argv)
+
+
+def _prompt_variant_ref(value: str) -> tuple[str, str | None]:
+    """`ID` or `ID@VERSION` as `(id, version or None)`."""
+    variant_id, _, version = value.partition("@")
+    return variant_id, version or None
 
 
 def main() -> None:
     args = _parse_args()
+    server.install_graceful_stop()
     try:
-        _run(resume_run_id=args.resume, suite=args.suite)
+        _run(
+            resume_run_id=args.resume,
+            suite=args.suite,
+            prompt_variant_ref=args.prompt_variant,
+        )
     except (
+        server.StopRequested,
         SettingsError,
         server.ServerStartupError,
         # requests.RequestException subclasses OSError, so every HTTP failure is
@@ -235,6 +270,14 @@ def main() -> None:
         # An unregistered `--suite`, an unknown scoring rule or a malformed
         # definition: refused before any process spawns, naming what is wrong.
         SuiteRegistryError,
+        # No container runtime, daemon or sandbox image for a suite whose
+        # generated code must run sandboxed: refused, never run on the host.
+        code_sandbox.SandboxUnavailable,
+        # An unregistered `--prompt-variant` id or version.
+        prompt_variants.PromptVariantError,
+        # A run outside its campaign's declaration, or a declaration that
+        # fails its own check: refused before any process spawns.
+        campaigns.CampaignError,
         # `--resume` over rows written under another configuration: refused
         # before any process spawns or any row is written, naming the field.
         results.ResumeConfigurationError,
@@ -243,22 +286,55 @@ def main() -> None:
         sys.exit(1)
 
 
-def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
+def _run(
+    resume_run_id: str | None = None,
+    suite: str = DEFAULT_SUITE,
+    prompt_variant_ref: tuple[str, str | None] = DEFAULT_PROMPT_VARIANT,
+) -> None:
     # Resolved first: an unregistered id, or a definition the registry or the
     # gate refuses, aborts before settings, the roster or any process.
     spec = suite_registry.resolve(suite)
+    # A rule that needs the host (the code sandbox) refuses here, before
+    # settings, the roster or any process: generated code never runs outside it.
+    spec.preflight()
+    prompt_variant = prompt_variants.resolve(*prompt_variant_ref)
     settings = load_settings()
+    # The declared machine and compute mode, before the roster or any
+    # process: a missing or undeclared one refuses here.
+    run_profile = require_run_profile(settings)
     # One id for the whole invocation: the local and cloud batches are two
     # halves of one comparison, and a reader must be able to tell which local
     # rows a given cloud row was scored against. `--resume` reuses a prior
     # invocation's id instead of minting a fresh one, so a provider's rows
     # from that earlier invocation are recognizable as the same run.
     run_id = resume_run_id or new_run_id()
+    # The first stdout line, flushed: a piped launcher (the demo console)
+    # reads it to find this run's rows once the run lands.
+    print(run_id, flush=True)
     is_resume = resume_run_id is not None
     provenance_fields = provenance.capture_provenance()
     # Loaded once per run, not once per row: raises before any HTTP call is made.
     loaded_roster = roster.load_roster(settings.roster_path)
     roster_entry = roster.resolve_entry(loaded_roster, settings.roster_entry_id)
+    # The (entry x machine x mode) run profile, with any operator override
+    # laid over it: a triple with no declared profile refuses here, before
+    # the build probe or any spawn.
+    launch_profile = profiles.resolve_for_run(
+        roster_entry,
+        run_profile.machine_id,
+        run_profile.compute_mode,
+        operator_n_cpu_moe=settings.host_n_cpu_moe,
+        operator_threads=settings.host_threads,
+    )
+    # Below the entry's declared minimum for this mode, the run refuses here,
+    # recorded, before the weights are looked for or any process starts.
+    preflight.enforce(
+        roster_entry,
+        run_profile.machine,
+        launch_profile,
+        models_dir=settings.slm_models_dir,
+        machine_results_root=settings.machine_results_root,
+    )
     model_path = _local_model_path(settings, roster_entry)
     # Computed when the definition loaded: a suite the gate refuses never
     # resolves, so it aborts before the multi-minute local run, let alone any
@@ -267,15 +343,47 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
     # Applied once, here, to every item: the local and both cloud paths send
     # these strings, and every row publishes its own as
     # `prompt_before_template`.
-    prompt_variant = prompt_variants.resolve(PROMPT_VARIANT_ID)
+    # Every item is run under every variant: outside the variant's declared
+    # families the authored text is sent unchanged and the rows say so.
     variant_prompts = [
-        prompt_variants.apply_variant(prompt_variant, item["prompt"])
+        prompt_variants.apply_variant(
+            prompt_variant, item["prompt"], spec.task_suite
+        ).prompt
         for item in spec.items
     ]
 
     # The engine the local half runs on, from the tracked registry: where it
     # listens, how its build is probed, how its reasoning switch is spelled.
     engine = engines.tracked_reference_engine()
+
+    # Under a campaign, checked against its declaration before the build
+    # probe or any spawn, cloud providers included: a campaign declares
+    # engines and a cloud subject runs on none. Every row of the invocation
+    # carries the id, or `NO_CAMPAIGN` for a run under none, beside the code
+    # identity the invocation was run as.
+    campaign_id = campaigns.require_run_campaign(
+        settings,
+        engine_id=engine.engine_id,
+        prompt_variant=prompt_variant,
+        roster_entry_id=roster_entry.entry_id,
+        suite_id=spec.suite_id,
+        machine_id=run_profile.machine_id,
+        compute_mode=run_profile.compute_mode,
+        cloud_providers=settings.quality_providers - {"local"},
+    )
+    provenance_fields["campaign_id"] = campaign_id
+
+    # The variant's decoding constraint for this suite's family, in the
+    # request field the engine declares for its mechanism; refused before
+    # any spawn when the engine lacks it or a cloud subject would run beside
+    # it unconstrained.
+    constraint = prompt_variants.constraint_for(prompt_variant, spec.task_suite)
+    constraint_body = _constraint_body(
+        prompt_variant,
+        constraint,
+        engine,
+        cloud_providers=settings.quality_providers - {"local"},
+    )
 
     # Resolved once, before any process spawns: an entry that declares no
     # thinking control cannot run a `disabled` suite, and every render and
@@ -288,22 +396,20 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
     # Refuses (roster.RosterError) before any process spawns when the
     # resolved n_cpu_moe cannot be applied to roster_entry -- the check lives
     # inside build_flags itself (server.py's one call site), and it runs on
-    # the resolved value: settings.host_n_cpu_moe when set, the entry's own
-    # validated_host value when unset.
-    flags = server.build_flags(
-        roster_entry,
-        settings.host_n_cpu_moe,
-        settings.host_threads,
-        model_path,
-        engine=engine,
-    )
+    # the resolved profile's value, operator override included.
+    flags = server.build_flags(roster_entry, launch_profile, model_path, engine=engine)
     # Probing the binary itself doesn't need the server running, so this is
     # done before launch rather than costing readiness-wait time. An
     # unreadable build is an explicit None, never a fallback string.
     engine_fields = engines.fiche_fields(
         engine, settings.llama_server_path, flags, roster_entry.entry_id
     )
-    local_engine_fields = quality_rows.local_engine_fields(engine_fields)
+    local_producer_fields = quality_rows.local_producer_fields(
+        engine_fields,
+        machine_id=run_profile.machine_id,
+        compute_mode=run_profile.compute_mode,
+        profile=launch_profile,
+    )
 
     # After the build probe, because the engine and its build are part of the
     # configuration a resumed batch must match; still before the server
@@ -315,7 +421,8 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
             run_id=run_id,
             roster_entry=roster_entry,
             prompt_variant=prompt_variant,
-            local_engine_fields=local_engine_fields,
+            local_producer_fields=local_producer_fields,
+            campaign_id=campaign_id,
         )
 
     # One fiche per invocation, built from the one local launch this run
@@ -326,6 +433,9 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
     run_fiche = build_fiche(
         capture_fiche(),
         **engine_fields,
+        machine_id=run_profile.machine_id,
+        compute_mode=run_profile.compute_mode,
+        profile_id=launch_profile.profile_id,
         roster_entry_id=roster_entry.entry_id,
         model_sha256=roster_entry.sha256,
         quant=roster_entry.quant,
@@ -361,6 +471,7 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
                 roster_entry=roster_entry,
                 thinking_kwargs=thinking_kwargs,
                 engine=engine,
+                constraint_body=constraint_body,
             ),
             country_iso_code=settings.emission_country_iso_code,
         )
@@ -389,7 +500,7 @@ def _run(resume_run_id: str | None = None, suite: str = DEFAULT_SUITE) -> None:
             prompt_variant=prompt_variant,
             variant_prompts=variant_prompts,
             fiche_hash=fiche_hash_value,
-            engine_row_fields=local_engine_fields,
+            producer_row_fields=local_producer_fields,
             batch_fields=quality_rows.local_batch_fields(
                 settings, local_energy, local_completions
             ),
@@ -517,6 +628,17 @@ def _google_batch(
 # item (the pre-flight) one skips the provider; mid-batch it stops the batch
 # at the item it failed on, and the items already answered are written as a
 # partial batch -- never discarded, never aborting the run.
+# The names a seed travels under in a request's sampling: `seed` (llama.cpp,
+# Google), `random_seed` (Mistral).
+_SEED_KEYS = ("seed", "random_seed")
+
+# The pre-flight refusals that mean the subject's dated model id is no longer
+# served: its published batches can never be re-run (Methodology 8).
+_MODEL_NOT_SERVED: tuple[type[Exception], ...] = (
+    mistral_client.ModelUnavailableError,
+    google_client.ModelUnavailableError,
+)
+
 _PROVIDER_FAILURES: tuple[type[Exception], ...] = (
     MistralRequestError,
     google_client.GoogleRequestError,
@@ -578,16 +700,18 @@ def _refuse_a_resume_under_another_configuration(
     run_id: str,
     roster_entry: roster.RosterEntry,
     prompt_variant: prompt_variants.PromptVariant,
-    local_engine_fields: Mapping[str, str | None],
+    local_producer_fields: Mapping[str, Any],
+    campaign_id: str,
 ) -> None:
     """Raise `ResumeConfigurationError` unless every row this run already
     wrote for this suite was produced the way this invocation would.
 
     A resume folds the rows on disk into the completed batch's score, so a
     row written under another model, suite version, prompt set, prompt
-    variant, sampler, endpoint, roster entry, thinking policy, engine or
-    engine build would make one published score span two configurations.
-    A cloud batch is held to the engine not applying. Checked for every provider
+    variant, sampler, endpoint, roster entry, thinking policy, engine,
+    engine build, machine or compute mode would make one published score span
+    two configurations. A cloud batch is held to none of the last four
+    applying. Checked for every provider
     before anything spawns or is written, so a refusal writes nothing.
     """
     shared = {
@@ -597,28 +721,35 @@ def _refuse_a_resume_under_another_configuration(
         "prompt_variant_version": prompt_variant.version,
         "roster_entry_id": roster_entry.entry_id,
         "thinking_policy": spec.thinking_policy,
+        # One batch never spans two campaigns, nor a campaign and none.
+        "campaign_id": campaign_id,
     }
     by_provider = {
         "local": (
             roster_entry.display_id,
             LOCAL_SAMPLING,
             prompt_provenance.LOCAL_CHAT_ENDPOINT,
-            local_engine_fields,
+            local_producer_fields,
         ),
         "mistral": (
             mistral_client.MODEL,
             CLOUD_SAMPLING,
             mistral_client.CHAT_COMPLETIONS_URL,
-            quality_rows.ENGINE_NOT_APPLICABLE_FIELDS,
+            quality_rows.NO_LOCAL_PRODUCER_FIELDS,
         ),
         "google": (
             google_client.MODEL,
             GOOGLE_SAMPLING,
             google_client.GENERATE_URL,
-            quality_rows.ENGINE_NOT_APPLICABLE_FIELDS,
+            quality_rows.NO_LOCAL_PRODUCER_FIELDS,
         ),
     }
-    for provider, (model_id, sampling, endpoint, engine_fields) in by_provider.items():
+    for provider, (
+        model_id,
+        sampling,
+        endpoint,
+        producer_fields,
+    ) in by_provider.items():
         prior_rows = results.batch_rows(
             settings.quality_results_path, run_id, provider, task_suite=spec.task_suite
         )
@@ -629,7 +760,7 @@ def _refuse_a_resume_under_another_configuration(
                 "model_id": model_id,
                 "sampling": dict(sampling),
                 "endpoint": endpoint,
-                **engine_fields,
+                **producer_fields,
             },
         )
         if conflict is not None:
@@ -707,6 +838,15 @@ def _try_run_cloud_provider(
     except _PROVIDER_FAILURES as exc:
         # The pre-flight: nothing was answered, nothing is written.
         print(f"{provider} skipped: {exc}", file=sys.stderr)
+        if isinstance(exc, _MODEL_NOT_SERVED):
+            # No row exists to carry the mark, so it is stated here: a
+            # published batch of this model can no longer be re-run.
+            print(
+                f"{provider}: a published batch of this model is single-run "
+                f"indicative ({verdict.RERUN_MODEL_NOT_SERVED}): it cannot be "
+                "re-run, so it is never not_reproduced",
+                file=sys.stderr,
+            )
         return
 
     failure = batch["failure"]
@@ -745,11 +885,45 @@ def _try_run_cloud_provider(
         fiche_hash=fiche_hash,
         batch_fields=batch["batch_fields"],
         extra_row_fields=batch["extra_row_fields"],
-        engine_row_fields=quality_rows.ENGINE_NOT_APPLICABLE_FIELDS,
+        producer_row_fields=quality_rows.NO_LOCAL_PRODUCER_FIELDS,
         resumed=is_resume,
         retry_budget={provider: budget.total},
         partial_failure=failure,
     )
+
+
+def _constraint_body(
+    prompt_variant: prompt_variants.PromptVariant,
+    constraint: prompt_variants.Constraint | None,
+    engine: engines.EngineEntry,
+    *,
+    cloud_providers: frozenset[str],
+) -> dict[str, str]:
+    """The request fields carrying `constraint` to `engine` (`{}` for none).
+
+    Refused when the engine declares no request field for the constraint's
+    mechanism, or when a cloud provider would answer the same items: a cloud
+    subject has no grammar path, so its rows would name a variant whose
+    constraint it never ran under.
+    """
+    if constraint is None:
+        return {}
+    where = (
+        f"prompt variant {prompt_variant.variant_id!r} version "
+        f"{prompt_variant.version!r} constrains output through "
+        f"{constraint.mechanism}"
+    )
+    request_field = engine.constraint_mechanisms.get(constraint.mechanism)
+    if request_field is None:
+        raise prompt_variants.PromptVariantError(
+            f"{where}, which engine {engine.engine_id!r} does not declare"
+        )
+    if cloud_providers:
+        raise prompt_variants.PromptVariantError(
+            f"{where}, which no cloud subject can apply: run it with "
+            f"QUALITY_PROVIDERS=local (enabled: {', '.join(sorted(cloud_providers))})"
+        )
+    return {request_field: constraint.grammar}
 
 
 def _local_call_path(chat_template: str) -> dict[str, Any]:
@@ -836,6 +1010,7 @@ def _run_local_suite(
     roster_entry: roster.RosterEntry,
     thinking_kwargs: dict[str, Any],
     engine: engines.EngineEntry,
+    constraint_body: Mapping[str, str] | None = None,
 ) -> _LocalBatch:
     """Answer every item through the loaded model's own chat template.
 
@@ -856,6 +1031,10 @@ def _run_local_suite(
     it is verified against the loaded template before the first item: a
     template that ignores it refuses the batch here, so no row can publish a
     policy the model never applied.
+
+    `constraint_body` is the variant's decoding constraint in the engine's
+    own request field (llama.cpp: `grammar`), sent with every item's answer
+    and with nothing else: the render and the token count are unconstrained.
     """
     completions: list[_Completion] = []
     rendered_prompts: list[str] = []
@@ -891,6 +1070,7 @@ def _run_local_suite(
                 sampling=LOCAL_SAMPLING,
                 thinking_kwargs=thinking_kwargs,
                 timeout=REQUEST_TIMEOUT_S,
+                constraint_body=constraint_body,
             )
             completions.append(
                 _Completion(
@@ -1192,7 +1372,7 @@ def _score_and_write(
     prompt_variant: prompt_variants.PromptVariant,
     variant_prompts: list[str],
     fiche_hash: str,
-    engine_row_fields: Mapping[str, str | None],
+    producer_row_fields: Mapping[str, Any],
     batch_fields: dict[str, Any],
     resumed: bool,
     retry_budget: dict[str, int],
@@ -1257,7 +1437,7 @@ def _score_and_write(
             "provider": provider,
             "subject_egress": row_contract.subject_egress_for(provider),
             **quality_rows.subject_composition_fields(model_id, provider, roster_entry),
-            **engine_row_fields,
+            **producer_row_fields,
             "fiche_hash": fiche_hash,
             **batch_fields,
             "task_suite": spec.task_suite,
@@ -1271,6 +1451,13 @@ def _score_and_write(
             ),
             "prompt_variant_id": prompt_variant.variant_id,
             "prompt_variant_version": prompt_variant.version,
+            "prompt_variant_noop": not prompt_variants.applies(
+                prompt_variant, spec.task_suite
+            ),
+            # The decoding constraint the item's answer ran under (schema
+            # "28"): every provider of a constraining variant is the local
+            # engine, which `_constraint_body` sent it to.
+            **prompt_variants.constraint_row_fields(prompt_variant, spec.task_suite),
             "prompt_before_template": variant_prompts[index],
             # Everything the suite's own scorer decided: the exact-match
             # fields on one suite, the graded block on the other, each
@@ -1333,7 +1520,20 @@ def _score_and_write(
         for row in results.read_rows(settings.quality_reference_path)
         if row.get("model_id") == model_id
     ]
-    batch_verdict = verdict.quality_verdict(prior_rows + rows, reference_rows)
+    # A local subject is held to identical output; a cloud one is decided
+    # under the suite's declared tolerance, and a cloud batch sent with no
+    # seed is single-run indicative: no re-run of it can be deterministic.
+    batch_verdict = verdict.quality_verdict(
+        prior_rows + rows,
+        reference_rows,
+        provider=provider,
+        tolerance=_deciding_tolerance(spec),
+        rerun_blocker=(
+            verdict.RERUN_NO_SEED
+            if provider != verdict.LOCAL_PROVIDER and not _carries_seed(sampling)
+            else None
+        ),
+    )
     # Before anything is appended: the interval qualifies the score over the
     # same items, on every row of the batch that publishes one. Rows a
     # partial run wrote before this resume carry no block and stay as written.
@@ -1344,6 +1544,21 @@ def _score_and_write(
 
     if partial_failure is None:
         print(f"model={model_id} provider={provider} {_headline(batch_score_fields)}")
+
+
+def _deciding_tolerance(spec: SuiteDefinition) -> verdict.DecidingTolerance:
+    """The suite's declared tolerance, named with the version that declared it."""
+    return verdict.DecidingTolerance(
+        value=spec.divergence_tolerance["value"],
+        unit=spec.divergence_tolerance["unit"],
+        suite_id=spec.suite_id,
+        suite_version=spec.suite_version,
+    )
+
+
+def _carries_seed(sampling: Mapping[str, Any]) -> bool:
+    """Whether the request carried a seed, under either provider's name."""
+    return any(sampling.get(key) is not None for key in _SEED_KEYS)
 
 
 def _headline(batch_score_fields: dict[str, Any]) -> str:
@@ -1358,3 +1573,7 @@ def _headline(batch_score_fields: dict[str, Any]) -> str:
     if accuracy is not None:
         return f"accuracy={accuracy:.2f}"
     return f"suite_score={batch_score_fields['suite_score']:.2f}"
+
+
+if __name__ == "__main__":  # pragma: no cover
+    main()

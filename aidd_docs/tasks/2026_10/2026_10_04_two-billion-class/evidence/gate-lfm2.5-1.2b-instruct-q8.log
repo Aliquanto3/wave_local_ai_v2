@@ -1,0 +1,11 @@
+# preconditions 2026-10-04T04:32:49+02:00
+0 MiB
+Informationÿ: aucune tƒche en service ne correspond aux critŠres sp‚cifi‚s.
+D:             1000186310656 925232340992 74953969664  93% /d
+listeners on 8080: 0
+free after download: 73707715776 bytes
+lfm2.5-1.2b-instruct-q8: passed; record appended to aidd_docs\roster\candidate-records.jsonl
+exit 0
+# after
+0 MiB
+InformationÂ : aucune tÃ¢che en service ne correspond aux critÃ¨res spÃ©cifiÃ©s.

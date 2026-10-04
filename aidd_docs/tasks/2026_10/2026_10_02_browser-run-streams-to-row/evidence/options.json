@@ -1,0 +1,69 @@
+{
+  "kinds": [
+    "runtime",
+    "quality"
+  ],
+  "suites": [
+    "classification-support-routing",
+    "translation-business-short-form"
+  ],
+  "roster_entries": [
+    "qwen3.6-35b-a3b-ud-iq4xs",
+    "qwen3-0.6b-q8",
+    "qwen3-1.7b-q8",
+    "qwen3-4b-q4km"
+  ],
+  "machine_id": "laptop-mobile-gpu",
+  "machine_absence": null,
+  "profiles": {
+    "qwen3.6-35b-a3b-ud-iq4xs": [
+      {
+        "profile_id": "qwen3.6-35b-a3b-ud-iq4xs@laptop-mobile-gpu/cpu_only",
+        "machine_id": "laptop-mobile-gpu",
+        "compute_mode": "cpu_only"
+      },
+      {
+        "profile_id": "qwen3.6-35b-a3b-ud-iq4xs@laptop-mobile-gpu/gpu",
+        "machine_id": "laptop-mobile-gpu",
+        "compute_mode": "gpu"
+      }
+    ],
+    "qwen3-0.6b-q8": [
+      {
+        "profile_id": "qwen3-0.6b-q8@laptop-mobile-gpu/cpu_only",
+        "machine_id": "laptop-mobile-gpu",
+        "compute_mode": "cpu_only"
+      },
+      {
+        "profile_id": "qwen3-0.6b-q8@laptop-mobile-gpu/gpu",
+        "machine_id": "laptop-mobile-gpu",
+        "compute_mode": "gpu"
+      }
+    ],
+    "qwen3-1.7b-q8": [
+      {
+        "profile_id": "qwen3-1.7b-q8@laptop-mobile-gpu/cpu_only",
+        "machine_id": "laptop-mobile-gpu",
+        "compute_mode": "cpu_only"
+      },
+      {
+        "profile_id": "qwen3-1.7b-q8@laptop-mobile-gpu/gpu",
+        "machine_id": "laptop-mobile-gpu",
+        "compute_mode": "gpu"
+      }
+    ],
+    "qwen3-4b-q4km": [
+      {
+        "profile_id": "qwen3-4b-q4km@laptop-mobile-gpu/cpu_only",
+        "machine_id": "laptop-mobile-gpu",
+        "compute_mode": "cpu_only"
+      },
+      {
+        "profile_id": "qwen3-4b-q4km@laptop-mobile-gpu/gpu",
+        "machine_id": "laptop-mobile-gpu",
+        "compute_mode": "gpu"
+      }
+    ]
+  },
+  "holder": null
+}

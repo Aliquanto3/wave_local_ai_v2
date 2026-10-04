@@ -13,7 +13,57 @@ import json
 from pathlib import Path
 from typing import Any
 
-from wave_local_ai_v2 import row_contract, score_interval, suite_snapshot
+from wave_local_ai_v2 import (
+    machines,
+    preflight,
+    row_contract,
+    score_interval,
+    suite_snapshot,
+)
+
+# The declared minimums a constructed roster entry carries (`roster.load_roster`
+# requires them): tiny enough that the pre-flight passes on any machine. Every
+# one is declared, so a run prints no "not checked" line; the laptop's VRAM is
+# read from its declared allocatable value, so no test needs a GPU.
+ROSTER_REQUIREMENTS: dict[str, Any] = {
+    "gpu": {
+        "ram_gb": {"value": 0.001, "source": "declared", "read_from": "test"},
+        "vram_gb": {"value": 0.001, "source": "declared", "read_from": "test"},
+        "disk_gb": {"value": 0.001, "source": "declared", "read_from": "test"},
+    },
+    "cpu_only": {
+        "ram_gb": {"value": 0.001, "source": "declared", "read_from": "test"},
+        "disk_gb": {"value": 0.001, "source": "declared", "read_from": "test"},
+    },
+}
+
+
+def write_raised_roster(roster_file: dict[str, Any], tmp_path: Path) -> Path:
+    """`roster_file` with every entry's RAM minimum raised above any machine.
+
+    A writer run under it must refuse at the pre-flight, before the weights
+    are looked for or any process starts.
+    """
+    raised = json.loads(json.dumps(roster_file))
+    for entry in raised["entries"].values():
+        requirements = json.loads(json.dumps(ROSTER_REQUIREMENTS))
+        for mode in requirements.values():
+            mode["ram_gb"]["value"] = 10**6
+        entry["requirements"] = requirements
+    path = tmp_path / "raised-roster.json"
+    path.write_text(json.dumps(raised), encoding="utf-8")
+    return path
+
+
+def single_refusal(machine_results_root: Path, machine_id: str) -> dict[str, Any]:
+    """The one refusal record a refused run wrote for `machine_id`."""
+    path = preflight.refusal_path(machine_results_root, machine_id)
+    lines = path.read_text("utf-8").splitlines()
+    assert len(lines) == 1, lines
+    record: dict[str, Any] = json.loads(lines[0])
+    assert record.keys() == row_contract.REFUSAL_FIELDS
+    return record
+
 
 FLOOR = "7"
 RUN_ID = "run-under-test"
@@ -31,6 +81,8 @@ NAMED_VALUES: dict[str, Any] = {
     "captured_at": "2026-09-01T00:00:00+00:00",
     "roster_entry_id": ROSTER_ENTRY_ID,
     "fiche_hash": FICHE_HASH,
+    "machine_id": "laptop-mobile-gpu",
+    "compute_mode": "gpu",
     "suite_id": SUITE_ID,
     "suite_version": SUITE_VERSION,
     "prompt_variant_id": "baseline",
@@ -139,6 +191,7 @@ def build_bundle(tmp_path: Path) -> dict[str, Path]:
                         "display_id": "Qwen3.6-35B-A3B",
                         "quant": "UD-IQ4_XS",
                         "sha256": "c" * 64,
+                        "requirements": ROSTER_REQUIREMENTS,
                         "architecture": {
                             "kind": "moe",
                             "expert_count": 48,
@@ -158,11 +211,6 @@ def build_bundle(tmp_path: Path) -> dict[str, Path]:
                                 "min_p": 0.0,
                                 "presence_penalty": 0.0,
                             },
-                        },
-                        "validated_host": {
-                            "n_cpu_moe": 37,
-                            "threads": 8,
-                            "fiche_summary": "a laptop",
                         },
                     }
                 },
@@ -189,11 +237,19 @@ def build_bundle(tmp_path: Path) -> dict[str, Path]:
         encoding="utf-8",
     )
 
+    # The tracked machine registry, copied so a test can edit its own bundle's.
+    machines_path = tmp_path / "machines.json"
+    machines_path.write_text(
+        Path(machines.DEFAULT_REGISTRY_PATH).read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
     return {
         "runtime": tmp_path / "runtime.jsonl",
         "quality": tmp_path / "quality.jsonl",
         "fiches": fiches,
         "roster": roster_path,
+        "machines": machines_path,
         "suites": suites,
         "leader_sets": tmp_path / "leader-sets",
     }

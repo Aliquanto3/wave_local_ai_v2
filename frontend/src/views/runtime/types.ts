@@ -3,7 +3,7 @@
 // `views/quality/types.ts` or `views/energy/types.ts` -- see
 // `views/boundary.test.ts`.
 
-import type { Maybe, RosterEntry } from '../../api/types'
+import type { MachineEntry, Maybe, RosterEntry } from '../../api/types'
 
 export interface VerdictBlock {
   verdict: Maybe<string>
@@ -30,6 +30,9 @@ export interface RuntimeEntry {
   prompt_template_id: Maybe<string>
   prompt_template_hash: Maybe<string>
   prompt_capture: Maybe<string>
+  // The declared machine and compute mode (schema "23").
+  machine_id: Maybe<string>
+  compute_mode: Maybe<string>
   fiche_hash: Maybe<string>
   verdict: Maybe<VerdictBlock>
   max_tokens: Maybe<number>
@@ -38,6 +41,7 @@ export interface RuntimeEntry {
   prompt_tok_per_s: Maybe<number>
   gen_tok_per_s: Maybe<number>
   ttft_source: Maybe<string>
+  // Absent with reason `not_applicable` on a `cpu_only` row (schema "25").
   vram_used_mib: Maybe<number>
   gpu_draw_w: Maybe<number>
   process_rss_bytes: Maybe<number>
@@ -77,6 +81,7 @@ export interface RuntimeEntry {
   thermal_posture: Maybe<string>
 
   roster_entry: Maybe<RosterEntry>
+  machine: Maybe<MachineEntry>
   fiche: Maybe<Fiche>
 }
 

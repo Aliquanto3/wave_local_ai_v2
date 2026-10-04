@@ -54,6 +54,8 @@ from wave_local_ai_v2 import (
     judge_protocol,
     local_client,
     mistral_client,
+    preflight,
+    profiles,
     prompt_provenance,
     prompt_variants,
     provenance,
@@ -72,7 +74,12 @@ from wave_local_ai_v2 import (
 from wave_local_ai_v2.energy import measure_energy
 from wave_local_ai_v2.hardware import build_fiche, capture_fiche
 from wave_local_ai_v2.results import append_row, captured_at, new_run_id
-from wave_local_ai_v2.settings import Settings, SettingsError, load_settings
+from wave_local_ai_v2.settings import (
+    Settings,
+    SettingsError,
+    load_settings,
+    require_run_profile,
+)
 from wave_local_ai_v2.suite_gate import SuiteGateResult
 
 REQUEST_TIMEOUT_S = 300
@@ -274,6 +281,20 @@ SUITE_VERSION = "1"
 # two published `prompt_set_hash` values are comparable because one function
 # produced both.
 PROMPT_SET_HASH = suite_registry.prompt_set_hash(JUDGE_PROBE_ITEMS)
+# Every quality suite declares the divergence tolerance its cloud subjects'
+# re-runs are decided under, the probe included, and the gate checks it. No
+# probe re-run is ever decided under it: every probe verdict is
+# not_comparable, since the probe publishes no label and no score.
+DIVERGENCE_TOLERANCE = suite_gate.gate_divergence_tolerance(
+    {
+        "value": 0.0,
+        "unit": suite_gate.TOLERANCE_UNIT_FRACTION_OF_ITEMS,
+        "reason": "Never applied: the probe publishes no label and no score, so "
+        "every probe verdict is not_comparable and no re-run of it is decided "
+        "under a tolerance. Declared at the strictest value because every "
+        "quality suite declares one.",
+    }
+)
 # Open-ended prose, not a one-word label: 32 tokens (the classification
 # suite's cap) would truncate every single answer.
 MAX_OUTPUT_TOKENS = 256
@@ -383,7 +404,7 @@ class _RunContext:
     # it: its id and live-probed build. A cloud subject's rows state that no
     # engine applies.
     engine: engines.EngineEntry
-    local_engine_fields: dict[str, str | None]
+    local_producer_fields: dict[str, Any]
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -431,6 +452,18 @@ def main() -> None:
 
 def _run(resume_run_id: str | None = None) -> None:
     settings = load_settings()
+    # The declared machine and compute mode, before anything else: a missing
+    # or undeclared one refuses before any judge preflight or process.
+    run_profile = require_run_profile(settings)
+    # No campaign can declare the probe: its suite is not a registered suite
+    # and its two judges are cloud calls. Refused rather than ignored, so a
+    # set `CAMPAIGN_ID` never yields rows that silently belong to none.
+    if settings.campaign_id is not None:
+        raise SettingsError(
+            f"CAMPAIGN_ID={settings.campaign_id!r} is set: the judge probe runs "
+            "under no campaign (its suite is not a registered suite and its "
+            "judges are cloud calls); unset CAMPAIGN_ID"
+        )
     # Offline, before anything is generated or paid for: a probe missing a
     # judge must cost nothing at all.
     _preflight_judges(settings)
@@ -443,9 +476,31 @@ def _run(resume_run_id: str | None = None) -> None:
     # and `--resume` needs that id. It costs one stdout line to make the
     # failure recoverable.
     print(f"run_id={run_id}")
-    provenance_fields = provenance.capture_provenance()
+    # Every row states that the probe belongs to no campaign.
+    provenance_fields = {
+        **provenance.capture_provenance(),
+        "campaign_id": row_contract.NO_CAMPAIGN,
+    }
     loaded_roster = roster.load_roster(settings.roster_path)
     roster_entry = roster.resolve_entry(loaded_roster, settings.roster_entry_id)
+    # The (entry x machine x mode) run profile, with any operator override:
+    # a triple with no declared profile refuses here, before any spawn.
+    launch_profile = profiles.resolve_for_run(
+        roster_entry,
+        run_profile.machine_id,
+        run_profile.compute_mode,
+        operator_n_cpu_moe=settings.host_n_cpu_moe,
+        operator_threads=settings.host_threads,
+    )
+    # Below the entry's declared minimum for this mode, the run refuses here,
+    # recorded, before the weights are looked for or any process starts.
+    preflight.enforce(
+        roster_entry,
+        run_profile.machine,
+        launch_profile,
+        models_dir=settings.slm_models_dir,
+        machine_results_root=settings.machine_results_root,
+    )
     model_path = _local_model_path(settings, roster_entry)
     # Expected to come back indicative, naming the sub-20 item count. Not
     # suppressed: the probe sits below the gate deliberately and every row
@@ -454,26 +509,28 @@ def _run(resume_run_id: str | None = None) -> None:
     # hand-written set.
     gate_result = suite_gate.gate_suite(JUDGE_PROBE_ITEMS)
     engine = engines.tracked_reference_engine()
-    flags = server.build_flags(
-        roster_entry,
-        settings.host_n_cpu_moe,
-        settings.host_threads,
-        model_path,
-        engine=engine,
-    )
+    flags = server.build_flags(roster_entry, launch_profile, model_path, engine=engine)
     engine_fields = engines.fiche_fields(
         engine, settings.llama_server_path, flags, roster_entry.entry_id
     )
-    local_engine_fields = quality_rows.local_engine_fields(engine_fields)
+    local_producer_fields = quality_rows.local_producer_fields(
+        engine_fields,
+        machine_id=run_profile.machine_id,
+        compute_mode=run_profile.compute_mode,
+        profile=launch_profile,
+    )
     # After the build probe (the engine and its build are part of the
     # configuration), before the fiche, any spawn or any row is written.
     if is_resume:
         _refuse_a_resume_under_another_configuration(
-            settings, run_id, roster_entry, local_engine_fields
+            settings, run_id, roster_entry, local_producer_fields
         )
     run_fiche = build_fiche(
         capture_fiche(),
         **engine_fields,
+        machine_id=run_profile.machine_id,
+        compute_mode=run_profile.compute_mode,
+        profile_id=launch_profile.profile_id,
         roster_entry_id=roster_entry.entry_id,
         model_sha256=roster_entry.sha256,
         quant=roster_entry.quant,
@@ -564,7 +621,7 @@ def _run(resume_run_id: str | None = None) -> None:
             judge_backends.PROVIDER_GOOGLE: google_budget.total,
         },
         engine=engine,
-        local_engine_fields=local_engine_fields,
+        local_producer_fields=local_producer_fields,
     )
 
     local_summary = _run_local_batch(
@@ -595,7 +652,7 @@ def _refuse_a_resume_under_another_configuration(
     settings: Settings,
     run_id: str,
     roster_entry: roster.RosterEntry,
-    local_engine_fields: Mapping[str, str | None],
+    local_producer_fields: Mapping[str, Any],
 ) -> None:
     """Raise `ResumeConfigurationError` unless every row this run already
     wrote was produced, and judged, the way this invocation would.
@@ -620,14 +677,14 @@ def _refuse_a_resume_under_another_configuration(
             LOCAL_SAMPLING,
             prompt_provenance.LOCAL_CHAT_ENDPOINT,
             sorted([mistral_client.MODEL, google_client.MODEL]),
-            local_engine_fields,
+            local_producer_fields,
         ),
         judge_backends.PROVIDER_GOOGLE: (
             google_client.MODEL,
             GOOGLE_SAMPLING,
             google_client.GENERATE_URL,
             [mistral_client.MODEL],
-            quality_rows.ENGINE_NOT_APPLICABLE_FIELDS,
+            quality_rows.NO_LOCAL_PRODUCER_FIELDS,
         ),
     }
     for provider, (
@@ -635,7 +692,7 @@ def _refuse_a_resume_under_another_configuration(
         sampling,
         endpoint,
         judge_ids,
-        engine_fields,
+        producer_fields,
     ) in by_provider.items():
         prior_rows = results.batch_rows(
             settings.judge_probe_reference_path, run_id, provider, task_suite=TASK_SUITE
@@ -648,7 +705,8 @@ def _refuse_a_resume_under_another_configuration(
                 "sampling": dict(sampling),
                 "endpoint": endpoint,
                 "judge_model_ids": judge_ids,
-                **engine_fields,
+                "campaign_id": row_contract.NO_CAMPAIGN,
+                **producer_fields,
             },
             derived={"judge_model_ids": _judge_model_ids},
         )
@@ -930,9 +988,9 @@ def _build_row(
             model_id, provider, context.roster_entry
         ),
         **(
-            context.local_engine_fields
+            context.local_producer_fields
             if provider == PROVIDER_LOCAL
-            else quality_rows.ENGINE_NOT_APPLICABLE_FIELDS
+            else quality_rows.NO_LOCAL_PRODUCER_FIELDS
         ),
         "fiche_hash": context.fiche_hash,
         **batch_fields,
@@ -941,6 +999,8 @@ def _build_row(
         "prompt": prompt if prompt is not None else prompt_before_template,
         "prompt_variant_id": prompt_variant.variant_id,
         "prompt_variant_version": prompt_variant.version,
+        "prompt_variant_noop": not prompt_variants.applies(prompt_variant, TASK_SUITE),
+        **prompt_variants.constraint_row_fields(prompt_variant, TASK_SUITE),
         "prompt_before_template": prompt_before_template,
         "expected_label": None,
         "predicted_label": None,
@@ -981,6 +1041,17 @@ def _build_row(
             "reference_run_id": None,
             "differing_fields": [],
             "reason": _VERDICT_NOT_COMPARABLE_REASON,
+            **verdict.subject_rule_fields(
+                provider,
+                verdict.DecidingTolerance(
+                    value=DIVERGENCE_TOLERANCE["value"],
+                    unit=DIVERGENCE_TOLERANCE["unit"],
+                    suite_id=SUITE_ID,
+                    suite_version=SUITE_VERSION,
+                ),
+            ),
+            "divergence": None,
+            "single_run_indicative": None,
         },
         **judge_block,
         "subject_output": subject_output,
@@ -1020,7 +1091,8 @@ def _run_local_batch(
     items = [JUDGE_PROBE_ITEMS[index] for index in indexes]
     prompt_variant = prompt_variants.resolve(PROMPT_VARIANT_ID)
     variant_prompts = [
-        prompt_variants.apply_variant(prompt_variant, item["prompt"]) for item in items
+        prompt_variants.apply_variant(prompt_variant, item["prompt"], TASK_SUITE).prompt
+        for item in items
     ]
     local_batch, energy = measure_energy(
         lambda: _generate_local_outputs(
@@ -1226,7 +1298,9 @@ def _run_cloud_subject_item(
     item = _item_by_id(CLOUD_SUBJECT_ITEM_ID)
     api_key = settings.google_api_key
     prompt_variant = prompt_variants.resolve(PROMPT_VARIANT_ID)
-    variant_prompt = prompt_variants.apply_variant(prompt_variant, item["prompt"])
+    variant_prompt = prompt_variants.apply_variant(
+        prompt_variant, item["prompt"], TASK_SUITE
+    ).prompt
 
     pacer.wait()
     _, context_retries = retry.call_with_retry(

@@ -2,12 +2,13 @@
 receives `reproduced`, `not_reproduced`, or `not_comparable`, stored on the row.
 
 Reference matching never uses CPU, RAM, driver, or OS: only `engine_id`,
-`engine_build`, `quant`, `gpu_name` and the raw `flags` list decide whether
-a candidate and a reference row are the same run to compare (PRD Methodology
-8; plan.md's Decisions table resolves the tension between "shares the
-re-run's fiche hash" and "CPU/RAM/driver/OS never block a comparison" by
-naming these four fields explicitly, separate from the fiche's full identity
-hash).
+`engine_build`, `quant`, `gpu_name`, the raw `flags` list and `compute_mode`
+decide whether a candidate and a reference row are the same run to compare
+(PRD Methodology 8; plan.md's Decisions table resolves the tension between
+"shares the re-run's fiche hash" and "CPU/RAM/driver/OS never block a
+comparison" by naming these fields explicitly, separate from the fiche's full
+identity hash -- a divergence from the PRD's wording that stays recorded, with
+`compute_mode` now in both definitions).
 
 A blocking field that is null on either side never matches, not even another
 null: two unknown builds or GPUs are not evidence of the same run, so such a
@@ -16,6 +17,30 @@ legacy projection carries no engine field at all (`hardware.FICHE_PROJECTIONS`
 "1"); that absence reads as null here, so a run against such a reference is
 `not_comparable` naming the engine fields rather than matched on a
 `llama_cpp_build` nobody tied to an engine.
+
+`compute_mode` blocks too (Methodology 8): a `gpu` row and a `cpu_only` row
+from one machine are never a failed reproduction of each other. A fiche
+written before projection "3" carries no mode, which reads as null here.
+
+A GPU the machine registry declares absent is not an unknown GPU: on a fiche
+whose `machine_id` names a machine declared GPU-less, a null `gpu_name` reads
+as `GPU_DECLARED_ABSENT`, which matches itself, so two `cpu_only` runs on the
+no-GPU machine can reproduce. A null `gpu_name` on any other fiche -- a GPU
+that failed to capture on a machine that declares one, or an undeclared
+machine -- stays null and never matches.
+
+A quality batch is decided under one of two subject rules (Methodology 8). A
+`local` subject is held to identical per-item output (`SUBJECT_RULE_IDENTICAL`).
+A cloud subject is decided per item under its suite's declared divergence
+tolerance (`SUBJECT_RULE_WITHIN_TOLERANCE`): `reproduced` while the share of
+diverging items stays within it, `not_reproduced` beyond it, naming the
+diverging items either way, so a provider's own non-determinism reads as a
+property of the subject rather than as a failed reproduction. A cloud batch
+that cannot be re-run deterministically at all (its dated model id is no
+longer served, or its provider accepts no seed for it) is marked
+single-run indicative, naming which, and is `not_comparable`, never
+`not_reproduced`. This module owns the subject-side rule only; a judged
+batch's judged component reuses it for its subject.
 """
 
 from __future__ import annotations
@@ -23,7 +48,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, TypedDict
 
-from wave_local_ai_v2 import fiche_registry
+from wave_local_ai_v2 import fiche_registry, machines
 
 VERDICT_REPRODUCED = "reproduced"
 VERDICT_NOT_REPRODUCED = "not_reproduced"
@@ -32,13 +57,54 @@ VERDICT_NOT_COMPARABLE = "not_comparable"
 # `engine_id` and `engine_build` generalise `llama_cpp_build`: two engines on
 # one machine with one model are never the same run, so a mismatch is
 # `not_comparable` naming the engine, never a false `not_reproduced`.
-_RUNTIME_BLOCKING_FIELDS = ("engine_id", "engine_build", "quant", "gpu_name", "flags")
+_RUNTIME_BLOCKING_FIELDS = (
+    "engine_id",
+    "engine_build",
+    "quant",
+    "gpu_name",
+    "flags",
+    "compute_mode",
+)
+
+# What `runtime_blocking_fields` reads a null `gpu_name` as, on a fiche whose
+# machine the tracked registry declares GPU-less: a stated absence, equal to
+# itself, rather than an unknown value that never matches.
+GPU_DECLARED_ABSENT = "declared_absent"
 
 # The two per-item values a quality batch can be compared on, in the order
 # they are tried. Methodology 8's "identical per-item predicted labels or
 # scores": an exact-match suite publishes the first, a graded one the second.
 QUALITY_COMPARED_LABEL = "predicted_label"
 QUALITY_COMPARED_SCORE = "item_score"
+
+# The provider value a local subject's rows carry; every other provider is a
+# cloud subject.
+LOCAL_PROVIDER = "local"
+SUBJECT_RULE_IDENTICAL = "identical"
+SUBJECT_RULE_WITHIN_TOLERANCE = "within_tolerance"
+SUBJECT_RULES = frozenset({SUBJECT_RULE_IDENTICAL, SUBJECT_RULE_WITHIN_TOLERANCE})
+# Why a cloud batch cannot be re-run deterministically at all.
+RERUN_MODEL_NOT_SERVED = "model_not_served"
+RERUN_NO_SEED = "no_seed"
+RERUN_BLOCKERS = frozenset({RERUN_MODEL_NOT_SERVED, RERUN_NO_SEED})
+# The keys every quality verdict block carries from row schema "29", beside
+# `verdict`, `reference_run_id`, `differing_fields`, `compared_field` and
+# `reason`.
+QUALITY_SUBJECT_RULE_KEYS = (
+    "subject_rule",
+    "tolerance",
+    "divergence",
+    "single_run_indicative",
+)
+
+
+class DecidingTolerance(TypedDict):
+    """The tolerance a cloud batch was decided under, and who declared it."""
+
+    value: float
+    unit: str
+    suite_id: str
+    suite_version: str
 
 
 class ReferenceMatch(TypedDict):
@@ -47,13 +113,23 @@ class ReferenceMatch(TypedDict):
 
 
 def runtime_blocking_fields(fiche: dict[str, Any]) -> dict[str, Any]:
-    """Project `fiche` to exactly the fields a runtime reference match compares."""
-    return {key: fiche.get(key) for key in _RUNTIME_BLOCKING_FIELDS}
+    """Project `fiche` to exactly the fields a runtime reference match compares.
+
+    A null `gpu_name` on a machine declared GPU-less reads as
+    `GPU_DECLARED_ABSENT`; every other null stays null.
+    """
+    blocking = {key: fiche.get(key) for key in _RUNTIME_BLOCKING_FIELDS}
+    if blocking["gpu_name"] is None and machines.declares_no_gpu(
+        fiche.get("machine_id")
+    ):
+        blocking["gpu_name"] = GPU_DECLARED_ABSENT
+    return blocking
 
 
 def null_blocking_fields(fiche: dict[str, Any]) -> list[str]:
     """The blocking fields `fiche` leaves null, in declaration order."""
-    return [key for key in _RUNTIME_BLOCKING_FIELDS if fiche.get(key) is None]
+    blocking = runtime_blocking_fields(fiche)
+    return [key for key in _RUNTIME_BLOCKING_FIELDS if blocking[key] is None]
 
 
 def _resolve_fiche(row: dict[str, Any], registry_dir: Path) -> dict[str, Any] | None:
@@ -245,15 +321,27 @@ def select_quality_references(
     number pulls both suites' rows into the comparison, trips the
     `unmatched_items` guard below, and reports `not_comparable` for a batch
     that reproduced item for item.
+
+    `suite_id` is part of the key too, wherever both rows carry one: two
+    suites now share a `task_suite` (the hand-written and the publication
+    classification suites), and each versions itself independently, so a
+    shared `task_suite` and `suite_version` no longer name one suite. A row
+    carrying no `suite_id` is matched as before, on `task_suite` alone.
     """
     if not candidate_rows:
         return []
     first = candidate_rows[0]
     seed = first.get("sampling", {}).get("seed")
+    suite_id = first.get("suite_id")
     return [
         row
         for row in reference_rows
         if row.get("task_suite") == first.get("task_suite")
+        and (
+            suite_id is None
+            or row.get("suite_id") is None
+            or row.get("suite_id") == suite_id
+        )
         and row.get("model_id") == first.get("model_id")
         and row.get("suite_version") == first.get("suite_version")
         and row.get("sampling", {}).get("seed") == seed
@@ -284,8 +372,48 @@ def _comparable_field(
     return None
 
 
+def subject_rule_fields(provider: str, tolerance: DecidingTolerance) -> dict[str, Any]:
+    """The subject rule a `provider` batch is decided under, and its tolerance.
+
+    `identical` under no tolerance for a local subject; `within_tolerance`
+    under `tolerance` for a cloud one. Shared with any writer that builds a
+    quality verdict block without deciding it (the judge probe).
+    """
+    if provider == LOCAL_PROVIDER:
+        return {"subject_rule": SUBJECT_RULE_IDENTICAL, "tolerance": None}
+    return {"subject_rule": SUBJECT_RULE_WITHIN_TOLERANCE, "tolerance": dict(tolerance)}
+
+
+def _quality_block(
+    verdict: str,
+    reference_run_id: object,
+    differing_fields: list[str],
+    compared_field: str | None,
+    reason: str | None,
+    *,
+    rule_fields: dict[str, Any],
+    divergence: float | None = None,
+    single_run_indicative: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "verdict": verdict,
+        "reference_run_id": reference_run_id,
+        "differing_fields": differing_fields,
+        "compared_field": compared_field,
+        "reason": reason,
+        **rule_fields,
+        "divergence": divergence,
+        "single_run_indicative": single_run_indicative,
+    }
+
+
 def quality_verdict(
-    candidate_rows: list[dict[str, Any]], reference_rows: list[dict[str, Any]]
+    candidate_rows: list[dict[str, Any]],
+    reference_rows: list[dict[str, Any]],
+    *,
+    provider: str,
+    tolerance: DecidingTolerance,
+    rerun_blocker: str | None = None,
 ) -> dict[str, Any]:
     """Compute the quality verdict block, shared by every row of one suite batch.
 
@@ -305,19 +433,53 @@ def quality_verdict(
     protocol commits two per batch), the first run in file order is the
     reference, the same tie-break as `select_runtime_reference`: its items
     alone are compared, and `reference_run_id` names it.
-    """
-    matching = select_quality_references(candidate_rows, reference_rows)
-    if not matching:
-        return {
-            "verdict": VERDICT_NOT_COMPARABLE,
-            "reference_run_id": None,
-            "differing_fields": [],
-            "compared_field": None,
-            "reason": "no reference row shares this batch's "
-            "task_suite/model_id/suite_version/seed",
-        }
 
-    reference_run_id = matching[0].get("run_id")
+    `provider` picks the subject rule: `local` is held to identical per-item
+    values, under no tolerance (`tolerance: null` on the block); any other
+    provider is decided under `tolerance`, the suite's declared divergence
+    tolerance, named on the block with the suite version that declared it,
+    together with the observed `divergence` (the share of diverging items).
+    On a cloud batch an item whose compared value is null on either side
+    counts as diverging: a null agreeing with a null is not evidence of a
+    reproduction, so a cloud batch is never decided off null values.
+    `rerun_blocker` (`RERUN_BLOCKERS`) marks a cloud batch that cannot be
+    re-run deterministically at all: `not_comparable`, single-run indicative,
+    never `not_reproduced`. A local subject has no such blocker.
+    """
+    is_local = provider == LOCAL_PROVIDER
+    if rerun_blocker is not None and (is_local or rerun_blocker not in RERUN_BLOCKERS):
+        raise ValueError(
+            f"rerun_blocker {rerun_blocker!r} does not apply to provider "
+            f"{provider!r}: only a cloud subject is marked single-run indicative, "
+            f"for one of {', '.join(sorted(RERUN_BLOCKERS))}"
+        )
+    rule_fields = subject_rule_fields(provider, tolerance)
+
+    matching = select_quality_references(candidate_rows, reference_rows)
+    reference_run_id = matching[0].get("run_id") if matching else None
+    if rerun_blocker is not None:
+        return _quality_block(
+            VERDICT_NOT_COMPARABLE,
+            reference_run_id,
+            [],
+            None,
+            f"single-run indicative ({rerun_blocker}): this cloud batch cannot "
+            "be re-run deterministically, so no re-run can reproduce or "
+            "contradict it",
+            rule_fields=rule_fields,
+            single_run_indicative=rerun_blocker,
+        )
+    if not matching:
+        return _quality_block(
+            VERDICT_NOT_COMPARABLE,
+            None,
+            [],
+            None,
+            "no reference row shares this batch's "
+            "task_suite/suite_id/model_id/suite_version/seed",
+            rule_fields=rule_fields,
+        )
+
     reference_by_item = {
         row["item_id"]: row for row in matching if row.get("run_id") == reference_run_id
     }
@@ -328,37 +490,52 @@ def quality_verdict(
     # `reproduced` off zero or near-zero evidence.
     unmatched_items = sorted(reference_by_item.keys() ^ candidate_by_item.keys())
     if unmatched_items:
-        return {
-            "verdict": VERDICT_NOT_COMPARABLE,
-            "reference_run_id": reference_run_id,
-            "differing_fields": unmatched_items,
-            "compared_field": None,
-            "reason": "these item_ids are on one side only, so the two batches "
+        return _quality_block(
+            VERDICT_NOT_COMPARABLE,
+            reference_run_id,
+            unmatched_items,
+            None,
+            "these item_ids are on one side only, so the two batches "
             "do not cover the same suite",
-        }
+            rule_fields=rule_fields,
+        )
 
     compared_field = _comparable_field(candidate_by_item, reference_by_item)
     if compared_field is None:
-        return {
-            "verdict": VERDICT_NOT_COMPARABLE,
-            "reference_run_id": reference_run_id,
-            "differing_fields": [],
-            "compared_field": None,
-            "reason": "the two batches carry no comparable per-item value: "
+        return _quality_block(
+            VERDICT_NOT_COMPARABLE,
+            reference_run_id,
+            [],
+            None,
+            "the two batches carry no comparable per-item value: "
             "every predicted_label and every item_score is null on both sides",
-        }
+            rule_fields=rule_fields,
+        )
+
+    def diverges(item_id: str) -> bool:
+        value = candidate_by_item[item_id].get(compared_field)
+        reference_value = reference_by_item[item_id].get(compared_field)
+        if not is_local and (value is None or reference_value is None):
+            return True
+        return bool(value != reference_value)
 
     differing_items = sorted(
-        item_id
-        for item_id, row in candidate_by_item.items()
-        if row.get(compared_field) != reference_by_item[item_id].get(compared_field)
+        item_id for item_id in candidate_by_item if diverges(item_id)
     )
-    verdict = VERDICT_NOT_REPRODUCED if differing_items else VERDICT_REPRODUCED
-
-    return {
-        "verdict": verdict,
-        "reference_run_id": reference_run_id,
-        "differing_fields": differing_items,
-        "compared_field": compared_field,
-        "reason": None,
-    }
+    divergence = len(differing_items) / len(candidate_by_item)
+    if is_local:
+        reproduced = not differing_items
+    else:
+        # Compared on the item count, with a rounding allowance, so a value
+        # like 0.1 admits exactly 2 of 20 items despite binary floats.
+        allowed = tolerance["value"] * len(candidate_by_item) + 1e-9
+        reproduced = len(differing_items) <= allowed
+    return _quality_block(
+        VERDICT_REPRODUCED if reproduced else VERDICT_NOT_REPRODUCED,
+        reference_run_id,
+        differing_items,
+        compared_field,
+        None,
+        rule_fields=rule_fields,
+        divergence=divergence,
+    )

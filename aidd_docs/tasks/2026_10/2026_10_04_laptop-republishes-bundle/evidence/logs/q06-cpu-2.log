@@ -1,0 +1,4 @@
+1212b9b15c68476ea95a449eeeb8137d
+[codecarbon INFO @ 02:28:18] offline tracker init
+[codecarbon WARNING @ 02:28:18] Multiple instances of codecarbon are allowed to run at the same time.
+gen_tok_per_s=32.2 prompt_tok_per_s=203.3 ttft_ms=7302.8 repetitions_n=5 unreliable=False emissions_kg=4.539581669512259e-05 cost_total=0.00015715463228918757 -> C:\Users\Anael\AppData\Local\Temp\claude\C--Users-Anael-dev-wave-local-ai-v2\2554606c-a87d-454f-a374-f2d0c622109e\scratchpad\bench\runtime.jsonl

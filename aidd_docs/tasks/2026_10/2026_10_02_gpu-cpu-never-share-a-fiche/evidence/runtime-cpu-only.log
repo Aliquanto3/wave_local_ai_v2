@@ -1,0 +1,4 @@
+[codecarbon INFO @ 06:25:19] offline tracker init
+[codecarbon WARNING @ 06:25:19] Multiple instances of codecarbon are allowed to run at the same time.
+gen_tok_per_s=29.9 prompt_tok_per_s=300.4 ttft_ms=4943.6 repetitions_n=2 unreliable=False emissions_kg=3.011607264069321e-05 cost_total=0.00010425807191945758 -> aidd_docs\tasks\2026_10\2026_10_02_gpu-cpu-never-share-a-fiche\evidence\runtime.jsonl
+exit=0

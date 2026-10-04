@@ -1,0 +1,1 @@
+{"model":"wla-qwen3-0.6b-q8","created_at":"2026-10-03T22:21:46.3512802Z","message":{"role":"assistant","content":"\"technical\""},"done":true,"done_reason":"stop","total_duration":169528100,"load_duration":1545200,"prompt_eval_count":73,"prompt_eval_cached_count":37,"prompt_eval_duration":66811000,"eval_count":8,"eval_duration":91791000}

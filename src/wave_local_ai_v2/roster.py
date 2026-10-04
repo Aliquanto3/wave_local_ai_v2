@@ -4,9 +4,9 @@ and flag set.
 `load_roster` refuses (raises `RosterError`) any entry missing a required
 field, `sha256` included, so an incomplete entry can never be resolved.
 `resolve_entry` and `validate_host_fit` are the two gates a caller passes
-through before launching a model: an unknown id, a dense entry given a host
-`n_cpu_moe`, or an MoE entry whose host `n_cpu_moe` exceeds its expert count
-are all refused here rather than surfacing as a confusing llama-server error
+through before launching a model: an unknown id, a dense entry whose resolved
+run profile (`profiles.py`) carries an `n_cpu_moe`, or an MoE entry whose
+`n_cpu_moe` exceeds its expert count are all refused here rather than surfacing as a confusing llama-server error
 downstream.
 
 Deliberately does not import `server.py`: phase 2 imports this module from
@@ -21,7 +21,12 @@ import re
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from wave_local_ai_v2 import machines
+
+if TYPE_CHECKING:
+    from wave_local_ai_v2.profiles import ResolvedProfile
 
 # Every required field, keyed by the dotted path of the block that holds it
 # ("" is the entry itself). Parents are listed before their children so the
@@ -40,7 +45,6 @@ REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
         "sha256",
         "architecture",
         "server_flags",
-        "validated_host",
     ),
     "architecture": ("kind", "expert_count", "active_params_b"),
     "server_flags": (
@@ -59,7 +63,17 @@ REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
         "min_p",
         "presence_penalty",
     ),
-    "validated_host": ("n_cpu_moe", "threads", "fiche_summary"),
+}
+
+# The minimum requirements every entry declares per compute mode (Methodology
+# 21), each a `{value, source, read_from}` fact in decimal GB (10^9 bytes):
+# total system RAM, VRAM the GPU can allocate (`gpu` only: a `cpu_only` run
+# puts no layer on it) and free disk on the models volume (checked only when
+# the weights are not on disk yet). `preflight.py` checks them before the
+# weights are looked for or any process starts.
+REQUIREMENTS_BY_MODE: dict[str, tuple[str, ...]] = {
+    machines.COMPUTE_MODE_GPU: ("ram_gb", "vram_gb", "disk_gb"),
+    machines.COMPUTE_MODE_CPU_ONLY: ("ram_gb", "disk_gb"),
 }
 
 _SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
@@ -194,7 +208,12 @@ class LanguageClaim:
 
 @dataclass(frozen=True)
 class RosterEntry:
-    """One roster entry: model identity, its flag set, and its validated host."""
+    """One roster entry: model identity and its model-intrinsic flag set.
+
+    The host-fitted values (thread count, `--n-cpu-moe`) are not roster data:
+    they live in the run profile of each (entry x machine x mode) triple
+    (`profiles.py`).
+    """
 
     entry_id: str
     repo: str
@@ -209,7 +228,6 @@ class RosterEntry:
     sha256: str
     architecture: Architecture
     server_flags: dict[str, Any]
-    validated_host: dict[str, Any]
     # The model's family, when the roster file carries one. Optional and
     # deliberately absent from REQUIRED_FIELDS: the shipped roster is not
     # edited by the increment that introduced this, so every existing entry
@@ -237,6 +255,11 @@ class RosterEntry:
     # that omits them rather than the loader refusing it first.
     size_class: str | None = None
     bytes_on_disk: int | None = None
+    # compute mode -> requirement name -> `{value, source, read_from}`, per
+    # `REQUIREMENTS_BY_MODE`. Required by `load_roster` (a run reads only
+    # roster files) and optional to `parse_entry`, whose candidate has no
+    # measured peak to calibrate a minimum from before its first run.
+    requirements: dict[str, dict[str, dict[str, Any]]] | None = None
 
 
 @dataclass(frozen=True)
@@ -312,6 +335,10 @@ def load_roster(path: Path) -> RosterFile:
     entries: dict[str, RosterEntry] = {}
     for entry_id, raw_entry in raw_entries.items():
         entries[entry_id] = _parse_entry(entry_id, raw_entry)
+        if isinstance(raw_entry, dict) and "requirements" not in raw_entry:
+            raise RosterError(
+                f"roster entry {entry_id!r} is missing required field(s): requirements"
+            )
 
     return RosterFile(
         roster_version=roster_version,
@@ -451,14 +478,96 @@ def _parse_entry(entry_id: str, raw_entry: Any) -> RosterEntry:
             ),
         ),
         server_flags=raw_entry["server_flags"],
-        validated_host=raw_entry["validated_host"],
         family=family,
         thinking_control=_parse_thinking_control(entry_id, raw_entry),
         licence=_parse_licence(entry_id, raw_entry),
         language_claim=_parse_language_claim(entry_id, raw_entry),
         size_class=_parse_size_class(entry_id, raw_entry),
         bytes_on_disk=_optional_count(entry_id, raw_entry, "bytes_on_disk"),
+        requirements=_parse_requirements(entry_id, raw_entry),
     )
+
+
+def _parse_requirements(
+    entry_id: str, raw_entry: dict[str, Any]
+) -> dict[str, dict[str, dict[str, Any]]] | None:
+    """The declared minimums per compute mode, or `None` when absent.
+
+    Every mode of `REQUIREMENTS_BY_MODE` and every requirement of each is
+    required, and nothing else is accepted (a `vram_gb` under `cpu_only` is
+    refused, not ignored). A `declared` value is a positive number; a
+    `not_yet_declared` one is `null` and names what it awaits.
+    """
+    if "requirements" not in raw_entry:
+        return None
+    block = raw_entry["requirements"]
+    if not isinstance(block, dict):
+        raise RosterError(
+            f"roster entry {entry_id!r}: 'requirements' must be an object"
+        )
+    _require_exact_keys(entry_id, "requirements", block, tuple(REQUIREMENTS_BY_MODE))
+    parsed: dict[str, dict[str, dict[str, Any]]] = {}
+    for mode, names in REQUIREMENTS_BY_MODE.items():
+        where = f"requirements.{mode}"
+        mode_block = block[mode]
+        if not isinstance(mode_block, dict):
+            raise RosterError(f"roster entry {entry_id!r}: {where!r} must be an object")
+        _require_exact_keys(entry_id, where, mode_block, names)
+        parsed[mode] = {
+            name: _requirement_fact(entry_id, f"{where}.{name}", mode_block[name])
+            for name in names
+        }
+    return parsed
+
+
+def _require_exact_keys(
+    entry_id: str, where: str, block: dict[str, Any], names: tuple[str, ...]
+) -> None:
+    missing = [name for name in names if name not in block]
+    if missing:
+        raise RosterError(
+            f"roster entry {entry_id!r} is missing required field(s): "
+            f"{', '.join(f'{where}.{name}' for name in missing)}"
+        )
+    unknown = sorted(set(block) - set(names))
+    if unknown:
+        raise RosterError(
+            f"roster entry {entry_id!r}: {where!r} declares unknown field(s) "
+            f"{', '.join(unknown)} (expected: {', '.join(names)})"
+        )
+
+
+def _requirement_fact(entry_id: str, where: str, fact: Any) -> dict[str, Any]:
+    if not isinstance(fact, dict) or set(fact) != set(machines.FACT_FIELDS):
+        raise _malformed(
+            entry_id, where, "an object with exactly value, source, read_from", fact
+        )
+    read_from = fact["read_from"]
+    if not isinstance(read_from, str) or not read_from.strip():
+        raise _malformed(
+            entry_id, f"{where}.read_from", "a non-empty string", read_from
+        )
+    value = fact["value"]
+    if fact["source"] == machines.SOURCE_DECLARED:
+        if not isinstance(value, int | float) or isinstance(value, bool) or value <= 0:
+            raise _malformed(entry_id, f"{where}.value", "a positive number", value)
+    elif fact["source"] == machines.SOURCE_NOT_YET_DECLARED:
+        if value is not None:
+            raise _malformed(
+                entry_id,
+                f"{where}.value",
+                "null while not_yet_declared (a minimum nobody calibrated is "
+                "never published)",
+                value,
+            )
+    else:
+        raise _malformed(
+            entry_id,
+            f"{where}.source",
+            f"one of {sorted(machines.FACT_SOURCES)}",
+            fact["source"],
+        )
+    return dict(fact)
 
 
 def _parse_size_class(entry_id: str, raw_entry: dict[str, Any]) -> str | None:
@@ -648,27 +757,42 @@ def family_of(model_id: str, entry: RosterEntry | None = None) -> str:
     return family
 
 
-def validate_host_fit(entry: RosterEntry, n_cpu_moe: int | None) -> None:
-    """Raise `RosterError` when `n_cpu_moe` cannot be applied to `entry`.
+def validate_host_fit(entry: RosterEntry, profile: ResolvedProfile) -> None:
+    """Raise `RosterError` when the resolved profile's `n_cpu_moe` cannot be
+    applied to `entry`.
 
-    A dense entry never accepts a host `n_cpu_moe` value. An MoE entry
-    accepts any value at or below its `architecture.expert_count`; a `None`
-    value is always accepted (a caller decision outside this rule's scope).
+    Reads the value the run will launch with: the profile's, or the operator
+    override laid over it. A dense entry never accepts an `n_cpu_moe` value.
+    An MoE entry accepts any value at or below its `architecture.expert_count`;
+    `None` (no `--n-cpu-moe` at all) is always accepted. Under `cpu_only` no
+    value is accepted: every layer is already on the CPU, and `--n-cpu-moe 0`
+    would mean the opposite (offload no experts), so a supplied value is
+    refused naming the mode, never dropped. The registry refuses one declared
+    under `cpu_only`, so only an operator override can reach this check.
     """
+    n_cpu_moe = profile.n_cpu_moe
     if n_cpu_moe is None:
         return
 
+    if profile.compute_mode == "cpu_only":
+        raise RosterError(
+            f"roster entry {entry.entry_id!r} runs under compute mode "
+            f"'cpu_only': it cannot take an n_cpu_moe value "
+            f"({n_cpu_moe!r} given); unset SERVER_N_CPU_MOE"
+        )
+
     if entry.architecture.kind == "dense":
         raise RosterError(
-            f"roster entry {entry.entry_id!r} is dense: it cannot take a "
-            f"host n_cpu_moe value ({n_cpu_moe!r} given)"
+            f"roster entry {entry.entry_id!r} is dense: it cannot take an "
+            f"n_cpu_moe value ({n_cpu_moe!r} given, run profile "
+            f"{profile.profile_id!r})"
         )
 
     if n_cpu_moe > entry.architecture.expert_count:
         raise RosterError(
             f"roster entry {entry.entry_id!r} has expert_count="
-            f"{entry.architecture.expert_count}: host n_cpu_moe={n_cpu_moe} "
-            "exceeds that ceiling"
+            f"{entry.architecture.expert_count}: n_cpu_moe={n_cpu_moe} "
+            f"(run profile {profile.profile_id!r}) exceeds that ceiling"
         )
 
 

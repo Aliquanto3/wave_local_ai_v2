@@ -11,11 +11,9 @@ where `llama-server` actually loads the model and runs inference.
 - Python 3.12+
 - [`uv`](https://docs.astral.sh/uv/) installed
 - `git`
-- **~18 GB free disk** for the weights and the binary, **32 GB system RAM**, and
-  an **NVIDIA GPU with CUDA 12.x support** to reach a runtime row comparable to
-  the committed evidence — see
-  [the README's hardware section](../README.md#hardware-you-need-before-downloading-anything)
-  before starting step 3, which downloads 17.7 GB.
+- What each model needs per compute mode (RAM, VRAM, disk) is the declared
+  minimums table in [section 1.2](#12-what-each-model-needs-declared-minimums);
+  read it before starting step 3, which downloads 17.7 GB for the flagship.
 
 The GPU/CUDA driver is only required to *run* the benchmarks (step 4 onward),
 not to reach this point.
@@ -54,6 +52,62 @@ serve the dashboard from the service's own origin.
 
 For the TLS certificate, the key, and reaching the dashboard from a second
 machine (the demo/pitch path), see `docs/demo.md`.
+
+### 1.2 What each model needs: declared minimums
+
+Every roster entry declares, per compute mode, the minimum it needs to start:
+total system RAM, VRAM the GPU can allocate (`gpu` only) and free disk on the
+models volume (`requirements` in `aidd_docs/roster/models.json`, each value
+`{value, source, read_from}` in decimal GB, 10^9 bytes). Before a run looks
+for the weights or starts `llama-server`, its pre-flight compares them with
+what the machine reports: total RAM, the machine registry's declared
+allocatable VRAM (NVML's reported total where none is declared), and free disk
+only while the weights are not on disk yet. A machine below a minimum refuses
+the run: it names the requirement, the mode, the declared minimum and the
+observed value, exits non-zero, writes no runtime or quality row, and appends
+one refusal record (roster entry, machine, mode, profile id, requirement,
+declared and observed values, release version, commit sha, timestamp) to the
+machine's own tracked results location,
+`aidd_docs/results/machines/<machine_id>/refusals.jsonl` (`MACHINE_RESULTS_ROOT`
+moves the root; see section 6). Nothing is substituted: no smaller quant, no
+shorter context, no switch from `gpu` to `cpu_only`; a refused `gpu` run names
+the `cpu_only` profile that exists for the same machine and runs nothing.
+
+| Model | Mode | RAM (GB) | VRAM (GB) | Disk (GB) | Calibrated from |
+| ----- | ---- | -------- | --------- | --------- | --------------- |
+| `Qwen3.6-35B-A3B` `UD-IQ4_XS` | `gpu` | 15.23 | not yet declared | 17.74 | RAM: peak `process_rss_bytes` 15225831424 of the published laptop rows; disk: `bytes_on_disk` |
+| `Qwen3.6-35B-A3B` `UD-IQ4_XS` | `cpu_only` | 17.74 | n/a | 17.74 | RAM: lower bound, the larger of the `gpu` peak and the weights' size (no `cpu_only` peak published) |
+| `Qwen3-0.6B` `Q8_0` | `gpu` | 1.08 | not yet declared | 0.64 | RAM: peak 1077411840 B (1077 MB) of the laptop gpu row in the gpu-cpu-never-share-a-fiche task evidence |
+| `Qwen3-0.6B` `Q8_0` | `cpu_only` | 4.77 | n/a | 0.64 | RAM: peak 4761899008 B of the laptop `cpu_only` rows (named-run-profiles evidence) |
+| `Qwen3-1.7B` `Q8_0` | `gpu` | 2.28 | not yet declared | 1.84 | RAM: peak 2277 MB of the published laptop row |
+| `Qwen3-1.7B` `Q8_0` | `cpu_only` | 2.28 | n/a | 1.84 | RAM: lower bound, as for the flagship |
+| `Qwen3-4B` `Q4_K_M` | `gpu` | 4.28 | not yet declared | 2.50 | RAM: peak 4275 MB of the published laptop row |
+| `Qwen3-4B` `Q4_K_M` | `cpu_only` | 4.28 | n/a | 2.50 | RAM: lower bound, as for the flagship |
+| `Granite-4.0-H-350M` `Q8_0` | `gpu` | 0.37 | not yet declared | 0.37 | RAM: lower bound, the weights' size (no runtime peak published) |
+| `Granite-4.0-H-350M` `Q8_0` | `cpu_only` | 0.37 | n/a | 0.37 | RAM: lower bound, as for `gpu` |
+| `LFM2.5-1.2B-Instruct` `Q8_0` | `gpu` | 1.25 | not yet declared | 1.25 | RAM: lower bound, the weights' size (no runtime peak published) |
+| `LFM2.5-1.2B-Instruct` `Q8_0` | `cpu_only` | 1.25 | n/a | 1.25 | RAM: lower bound, as for `gpu` |
+| `Granite-3.1-1B-A400M-Instruct` `Q8_0` | `gpu` | 1.42 | not yet declared | 1.42 | RAM: lower bound, the weights' size (no runtime peak published) |
+| `Granite-3.1-1B-A400M-Instruct` `Q8_0` | `cpu_only` | 1.42 | n/a | 1.42 | RAM: lower bound, as for `gpu` |
+| `Granite-3.1-3B-A800M-Instruct` `Q4_K_M` | `gpu` | 2.02 | not yet declared | 2.02 | RAM: lower bound, the weights' size (no runtime peak published) |
+| `Granite-3.1-3B-A800M-Instruct` `Q4_K_M` | `cpu_only` | 2.02 | n/a | 2.02 | RAM: lower bound, as for `gpu` |
+| `Gemma-4-12B-it` `IQ4_XS` | `gpu` | 6.38 | not yet declared | 6.38 | RAM: lower bound, the weights' size (no runtime peak published) |
+| `Gemma-4-12B-it` `IQ4_XS` | `cpu_only` | 6.38 | n/a | 6.38 | RAM: lower bound, as for `gpu` |
+
+The `gpu` RAM peaks are the side-by-side runtime table of
+`aidd_docs/results/README.md`; each declaration's full source is its
+`read_from`. No VRAM minimum is declared yet: the published `vram_used_mib` is
+NVML's device-wide used memory (4527 MiB for the 0.6B, whose weights are
+0.64 GB), not a model's own need, so a VRAM requirement is not checked and the
+pre-flight says so on stderr. A `gpu` run on the laptop also needs an NVIDIA
+GPU with CUDA 12.x support; the flagship's laptop evidence offloads experts to
+CPU RAM with `--n-cpu-moe`, so system RAM, not VRAM, is its ceiling.
+
+These minimums are declared, not verified. Nothing checks that a declaration
+is right: one set too low surfaces as a run that starts and then fails (an
+out-of-memory exit or a load error), not as a refusal. The `cpu_only` lower
+bounds are the likeliest to be too low until a measured `cpu_only` peak
+replaces them.
 
 ## 2. Get `llama-server`, build `b10537`
 
@@ -116,9 +170,9 @@ need, instead:
   MoE experts back to CPU RAM under a 6 GB-VRAM ceiling; a GPU deployment
   with more VRAM would lower or drop `SERVER_N_CPU_MOE` to keep more experts
   resident on the GPU. There is no second set of magic numbers documented
-  here — the roster's `validated_host` block and this project's own `.env`
-  are the bare-metal precedent to start from and re-tune per your own VRAM
-  budget.
+  here — the laptop's run profiles in `aidd_docs/roster/profiles.json`
+  (section 4) are the bare-metal precedent to start from and re-tune per your
+  own VRAM budget.
 
 **Untested in CI** — no GitHub-hosted runner carries a GPU, so this path is
 documented, not built or exercised by this repository's CI.
@@ -319,7 +373,8 @@ Declare the candidate as a JSON file:
 | `active_params_b` | the card's figure |
 | `client_commercial_use` | your reading of the licence, a boolean |
 | `language_claim` | `languages` (subset of `en`/`fr`/`de`), `source_url`, optional verbatim `statement` |
-| `server_flags`, `validated_host` | the launch blocks, exactly as a roster entry holds them |
+| `server_flags` | the launch block, exactly as a roster entry holds it |
+| `load_profile` | the host values the gate's one load runs with: `n_cpu_moe` (an integer, or `null` for no `--n-cpu-moe`) and `threads`; not copied into the entry (run profiles hold host values, section 4) |
 
 Then, with `SLM_MODELS_DIR` and `LLAMA_SERVER_PATH` set as for a run and no
 `llama-server` already on port 8080:
@@ -349,6 +404,239 @@ busy port, an unreadable build). The gate never writes `models.json`: copy the
 pass record's `entry` into it as a reviewed change, and add the model's row to
 the tables above.
 
+### 3.3 The second family at ~0.5B: Granite 4.0 H 350M
+
+The ~0.5B class holds a second family beside `Qwen3-0.6B`: IBM's Granite 4.0
+H 350M (`granitehybrid`, a dense Mamba2 hybrid), entered from its candidate
+gate pass record (`aidd_docs/roster/candidate-records.jsonl`). It is taken at
+`Q8_0`, the quant of the class's Qwen entry, which IBM ships, so the two rows
+of this class compare families, not quants. As above, the roster file is the
+source of truth and a mismatch with this section is a bug.
+
+| Entry id | Repo | Revision | File in the repo | Under `SLM_MODELS_DIR` | Quant | Size |
+| -------- | ---- | -------- | ---------------- | ---------------------- | ----- | ---- |
+| `granite-4.0-h-350m-q8` | `ibm-granite/granite-4.0-h-350m-GGUF` | `a864f823cce6e6048b5752e2816fe7a23987d790` | `granite-4.0-h-350m-Q8_0.gguf` | `granite-4.0-h-350m/granite-4.0-h-350m-Q8_0.gguf` | `Q8_0` | 366,195,616 B (0.34 GiB) |
+
+sha256:
+
+```
+granite-4.0-h-350m-q8   c7d9873640dc303b6773dcc44e72e5bdf533e1c95ca8421e6191fbff5c94c942
+```
+
+Download it at its pinned revision:
+
+```powershell
+# Windows
+hf download ibm-granite/granite-4.0-h-350m-GGUF granite-4.0-h-350m-Q8_0.gguf `
+  --revision a864f823cce6e6048b5752e2816fe7a23987d790 `
+  --local-dir <SLM_MODELS_DIR>\granite-4.0-h-350m
+```
+
+```sh
+# POSIX
+hf download ibm-granite/granite-4.0-h-350m-GGUF granite-4.0-h-350m-Q8_0.gguf \
+  --revision a864f823cce6e6048b5752e2816fe7a23987d790 \
+  --local-dir <SLM_MODELS_DIR>/granite-4.0-h-350m
+```
+
+Verify the checksum:
+
+```powershell
+# Windows -- .ToLower() matters: the roster stores lowercase hex.
+(Get-FileHash -Algorithm SHA256 "<SLM_MODELS_DIR>\granite-4.0-h-350m\granite-4.0-h-350m-Q8_0.gguf").Hash.ToLower()
+```
+
+```sh
+# POSIX
+sha256sum <SLM_MODELS_DIR>/granite-4.0-h-350m/granite-4.0-h-350m-Q8_0.gguf
+```
+
+The model does not reason, so its entry declares `thinking_control: "none"`
+(the gate verified it with one generation that returned no reasoning): a
+`thinking_policy: disabled` batch sends no switch for it.
+
+### 3.4 The other families at ~2B: LFM2.5-1.2B-Instruct and Granite 3.1 1B-A400M
+
+The ~2B class holds two more families beside `Qwen3-1.7B`: Liquid's
+LFM2.5-1.2B-Instruct (`lfm2`, dense) and IBM's Granite 3.1 1B-A400M Instruct
+(`granitemoe`, a MoE of 32 experts, 8 active), each entered from its candidate
+gate pass record (`aidd_docs/roster/candidate-records.jsonl`). Both are taken at
+`Q8_0`, the quant of the class's Qwen entry, which both publishers ship, so the
+rows of this class compare families, not quants. IBM ships no GGUF of Granite
+3.1 1B-A400M, so the file is bartowski's quantization of IBM's weights. As
+above, the roster file is the source of truth and a mismatch with this section
+is a bug.
+
+| Entry id | Repo | Revision | File in the repo | Under `SLM_MODELS_DIR` | Quant | Size |
+| -------- | ---- | -------- | ---------------- | ---------------------- | ----- | ---- |
+| `lfm2.5-1.2b-instruct-q8` | `LiquidAI/LFM2.5-1.2B-Instruct-GGUF` | `8ed288026e23958ad9dfa92d53ed773a8eee7125` | `LFM2.5-1.2B-Instruct-Q8_0.gguf` | `LFM2.5-1.2B-Instruct/LFM2.5-1.2B-Instruct-Q8_0.gguf` | `Q8_0` | 1,246,253,888 B (1.16 GiB) |
+| `granite-3.1-1b-a400m-instruct-q8` | `bartowski/granite-3.1-1b-a400m-instruct-GGUF` | `940d2e1f9f65330615c7c8e980e6c5ac73d3360c` | `granite-3.1-1b-a400m-instruct-Q8_0.gguf` | `granite-3.1-1b-a400m-instruct/granite-3.1-1b-a400m-instruct-Q8_0.gguf` | `Q8_0` | 1,422,239,776 B (1.32 GiB) |
+
+sha256:
+
+```
+lfm2.5-1.2b-instruct-q8            f6b981dcb86917fa463f78a362320bd5e2dc45445df147287eedb85e5a30d26a
+granite-3.1-1b-a400m-instruct-q8   724302357c718bbfb4574e4c99b27d8814c8338b0873b062bf410111d1417650
+```
+
+Download them at their pinned revisions:
+
+```powershell
+# Windows
+hf download LiquidAI/LFM2.5-1.2B-Instruct-GGUF LFM2.5-1.2B-Instruct-Q8_0.gguf `
+  --revision 8ed288026e23958ad9dfa92d53ed773a8eee7125 `
+  --local-dir <SLM_MODELS_DIR>\LFM2.5-1.2B-Instruct
+hf download bartowski/granite-3.1-1b-a400m-instruct-GGUF granite-3.1-1b-a400m-instruct-Q8_0.gguf `
+  --revision 940d2e1f9f65330615c7c8e980e6c5ac73d3360c `
+  --local-dir <SLM_MODELS_DIR>\granite-3.1-1b-a400m-instruct
+```
+
+```sh
+# POSIX
+hf download LiquidAI/LFM2.5-1.2B-Instruct-GGUF LFM2.5-1.2B-Instruct-Q8_0.gguf \
+  --revision 8ed288026e23958ad9dfa92d53ed773a8eee7125 \
+  --local-dir <SLM_MODELS_DIR>/LFM2.5-1.2B-Instruct
+hf download bartowski/granite-3.1-1b-a400m-instruct-GGUF granite-3.1-1b-a400m-instruct-Q8_0.gguf \
+  --revision 940d2e1f9f65330615c7c8e980e6c5ac73d3360c \
+  --local-dir <SLM_MODELS_DIR>/granite-3.1-1b-a400m-instruct
+```
+
+Verify the checksums:
+
+```powershell
+# Windows -- .ToLower() matters: the roster stores lowercase hex.
+(Get-FileHash -Algorithm SHA256 "<SLM_MODELS_DIR>\LFM2.5-1.2B-Instruct\LFM2.5-1.2B-Instruct-Q8_0.gguf").Hash.ToLower()
+(Get-FileHash -Algorithm SHA256 "<SLM_MODELS_DIR>\granite-3.1-1b-a400m-instruct\granite-3.1-1b-a400m-instruct-Q8_0.gguf").Hash.ToLower()
+```
+
+```sh
+# POSIX
+sha256sum <SLM_MODELS_DIR>/LFM2.5-1.2B-Instruct/LFM2.5-1.2B-Instruct-Q8_0.gguf
+sha256sum <SLM_MODELS_DIR>/granite-3.1-1b-a400m-instruct/granite-3.1-1b-a400m-instruct-Q8_0.gguf
+```
+
+Neither model reasons, so each entry declares `thinking_control: "none"` (the
+gate verified it with one generation that returned no reasoning): a
+`thinking_policy: disabled` batch sends no switch for them. LFM2.5-1.2B-Instruct
+is under the LFM Open License v1.0 and its entry declares
+`client_commercial_use: false`: section 5 conditions commercial use on a legal
+entity below USD 10M annual revenue. Granite 3.1 1B-A400M fits a 6 GB GPU
+whole, so it launches with no `--n-cpu-moe`.
+
+### 3.5 The second family at ~4B: Granite 3.1 3B-A800M
+
+The ~4B class holds a second family beside `Qwen3-4B`: IBM's Granite 3.1
+3B-A800M Instruct (`granitemoe`, a MoE of 40 experts, 8 active), entered from
+its candidate gate pass record (`aidd_docs/roster/candidate-records.jsonl`). It
+is taken at `Q4_K_M`, the quant of the class's Qwen entry, so the rows of this
+class compare families, not quants. IBM ships no GGUF of Granite 3.1 3B-A800M,
+so the file is bartowski's quantization of IBM's weights. As above, the roster
+file is the source of truth and a mismatch with this section is a bug.
+
+| Entry id | Repo | Revision | File in the repo | Under `SLM_MODELS_DIR` | Quant | Size |
+| -------- | ---- | -------- | ---------------- | ---------------------- | ----- | ---- |
+| `granite-3.1-3b-a800m-instruct-q4km` | `bartowski/granite-3.1-3b-a800m-instruct-GGUF` | `be9a36f042806cb586bc65556c527079782b78e0` | `granite-3.1-3b-a800m-instruct-Q4_K_M.gguf` | `granite-3.1-3b-a800m-instruct/granite-3.1-3b-a800m-instruct-Q4_K_M.gguf` | `Q4_K_M` | 2,016,888,384 B (1.88 GiB) |
+
+sha256:
+
+```
+granite-3.1-3b-a800m-instruct-q4km   48e0edcd578fd4462f26127f04c651d0e650741110185297741089aea01a82b3
+```
+
+Download it at its pinned revision:
+
+```powershell
+# Windows
+hf download bartowski/granite-3.1-3b-a800m-instruct-GGUF granite-3.1-3b-a800m-instruct-Q4_K_M.gguf `
+  --revision be9a36f042806cb586bc65556c527079782b78e0 `
+  --local-dir <SLM_MODELS_DIR>\granite-3.1-3b-a800m-instruct
+```
+
+```sh
+# POSIX
+hf download bartowski/granite-3.1-3b-a800m-instruct-GGUF granite-3.1-3b-a800m-instruct-Q4_K_M.gguf \
+  --revision be9a36f042806cb586bc65556c527079782b78e0 \
+  --local-dir <SLM_MODELS_DIR>/granite-3.1-3b-a800m-instruct
+```
+
+Verify the checksum:
+
+```powershell
+# Windows -- .ToLower() matters: the roster stores lowercase hex.
+(Get-FileHash -Algorithm SHA256 "<SLM_MODELS_DIR>\granite-3.1-3b-a800m-instruct\granite-3.1-3b-a800m-instruct-Q4_K_M.gguf").Hash.ToLower()
+```
+
+```sh
+# POSIX
+sha256sum <SLM_MODELS_DIR>/granite-3.1-3b-a800m-instruct/granite-3.1-3b-a800m-instruct-Q4_K_M.gguf
+```
+
+The model does not reason, so its entry declares `thinking_control: "none"`
+(the gate verified it with one generation that returned no reasoning): a
+`thinking_policy: disabled` batch sends no switch for it. Granite 3.1 3B-A800M
+fits a 6 GB GPU whole, so it launches with no `--n-cpu-moe`.
+
+### 3.6 The second family and the dense model at ~8B-and-up: Gemma 4 12B
+
+The top class holds a second family and a dense model beside the
+`Qwen3.6-35B-A3B` MoE flagship: Google's Gemma 4 12B it (`gemma4`, dense),
+entered from its candidate gate pass record
+(`aidd_docs/roster/candidate-records.jsonl`). No packager ships it at the
+flagship's `UD-IQ4_XS`, so it is taken at `IQ4_XS`, the nearest quant: the same
+`IQ4_XS` base type without Unsloth Dynamic's per-layer upcasting. The file is
+unsloth's quantization of Google's weights. As above, the roster file is the
+source of truth and a mismatch with this section is a bug.
+
+| Entry id | Repo | Revision | File in the repo | Under `SLM_MODELS_DIR` | Quant | Size |
+| -------- | ---- | -------- | ---------------- | ---------------------- | ----- | ---- |
+| `gemma-4-12b-it-iq4xs` | `unsloth/gemma-4-12b-it-GGUF` | `fc034cfff751157913579611efad8462ac1be606` | `gemma-4-12b-it-IQ4_XS.gguf` | `gemma-4-12b-it/gemma-4-12b-it-IQ4_XS.gguf` | `IQ4_XS` | 6,375,734,080 B (5.94 GiB) |
+
+sha256:
+
+```
+gemma-4-12b-it-iq4xs   b0037d0e0de0290177045ca214b2a0fb1079d18bde57842b3ca32f5b0cd76774
+```
+
+Download it at its pinned revision:
+
+```powershell
+# Windows
+hf download unsloth/gemma-4-12b-it-GGUF gemma-4-12b-it-IQ4_XS.gguf `
+  --revision fc034cfff751157913579611efad8462ac1be606 `
+  --local-dir <SLM_MODELS_DIR>\gemma-4-12b-it
+```
+
+```sh
+# POSIX
+hf download unsloth/gemma-4-12b-it-GGUF gemma-4-12b-it-IQ4_XS.gguf \
+  --revision fc034cfff751157913579611efad8462ac1be606 \
+  --local-dir <SLM_MODELS_DIR>/gemma-4-12b-it
+```
+
+Verify the checksum:
+
+```powershell
+# Windows -- .ToLower() matters: the roster stores lowercase hex.
+(Get-FileHash -Algorithm SHA256 "<SLM_MODELS_DIR>\gemma-4-12b-it\gemma-4-12b-it-IQ4_XS.gguf").Hash.ToLower()
+```
+
+```sh
+# POSIX
+sha256sum <SLM_MODELS_DIR>/gemma-4-12b-it/gemma-4-12b-it-IQ4_XS.gguf
+```
+
+Its chat template carries a thinking switch, so its entry declares
+`thinking_control: {"chat_template_kwargs": {"enable_thinking": false}}`, as the
+Qwen entries do; the gate verified it renders a different prompt with and
+without the switch. The model is dense, so it launches with no `--n-cpu-moe`.
+On the laptop's 6 GB GPU it launched at the declared `-ngl 99`. Its weights
+(6,080 MiB) fit under the GPU's 6,144 MiB on their own, but the KV cache at a
+32,768-token context and the compute buffers come on top, and dedicated memory
+plateaued at 5,959-5,973 MiB. The rest most likely sits in the shared system
+memory the Windows driver falls back to (inferred: the logs hold no
+llama-server buffer lines), so the model runs, and its speed there is not a
+full-offload figure.
+
 ## 4. Configure `.env` and run
 
 ```sh
@@ -359,24 +647,93 @@ copy .env.example .env     # Windows
 Fill `SLM_MODELS_DIR` (the parent directory from step 3) and
 `LLAMA_SERVER_PATH` (the binary path from step 2).
 
-Two more env vars set the host-fitted launch flags that are not part of the
-roster's model data: `SERVER_N_CPU_MOE` and `SERVER_THREADS` (default `8`),
-matching `--n-cpu-moe` and `-t` on this project's own laptop fiche. They
-exist to be overridden on different hardware; leave them unset to reproduce
-the committed reference evidence on comparable hardware.
+`.env.example` ships placeholder values for `MISTRAL_API_KEY`
+(`sk-replace-me`) and `GOOGLE_API_KEY` (`AIza-replace-me`). The quality CLI
+reads any non-empty value as a key, so a placeholder left in place is sent to
+that provider, which rejects it. Until you set real keys at step 4.3, empty
+both lines (`MISTRAL_API_KEY=`, `GOOGLE_API_KEY=`): an empty key skips its
+provider with one stderr line and makes no call.
 
-`SERVER_N_CPU_MOE` has two states, and the difference matters:
+Then name the machine and the compute mode. Both are required and have no
+default: every runtime and quality run refuses before any server starts
+until they are set, and every fiche and row records them.
 
-- **Unset** — the selected entry decides. Its own `validated_host.n_cpu_moe`
-  is used: `37` for the MoE flagship (so its launch command is byte-identical
-  to the validated baseline), and `null` for a dense entry, which puts no
-  `--n-cpu-moe` on the command line at all. This is what a reader following
-  this walkthrough wants, whichever entry they select.
-- **Set** — the operator overrides the entry. A value above an MoE entry's
-  `expert_count` is refused, and **any** value on a dense entry is refused,
-  `SERVER_N_CPU_MOE=0` included: `0` says "offload no experts", which a model
-  with no experts cannot honour. Both refusals name the entry and happen
-  before any process is spawned.
+- `MACHINE_ID` — one of the declared machines in
+  `aidd_docs/roster/machines.json`: `laptop-mobile-gpu`,
+  `tower-desktop-gpu` or `pro-pc-no-gpu`. An id names a declared
+  configuration, not a box: a RAM upgrade or a GPU swap is a new entry with
+  a new id, added to that file before the machine runs anything. An
+  undeclared id is refused, naming the declared ones.
+- `COMPUTE_MODE` — `gpu` or `cpu_only`. `gpu` launches the roster entry's
+  own flag set. `cpu_only` puts every layer on the CPU: it launches with
+  `-ngl 0 --device none` and no `--n-cpu-moe` (the CUDA build still drives
+  the GPU during prompt processing with `-ngl 0` alone), and refuses a
+  `SERVER_N_CPU_MOE` value rather than dropping it. `gpu` on a machine
+  declared GPU-less is refused. A `gpu` run and a `cpu_only` run of one
+  model on one machine produce two fiches and are never compared as a
+  reproduction of each other.
+
+`CAMPAIGN_ID` is optional. Unset, a run belongs to no campaign and every row
+records `campaign_id: "none"`. Set, it names a campaign declaration,
+`aidd_docs/campaigns/<campaign_id>.json` (`CAMPAIGNS_DIR` overrides the
+directory): the run is checked against it before any server starts and
+refused, naming the dimension, when its engine, prompt variant, roster entry,
+suite, machine or compute mode is outside the declaration, when it runs a
+cell the declaration excludes, or when a quality run enables a cloud
+provider. `wave-local-ai-v2-campaign-completeness --campaign <campaign_id>`
+then lists every declared cell and fails naming each one nobody ran.
+
+### Run profiles: the host-fitted launch values
+
+Every (roster entry x machine x compute mode) triple runs under a named run
+profile, `<roster_entry_id>@<machine_id>/<compute_mode>`, declared in the
+tracked registry `aidd_docs/roster/profiles.json`. The registry holds one
+default per (machine, mode) and, under `entries`, only the values a given
+model needs differently, so a new roster entry needs no profile of its own
+unless it differs. Every value is `{value, source, read_from}`: `declared`
+values were read or fitted on the machine, `not_yet_declared` values await
+that read and are never guessed.
+
+One resolution order, applied by `profiles.resolve`; `server.build_flags`, the only flag
+builder, launches the result:
+
+1. **Roster entry default** — the model-intrinsic `server_flags`
+   (`aidd_docs/roster/models.json`), including the default `-ngl`.
+2. **Run profile** — the (machine, mode) default with the entry's own
+   overrides laid over it: `-ngl` (`cpu_only` profiles declare `0`, and the
+   mode adds `--device none`), `--n-cpu-moe` (absent unless declared, so a
+   dense entry carries none) and `-t`.
+3. **Operator override** — `SERVER_N_CPU_MOE` and `SERVER_THREADS`, applied
+   last. Unset, the profile decides. Set, the value replaces the profile's,
+   and every row records it in `profile_overrides` beside the profile's own
+   value, so a row never claims a profile it did not run under.
+
+The declared profile set:
+
+| Machine | Mode | `-ngl` | `--n-cpu-moe` | `-t` |
+| --- | --- | --- | --- | --- |
+| `laptop-mobile-gpu` | `gpu` | roster default (`99`) | none; `37` for `qwen3.6-35b-a3b-ud-iq4xs` | `8` |
+| `laptop-mobile-gpu` | `cpu_only` | `0` (+ `--device none`) | none | `8` |
+| `tower-desktop-gpu` | `gpu` | roster default | none; not yet declared for `qwen3.6-35b-a3b-ud-iq4xs` | not yet declared |
+| `tower-desktop-gpu` | `cpu_only` | `0` (+ `--device none`) | none | not yet declared |
+| `pro-pc-no-gpu` | `cpu_only` | `0` (+ `--device none`) | none | not yet declared |
+
+A run whose triple has no declared profile (for example `gpu` on the
+professional PC) refuses before any server starts, naming the triple and the
+profiles that exist for that entry. A run under a profile with a value not
+yet declared refuses the same way, naming the value and what it awaits,
+unless the operator overrides it (`SERVER_THREADS=6` on the tower, for
+instance), and that row then records the override.
+
+An operator value is still checked against the model: a `SERVER_N_CPU_MOE`
+above an MoE entry's `expert_count` is refused, **any** value on a dense
+entry is refused (`0` included: it says "offload no experts", which a model
+with no experts cannot honour), and any value under `cpu_only` is refused
+naming the mode. Every refusal happens before any process is spawned.
+
+The profile id is on every fiche and every row. On the fiche it is evidence
+like `flags`, outside the hashed projection: renaming a profile does not move
+a fiche hash.
 
 `ROSTER_PATH` (default `aidd_docs/roster/models.json`) and `ROSTER_ENTRY_ID`
 (default `qwen3.6-35b-a3b-ud-iq4xs`) select which of the roster's four
@@ -474,6 +831,31 @@ comparison). A reference fiche written before the engine fields carries
 neither, so it never matches a current run.
 Point `RUNTIME_REFERENCE_PATH` at an empty or absent file to opt out: that
 is `not_comparable`, not a failure.
+
+To decide a re-run against a run of your own (the republication protocol: two
+runs, the second against the first), point the reference path at a file that
+holds only the first run's rows. The first run reads an empty file, so it is
+not compared with the committed bundle; before the second, copy the first
+run's rows from the live store into a file of their own (a runtime run writes
+one line, the store's last; a quality run writes one line per item and
+provider, every line carrying its `run_id`) and set `RUNTIME_REFERENCE_PATH`
+or `QUALITY_REFERENCE_PATH` to it for that invocation only. With the
+committed bundle left as the reference instead, a second run can be decided
+against a published row rather than against its own first.
+
+A quality batch is decided per item against the matching reference batch.
+A `local` subject must reproduce every item's `predicted_label` (or
+`item_score`) exactly. A cloud subject (`mistral`, `google`) is decided under
+its suite's declared `divergence_tolerance` (`suite_data/<suite_id>.json`:
+value, unit `fraction_of_items`, and the reason for the value): `reproduced`
+while the share of diverging items stays within it, `not_reproduced` beyond
+it, and the block's `differing_fields` names the diverging items either way.
+From row schema "29" the block also names `subject_rule` (`identical` or
+`within_tolerance`), the `tolerance` with the `suite_id`/`suite_version` that
+declared it, the observed `divergence`, and `single_run_indicative`: a cloud
+batch sent with no seed is marked `no_seed` and is `not_comparable`, never
+`not_reproduced`; a cloud model whose dated id is no longer served is named
+`model_not_served` on stderr when its pre-flight is refused.
 
 **4.3 — second run, set `MISTRAL_API_KEY` and `GOOGLE_API_KEY` first:**
 
@@ -584,3 +966,108 @@ the Scope-3 estimate has no local counterpart yet for facility overhead or
 hardware amortization, so a Scope-2 number and a Scope-3 number on the same
 dashboard describe different boundaries, not the same thing measured two
 ways. Read `emissions_scope` before comparing any two rows' `emissions_kg`.
+
+## 6. Returning a machine's rows: promote, branch, pull request
+
+Every machine returns its evidence the same way, and the published bundle is
+only ever derived from what came back. The live stores a run appends to
+(`RUNTIME_RESULTS_PATH`, `QUALITY_RESULTS_PATH`) are untracked; each declared
+machine instead owns one tracked location,
+`aidd_docs/results/machines/<machine_id>/`, holding `runtime.jsonl`,
+`quality.jsonl` and `refusals.jsonl`. Its fiches go to the shared, tracked,
+content-addressed registry `aidd_docs/results/fiches/`, where two machines'
+pull requests add different file names and never conflict.
+
+### 6.1 The per-machine loop
+
+1. **Declare.** The machine is an entry of `aidd_docs/roster/machines.json`
+   and every entry it runs has a profile in `aidd_docs/roster/profiles.json`.
+   `MACHINE_ID` and `COMPUTE_MODE` are set in `.env` (section 4).
+2. **Run.** Run the benchmark (section 4). Each invocation is one `run_id`, carried
+   by every row it wrote: the last line of the live store names the latest
+   run. A refused run needs no promotion: the
+   pre-flight already appended its record to the location's `refusals.jsonl`.
+3. **Promote** the runs to publish, by `run_id`:
+
+   ```bash
+   uv run wave-local-ai-v2-promote --run-id <run_id> [--run-id <run_id> ...]
+   ```
+
+   It copies those runs' runtime and quality rows line-for-line into the
+   machine's location and their fiches file-for-file into the tracked
+   registry. It refuses, writing nothing, a `run_id` with no row, a row whose
+   `machine_id` is another machine's (only the machine that produced a row
+   promotes it; a cloud subject's `not_applicable` row travels with the
+   machine that ran it), and a fiche the live registry lacks or that differs
+   from the tracked copy. Promoting the same run twice changes nothing.
+   `--machine` overrides `MACHINE_ID`; `FICHE_REGISTRY_DIR` is where the run
+   wrote its fiches, `TRACKED_FICHE_REGISTRY_DIR` (default
+   `aidd_docs/results/fiches`) where they are published.
+4. **Branch.** One branch per machine and batch, for example
+   `git switch -c results/<machine_id>-<yyyy-mm-dd>`, from an up-to-date
+   `main`.
+5. **Regenerate the bundle on the same branch.** Run
+
+   ```bash
+   uv run wave-local-ai-v2-merge-bundle
+   uv run wave-local-ai-v2-merge-bundle --check
+   ```
+
+   The first command writes `aidd_docs/results/runtime-reference.jsonl`,
+   `quality-reference.jsonl` and `refusals-reference.jsonl` from every
+   location on the branch; the second must print that the committed bundle
+   equals the merge. Commit the machine's location, the new fiche files and
+   the three bundle files together, in one commit. The merge refuses,
+   writing nothing, when two rows claim one fiche hash under two machine ids
+   (it names both rows, both machine ids and the hash, and never chooses),
+   when a row's or a refusal's `machine_id` is not a declared machine, when a
+   row sits in another machine's location, when a row carries no `run_id`,
+   and when one `run_id` appears in two locations.
+6. **Pull request.** Push the branch and open one pull request into `main`.
+   It runs the same check suite as any code change, including the
+   **Derived bundle** step (`wave-local-ai-v2-merge-bundle --check`), which
+   fails when the committed bundle differs from what the merge derives: the
+   bundle is never edited by hand. Merge it once `required` is green.
+7. **If another machine's pull request lands first**, the bundle files
+   conflict. Never resolve that conflict by hand: rebase the branch onto
+   `main`, take `main`'s bundle files, re-run step 5 (`merge-bundle`, then
+   `--check`), amend or add the regenerated bundle, and push again.
+
+The bundle this loop derives replaced the schema-"7" curated snapshot on
+2026-10-04, when the laptop promoted its runs and ran the merge (steps 1 to
+5); that republication lands on `main` inside the night-run's draft pull
+request rather than a laptop branch of its own. The snapshot is kept, never
+edited, as `aidd_docs/results/*-reference.schema-7.jsonl`
+(`aidd_docs/results/README.md`).
+
+### 6.2 Fallback: a machine that cannot push
+
+When a machine cannot push (no git credentials, a managed network), its
+evidence is carried by the operator to a machine that can. It is recorded as
+carried, never passed off as the machine's own push.
+
+1. On the source machine, run steps 1 to 3 of section 6.1 as usual.
+2. Copy `aidd_docs/results/machines/<source_machine_id>/` and every fiche file
+   its rows cite from `aidd_docs/results/fiches/` to removable media.
+3. On the carrying machine, from an up-to-date `main`, create the branch
+   `results/<source_machine_id>-<yyyy-mm-dd>` and copy both into the same
+   paths. Do not promote again there: `MACHINE_ID` on the carrier is the
+   carrier, and its promotion would rightly refuse the source's rows.
+4. Commit with these trailers, exactly (with step 5's bundle files):
+
+   ```text
+   feat(results): promote <source_machine_id> records
+
+   Transport: operator-carried
+   Source-machine: <source_machine_id>
+   Carried-by: <carrying_machine_id>
+   Transport-verification: declared, not verified
+   ```
+
+   The transport is a declaration, under the same declared-not-verified
+   honesty as the energy labels: nothing proves the bytes left the source
+   machine unchanged, and the commit says so.
+5. On the same branch, regenerate and check the bundle (section 6.1 step 5),
+   then commit the three bundle files with the carried location in the same
+   commit as the trailers above. Open the pull request as in step 6; if
+   another pull request lands first, follow step 7.

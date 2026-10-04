@@ -1,0 +1,5 @@
+pre-flight: vram_gb not checked under gpu: roster entry 'qwen3-0.6b-q8' declares no minimum yet (awaits a per-process VRAM peak: the published vram_used_mib is NVML's device-wide used memory (4527 MiB for the 0.6B, whose weights are 0.64 GB), not this model's own need)
+[codecarbon INFO @ 13:24:42] offline tracker init
+[codecarbon WARNING @ 13:24:42] Multiple instances of codecarbon are allowed to run at the same time.
+gen_tok_per_s=214.0 prompt_tok_per_s=13043.8 ttft_ms=114.6 repetitions_n=2 unreliable=False emissions_kg=3.0947527411513296e-06 cost_total=1.0713646420945377e-05 -> aidd_docs\tasks\2026_10\2026_10_02_below-minimum-refusal\evidence\runtime.jsonl
+exit=0

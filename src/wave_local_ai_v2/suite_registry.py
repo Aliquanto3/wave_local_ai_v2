@@ -29,6 +29,11 @@ each item's optional `licence`, `source` and `source_revision`. A declared
 `subset_sampler`, which owns what they mean: a rule it could not replay, or
 items that disagree with it, never load.
 
+The `divergence_tolerance` a cloud subject's re-run is decided under is a
+required declaration, checked by `suite_gate.gate_divergence_tolerance` at
+load and held on the definition; it stays in `extra` too, so the snapshot of
+the suite version that declared it publishes it.
+
 `prompt_set_hash` is never declared in the data: it is computed from the
 items at load, so a hand-edited prompt always moves it.
 """
@@ -46,7 +51,7 @@ from types import MappingProxyType
 from typing import Any
 
 from wave_local_ai_v2 import row_contract, scoring_rules, subset_sampler, suite_gate
-from wave_local_ai_v2.suite_gate import SuiteGateResult
+from wave_local_ai_v2.suite_gate import DivergenceTolerance, SuiteGateResult
 
 SUITE_DATA_DIRNAME = "suite_data"
 
@@ -95,7 +100,25 @@ class SuiteDefinition:
     items: tuple[Mapping[str, Any], ...]
     prompt_set_hash: str
     gate: SuiteGateResult
+    # The per-item divergence a cloud subject's re-run is decided under
+    # (`verdict.quality_verdict`), as the gate checked it.
+    divergence_tolerance: DivergenceTolerance
     extra: Mapping[str, Any] = field(default_factory=lambda: MappingProxyType({}))
+
+    @property
+    def labels(self) -> frozenset[str]:
+        """The suite's label set: every `expected_label` its items carry.
+
+        Derived from all of the suite's items, never from the items one
+        call scores, so a resumed batch parses its missing items' completions
+        against the same closed set an uninterrupted batch does. Empty for a
+        suite whose items carry no label (a graded suite).
+        """
+        return frozenset(
+            str(item["expected_label"])
+            for item in self.items
+            if item.get("expected_label") is not None
+        )
 
     def score_batch(
         self, completions: Sequence[Mapping[str, Any]]
@@ -103,7 +126,12 @@ class SuiteDefinition:
         """Score this suite's items against one batch's completions."""
         # The name was checked against the table when the definition loaded.
         rule = scoring_rules.SCORING_RULES[self.scoring_rule]
-        return rule(self.items, completions, max_output_tokens=self.max_output_tokens)
+        return rule(
+            self.items,
+            completions,
+            max_output_tokens=self.max_output_tokens,
+            labels=self.labels,
+        )
 
     def score_items(
         self,
@@ -117,7 +145,12 @@ class SuiteDefinition:
         over the whole suite.
         """
         rule = scoring_rules.SCORING_RULES[self.scoring_rule]
-        per_item, _ = rule(items, completions, max_output_tokens=self.max_output_tokens)
+        per_item, _ = rule(
+            items,
+            completions,
+            max_output_tokens=self.max_output_tokens,
+            labels=self.labels,
+        )
         return per_item
 
     def aggregate_batch(
@@ -128,6 +161,16 @@ class SuiteDefinition:
         """The suite-level fields over `items` and their per-item fields."""
         # Checked against the table when the definition loaded.
         return scoring_rules.BATCH_AGGREGATES[self.scoring_rule](items, per_item)
+
+    def preflight(self) -> None:
+        """Run the scoring rule's host check, if it declares one.
+
+        Raises before any process starts when the rule cannot score here
+        (the code-generation sandbox absent): the suite refuses to start.
+        """
+        check = scoring_rules.PREFLIGHTS.get(self.scoring_rule)
+        if check is not None:
+            check(self.items)
 
 
 def prompt_set_hash(items: Sequence[Mapping[str, Any]]) -> str:
@@ -219,6 +262,13 @@ def _definition_from_data(data: dict[str, Any], *, origin: str) -> SuiteDefiniti
         )
 
     items = _items(data["items"], origin)
+    item_check = scoring_rules.ITEM_CHECKS.get(rule_name)
+    item_problems = item_check(items) if item_check is not None else []
+    if item_problems:
+        raise SuiteRegistryError(
+            f"suite definition {origin} has items its scoring rule "
+            f"{rule_name!r} cannot score: " + "; ".join(item_problems)
+        )
     _check_selection(data, items, origin)
     # The gate runs on every load and its refusal propagates: no definition
     # object exists for a suite it refuses, including a suite that falls short
@@ -229,6 +279,9 @@ def _definition_from_data(data: dict[str, Any], *, origin: str) -> SuiteDefiniti
         level=data["level"],
         size_target=data.get("size_target"),
         size_target_reason=data.get("size_target_reason"),
+    )
+    divergence_tolerance = suite_gate.gate_divergence_tolerance(
+        data.get(suite_gate.DIVERGENCE_TOLERANCE_KEY)
     )
 
     return SuiteDefinition(
@@ -244,6 +297,7 @@ def _definition_from_data(data: dict[str, Any], *, origin: str) -> SuiteDefiniti
         items=items,
         prompt_set_hash=prompt_set_hash(items),
         gate=gate,
+        divergence_tolerance=divergence_tolerance,
         extra=MappingProxyType(
             {key: value for key, value in data.items() if key not in _CORE_KEYS}
         ),

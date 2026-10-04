@@ -8,6 +8,17 @@ holds its identity, its caps and its 21 items, resolved by id through
 reads and the reasoning behind the declarations the data file cannot carry
 as comments.
 
+A second translation suite stands beside this one at the publication level:
+`suite_data/translation-mixed-domain-wmt24pp.json`, 300 segments drawn from
+WMT24++ by `subset_sampler` (`scripts/wmt24pp_suite.py`), in the same three
+directions and under the same instruction shell and scoring rule. Its items
+are paragraph-level news, social, literary and speech segments rather than
+one business sentence, so its cap is derived from its own references (twice
+the longest under the published subject's tokenizer) instead of this suite's
+128; and its FR->DE and DE->EN sources are translations from English, which
+this suite's natively written sources are not. Its score sits beside this
+suite's as the scale check and is never averaged with it.
+
 Domain: the sentences a consultant's inbox actually carries -- a delivery
 note, a line from a client email, a meeting time, an invoice status. Short,
 professional register, one sentence per item, so a single reference

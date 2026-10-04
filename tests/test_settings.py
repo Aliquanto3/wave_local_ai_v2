@@ -126,7 +126,7 @@ def _minimal_env(monkeypatch, tmp_path: Path) -> None:
 def test_server_n_cpu_moe_unset_resolves_to_none_not_to_the_flagships_value(
     monkeypatch, tmp_path: Path
 ) -> None:
-    """Unset means "the selected entry decides", which is `None`, not `37`.
+    """Unset means "the run profile decides", which is `None`, not `37`.
 
     `37` here would be the MoE flagship's offload value handed to whatever
     entry is selected, and every dense entry would refuse to launch.
@@ -164,6 +164,36 @@ def test_server_n_cpu_moe_still_refuses_an_invalid_value(
     monkeypatch.setenv("SERVER_N_CPU_MOE", value)
 
     with pytest.raises(SettingsError, match="SERVER_N_CPU_MOE"):
+        load_settings()
+
+
+def test_server_threads_unset_resolves_to_none_so_the_run_profile_decides(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """No default thread count: one would be the laptop's, silently reused."""
+    _minimal_env(monkeypatch, tmp_path)
+    monkeypatch.delenv("SERVER_THREADS", raising=False)
+
+    assert load_settings().host_threads is None
+
+
+def test_server_threads_set_is_an_operator_override(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _minimal_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("SERVER_THREADS", "6")
+
+    assert load_settings().host_threads == 6
+
+
+@pytest.mark.parametrize("value", ["0", "not-a-number"])
+def test_server_threads_refuses_an_invalid_value(
+    monkeypatch, tmp_path: Path, value: str
+) -> None:
+    _minimal_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("SERVER_THREADS", value)
+
+    with pytest.raises(SettingsError, match="SERVER_THREADS"):
         load_settings()
 
 
@@ -685,6 +715,19 @@ SERVICE_ENV_VARS = (
     "DASHBOARD_ORIGIN",
     "SERVICE_TLS_CERTFILE",
     "SERVICE_TLS_KEYFILE",
+    "SERVICE_DEMO_MODE",
+    "MACHINE_ID",
+    "LLAMA_SERVER_PATH",
+    "SLM_MODELS_DIR",
+    "PLAYGROUND_MAX_PROMPT_CHARS",
+    "PLAYGROUND_MAX_TOKENS",
+    "PLAYGROUND_CLOUD_SUBJECT",
+    "MISTRAL_API_KEY",
+    "GOOGLE_API_KEY",
+    "MISTRAL_REQUEST_PACING_S",
+    "GOOGLE_REQUEST_PACING_S",
+    "CLOUD_RETRY_MIN_RETRIES",
+    "CLOUD_RETRY_RETRIES_PER_ITEM",
 )
 
 
@@ -866,6 +909,51 @@ def test_load_service_settings_refuses_a_non_integer_schema_floor(
         load_service_settings()
 
 
+def test_load_service_settings_leaves_demo_mode_off_when_unset(
+    monkeypatch, _clean_service_env: None, _tls_env: tuple[Path, Path]
+) -> None:
+    monkeypatch.setenv("SERVICE_API_KEY", "a-key")  # pragma: allowlist secret
+
+    settings = load_service_settings()
+
+    assert settings.demo_mode is False
+    assert settings.machine_id is None
+
+
+@pytest.mark.parametrize(("value", "expected"), [("true", True), ("false", False)])
+def test_load_service_settings_reads_the_two_demo_mode_literals(
+    monkeypatch,
+    _clean_service_env: None,
+    _tls_env: tuple[Path, Path],
+    value: str,
+    expected: bool,
+) -> None:
+    monkeypatch.setenv("SERVICE_API_KEY", "a-key")  # pragma: allowlist secret
+    monkeypatch.setenv("SERVICE_DEMO_MODE", value)
+
+    assert load_service_settings().demo_mode is expected
+
+
+@pytest.mark.parametrize("value", ["maybe", "True", "1", "yes", ""])
+def test_load_service_settings_refuses_any_other_demo_mode_value(
+    monkeypatch, _clean_service_env: None, _tls_env: tuple[Path, Path], value: str
+) -> None:
+    monkeypatch.setenv("SERVICE_API_KEY", "a-key")  # pragma: allowlist secret
+    monkeypatch.setenv("SERVICE_DEMO_MODE", value)
+
+    with pytest.raises(SettingsError, match="SERVICE_DEMO_MODE"):
+        load_service_settings()
+
+
+def test_load_service_settings_reads_the_service_machine_raw(
+    monkeypatch, _clean_service_env: None, _tls_env: tuple[Path, Path]
+) -> None:
+    monkeypatch.setenv("SERVICE_API_KEY", "a-key")  # pragma: allowlist secret
+    monkeypatch.setenv("MACHINE_ID", "laptop-mobile-gpu")
+
+    assert load_service_settings().machine_id == "laptop-mobile-gpu"
+
+
 def test_service_settings_repr_omits_the_api_key(tmp_path: Path) -> None:
     secret = "secret-value"  # pragma: allowlist secret
     settings = ServiceSettings(
@@ -896,3 +984,212 @@ def test_the_loaded_service_settings_repr_omits_the_key(
     monkeypatch.setenv("SERVICE_API_KEY", secret)
 
     assert secret not in repr(load_service_settings())
+
+
+def _run_settings(tmp_path: Path, **overrides: object) -> Settings:
+    return Settings(
+        slm_models_dir=tmp_path,
+        llama_server_path=tmp_path / "llama-server.exe",
+        results_path=tmp_path / "runtime.jsonl",
+        **overrides,  # type: ignore[arg-type]
+    )
+
+
+def test_load_settings_reads_machine_and_mode_with_no_default(
+    monkeypatch, tmp_path: Path
+) -> None:
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    server_path = tmp_path / "llama-server.exe"
+    server_path.write_text("")
+    monkeypatch.setenv("SLM_MODELS_DIR", str(models_dir))
+    monkeypatch.setenv("LLAMA_SERVER_PATH", str(server_path))
+    monkeypatch.delenv("MACHINE_ID", raising=False)
+    monkeypatch.delenv("COMPUTE_MODE", raising=False)
+
+    unset = load_settings()
+    assert (unset.machine_id, unset.compute_mode) == (None, None)
+
+    monkeypatch.setenv("MACHINE_ID", "laptop-mobile-gpu")
+    monkeypatch.setenv("COMPUTE_MODE", "cpu_only")
+    loaded = load_settings()
+    assert (loaded.machine_id, loaded.compute_mode) == (
+        "laptop-mobile-gpu",
+        "cpu_only",
+    )
+
+
+def test_require_run_profile_resolves_a_declared_machine_and_mode(
+    tmp_path: Path,
+) -> None:
+    profile = settings_module.require_run_profile(
+        _run_settings(tmp_path, machine_id="laptop-mobile-gpu", compute_mode="gpu")
+    )
+
+    assert profile.machine_id == "laptop-mobile-gpu"
+    assert profile.compute_mode == "gpu"
+    cpu = settings_module.require_run_profile(
+        _run_settings(tmp_path, machine_id="pro-pc-no-gpu", compute_mode="cpu_only")
+    )
+    assert cpu.machine.gpu_present is False
+
+
+@pytest.mark.parametrize("machine_id", [None, "my-own-box"])
+def test_a_missing_or_undeclared_machine_refuses_naming_the_declared_ids(
+    tmp_path: Path, machine_id: str | None
+) -> None:
+    with pytest.raises(SettingsError, match="MACHINE_ID") as caught:
+        settings_module.require_run_profile(
+            _run_settings(tmp_path, machine_id=machine_id, compute_mode="gpu")
+        )
+
+    for declared in ("laptop-mobile-gpu", "pro-pc-no-gpu", "tower-desktop-gpu"):
+        assert declared in str(caught.value)
+
+
+@pytest.mark.parametrize("compute_mode", [None, "hybrid"])
+def test_a_missing_or_unknown_mode_refuses_naming_both_modes(
+    tmp_path: Path, compute_mode: str | None
+) -> None:
+    with pytest.raises(SettingsError, match="COMPUTE_MODE") as caught:
+        settings_module.require_run_profile(
+            _run_settings(
+                tmp_path, machine_id="laptop-mobile-gpu", compute_mode=compute_mode
+            )
+        )
+
+    assert "gpu" in str(caught.value)
+    assert "cpu_only" in str(caught.value)
+
+
+def test_a_gpu_run_on_a_gpu_less_machine_refuses_naming_it(tmp_path: Path) -> None:
+    with pytest.raises(SettingsError, match="'pro-pc-no-gpu'"):
+        settings_module.require_run_profile(
+            _run_settings(tmp_path, machine_id="pro-pc-no-gpu", compute_mode="gpu")
+        )
+
+
+def test_an_unreadable_machine_registry_refuses(monkeypatch, tmp_path: Path) -> None:
+    from wave_local_ai_v2 import machines
+
+    def broken() -> machines.MachineRegistry:
+        raise machines.MachineRegistryError("gone")
+
+    monkeypatch.setattr(machines, "tracked_registry", broken)
+    with pytest.raises(SettingsError, match="machine registry cannot be read"):
+        settings_module.require_run_profile(
+            _run_settings(tmp_path, machine_id="laptop-mobile-gpu", compute_mode="gpu")
+        )
+
+
+def test_load_service_settings_defaults_the_playground_and_needs_no_install(
+    monkeypatch, _clean_service_env: None, _tls_env: tuple[Path, Path]
+) -> None:
+    monkeypatch.setenv("SERVICE_API_KEY", "a-key")  # pragma: allowlist secret
+
+    settings = load_service_settings()
+
+    assert settings.llama_server_path is None
+    assert settings.slm_models_dir is None
+    assert settings.playground_max_prompt_chars == 4000
+    assert settings.playground_max_tokens == 512
+
+
+def test_load_service_settings_reads_the_playground_install_and_caps(
+    monkeypatch, _clean_service_env: None, _tls_env: tuple[Path, Path]
+) -> None:
+    monkeypatch.setenv("SERVICE_API_KEY", "a-key")  # pragma: allowlist secret
+    monkeypatch.setenv("LLAMA_SERVER_PATH", "C:/llama/llama-server.exe")
+    monkeypatch.setenv("SLM_MODELS_DIR", "D:/models")
+    monkeypatch.setenv("PLAYGROUND_MAX_PROMPT_CHARS", "100")
+    monkeypatch.setenv("PLAYGROUND_MAX_TOKENS", "64")
+
+    settings = load_service_settings()
+
+    # Never existence-checked: the playground route reports a missing install.
+    assert settings.llama_server_path == Path("C:/llama/llama-server.exe")
+    assert settings.slm_models_dir == Path("D:/models")
+    assert settings.playground_max_prompt_chars == 100
+    assert settings.playground_max_tokens == 64
+
+
+@pytest.mark.parametrize(
+    "env_var", ["PLAYGROUND_MAX_PROMPT_CHARS", "PLAYGROUND_MAX_TOKENS"]
+)
+@pytest.mark.parametrize("value", ["0", "many"])
+def test_load_service_settings_refuses_a_playground_cap_below_one(
+    monkeypatch,
+    _clean_service_env: None,
+    _tls_env: tuple[Path, Path],
+    env_var: str,
+    value: str,
+) -> None:
+    monkeypatch.setenv("SERVICE_API_KEY", "a-key")  # pragma: allowlist secret
+    monkeypatch.setenv(env_var, value)
+
+    with pytest.raises(SettingsError, match=env_var):
+        load_service_settings()
+
+
+def test_holding_a_benchmark_key_enables_no_playground_cloud_subject(
+    monkeypatch, _clean_service_env: None, _tls_env: tuple[Path, Path]
+) -> None:
+    monkeypatch.setenv("SERVICE_API_KEY", "a-key")  # pragma: allowlist secret
+    monkeypatch.setenv("MISTRAL_API_KEY", "m-key")  # pragma: allowlist secret
+    monkeypatch.setenv("GOOGLE_API_KEY", "g-key")  # pragma: allowlist secret
+
+    assert load_service_settings().playground_cloud is None
+
+
+@pytest.mark.parametrize(
+    ("raw", "key_var", "pacing"),
+    [
+        ("mistral:mistral-small-2603", "MISTRAL_API_KEY", 1.1),
+        ("google:gemini-3.5-flash-lite", "GOOGLE_API_KEY", 4.1),
+    ],
+)
+def test_the_playground_cloud_subject_names_provider_model_and_the_benchmark_rules(
+    monkeypatch,
+    _clean_service_env: None,
+    _tls_env: tuple[Path, Path],
+    raw: str,
+    key_var: str,
+    pacing: float,
+) -> None:
+    monkeypatch.setenv("SERVICE_API_KEY", "a-key")  # pragma: allowlist secret
+    monkeypatch.setenv("PLAYGROUND_CLOUD_SUBJECT", raw)
+    monkeypatch.setenv(key_var, "p-key")  # pragma: allowlist secret
+
+    cloud = load_service_settings().playground_cloud
+
+    assert cloud is not None
+    assert (cloud.provider, cloud.model) == tuple(raw.split(":"))
+    assert cloud.api_key == "p-key"  # pragma: allowlist secret
+    assert cloud.pacing_s == pacing
+    # A one-item batch's budget under the default CLOUD_RETRY_* settings.
+    assert cloud.max_retries == 4
+    assert "p-key" not in repr(cloud)
+
+
+@pytest.mark.parametrize(
+    ("raw", "match"),
+    [
+        ("openai:gpt", "names no known provider"),
+        ("mistral", "pinned to 'mistral-small-2603'"),
+        ("mistral:mistral-small-latest", "pinned to 'mistral-small-2603'"),
+        ("google:gemini-3.5-flash-lite", "GOOGLE_API_KEY is not set"),
+    ],
+)
+def test_a_misconfigured_playground_cloud_subject_refuses_service_start(
+    monkeypatch,
+    _clean_service_env: None,
+    _tls_env: tuple[Path, Path],
+    raw: str,
+    match: str,
+) -> None:
+    monkeypatch.setenv("SERVICE_API_KEY", "a-key")  # pragma: allowlist secret
+    monkeypatch.setenv("MISTRAL_API_KEY", "m-key")  # pragma: allowlist secret
+    monkeypatch.setenv("PLAYGROUND_CLOUD_SUBJECT", raw)
+
+    with pytest.raises(SettingsError, match=match):
+        load_service_settings()

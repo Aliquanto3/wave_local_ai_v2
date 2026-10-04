@@ -1,0 +1,1190 @@
+time=2026-10-04T00:20:39.771+02:00 level=INFO source=routes.go:2117 msg="server config" env="map[CUDA_VISIBLE_DEVICES: GGML_VK_VISIBLE_DEVICES: GPU_DEVICE_ORDINAL: HIP_VISIBLE_DEVICES: HSA_OVERRIDE_GFX_VERSION: HTTPS_PROXY: HTTP_PROXY: LLAMA_ARG_FIT: LLAMA_ARG_FIT_TARGET: NO_PROXY: OLLAMA_CONTEXT_LENGTH:0 OLLAMA_CREATE_REMOTE:false OLLAMA_DEBUG:DEBUG OLLAMA_DEBUG_LOG_REQUESTS:true OLLAMA_EDITOR: OLLAMA_FLASH_ATTENTION:true OLLAMA_GO_TEMPLATE:true OLLAMA_GPU_OVERHEAD:0 OLLAMA_HOST:http://127.0.0.1:11500 OLLAMA_IGPU_ENABLE: OLLAMA_KEEP_ALIVE:5m0s OLLAMA_KV_CACHE_TYPE: OLLAMA_LLM_LIBRARY: OLLAMA_LOAD_TIMEOUT:5m0s OLLAMA_MAX_LOADED_MODELS:0 OLLAMA_MAX_QUEUE:512 OLLAMA_MAX_TRANSFER_STREAMS:4 OLLAMA_MODELS:D:\\ia\\ollama-v0.35.1-models OLLAMA_NOHISTORY:false OLLAMA_NOPRUNE:false OLLAMA_NO_CLOUD:false OLLAMA_NUM_PARALLEL:1 OLLAMA_ORIGINS:[http://localhost https://localhost http://localhost:* https://localhost:* http://127.0.0.1 https://127.0.0.1 http://127.0.0.1:* https://127.0.0.1:* http://0.0.0.0 https://0.0.0.0 http://0.0.0.0:* https://0.0.0.0:* app://* file://* tauri://* vscode-webview://* vscode-file://*] OLLAMA_REMOTES:[ollama.com] OLLAMA_SCHED_SPREAD:false OLLAMA_VULKAN:true ROCR_VISIBLE_DEVICES:]"
+time=2026-10-04T00:20:39.799+02:00 level=INFO source=routes.go:2119 msg="Ollama cloud disabled: false"
+time=2026-10-04T00:20:39.801+02:00 level=INFO source=images.go:947 msg="total blobs: 0"
+time=2026-10-04T00:20:39.801+02:00 level=INFO source=images.go:955 msg="total unused blobs removed: 0"
+time=2026-10-04T00:20:39.802+02:00 level=INFO source=inference_request_log.go:44 msg="request debug logging enabled; inference request logs will be stored in C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842 and include request bodies and replay curl commands"
+time=2026-10-04T00:20:39.803+02:00 level=DEBUG source=model_recommendations.go:57 msg="starting model recommendations cache" default_recommendations=6 refresh_interval=4h0m0s fetch_timeout=3s
+time=2026-10-04T00:20:39.803+02:00 level=DEBUG source=model_show_cache.go:128 msg="starting model show cache"
+time=2026-10-04T00:20:39.803+02:00 level=INFO source=routes.go:2177 msg="Listening on 127.0.0.1:11500 (version 0.35.1)"
+time=2026-10-04T00:20:39.803+02:00 level=DEBUG source=sched.go:220 msg="starting llm scheduler"
+time=2026-10-04T00:20:39.804+02:00 level=DEBUG source=model_recommendations.go:265 msg="loaded model recommendations snapshot" path=C:\Users\Anael\.ollama\cache\model-recommendations.json count=5
+time=2026-10-04T00:20:39.805+02:00 level=DEBUG source=model_recommendations.go:192 msg="refreshing model recommendations from remote" url=https://ollama.com/api/experimental/model-recommendations
+time=2026-10-04T00:20:39.805+02:00 level=INFO source=runner.go:60 msg="discovering available GPUs..."
+time=2026-10-04T00:20:40.030+02:00 level=DEBUG source=model_recommendations.go:228 msg="model recommendations refreshed" count=5
+time=2026-10-04T00:20:40.034+02:00 level=DEBUG source=model_recommendations.go:305 msg="persisted model recommendations snapshot" path=C:\Users\Anael\.ollama\cache\model-recommendations.json count=5
+time=2026-10-04T00:20:40.035+02:00 level=INFO source=model_recommendations.go:177 msg="model recommendations cache sleep scheduled" wait=3h28m1.559004441s consecutive_failures=0
+time=2026-10-04T00:20:41.154+02:00 level=DEBUG source=llama_server.go:121 msg="llama-server discovery: stopped subprocess after collecting GPU info" exit=1 libDirs="[D:\\ia\\ollama-v0.35.1\\lib\\ollama D:\\ia\\ollama-v0.35.1\\lib\\ollama\\cuda_v12]"
+time=2026-10-04T00:20:42.064+02:00 level=DEBUG source=llama_server.go:52 msg="llama-server device discovery took" duration=2.2406365s libDirs="[D:\\ia\\ollama-v0.35.1\\lib\\ollama D:\\ia\\ollama-v0.35.1\\lib\\ollama\\cuda_v12]"
+time=2026-10-04T00:20:42.064+02:00 level=DEBUG source=runner.go:494 msg="bootstrap discovery took" duration=2.2411635s OLLAMA_LIBRARY_PATH="[D:\\ia\\ollama-v0.35.1\\lib\\ollama D:\\ia\\ollama-v0.35.1\\lib\\ollama\\cuda_v12]" extra_envs=map[]
+time=2026-10-04T00:20:42.746+02:00 level=DEBUG source=llama_server.go:121 msg="llama-server discovery: stopped subprocess after collecting GPU info" exit=1 libDirs="[D:\\ia\\ollama-v0.35.1\\lib\\ollama D:\\ia\\ollama-v0.35.1\\lib\\ollama\\cuda_v13]"
+time=2026-10-04T00:20:43.982+02:00 level=DEBUG source=llama_server.go:52 msg="llama-server device discovery took" duration=1.9171999s libDirs="[D:\\ia\\ollama-v0.35.1\\lib\\ollama D:\\ia\\ollama-v0.35.1\\lib\\ollama\\cuda_v13]"
+time=2026-10-04T00:20:43.982+02:00 level=DEBUG source=runner.go:494 msg="bootstrap discovery took" duration=1.9182508s OLLAMA_LIBRARY_PATH="[D:\\ia\\ollama-v0.35.1\\lib\\ollama D:\\ia\\ollama-v0.35.1\\lib\\ollama\\cuda_v13]" extra_envs=map[]
+time=2026-10-04T00:20:43.984+02:00 level=DEBUG source=vulkan_windows.go:37 msg="selected windows Vulkan loader" path=C:\WINDOWS\system32\vulkan-1.dll
+time=2026-10-04T00:20:44.975+02:00 level=DEBUG source=llama_server.go:121 msg="llama-server discovery: stopped subprocess after collecting GPU info" exit=1 libDirs="[D:\\ia\\ollama-v0.35.1\\lib\\ollama D:\\ia\\ollama-v0.35.1\\lib\\ollama\\vulkan]"
+time=2026-10-04T00:20:45.438+02:00 level=DEBUG source=vulkan_windows.go:37 msg="selected windows Vulkan loader" path=C:\WINDOWS\system32\vulkan-1.dll
+time=2026-10-04T00:20:45.930+02:00 level=DEBUG source=llama_server.go:380 msg="skipping Vulkan native metadata with mismatched device name" llama_server_name="AMD Radeon(TM) Graphics" native_name="NVIDIA GeForce RTX 3060 Laptop GPU"
+time=2026-10-04T00:20:45.930+02:00 level=DEBUG source=llama_server.go:380 msg="skipping Vulkan native metadata with mismatched device name" llama_server_name="NVIDIA GeForce RTX 3060 Laptop GPU" native_name="AMD Radeon(TM) Graphics"
+time=2026-10-04T00:20:46.085+02:00 level=DEBUG source=vulkan.go:138 msg="windows vulkan device refinement applied" devices=2
+time=2026-10-04T00:20:46.085+02:00 level=DEBUG source=llama_server.go:52 msg="llama-server device discovery took" duration=2.1022282s libDirs="[D:\\ia\\ollama-v0.35.1\\lib\\ollama D:\\ia\\ollama-v0.35.1\\lib\\ollama\\vulkan]"
+time=2026-10-04T00:20:46.086+02:00 level=DEBUG source=runner.go:494 msg="bootstrap discovery took" duration=2.1034903s OLLAMA_LIBRARY_PATH="[D:\\ia\\ollama-v0.35.1\\lib\\ollama D:\\ia\\ollama-v0.35.1\\lib\\ollama\\vulkan]" extra_envs=map[]
+time=2026-10-04T00:20:46.086+02:00 level=INFO source=runner.go:405 msg="dropping integrated GPU; to enable, set OLLAMA_IGPU_ENABLE=1" id=0 library=Vulkan compute=0.0 name=Vulkan0 description="AMD Radeon(TM) Graphics" pci_id=""
+time=2026-10-04T00:20:46.086+02:00 level=DEBUG source=runner.go:131 msg="evaluating which, if any, devices to filter out" initial_count=2
+time=2026-10-04T00:20:46.086+02:00 level=DEBUG source=runner.go:153 msg="verifying if device is supported" library=D:\ia\ollama-v0.35.1\lib\ollama\cuda_v12 description="NVIDIA GeForce RTX 3060 Laptop GPU" compute=8.6 id=0 pci_id=0000:01:00.0
+time=2026-10-04T00:20:46.403+02:00 level=DEBUG source=llama_server.go:121 msg="llama-server discovery: stopped subprocess after collecting GPU info" exit=1 libDirs="[D:\\ia\\ollama-v0.35.1\\lib\\ollama D:\\ia\\ollama-v0.35.1\\lib\\ollama\\cuda_v12]"
+time=2026-10-04T00:20:47.314+02:00 level=DEBUG source=llama_server.go:52 msg="llama-server device discovery took" duration=1.2264766s libDirs="[D:\\ia\\ollama-v0.35.1\\lib\\ollama D:\\ia\\ollama-v0.35.1\\lib\\ollama\\cuda_v12]"
+time=2026-10-04T00:20:47.314+02:00 level=DEBUG source=runner.go:494 msg="bootstrap discovery took" duration=1.2275022s OLLAMA_LIBRARY_PATH="[D:\\ia\\ollama-v0.35.1\\lib\\ollama D:\\ia\\ollama-v0.35.1\\lib\\ollama\\cuda_v12]" extra_envs="map[CUDA_VISIBLE_DEVICES:0 GGML_CUDA_INIT:1]"
+time=2026-10-04T00:20:47.314+02:00 level=DEBUG source=runner.go:200 msg="adjusting filtering IDs" FilterID=0 new_ID=0
+time=2026-10-04T00:20:47.314+02:00 level=DEBUG source=runner.go:200 msg="adjusting filtering IDs" FilterID=1 new_ID=0
+time=2026-10-04T00:20:47.314+02:00 level=DEBUG source=runner.go:235 msg="dropping duplicate device" id=0 library=Vulkan compute=0.0 name=Vulkan1 description="NVIDIA GeForce RTX 3060 Laptop GPU" libdirs=D:\ia\ollama-v0.35.1\lib\ollama,D:\ia\ollama-v0.35.1\lib\ollama\vulkan driver=0.0 pci_id="" type=discrete total="5.9 GiB" available="5.1 GiB"
+time=2026-10-04T00:20:47.315+02:00 level=DEBUG source=runner.go:42 msg="GPU bootstrap discovery took" duration=7.5120994s
+time=2026-10-04T00:20:47.315+02:00 level=INFO source=types.go:32 msg="inference compute" id=0 filter_id=0 library=CUDA compute=8.6 name=CUDA0 description="NVIDIA GeForce RTX 3060 Laptop GPU" libdirs=ollama,cuda_v12 driver=12.8 pci_id=0000:01:00.0 type=discrete total="6.0 GiB" available="5.0 GiB"
+time=2026-10-04T00:20:47.315+02:00 level=INFO source=routes.go:2227 msg="vram-based default context" total_vram="6.0 GiB" default_num_ctx=4096
+time=2026-10-04T00:20:48.839+02:00 level=DEBUG source=model.go:111 msg="template detection" error="no matching template found" template="{%- if tools %}\n    {{- '<|im_start|>system\\n' }}\n    {%- if messages[0].role == 'system' %}\n        {{- messages[0].content + '\\n\\n' }}\n    {%- endif %}\n    {{- \"# Tools\\n\\nYou may call one or more functions to assist with the user query.\\n\\nYou are provided with function signatures within <tools></tools> XML tags:\\n<tools>\" }}\n    {%- for tool in tools %}\n        {{- \"\\n\" }}\n        {{- tool | tojson }}\n    {%- endfor %}\n    {{- \"\\n</tools>\\n\\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\\n<tool_call>\\n{\\\"name\\\": <function-name>, \\\"arguments\\\": <args-json-object>}\\n</tool_call><|im_end|>\\n\" }}\n{%- else %}\n    {%- if messages[0].role == 'system' %}\n        {{- '<|im_start|>system\\n' + messages[0].content + '<|im_end|>\\n' }}\n    {%- endif %}\n{%- endif %}\n{%- set ns = namespace(multi_step_tool=true, last_query_index=messages|length - 1) %}\n{%- for index in range(ns.last_query_index, -1, -1) %}\n    {%- set message = messages[index] %}\n    {%- if ns.multi_step_tool and message.role == \"user\" and not('<tool_response>' in message.content and '</tool_response>' in message.content) %}\n        {%- set ns.multi_step_tool = false %}\n        {%- set ns.last_query_index = index %}\n    {%- endif %}\n{%- endfor %}\n{%- for message in messages %}\n    {%- if (message.role == \"user\") or (message.role == \"system\" and not loop.first) %}\n        {{- '<|im_start|>' + message.role + '\\n' + message.content + '<|im_end|>' + '\\n' }}\n    {%- elif message.role == \"assistant\" %}\n        {%- set content = message.content %}\n        {%- set reasoning_content = '' %}\n        {%- if message.reasoning_content is defined and message.reasoning_content is not none %}\n            {%- set reasoning_content = message.reasoning_content %}\n        {%- else %}\n            {%- if '</think>' in message.content %}\n                {%- set content = message.content.split('</think>')[-1].lstrip('\\n') %}\n                {%- set reasoning_content = message.content.split('</think>')[0].rstrip('\\n').split('<think>')[-1].lstrip('\\n') %}\n            {%- endif %}\n        {%- endif %}\n        {%- if loop.index0 > ns.last_query_index %}\n            {%- if loop.last or (not loop.last and reasoning_content) %}\n                {{- '<|im_start|>' + message.role + '\\n<think>\\n' + reasoning_content.strip('\\n') + '\\n</think>\\n\\n' + content.lstrip('\\n') }}\n            {%- else %}\n                {{- '<|im_start|>' + message.role + '\\n' + content }}\n            {%- endif %}\n        {%- else %}\n            {{- '<|im_start|>' + message.role + '\\n' + content }}\n        {%- endif %}\n        {%- if message.tool_calls %}\n            {%- for tool_call in message.tool_calls %}\n                {%- if (loop.first and content) or (not loop.first) %}\n                    {{- '\\n' }}\n                {%- endif %}\n                {%- if tool_call.function %}\n                    {%- set tool_call = tool_call.function %}\n                {%- endif %}\n                {{- '<tool_call>\\n{\"name\": \"' }}\n                {{- tool_call.name }}\n                {{- '\", \"arguments\": ' }}\n                {%- if tool_call.arguments is string %}\n                    {{- tool_call.arguments }}\n                {%- else %}\n                    {{- tool_call.arguments | tojson }}\n                {%- endif %}\n                {{- '}\\n</tool_call>' }}\n            {%- endfor %}\n        {%- endif %}\n        {{- '<|im_end|>\\n' }}\n    {%- elif message.role == \"tool\" %}\n        {%- if loop.first or (messages[loop.index0 - 1].role != \"tool\") %}\n            {{- '<|im_start|>user' }}\n        {%- endif %}\n        {{- '\\n<tool_response>\\n' }}\n        {{- message.content }}\n        {{- '\\n</tool_response>' }}\n        {%- if loop.last or (messages[loop.index0 + 1].role != \"tool\") %}\n            {{- '<|im_end|>\\n' }}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{%- if add_generation_prompt %}\n    {{- '<|im_start|>assistant\\n' }}\n    {%- if enable_thinking is defined and enable_thinking is false %}\n        {{- '<think>\\n\\n</think>\\n\\n' }}\n    {%- endif %}\n{%- endif %}"
+time=2026-10-04T00:20:49.045+02:00 level=DEBUG source=runner.go:272 msg="refreshing free memory"
+time=2026-10-04T00:20:49.045+02:00 level=DEBUG source=runner.go:336 msg="unable to refresh all GPUs with existing runners, performing bootstrap discovery"
+time=2026-10-04T00:20:50.101+02:00 level=DEBUG source=llama_server.go:121 msg="llama-server discovery: stopped subprocess after collecting GPU info" exit=1 libDirs="[D:\\ia\\ollama-v0.35.1\\lib\\ollama D:\\ia\\ollama-v0.35.1\\lib\\ollama\\cuda_v12]"
+time=2026-10-04T00:20:51.113+02:00 level=DEBUG source=llama_server.go:52 msg="llama-server device discovery took" duration=2.0671847s libDirs="[D:\\ia\\ollama-v0.35.1\\lib\\ollama D:\\ia\\ollama-v0.35.1\\lib\\ollama\\cuda_v12]"
+time=2026-10-04T00:20:51.113+02:00 level=DEBUG source=runner.go:494 msg="bootstrap discovery took" duration=2.0671847s OLLAMA_LIBRARY_PATH="[D:\\ia\\ollama-v0.35.1\\lib\\ollama D:\\ia\\ollama-v0.35.1\\lib\\ollama\\cuda_v12]" extra_envs=map[CUDA_VISIBLE_DEVICES:0]
+time=2026-10-04T00:20:51.113+02:00 level=DEBUG source=runner.go:42 msg="overall device VRAM discovery took" duration=2.0682305s
+time=2026-10-04T00:20:51.113+02:00 level=DEBUG source=sched.go:295 msg="updating default concurrency" OLLAMA_MAX_LOADED_MODELS=3 gpu_count=1
+time=2026-10-04T00:20:51.113+02:00 level=DEBUG source=sched.go:304 msg="loading first model" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:20:51.144+02:00 level=INFO source=sched.go:1152 msg="disabling mmap for llama-server load by default" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 reason=windows_cuda
+time=2026-10-04T00:20:51.144+02:00 level=INFO source=server.go:100 msg="using llama-server for model" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:20:51.154+02:00 level=INFO source=llama_server.go:436 msg="starting llama-server" cmd="D:\\ia\\ollama-v0.35.1\\lib\\ollama\\llama-server.exe --model D:\\ia\\ollama-v0.35.1-models\\blobs\\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 --port 51964 --host 127.0.0.1 --no-webui --offline -c 32768 -np 1 --log-verbosity 4 --no-log-prefix --no-log-timestamps --load-mode none --flash-attn on -b 512 -ub 512 -ngl 99"
+time=2026-10-04T00:20:51.154+02:00 level=DEBUG source=llama_server.go:437 msg=subprocess CUDA_PATH="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.6" CUDA_PATH_V12_6="C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.6" PATH="D:\\ia\\ollama-v0.35.1\\lib\\ollama;D:\\ia\\ollama-v0.35.1\\lib\\ollama\\cuda_v12;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.6\\bin;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.6\\libnvvp;C:\\Windows\\system32;C:\\Windows;C:\\Windows\\System32\\Wbem;C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\;C:\\Windows\\System32\\OpenSSH\\;C:\\Program Files (x86)\\NVIDIA Corporation\\PhysX\\Common;C:\\WINDOWS\\system32;C:\\WINDOWS;C:\\WINDOWS\\System32\\Wbem;C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\;C:\\WINDOWS\\System32\\OpenSSH\\;C:\\Program Files\\dotnet\\;C:\\Program Files\\Git\\cmd;C:\\Program Files\\NVIDIA Corporation\\NVIDIA app\\NvDLISR;C:\\Program Files\\Microsoft SQL Server\\Client SDK\\ODBC\\170\\Tools\\Binn\\;C:\\Program Files\\NVIDIA Corporation\\Nsight Compute 2024.3.2\\;C:\\Program Files\\nodejs\\;C:\\Program Files\\gs\\gs10.05.1\\bin;C:\\Program Files\\GitHub CLI\\;C:\\Program Files\\Docker\\Docker\\resources\\bin;C:\\Users\\Anael\\AppData\\Local\\Microsoft\\WindowsApps;C:\\Users\\Anael\\AppData\\Local\\Programs\\Microsoft VS Code\\bin;C:\\Program Files\\JetBrains\\IntelliJ IDEA Community Edition 2023.1.4\\bin;C:\\Users\\Anael\\.dotnet\\tools;C:\\Users\\Anael\\AppData\\Local\\Programs\\Ollama;C:\\Users\\Anael\\AppData\\Local\\Packages\\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\\LocalCache\\local-packages;C:\\Users\\Anael\\.cache\\lm-studio\\bin;C:\\Users\\Anael\\AppData\\Roaming\\npm;C:\\Users\\Anael\\.local\\bin;C:\\Users\\Anael\\AppData\\Local\\Python\\bin" CUDA_VISIBLE_DEVICES=0 GGML_BACKEND_PATH=D:\ia\ollama-v0.35.1\lib\ollama\cuda_v12\ggml-cuda.dll
+time=2026-10-04T00:20:51.208+02:00 level=INFO source=sched.go:618 msg="system memory" total="31.4 GiB" free="15.5 GiB" free_swap="24.0 GiB"
+time=2026-10-04T00:20:51.208+02:00 level=INFO source=sched.go:625 msg="gpu memory" id=0 library=CUDA available="4.6 GiB" free="5.0 GiB" minimum="457.0 MiB" overhead="0 B"
+time=2026-10-04T00:20:51.208+02:00 level=INFO source=llama_server.go:1054 msg="loading model via llama-server" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:20:51.208+02:00 level=INFO source=llama_server.go:1307 msg="waiting for llama-server to start responding"
+time=2026-10-04T00:20:51.210+02:00 level=INFO source=llama_server.go:1362 msg="waiting for llama-server to become available" status="llm server error"
+load_backend: loaded CPU backend from D:\ia\ollama-v0.35.1\lib\ollama\ggml-cpu-haswell.dll
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6143 MiB):
+  Device 0: NVIDIA GeForce RTX 3060 Laptop GPU, compute capability 8.6, VMM: yes, VRAM: 6143 MiB
+load_backend: loaded CUDA backend from D:\ia\ollama-v0.35.1\lib\ollama\cuda_v12\ggml-cuda.dll
+srv  llama_server: initializing ...
+cmn  common_param: common_params_print_info: build 1 (6f767fe96) with Clang 18.1.8 for Windows AMD64
+cmn  common_param: common_params_print_info: verbosity = 4 (adjust with the `-lv N` CLI arg)
+cmn  common_param: device_info:
+cmn  common_param:   - CPU     : AMD Ryzen 7 5800H with Radeon Graphics          (32157 MiB, 15766 MiB free)
+cmn  common_param:   - CUDA0   : NVIDIA GeForce RTX 3060 Laptop GPU (6143 MiB, 5122 MiB free)
+cmn  common_param: system_info: n_threads = 8 (n_threads_batch = 8) / 16 | CPU : SSE3 = 1 | SSSE3 = 1 | AVX = 1 | AVX2 = 1 | F16C = 1 | FMA = 1 | BMI2 = 1 | LLAMAFILE = 1 | OPENMP = 1 | REPACK = 1 | CUDA : ARCHS = 500,520,600,610,700,750,800,860,890,900,1200 | USE_GRAPHS = 1 | FA_QUANTS = q4_0-q4_0,q8_0-q8_0,f16-f16,bf16-bf16 | 
+srv  init_listene: The UI is disabled
+srv  init_listene: Use --ui/--no-ui (or deprecated --webui/--no-webui) to enable/disable
+srv          init: using 15 threads for HTTP server
+srv  llama_server: security: no API key is set and CORS allows all origins (see https://github.com/ggml-org/llama.cpp/pull/25655)
+srv    load_model: loading model 'D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031'
+srv    load_model: local path 'D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031'
+cmn  common_init_: fitting params to device memory ...
+cmn  common_init_: (for bugs during this step try to reproduce them with -fit off, or provide --verbose logs if the bug only occurs with -fit on)
+common_params_fit_impl: getting device memory data for initial parameters:
+time=2026-10-04T00:20:51.713+02:00 level=INFO source=llama_server.go:1362 msg="waiting for llama-server to become available" status="llm server loading model"
+common_memory_breakdown_print: | memory breakdown [MiB]          | total   free    self   model   context   compute    unaccounted |
+common_memory_breakdown_print: |   - CUDA0 (RTX 3060 Laptop GPU) |  6143 = 5122 + (4246 =   604 +    3584 +      58) +       -3224 |
+common_memory_breakdown_print: |   - Host                        |                  193 =   157 +       0 +      36                |
+common_params_fit_impl: projected to use 4246 MiB of device memory vs. 5122 MiB of free device memory
+common_params_fit_impl: cannot meet free memory target of 1024 MiB, need to reduce device memory by 148 MiB
+common_params_fit_impl: context size set by user to 32768 -> no change
+common_fit_params: failed to fit params to free device memory: n_gpu_layers already set by user to 99, abort
+common_fit_params: fitting params to free memory took 0.25 seconds
+llama_model_loader: loaded meta data with 28 key-value pairs and 310 tensors from D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 (version GGUF V3 (latest))
+llama_model_loader: Dumping metadata keys/values. Note: KV overrides do not apply in this output.
+llama_model_loader: - kv   0:                       general.architecture str              = qwen3
+llama_model_loader: - kv   1:                               general.type str              = model
+llama_model_loader: - kv   2:                               general.name str              = Qwen3 0.6B Instruct
+llama_model_loader: - kv   3:                           general.finetune str              = Instruct
+llama_model_loader: - kv   4:                           general.basename str              = Qwen3
+llama_model_loader: - kv   5:                         general.size_label str              = 0.6B
+llama_model_loader: - kv   6:                          qwen3.block_count u32              = 28
+llama_model_loader: - kv   7:                       qwen3.context_length u32              = 40960
+llama_model_loader: - kv   8:                     qwen3.embedding_length u32              = 1024
+llama_model_loader: - kv   9:                  qwen3.feed_forward_length u32              = 3072
+llama_model_loader: - kv  10:                 qwen3.attention.head_count u32              = 16
+llama_model_loader: - kv  11:              qwen3.attention.head_count_kv u32              = 8
+llama_model_loader: - kv  12:                       qwen3.rope.freq_base f32              = 1000000.000000
+llama_model_loader: - kv  13:     qwen3.attention.layer_norm_rms_epsilon f32              = 0.000001
+llama_model_loader: - kv  14:                 qwen3.attention.key_length u32              = 128
+llama_model_loader: - kv  15:               qwen3.attention.value_length u32              = 128
+llama_model_loader: - kv  16:                       tokenizer.ggml.model str              = gpt2
+llama_model_loader: - kv  17:                         tokenizer.ggml.pre str              = qwen2
+llama_model_loader: - kv  18:                      tokenizer.ggml.tokens arr[str,151936]  = ["!", "\"", "#", "$", "%", "&", "'", ...
+llama_model_loader: - kv  19:                  tokenizer.ggml.token_type arr[i32,151936]  = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, ...
+llama_model_loader: - kv  20:                      tokenizer.ggml.merges arr[str,151387]  = ["Ġ Ġ", "ĠĠ ĠĠ", "i n", "Ġ t",...
+llama_model_loader: - kv  21:                tokenizer.ggml.eos_token_id u32              = 151645
+llama_model_loader: - kv  22:            tokenizer.ggml.padding_token_id u32              = 151643
+llama_model_loader: - kv  23:                tokenizer.ggml.bos_token_id u32              = 151643
+llama_model_loader: - kv  24:               tokenizer.ggml.add_bos_token bool             = false
+llama_model_loader: - kv  25:                    tokenizer.chat_template str              = {%- if tools %}\n    {{- '<|im_start|>...
+llama_model_loader: - kv  26:               general.quantization_version u32              = 2
+llama_model_loader: - kv  27:                          general.file_type u32              = 7
+llama_model_loader: - type  f32:  113 tensors
+llama_model_loader: - type q8_0:  197 tensors
+print_info: file format = GGUF V3 (latest)
+print_info: file type   = Q8_0
+print_info: file size   = 604.15 MiB (8.50 BPW) 
+llama_prepare_model_devices: using device CUDA0 (NVIDIA GeForce RTX 3060 Laptop GPU) (0000:01:00.0) - 5122 MiB free
+load: 0 unused tokens
+load: control-looking token: 128247 '</s>' was not control-type; this is probably a bug in the model. its type will be overridden
+load: printing all EOG tokens:
+load:   - 128247 ('</s>')
+load:   - 151643 ('<|endoftext|>')
+load:   - 151645 ('<|im_end|>')
+load:   - 151662 ('<|fim_pad|>')
+load:   - 151663 ('<|repo_name|>')
+load:   - 151664 ('<|file_sep|>')
+load: special tokens cache size = 27
+load: token to piece cache size = 0.9311 MB
+print_info: arch                  = qwen3
+print_info: vocab_only            = 0
+print_info: no_alloc              = 0
+print_info: n_ctx_train           = 40960
+print_info: n_embd_inp            = 1024
+print_info: n_embd                = 1024
+print_info: n_embd_out            = 1024
+print_info: n_layer               = 28
+print_info: n_layer_all           = 28
+print_info: n_head                = 16
+print_info: n_head_kv             = 8
+print_info: n_rot                 = 128
+print_info: n_swa                 = 0
+print_info: is_swa_any            = 0
+print_info: non_causal_type       = 0
+print_info: n_embd_head_k         = 128
+print_info: n_embd_head_v         = 128
+print_info: n_gqa                 = 2
+print_info: n_embd_k_gqa          = 1024
+print_info: n_embd_v_gqa          = 1024
+print_info: f_norm_eps            = 0.0e+00
+print_info: f_norm_rms_eps        = 1.0e-06
+print_info: f_clamp_kqv           = 0.0e+00
+print_info: f_max_alibi_bias      = 0.0e+00
+print_info: f_logit_scale         = 0.0e+00
+print_info: f_attn_scale          = 0.0e+00
+print_info: f_attn_value_scale    = 0.0000
+print_info: n_ff                  = 3072
+print_info: n_expert              = 0
+print_info: n_expert_used         = 0
+print_info: n_expert_groups       = 0
+print_info: n_group_used          = 0
+print_info: causal attn           = 1
+print_info: pooling type          = -1
+print_info: rope type             = 2
+print_info: rope scaling          = linear
+print_info: freq_base_train       = 1000000.0
+print_info: freq_scale_train      = 1
+print_info: n_ctx_orig_yarn       = 40960
+print_info: rope_yarn_log_mul     = 0.0000
+print_info: rope_finetuned        = unknown
+print_info: model type            = 0.6B
+print_info: model params          = 596.05 M
+print_info: general.name          = Qwen3 0.6B Instruct
+print_info: vocab type            = BPE
+print_info: n_vocab               = 151936
+print_info: n_merges              = 151387
+print_info: BOS token             = 151643 '<|endoftext|>'
+print_info: EOS token             = 151645 '<|im_end|>'
+print_info: EOT token             = 151645 '<|im_end|>'
+print_info: PAD token             = 151643 '<|endoftext|>'
+print_info: LF token              = 198 'Ċ'
+print_info: FIM PRE token         = 151659 '<|fim_prefix|>'
+print_info: FIM SUF token         = 151661 '<|fim_suffix|>'
+print_info: FIM MID token         = 151660 '<|fim_middle|>'
+print_info: FIM PAD token         = 151662 '<|fim_pad|>'
+print_info: FIM REP token         = 151663 '<|repo_name|>'
+print_info: FIM SEP token         = 151664 '<|file_sep|>'
+print_info: EOG token             = 128247 '</s>'
+print_info: EOG token             = 151643 '<|endoftext|>'
+print_info: EOG token             = 151645 '<|im_end|>'
+print_info: EOG token             = 151662 '<|fim_pad|>'
+print_info: EOG token             = 151663 '<|repo_name|>'
+print_info: EOG token             = 151664 '<|file_sep|>'
+print_info: max token length      = 256
+load_tensors: loading model tensors, this can take a while... (load_mode = none)
+load_tensors: offloading output layer to GPU
+load_tensors: offloading 27 repeating layers to GPU
+load_tensors: offloaded 29/29 layers to GPU
+load_tensors:        CUDA0 model buffer size =   604.15 MiB
+load_tensors:    CUDA_Host model buffer size =   157.65 MiB
+cmn  common_init_: added </s> logit bias = -inf
+cmn  common_init_: added <|endoftext|> logit bias = -inf
+cmn  common_init_: added <|im_end|> logit bias = -inf
+cmn  common_init_: added <|fim_pad|> logit bias = -inf
+cmn  common_init_: added <|repo_name|> logit bias = -inf
+cmn  common_init_: added <|file_sep|> logit bias = -inf
+llama_context: constructing llama_context
+llama_context: n_seq_max             = 1
+llama_context: n_ctx                 = 32768
+llama_context: n_ctx_seq             = 32768
+llama_context: n_batch               = 512
+llama_context: n_ubatch              = 512
+llama_context: causal_attn           = 1
+llama_context: flash_attn            = enabled
+llama_context: kv_unified            = false
+llama_context: freq_base             = 1000000.0
+llama_context: freq_scale            = 1
+llama_context: n_rs_seq              = 0
+llama_context: n_outputs_max         = 1
+llama_context: n_outputs_max_per_seq = 1
+llama_context: n_ctx_seq (32768) < n_ctx_train (40960) -- the full capacity of the model will not be utilized
+llama_context:  CUDA_Host  output buffer size =     0.58 MiB
+llama_kv_cache:      CUDA0 KV buffer size =  3584.00 MiB
+llama_kv_cache: size = 3584.00 MiB ( 32768 cells,  28 layers,  1/1 seqs), K (f16): 1792.00 MiB, V (f16): 1792.00 MiB
+llama_kv_cache: attn_rot_k = 0, n_embd_head_k_all = 128
+llama_kv_cache: attn_rot_v = 0, n_embd_head_k_all = 128
+sched_reserve: reserving ...
+resolve_fused_ops: resolving fused DeepSeek V4 HC support:
+resolve_fused_ops: fused DeepSeek V4 HC pre enabled
+resolve_fused_ops: fused DeepSeek V4 HC comb enabled
+resolve_fused_ops: fused DeepSeek V4 HC post enabled
+sched_reserve:      CUDA0 compute buffer size =    58.01 MiB
+sched_reserve:  CUDA_Host compute buffer size =    36.01 MiB
+sched_reserve: graph: nodes = 986, splits = 2, input objects = 4, input tensors = 6
+sched_reserve: reserve took 12.94 ms, sched copies = 1
+cmn          init: llama threadpool init, n_threads = 8
+cmn  common_init_: warming up the model with an empty run - please wait ... (--no-warmup to disable)
+srv    load_model: initializing, n_slots = 1, n_ctx_slot = 32768, kv_unified = 'false'
+spec common_specu: no implementations specified for speculative decoding
+slot   load_model: id  0 | task -1 | new slot, n_ctx = 32768
+srv    load_model: prompt cache is enabled, size limit: 8192 MiB
+srv    load_model: use `--cache-ram 0` to disable the prompt cache
+srv    load_model: for more info see https://github.com/ggml-org/llama.cpp/pull/16391
+srv    load_model: context checkpoints enabled, max = 32, min spacing = 8192
+srv          init: idle slots will be saved to prompt cache upon starting a new task
+srv          init: init: chat template, example_format: '<|im_start|>system
+You are a helpful assistant<|im_end|>
+<|im_start|>user
+Hello<|im_end|>
+<|im_start|>assistant
+Hi there<|im_end|>
+<|im_start|>user
+How are you?<|im_end|>
+<|im_start|>assistant
+'
+srv          init: init: chat template, thinking = 1
+srv          init: preserve_reasoning kwarg: not supported by template
+srv  llama_server: model loaded
+srv  llama_server: listening on http://127.0.0.1:51964
+srv  update_slots: all slots are idle
+time=2026-10-04T00:20:52.719+02:00 level=INFO source=llama_server.go:1374 msg="llama-server started in 1.51 seconds"
+time=2026-10-04T00:20:52.720+02:00 level=INFO source=images.go:395 msg="template selection" model=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest selected=gguf_chat_template renderer="" parser="" go_template=null chat_template="[tools thinking completion]" harmony=null renderer_parser=null
+time=2026-10-04T00:20:52.720+02:00 level=INFO source=sched.go:733 msg="loaded runners" count=1
+time=2026-10-04T00:20:52.720+02:00 level=INFO source=llama_server.go:1307 msg="waiting for llama-server to start responding"
+time=2026-10-04T00:20:52.721+02:00 level=INFO source=llama_server.go:1374 msg="llama-server started in 1.51 seconds"
+time=2026-10-04T00:20:52.722+02:00 level=DEBUG source=sched.go:745 msg="finished setting up" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:20:52.722+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+srv  server_strea: conv_id= (empty=1)
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - skipping, slot is empty
+slot get_availabl: id  0 | task -1 | selected slot by LRU, t_last = -1
+srv  get_availabl: updating prompt cache
+srv          load:  - looking for better prompt, base f_keep = -1.000, f_sim = 0.000
+srv        update:  - cache state: 0 prompts, 0.000 MiB (limits: 8192.000 MiB, 32768 tokens, 8589934592 est)
+srv  get_availabl: prompt cache update took 0.01 ms
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> penalties -> ?dry -> ?top-n-sigma -> top-k -> ?typical -> top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 1.500
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 20, top_p = 0.950, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.600
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 0 | processing task, is_child = 0
+slot   operator(): id  0 | task 0 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 61
+slot   operator(): id  0 | task 0 | cached n_tokens = 0, memory_seq_rm [0, end)
+slot init_sampler: id  0 | task 0 | init sampler, took 0.01 ms, tokens: text = 61, total = 61
+slot print_timing: id  0 | task 0 | prompt eval time =      20.92 ms /    61 tokens (    0.34 ms per token,  2916.29 tokens per second)
+slot print_timing: id  0 | task 0 |        eval time =       7.16 ms /     2 tokens (    7.16 ms per token,   139.74 tokens per second)
+slot print_timing: id  0 | task 0 |       total time =      28.07 ms /    63 tokens
+slot print_timing: id  0 | task 0 |    graphs reused =          1
+slot      release: id  0 | task 0 | stop processing: n_tokens = 62, truncated = 0
+srv  update_slots: all slots are idle
+time=2026-10-04T00:20:52.767+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222052.758885100Z-000001_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222052.758885100Z-000001_api_chat_request.sh`"
+time=2026-10-04T00:20:52.767+02:00 level=DEBUG source=sched.go:753 msg="context for request finished"
+time=2026-10-04T00:20:52.767+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:20:52.767+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:02.815+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:02.816+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+srv  server_strea: conv_id= (empty=1)
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - checking sim = 1.000 (61/61) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 1.000 (> 0.100 thold), f_keep = 0.984
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> penalties -> ?dry -> ?top-n-sigma -> top-k -> ?typical -> top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 1.500
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 20, top_p = 0.950, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.600
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 3 | processing task, is_child = 0
+slot   operator(): id  0 | task 3 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 61
+slot   operator(): id  0 | task 3 | need to evaluate at least 1 token for each active slot (n_past = 61, task.n_tokens() = 61)
+slot   operator(): id  0 | task 3 | n_past was set to 60
+slot   operator(): id  0 | task 3 | cached n_tokens = 60, memory_seq_rm [60, end)
+slot init_sampler: id  0 | task 3 | init sampler, took 0.02 ms, tokens: text = 61, total = 61
+slot print_timing: id  0 | task 3 | prompt eval time =      58.62 ms /     1 tokens (   58.62 ms per token,    17.06 tokens per second)
+slot print_timing: id  0 | task 3 |        eval time =      56.86 ms /     2 tokens (   56.86 ms per token,    17.59 tokens per second)
+slot print_timing: id  0 | task 3 |       total time =     115.48 ms /     3 tokens
+slot print_timing: id  0 | task 3 |    graphs reused =          3
+slot      release: id  0 | task 3 | stop processing: n_tokens = 62, truncated = 0
+srv  update_slots: all slots are idle
+time=2026-10-04T00:21:02.949+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222102.941196400Z-000002_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222102.941196400Z-000002_api_chat_request.sh`"
+time=2026-10-04T00:21:02.950+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:02.950+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:02.950+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:13.003+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:13.005+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+srv  server_strea: conv_id= (empty=1)
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - checking sim = 1.000 (61/61) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 1.000 (> 0.100 thold), f_keep = 0.984
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> penalties -> ?dry -> ?top-n-sigma -> top-k -> ?typical -> top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 1.500
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 20, top_p = 0.950, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.600
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 6 | processing task, is_child = 0
+slot   operator(): id  0 | task 6 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 61
+slot   operator(): id  0 | task 6 | need to evaluate at least 1 token for each active slot (n_past = 61, task.n_tokens() = 61)
+slot   operator(): id  0 | task 6 | n_past was set to 60
+slot   operator(): id  0 | task 6 | cached n_tokens = 60, memory_seq_rm [60, end)
+slot init_sampler: id  0 | task 6 | init sampler, took 0.02 ms, tokens: text = 61, total = 61
+slot print_timing: id  0 | task 6 | prompt eval time =      58.16 ms /     1 tokens (   58.16 ms per token,    17.19 tokens per second)
+slot print_timing: id  0 | task 6 |        eval time =      56.29 ms /     2 tokens (   56.29 ms per token,    17.77 tokens per second)
+slot print_timing: id  0 | task 6 |       total time =     114.45 ms /     3 tokens
+slot print_timing: id  0 | task 6 |    graphs reused =          5
+slot      release: id  0 | task 6 | stop processing: n_tokens = 62, truncated = 0
+srv  update_slots: all slots are idle
+time=2026-10-04T00:21:13.134+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222113.127743700Z-000003_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222113.127743700Z-000003_api_chat_request.sh`"
+time=2026-10-04T00:21:13.134+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:13.135+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:13.135+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:23.183+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:23.185+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+srv  server_strea: conv_id= (empty=1)
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - checking sim = 1.000 (61/61) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 1.000 (> 0.100 thold), f_keep = 0.984
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> penalties -> ?dry -> ?top-n-sigma -> top-k -> ?typical -> top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 1.500
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 20, top_p = 0.950, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.600
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 9 | processing task, is_child = 0
+slot   operator(): id  0 | task 9 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 61
+slot   operator(): id  0 | task 9 | need to evaluate at least 1 token for each active slot (n_past = 61, task.n_tokens() = 61)
+slot   operator(): id  0 | task 9 | n_past was set to 60
+slot   operator(): id  0 | task 9 | cached n_tokens = 60, memory_seq_rm [60, end)
+slot init_sampler: id  0 | task 9 | init sampler, took 0.01 ms, tokens: text = 61, total = 61
+slot print_timing: id  0 | task 9 | prompt eval time =      58.22 ms /     1 tokens (   58.22 ms per token,    17.18 tokens per second)
+slot print_timing: id  0 | task 9 |        eval time =      56.56 ms /     2 tokens (   56.56 ms per token,    17.68 tokens per second)
+slot print_timing: id  0 | task 9 |       total time =     114.78 ms /     3 tokens
+slot print_timing: id  0 | task 9 |    graphs reused =          7
+slot      release: id  0 | task 9 | stop processing: n_tokens = 62, truncated = 0
+srv  update_slots: all slots are idle
+time=2026-10-04T00:21:23.315+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222123.307712900Z-000004_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222123.307712900Z-000004_api_chat_request.sh`"
+time=2026-10-04T00:21:23.315+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:23.316+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:23.316+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:33.362+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:33.363+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+srv  server_strea: conv_id= (empty=1)
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - checking sim = 1.000 (61/61) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 1.000 (> 0.100 thold), f_keep = 0.984
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> penalties -> ?dry -> ?top-n-sigma -> top-k -> ?typical -> top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 1.500
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 20, top_p = 0.950, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.600
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 12 | processing task, is_child = 0
+slot   operator(): id  0 | task 12 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 61
+slot   operator(): id  0 | task 12 | need to evaluate at least 1 token for each active slot (n_past = 61, task.n_tokens() = 61)
+slot   operator(): id  0 | task 12 | n_past was set to 60
+slot   operator(): id  0 | task 12 | cached n_tokens = 60, memory_seq_rm [60, end)
+slot init_sampler: id  0 | task 12 | init sampler, took 0.03 ms, tokens: text = 61, total = 61
+slot print_timing: id  0 | task 12 | prompt eval time =      58.69 ms /     1 tokens (   58.69 ms per token,    17.04 tokens per second)
+slot print_timing: id  0 | task 12 |        eval time =      56.56 ms /     2 tokens (   56.56 ms per token,    17.68 tokens per second)
+slot print_timing: id  0 | task 12 |       total time =     115.25 ms /     3 tokens
+slot print_timing: id  0 | task 12 |    graphs reused =          9
+slot      release: id  0 | task 12 | stop processing: n_tokens = 62, truncated = 0
+srv  update_slots: all slots are idle
+time=2026-10-04T00:21:33.497+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222133.490372300Z-000005_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222133.490372300Z-000005_api_chat_request.sh`"
+time=2026-10-04T00:21:33.497+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:33.498+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:33.498+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:43.540+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:43.541+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+srv  server_strea: conv_id= (empty=1)
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - checking sim = 1.000 (61/61) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 1.000 (> 0.100 thold), f_keep = 0.984
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> penalties -> ?dry -> ?top-n-sigma -> top-k -> ?typical -> top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 1.500
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 20, top_p = 0.950, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.600
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 15 | processing task, is_child = 0
+slot   operator(): id  0 | task 15 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 61
+slot   operator(): id  0 | task 15 | need to evaluate at least 1 token for each active slot (n_past = 61, task.n_tokens() = 61)
+slot   operator(): id  0 | task 15 | n_past was set to 60
+slot   operator(): id  0 | task 15 | cached n_tokens = 60, memory_seq_rm [60, end)
+slot init_sampler: id  0 | task 15 | init sampler, took 0.02 ms, tokens: text = 61, total = 61
+slot print_timing: id  0 | task 15 | prompt eval time =      57.84 ms /     1 tokens (   57.84 ms per token,    17.29 tokens per second)
+slot print_timing: id  0 | task 15 |        eval time =      56.48 ms /     2 tokens (   56.48 ms per token,    17.71 tokens per second)
+slot print_timing: id  0 | task 15 |       total time =     114.31 ms /     3 tokens
+slot print_timing: id  0 | task 15 |    graphs reused =         11
+slot      release: id  0 | task 15 | stop processing: n_tokens = 62, truncated = 0
+srv  update_slots: all slots are idle
+time=2026-10-04T00:21:43.671+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222143.663966100Z-000006_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222143.663966100Z-000006_api_chat_request.sh`"
+time=2026-10-04T00:21:43.672+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:43.672+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:43.672+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:43.728+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:43.729+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+srv  server_strea: conv_id= (empty=1)
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - checking sim = 1.000 (57/57) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 1.000 (> 0.100 thold), f_keep = 0.919
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> ?top-k -> ?typical -> ?top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 0.000
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 0, top_p = 1.000, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.000
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 18 | processing task, is_child = 0
+slot   operator(): id  0 | task 18 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 57
+slot   operator(): id  0 | task 18 | need to evaluate at least 1 token for each active slot (n_past = 57, task.n_tokens() = 57)
+slot   operator(): id  0 | task 18 | n_past was set to 56
+slot   operator(): id  0 | task 18 | cached n_tokens = 56, memory_seq_rm [56, end)
+slot init_sampler: id  0 | task 18 | init sampler, took 0.01 ms, tokens: text = 57, total = 57
+time=2026-10-04T00:21:44.253+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:44.254+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+slot print_timing: id  0 | task 18 | prompt eval time =      54.74 ms /     1 tokens (   54.74 ms per token,    18.27 tokens per second)
+slot print_timing: id  0 | task 18 |        eval time =    1103.23 ms /   149 tokens (    7.45 ms per token,   134.15 tokens per second)
+slot print_timing: id  0 | task 18 |       total time =    1157.97 ms /   150 tokens
+slot print_timing: id  0 | task 18 |    graphs reused =        160
+slot      release: id  0 | task 18 | stop processing: n_tokens = 205, truncated = 0
+srv  update_slots: all slots are idle
+srv  server_strea: conv_id= (empty=1)
+time=2026-10-04T00:21:44.902+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222144.894710600Z-000007_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222144.894710600Z-000007_api_chat_request.sh`"
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - checking sim = 0.951 (58/61) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 0.951 (> 0.100 thold), f_keep = 0.283
+srv  get_availabl: updating prompt cache
+srv   prompt_save:  - saving prompt with length 205, total state size = 22.425 MiB (draft: 0.000 MiB)
+time=2026-10-04T00:21:44.902+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:44.903+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=1
+srv          load:  - looking for better prompt, base f_keep = 0.283, f_sim = 0.951
+srv          load:    - prompt with length     205, lcp =      58, f_keep = 0.283, f_sim = 0.951
+srv        update:  - cache state: 1 prompts, 22.425 MiB (limits: 8192.000 MiB, 32768 tokens, 74888 est)
+srv        update:    - prompt 000001B4B0B4A450:     205 tokens, checkpoints:  0,    22.425 MiB
+srv  get_availabl: prompt cache update took 11.11 ms
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> penalties -> ?dry -> ?top-n-sigma -> top-k -> ?typical -> top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 1.500
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 20, top_p = 0.950, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.600
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 168 | processing task, is_child = 0
+slot   operator(): id  0 | task 168 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 61
+slot   operator(): id  0 | task 168 | cached n_tokens = 58, memory_seq_rm [58, end)
+slot init_sampler: id  0 | task 168 | init sampler, took 0.02 ms, tokens: text = 61, total = 61
+slot print_timing: id  0 | task 168 | prompt eval time =      11.01 ms /     3 tokens (    3.67 ms per token,   272.60 tokens per second)
+slot print_timing: id  0 | task 168 |        eval time =       8.66 ms /     2 tokens (    8.66 ms per token,   115.47 tokens per second)
+slot print_timing: id  0 | task 168 |       total time =      19.66 ms /     5 tokens
+slot print_timing: id  0 | task 168 |    graphs reused =        160
+slot      release: id  0 | task 168 | stop processing: n_tokens = 62, truncated = 0
+srv  update_slots: all slots are idle
+time=2026-10-04T00:21:44.941+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222144.933599200Z-000008_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222144.933599200Z-000008_api_chat_request.sh`"
+time=2026-10-04T00:21:44.942+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:44.942+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:44.942+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:44.981+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:44.999+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222144.991592500Z-000009_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222144.991592500Z-000009_api_chat_request.sh`"
+time=2026-10-04T00:21:44.999+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:44.999+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:45.000+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:45.024+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:45.041+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222145.033698600Z-000010_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222145.033698600Z-000010_api_chat_request.sh`"
+time=2026-10-04T00:21:45.042+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:45.042+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:45.042+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:45.063+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:45.075+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222145.071344800Z-000011_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222145.071344800Z-000011_api_chat_request.sh`"
+time=2026-10-04T00:21:45.075+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:45.076+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:45.076+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:45.095+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:45.106+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222145.102782300Z-000012_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222145.102782300Z-000012_api_chat_request.sh`"
+time=2026-10-04T00:21:45.107+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:45.107+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:45.108+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:45.131+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:45.146+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222145.139779900Z-000013_api_generate_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222145.139779900Z-000013_api_generate_request.sh`"
+time=2026-10-04T00:21:45.147+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:45.147+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:45.147+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:45.166+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:45.168+02:00 level=DEBUG source=llama_server.go:1624 msg="llama-server completion request" media=0 prompt_len=319
+srv  server_strea: conv_id= (empty=1)
+slot get_availabl: id  0 | task -1 |  - checking sim = 1.000 (61/61) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 1.000 (> 0.100 thold), f_keep = 0.984
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> ?top-k -> ?typical -> ?top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 0.000
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 0, top_p = 1.000, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.000
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 171 | processing task, is_child = 0
+slot   operator(): id  0 | task 171 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 61
+slot   operator(): id  0 | task 171 | need to evaluate at least 1 token for each active slot (n_past = 61, task.n_tokens() = 61)
+slot   operator(): id  0 | task 171 | n_past was set to 60
+slot   operator(): id  0 | task 171 | cached n_tokens = 60, memory_seq_rm [60, end)
+slot init_sampler: id  0 | task 171 | init sampler, took 0.01 ms, tokens: text = 61, total = 61
+slot print_timing: id  0 | task 171 | prompt eval time =       6.17 ms /     1 tokens (    6.17 ms per token,   162.02 tokens per second)
+slot print_timing: id  0 | task 171 |        eval time =       4.38 ms /     2 tokens (    4.38 ms per token,   228.41 tokens per second)
+slot print_timing: id  0 | task 171 |       total time =      10.55 ms /     3 tokens
+slot print_timing: id  0 | task 171 |    graphs reused =        162
+slot      release: id  0 | task 171 | stop processing: n_tokens = 62, truncated = 0
+srv  update_slots: all slots are idle
+time=2026-10-04T00:21:45.185+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222145.180881400Z-000014_api_generate_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222145.180881400Z-000014_api_generate_request.sh`"
+time=2026-10-04T00:21:45.185+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:45.185+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:45.186+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:45.211+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:45.212+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+srv  server_strea: conv_id= (empty=1)
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - checking sim = 1.000 (61/61) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 1.000 (> 0.100 thold), f_keep = 0.984
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> ?top-k -> ?typical -> ?top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 0.000
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 0, top_p = 1.000, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.000
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 174 | processing task, is_child = 0
+slot   operator(): id  0 | task 174 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 61
+slot   operator(): id  0 | task 174 | need to evaluate at least 1 token for each active slot (n_past = 61, task.n_tokens() = 61)
+slot   operator(): id  0 | task 174 | n_past was set to 60
+slot   operator(): id  0 | task 174 | cached n_tokens = 60, memory_seq_rm [60, end)
+slot init_sampler: id  0 | task 174 | init sampler, took 0.01 ms, tokens: text = 61, total = 61
+slot print_timing: id  0 | task 174 | prompt eval time =       4.82 ms /     1 tokens (    4.82 ms per token,   207.34 tokens per second)
+slot print_timing: id  0 | task 174 |        eval time =       4.37 ms /     2 tokens (    4.37 ms per token,   229.04 tokens per second)
+slot print_timing: id  0 | task 174 |       total time =       9.19 ms /     3 tokens
+slot print_timing: id  0 | task 174 |    graphs reused =        164
+slot      release: id  0 | task 174 | stop processing: n_tokens = 62, truncated = 0
+srv  update_slots: all slots are idle
+time=2026-10-04T00:21:45.236+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222145.229372300Z-000015_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222145.229372300Z-000015_api_chat_request.sh`"
+time=2026-10-04T00:21:45.236+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:45.237+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:45.237+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:45.260+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:45.261+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+srv  server_strea: conv_id= (empty=1)
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - checking sim = 1.000 (61/61) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 1.000 (> 0.100 thold), f_keep = 0.984
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> ?top-k -> ?typical -> ?top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 0.000
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 0, top_p = 1.000, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.000
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 177 | processing task, is_child = 0
+slot   operator(): id  0 | task 177 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 61
+slot   operator(): id  0 | task 177 | need to evaluate at least 1 token for each active slot (n_past = 61, task.n_tokens() = 61)
+slot   operator(): id  0 | task 177 | n_past was set to 60
+slot   operator(): id  0 | task 177 | cached n_tokens = 60, memory_seq_rm [60, end)
+slot init_sampler: id  0 | task 177 | init sampler, took 0.01 ms, tokens: text = 61, total = 61
+slot print_timing: id  0 | task 177 | prompt eval time =      52.45 ms /     1 tokens (   52.45 ms per token,    19.07 tokens per second)
+slot print_timing: id  0 | task 177 |        eval time =      73.96 ms /     8 tokens (   10.57 ms per token,    94.65 tokens per second)
+slot print_timing: id  0 | task 177 |       total time =     126.41 ms /     9 tokens
+slot print_timing: id  0 | task 177 |    graphs reused =        172
+slot      release: id  0 | task 177 | stop processing: n_tokens = 68, truncated = 0
+srv  update_slots: all slots are idle
+time=2026-10-04T00:21:45.404+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222145.397091500Z-000016_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222145.397091500Z-000016_api_chat_request.sh`"
+time=2026-10-04T00:21:45.404+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:45.404+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:45.404+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:45.428+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:45.429+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+srv  server_strea: conv_id= (empty=1)
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - checking sim = 1.000 (61/61) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 1.000 (> 0.100 thold), f_keep = 0.897
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> ?top-k -> ?typical -> ?top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 0.000
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 0, top_p = 1.000, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.000
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 186 | processing task, is_child = 0
+slot   operator(): id  0 | task 186 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 61
+slot   operator(): id  0 | task 186 | need to evaluate at least 1 token for each active slot (n_past = 61, task.n_tokens() = 61)
+slot   operator(): id  0 | task 186 | n_past was set to 60
+slot   operator(): id  0 | task 186 | cached n_tokens = 60, memory_seq_rm [60, end)
+slot init_sampler: id  0 | task 186 | init sampler, took 0.01 ms, tokens: text = 61, total = 61
+slot print_timing: id  0 | task 186 | prompt eval time =       5.16 ms /     1 tokens (    5.16 ms per token,   193.72 tokens per second)
+slot print_timing: id  0 | task 186 |        eval time =       4.46 ms /     2 tokens (    4.46 ms per token,   224.47 tokens per second)
+slot print_timing: id  0 | task 186 |       total time =       9.62 ms /     3 tokens
+slot print_timing: id  0 | task 186 |    graphs reused =        174
+slot      release: id  0 | task 186 | stop processing: n_tokens = 62, truncated = 0
+srv  update_slots: all slots are idle
+time=2026-10-04T00:21:45.454+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222145.446905700Z-000017_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222145.446905700Z-000017_api_chat_request.sh`"
+time=2026-10-04T00:21:45.454+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:45.454+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:45.454+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:45.475+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:45.476+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+srv  server_strea: conv_id= (empty=1)
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - checking sim = 0.617 (37/60) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 0.617 (> 0.100 thold), f_keep = 0.597
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> ?top-k -> ?typical -> ?top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 0.000
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 0, top_p = 1.000, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.000
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 189 | processing task, is_child = 0
+slot   operator(): id  0 | task 189 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 60
+slot   operator(): id  0 | task 189 | cached n_tokens = 37, memory_seq_rm [37, end)
+slot init_sampler: id  0 | task 189 | init sampler, took 0.01 ms, tokens: text = 60, total = 60
+slot print_timing: id  0 | task 189 | prompt eval time =      57.06 ms /    23 tokens (    2.48 ms per token,   403.11 tokens per second)
+slot print_timing: id  0 | task 189 |        eval time =      77.98 ms /     8 tokens (   11.14 ms per token,    89.77 tokens per second)
+slot print_timing: id  0 | task 189 |       total time =     135.04 ms /    31 tokens
+slot print_timing: id  0 | task 189 |    graphs reused =        180
+slot      release: id  0 | task 189 | stop processing: n_tokens = 67, truncated = 0
+srv  update_slots: all slots are idle
+time=2026-10-04T00:21:45.625+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222145.621247900Z-000018_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222145.621247900Z-000018_api_chat_request.sh`"
+time=2026-10-04T00:21:45.625+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:45.626+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:45.626+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:45.645+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:45.646+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+srv  server_strea: conv_id= (empty=1)
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - checking sim = 1.000 (60/60) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 1.000 (> 0.100 thold), f_keep = 0.896
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> ?top-k -> ?typical -> ?top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 0.000
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 0, top_p = 1.000, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.000
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 198 | processing task, is_child = 0
+slot   operator(): id  0 | task 198 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 60
+slot   operator(): id  0 | task 198 | need to evaluate at least 1 token for each active slot (n_past = 60, task.n_tokens() = 60)
+slot   operator(): id  0 | task 198 | n_past was set to 59
+slot   operator(): id  0 | task 198 | cached n_tokens = 59, memory_seq_rm [59, end)
+slot init_sampler: id  0 | task 198 | init sampler, took 0.01 ms, tokens: text = 60, total = 60
+slot print_timing: id  0 | task 198 | prompt eval time =       4.95 ms /     1 tokens (    4.95 ms per token,   202.06 tokens per second)
+slot print_timing: id  0 | task 198 |        eval time =       4.42 ms /     2 tokens (    4.42 ms per token,   226.35 tokens per second)
+slot print_timing: id  0 | task 198 |       total time =       9.37 ms /     3 tokens
+slot print_timing: id  0 | task 198 |    graphs reused =        182
+slot      release: id  0 | task 198 | stop processing: n_tokens = 61, truncated = 0
+srv  update_slots: all slots are idle
+time=2026-10-04T00:21:45.667+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222145.663659300Z-000019_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222145.663659300Z-000019_api_chat_request.sh`"
+time=2026-10-04T00:21:45.668+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:45.668+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:45.668+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:45.688+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:45.689+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+srv  server_strea: conv_id= (empty=1)
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - checking sim = 0.607 (37/61) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 0.607 (> 0.100 thold), f_keep = 0.607
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> ?top-k -> ?typical -> ?top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 0.000
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 0, top_p = 1.000, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.000
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 201 | processing task, is_child = 0
+slot   operator(): id  0 | task 201 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 61
+slot   operator(): id  0 | task 201 | cached n_tokens = 37, memory_seq_rm [37, end)
+slot init_sampler: id  0 | task 201 | init sampler, took 0.01 ms, tokens: text = 61, total = 61
+slot print_timing: id  0 | task 201 | prompt eval time =      74.83 ms /    24 tokens (    3.12 ms per token,   320.71 tokens per second)
+slot print_timing: id  0 | task 201 |        eval time =      89.32 ms /     8 tokens (   12.76 ms per token,    78.37 tokens per second)
+slot print_timing: id  0 | task 201 |       total time =     164.16 ms /    32 tokens
+slot print_timing: id  0 | task 201 |    graphs reused =        188
+slot      release: id  0 | task 201 | stop processing: n_tokens = 68, truncated = 0
+srv  update_slots: all slots are idle
+time=2026-10-04T00:21:45.867+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222145.862075600Z-000020_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222145.862075600Z-000020_api_chat_request.sh`"
+time=2026-10-04T00:21:45.867+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:45.868+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:45.868+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:45.892+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:45.894+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+srv  server_strea: conv_id= (empty=1)
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - checking sim = 1.000 (61/61) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 1.000 (> 0.100 thold), f_keep = 0.897
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> ?top-k -> ?typical -> ?top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 0.000
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 0, top_p = 1.000, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.000
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 210 | processing task, is_child = 0
+slot   operator(): id  0 | task 210 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 61
+slot   operator(): id  0 | task 210 | need to evaluate at least 1 token for each active slot (n_past = 61, task.n_tokens() = 61)
+slot   operator(): id  0 | task 210 | n_past was set to 60
+slot   operator(): id  0 | task 210 | cached n_tokens = 60, memory_seq_rm [60, end)
+slot init_sampler: id  0 | task 210 | init sampler, took 0.01 ms, tokens: text = 61, total = 61
+slot print_timing: id  0 | task 210 | prompt eval time =       5.31 ms /     1 tokens (    5.31 ms per token,   188.29 tokens per second)
+slot print_timing: id  0 | task 210 |        eval time =       4.68 ms /     2 tokens (    4.68 ms per token,   213.81 tokens per second)
+slot print_timing: id  0 | task 210 |       total time =       9.99 ms /     3 tokens
+slot print_timing: id  0 | task 210 |    graphs reused =        190
+slot      release: id  0 | task 210 | stop processing: n_tokens = 62, truncated = 0
+srv  update_slots: all slots are idle
+time=2026-10-04T00:21:45.917+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222145.912331200Z-000021_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222145.912331200Z-000021_api_chat_request.sh`"
+time=2026-10-04T00:21:45.917+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:45.918+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:45.918+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:45.940+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:45.941+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+srv  server_strea: conv_id= (empty=1)
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - checking sim = 0.627 (37/59) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 0.627 (> 0.100 thold), f_keep = 0.597
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> ?top-k -> ?typical -> ?top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 0.000
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 0, top_p = 1.000, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.000
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 213 | processing task, is_child = 0
+slot   operator(): id  0 | task 213 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 59
+slot   operator(): id  0 | task 213 | cached n_tokens = 37, memory_seq_rm [37, end)
+slot init_sampler: id  0 | task 213 | init sampler, took 0.01 ms, tokens: text = 59, total = 59
+slot print_timing: id  0 | task 213 | prompt eval time =      70.64 ms /    22 tokens (    3.21 ms per token,   311.46 tokens per second)
+slot print_timing: id  0 | task 213 |        eval time =      85.41 ms /     8 tokens (   12.20 ms per token,    81.96 tokens per second)
+slot print_timing: id  0 | task 213 |       total time =     156.04 ms /    30 tokens
+slot print_timing: id  0 | task 213 |    graphs reused =        196
+slot      release: id  0 | task 213 | stop processing: n_tokens = 66, truncated = 0
+srv  update_slots: all slots are idle
+time=2026-10-04T00:21:46.111+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222146.106979600Z-000022_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222146.106979600Z-000022_api_chat_request.sh`"
+time=2026-10-04T00:21:46.112+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:46.112+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:46.112+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:46.134+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:46.135+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+srv  server_strea: conv_id= (empty=1)
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - checking sim = 1.000 (59/59) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 1.000 (> 0.100 thold), f_keep = 0.894
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> ?top-k -> ?typical -> ?top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 0.000
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 0, top_p = 1.000, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.000
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 222 | processing task, is_child = 0
+slot   operator(): id  0 | task 222 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 59
+slot   operator(): id  0 | task 222 | need to evaluate at least 1 token for each active slot (n_past = 59, task.n_tokens() = 59)
+slot   operator(): id  0 | task 222 | n_past was set to 58
+slot   operator(): id  0 | task 222 | cached n_tokens = 58, memory_seq_rm [58, end)
+slot init_sampler: id  0 | task 222 | init sampler, took 0.01 ms, tokens: text = 59, total = 59
+slot print_timing: id  0 | task 222 | prompt eval time =       5.23 ms /     1 tokens (    5.23 ms per token,   191.35 tokens per second)
+slot print_timing: id  0 | task 222 |        eval time =       4.63 ms /     2 tokens (    4.63 ms per token,   215.98 tokens per second)
+slot print_timing: id  0 | task 222 |       total time =       9.86 ms /     3 tokens
+slot print_timing: id  0 | task 222 |    graphs reused =        198
+slot      release: id  0 | task 222 | stop processing: n_tokens = 60, truncated = 0
+srv  update_slots: all slots are idle
+time=2026-10-04T00:21:46.158+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222146.153764700Z-000023_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222146.153764700Z-000023_api_chat_request.sh`"
+time=2026-10-04T00:21:46.158+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:46.159+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:46.159+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:46.182+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:46.183+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+srv  server_strea: conv_id= (empty=1)
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - checking sim = 0.507 (37/73) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 0.507 (> 0.100 thold), f_keep = 0.617
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> ?top-k -> ?typical -> ?top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 0.000
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 0, top_p = 1.000, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.000
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 225 | processing task, is_child = 0
+slot   operator(): id  0 | task 225 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 73
+slot   operator(): id  0 | task 225 | cached n_tokens = 37, memory_seq_rm [37, end)
+slot init_sampler: id  0 | task 225 | init sampler, took 0.01 ms, tokens: text = 73, total = 73
+slot print_timing: id  0 | task 225 | prompt eval time =      66.81 ms /    36 tokens (    1.86 ms per token,   538.83 tokens per second)
+slot print_timing: id  0 | task 225 |        eval time =      91.79 ms /     8 tokens (   13.11 ms per token,    76.26 tokens per second)
+slot print_timing: id  0 | task 225 |       total time =     158.60 ms /    44 tokens
+slot print_timing: id  0 | task 225 |    graphs reused =        204
+slot      release: id  0 | task 225 | stop processing: n_tokens = 80, truncated = 0
+srv  update_slots: all slots are idle
+time=2026-10-04T00:21:46.355+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222146.351280200Z-000024_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222146.351280200Z-000024_api_chat_request.sh`"
+time=2026-10-04T00:21:46.355+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:46.355+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:46.356+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:46.377+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:46.378+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+srv  server_strea: conv_id= (empty=1)
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - checking sim = 1.000 (73/73) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 1.000 (> 0.100 thold), f_keep = 0.913
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> ?top-k -> ?typical -> ?top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 0.000
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 0, top_p = 1.000, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.000
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 234 | processing task, is_child = 0
+slot   operator(): id  0 | task 234 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 73
+slot   operator(): id  0 | task 234 | need to evaluate at least 1 token for each active slot (n_past = 73, task.n_tokens() = 73)
+slot   operator(): id  0 | task 234 | n_past was set to 72
+slot   operator(): id  0 | task 234 | cached n_tokens = 72, memory_seq_rm [72, end)
+slot init_sampler: id  0 | task 234 | init sampler, took 0.01 ms, tokens: text = 73, total = 73
+slot print_timing: id  0 | task 234 | prompt eval time =       5.61 ms /     1 tokens (    5.61 ms per token,   178.35 tokens per second)
+slot print_timing: id  0 | task 234 |        eval time =       4.92 ms /     2 tokens (    4.92 ms per token,   203.05 tokens per second)
+slot print_timing: id  0 | task 234 |       total time =      10.53 ms /     3 tokens
+slot print_timing: id  0 | task 234 |    graphs reused =        206
+slot      release: id  0 | task 234 | stop processing: n_tokens = 74, truncated = 0
+srv  update_slots: all slots are idle
+time=2026-10-04T00:21:46.403+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222146.398948500Z-000025_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222146.398948500Z-000025_api_chat_request.sh`"
+time=2026-10-04T00:21:46.404+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:46.404+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:46.404+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:46.427+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:46.428+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+srv  server_strea: conv_id= (empty=1)
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - checking sim = 0.521 (37/71) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 0.521 (> 0.100 thold), f_keep = 0.500
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> ?top-k -> ?typical -> ?top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 0.000
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 0, top_p = 1.000, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.000
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 237 | processing task, is_child = 0
+slot   operator(): id  0 | task 237 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 71
+slot   operator(): id  0 | task 237 | cached n_tokens = 37, memory_seq_rm [37, end)
+slot init_sampler: id  0 | task 237 | init sampler, took 0.01 ms, tokens: text = 71, total = 71
+slot print_timing: id  0 | task 237 | prompt eval time =      74.56 ms /    34 tokens (    2.19 ms per token,   456.00 tokens per second)
+slot print_timing: id  0 | task 237 |        eval time =     102.04 ms /     8 tokens (   14.58 ms per token,    68.60 tokens per second)
+slot print_timing: id  0 | task 237 |       total time =     176.60 ms /    42 tokens
+slot print_timing: id  0 | task 237 |    graphs reused =        212
+slot      release: id  0 | task 237 | stop processing: n_tokens = 78, truncated = 0
+srv  update_slots: all slots are idle
+time=2026-10-04T00:21:46.622+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222146.615401000Z-000026_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222146.615401000Z-000026_api_chat_request.sh`"
+time=2026-10-04T00:21:46.623+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:46.623+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:46.623+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:46.649+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:46.651+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+srv  server_strea: conv_id= (empty=1)
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - checking sim = 1.000 (71/71) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 1.000 (> 0.100 thold), f_keep = 0.910
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> ?top-k -> ?typical -> ?top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 0.000
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 0, top_p = 1.000, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.000
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 246 | processing task, is_child = 0
+slot   operator(): id  0 | task 246 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 71
+slot   operator(): id  0 | task 246 | need to evaluate at least 1 token for each active slot (n_past = 71, task.n_tokens() = 71)
+slot   operator(): id  0 | task 246 | n_past was set to 70
+slot   operator(): id  0 | task 246 | cached n_tokens = 70, memory_seq_rm [70, end)
+slot init_sampler: id  0 | task 246 | init sampler, took 0.01 ms, tokens: text = 71, total = 71
+slot print_timing: id  0 | task 246 | prompt eval time =       6.23 ms /     1 tokens (    6.23 ms per token,   160.49 tokens per second)
+slot print_timing: id  0 | task 246 |        eval time =       5.68 ms /     2 tokens (    5.68 ms per token,   175.90 tokens per second)
+slot print_timing: id  0 | task 246 |       total time =      11.92 ms /     3 tokens
+slot print_timing: id  0 | task 246 |    graphs reused =        214
+slot      release: id  0 | task 246 | stop processing: n_tokens = 72, truncated = 0
+srv  update_slots: all slots are idle
+time=2026-10-04T00:21:46.676+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222146.672053700Z-000027_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222146.672053700Z-000027_api_chat_request.sh`"
+time=2026-10-04T00:21:46.677+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:46.677+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:46.678+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:46.698+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:46.699+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+srv  server_strea: conv_id= (empty=1)
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - checking sim = 0.561 (37/66) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 0.561 (> 0.100 thold), f_keep = 0.514
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> ?top-k -> ?typical -> ?top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 0.000
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 0, top_p = 1.000, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.000
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 249 | processing task, is_child = 0
+slot   operator(): id  0 | task 249 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 66
+slot   operator(): id  0 | task 249 | cached n_tokens = 37, memory_seq_rm [37, end)
+slot init_sampler: id  0 | task 249 | init sampler, took 0.01 ms, tokens: text = 66, total = 66
+slot print_timing: id  0 | task 249 | prompt eval time =      62.28 ms /    29 tokens (    2.15 ms per token,   465.65 tokens per second)
+slot print_timing: id  0 | task 249 |        eval time =      85.88 ms /     8 tokens (   12.27 ms per token,    81.51 tokens per second)
+slot print_timing: id  0 | task 249 |       total time =     148.16 ms /    37 tokens
+slot print_timing: id  0 | task 249 |    graphs reused =        220
+slot      release: id  0 | task 249 | stop processing: n_tokens = 73, truncated = 0
+srv  update_slots: all slots are idle
+time=2026-10-04T00:21:46.860+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222146.856493600Z-000028_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222146.856493600Z-000028_api_chat_request.sh`"
+time=2026-10-04T00:21:46.861+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:46.861+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:46.861+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:46.880+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:46.881+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+srv  server_strea: conv_id= (empty=1)
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - checking sim = 1.000 (66/66) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 1.000 (> 0.100 thold), f_keep = 0.904
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> ?top-k -> ?typical -> ?top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 0.000
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 0, top_p = 1.000, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.000
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 258 | processing task, is_child = 0
+slot   operator(): id  0 | task 258 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 66
+slot   operator(): id  0 | task 258 | need to evaluate at least 1 token for each active slot (n_past = 66, task.n_tokens() = 66)
+slot   operator(): id  0 | task 258 | n_past was set to 65
+slot   operator(): id  0 | task 258 | cached n_tokens = 65, memory_seq_rm [65, end)
+slot init_sampler: id  0 | task 258 | init sampler, took 0.01 ms, tokens: text = 66, total = 66
+slot print_timing: id  0 | task 258 | prompt eval time =       6.01 ms /     1 tokens (    6.01 ms per token,   166.39 tokens per second)
+slot print_timing: id  0 | task 258 |        eval time =       5.65 ms /     2 tokens (    5.65 ms per token,   176.96 tokens per second)
+slot print_timing: id  0 | task 258 |       total time =      11.66 ms /     3 tokens
+slot print_timing: id  0 | task 258 |    graphs reused =        222
+slot      release: id  0 | task 258 | stop processing: n_tokens = 67, truncated = 0
+srv  update_slots: all slots are idle
+time=2026-10-04T00:21:46.905+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222146.901348200Z-000029_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222146.901348200Z-000029_api_chat_request.sh`"
+time=2026-10-04T00:21:46.905+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:46.906+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:46.906+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:46.928+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:46.929+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+srv  server_strea: conv_id= (empty=1)
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - checking sim = 0.552 (37/67) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 0.552 (> 0.100 thold), f_keep = 0.552
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> ?top-k -> ?typical -> ?top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 0.000
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 0, top_p = 1.000, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.000
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 261 | processing task, is_child = 0
+slot   operator(): id  0 | task 261 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 67
+slot   operator(): id  0 | task 261 | cached n_tokens = 37, memory_seq_rm [37, end)
+slot init_sampler: id  0 | task 261 | init sampler, took 0.01 ms, tokens: text = 67, total = 67
+slot print_timing: id  0 | task 261 | prompt eval time =      63.43 ms /    30 tokens (    2.11 ms per token,   472.97 tokens per second)
+slot print_timing: id  0 | task 261 |        eval time =      85.90 ms /     8 tokens (   12.27 ms per token,    81.49 tokens per second)
+slot print_timing: id  0 | task 261 |       total time =     149.33 ms /    38 tokens
+slot print_timing: id  0 | task 261 |    graphs reused =        228
+slot      release: id  0 | task 261 | stop processing: n_tokens = 74, truncated = 0
+srv  update_slots: all slots are idle
+time=2026-10-04T00:21:47.094+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222147.087359300Z-000030_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222147.087359300Z-000030_api_chat_request.sh`"
+time=2026-10-04T00:21:47.095+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:47.095+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:47.095+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:47.117+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:47.118+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+srv  server_strea: conv_id= (empty=1)
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - checking sim = 1.000 (67/67) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 1.000 (> 0.100 thold), f_keep = 0.905
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> ?top-k -> ?typical -> ?top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 0.000
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 0, top_p = 1.000, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.000
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 270 | processing task, is_child = 0
+slot   operator(): id  0 | task 270 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 67
+slot   operator(): id  0 | task 270 | need to evaluate at least 1 token for each active slot (n_past = 67, task.n_tokens() = 67)
+slot   operator(): id  0 | task 270 | n_past was set to 66
+slot   operator(): id  0 | task 270 | cached n_tokens = 66, memory_seq_rm [66, end)
+slot init_sampler: id  0 | task 270 | init sampler, took 0.01 ms, tokens: text = 67, total = 67
+slot print_timing: id  0 | task 270 | prompt eval time =       6.09 ms /     1 tokens (    6.09 ms per token,   164.26 tokens per second)
+slot print_timing: id  0 | task 270 |        eval time =       5.68 ms /     2 tokens (    5.68 ms per token,   175.99 tokens per second)
+slot print_timing: id  0 | task 270 |       total time =      11.77 ms /     3 tokens
+slot print_timing: id  0 | task 270 |    graphs reused =        230
+slot      release: id  0 | task 270 | stop processing: n_tokens = 68, truncated = 0
+srv  update_slots: all slots are idle
+time=2026-10-04T00:21:47.144+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222147.137792300Z-000031_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222147.137792300Z-000031_api_chat_request.sh`"
+time=2026-10-04T00:21:47.145+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:47.145+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:47.145+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:47.165+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:47.166+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+srv  server_strea: conv_id= (empty=1)
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - checking sim = 0.552 (37/67) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 0.552 (> 0.100 thold), f_keep = 0.544
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> ?top-k -> ?typical -> ?top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 0.000
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 0, top_p = 1.000, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.000
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 273 | processing task, is_child = 0
+slot   operator(): id  0 | task 273 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 67
+slot   operator(): id  0 | task 273 | cached n_tokens = 37, memory_seq_rm [37, end)
+slot init_sampler: id  0 | task 273 | init sampler, took 0.01 ms, tokens: text = 67, total = 67
+slot print_timing: id  0 | task 273 | prompt eval time =      59.83 ms /    30 tokens (    1.99 ms per token,   501.39 tokens per second)
+slot print_timing: id  0 | task 273 |        eval time =      86.47 ms /     8 tokens (   12.35 ms per token,    80.95 tokens per second)
+slot print_timing: id  0 | task 273 |       total time =     146.31 ms /    38 tokens
+slot print_timing: id  0 | task 273 |    graphs reused =        236
+slot      release: id  0 | task 273 | stop processing: n_tokens = 74, truncated = 0
+srv  update_slots: all slots are idle
+time=2026-10-04T00:21:47.325+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222147.320845800Z-000032_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222147.320845800Z-000032_api_chat_request.sh`"
+time=2026-10-04T00:21:47.326+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:47.326+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:47.326+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:47.367+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:47.368+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+srv  server_strea: conv_id= (empty=1)
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - checking sim = 1.000 (67/67) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 1.000 (> 0.100 thold), f_keep = 0.905
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> ?top-k -> ?typical -> ?top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 0.000
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 0, top_p = 1.000, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.000
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 282 | processing task, is_child = 0
+slot   operator(): id  0 | task 282 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 67
+slot   operator(): id  0 | task 282 | need to evaluate at least 1 token for each active slot (n_past = 67, task.n_tokens() = 67)
+slot   operator(): id  0 | task 282 | n_past was set to 66
+slot   operator(): id  0 | task 282 | cached n_tokens = 66, memory_seq_rm [66, end)
+slot init_sampler: id  0 | task 282 | init sampler, took 0.01 ms, tokens: text = 67, total = 67
+slot print_timing: id  0 | task 282 | prompt eval time =       6.26 ms /     1 tokens (    6.26 ms per token,   159.82 tokens per second)
+slot print_timing: id  0 | task 282 |        eval time =       5.83 ms /     2 tokens (    5.83 ms per token,   171.64 tokens per second)
+slot print_timing: id  0 | task 282 |       total time =      12.08 ms /     3 tokens
+slot print_timing: id  0 | task 282 |    graphs reused =        238
+slot      release: id  0 | task 282 | stop processing: n_tokens = 68, truncated = 0
+srv  update_slots: all slots are idle
+time=2026-10-04T00:21:47.392+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222147.388271100Z-000033_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222147.388271100Z-000033_api_chat_request.sh`"
+time=2026-10-04T00:21:47.392+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:47.393+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:47.393+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:47.412+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:47.413+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+srv  server_strea: conv_id= (empty=1)
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - checking sim = 0.529 (37/70) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 0.529 (> 0.100 thold), f_keep = 0.544
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> ?top-k -> ?typical -> ?top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 0.000
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 0, top_p = 1.000, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.000
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 285 | processing task, is_child = 0
+slot   operator(): id  0 | task 285 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 70
+slot   operator(): id  0 | task 285 | cached n_tokens = 37, memory_seq_rm [37, end)
+slot init_sampler: id  0 | task 285 | init sampler, took 0.01 ms, tokens: text = 70, total = 70
+slot print_timing: id  0 | task 285 | prompt eval time =      65.05 ms /    33 tokens (    1.97 ms per token,   507.30 tokens per second)
+slot print_timing: id  0 | task 285 |        eval time =      90.71 ms /     8 tokens (   12.96 ms per token,    77.17 tokens per second)
+slot print_timing: id  0 | task 285 |       total time =     155.76 ms /    41 tokens
+slot print_timing: id  0 | task 285 |    graphs reused =        244
+slot      release: id  0 | task 285 | stop processing: n_tokens = 77, truncated = 0
+srv  update_slots: all slots are idle
+time=2026-10-04T00:21:47.582+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222147.567123500Z-000034_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222147.567123500Z-000034_api_chat_request.sh`"
+time=2026-10-04T00:21:47.582+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:47.582+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:47.583+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:47.602+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:47.603+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+srv  server_strea: conv_id= (empty=1)
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - checking sim = 1.000 (70/70) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 1.000 (> 0.100 thold), f_keep = 0.909
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> ?top-k -> ?typical -> ?top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 0.000
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 0, top_p = 1.000, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.000
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 294 | processing task, is_child = 0
+slot   operator(): id  0 | task 294 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 70
+slot   operator(): id  0 | task 294 | need to evaluate at least 1 token for each active slot (n_past = 70, task.n_tokens() = 70)
+slot   operator(): id  0 | task 294 | n_past was set to 69
+slot   operator(): id  0 | task 294 | cached n_tokens = 69, memory_seq_rm [69, end)
+slot init_sampler: id  0 | task 294 | init sampler, took 0.01 ms, tokens: text = 70, total = 70
+slot print_timing: id  0 | task 294 | prompt eval time =       6.35 ms /     1 tokens (    6.35 ms per token,   157.41 tokens per second)
+slot print_timing: id  0 | task 294 |        eval time =       6.04 ms /     2 tokens (    6.04 ms per token,   165.59 tokens per second)
+slot print_timing: id  0 | task 294 |       total time =      12.39 ms /     3 tokens
+slot print_timing: id  0 | task 294 |    graphs reused =        246
+slot      release: id  0 | task 294 | stop processing: n_tokens = 71, truncated = 0
+srv  update_slots: all slots are idle
+time=2026-10-04T00:21:47.627+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222147.623566500Z-000035_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222147.623566500Z-000035_api_chat_request.sh`"
+time=2026-10-04T00:21:47.628+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:47.628+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:47.628+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:47.651+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:47.652+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+srv  server_strea: conv_id= (empty=1)
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - checking sim = 0.649 (37/57) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 0.649 (> 0.100 thold), f_keep = 0.521
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> ?top-k -> ?typical -> ?top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 0.000
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 0, top_p = 1.000, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.000
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 297 | processing task, is_child = 0
+slot   operator(): id  0 | task 297 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 57
+slot   operator(): id  0 | task 297 | cached n_tokens = 37, memory_seq_rm [37, end)
+slot init_sampler: id  0 | task 297 | init sampler, took 0.01 ms, tokens: text = 57, total = 57
+slot print_timing: id  0 | task 297 | prompt eval time =      13.49 ms /    20 tokens (    0.67 ms per token,  1482.91 tokens per second)
+slot print_timing: id  0 | task 297 |        eval time =    1652.58 ms /   248 tokens (    6.69 ms per token,   149.46 tokens per second)
+slot print_timing: id  0 | task 297 |       total time =    1666.06 ms /   268 tokens
+slot print_timing: id  0 | task 297 |    graphs reused =        491
+slot      release: id  0 | task 297 | stop processing: n_tokens = 304, truncated = 0
+srv  update_slots: all slots are idle
+time=2026-10-04T00:21:49.333+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222149.326705300Z-000036_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222149.326705300Z-000036_api_chat_request.sh`"
+time=2026-10-04T00:21:49.334+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:49.334+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:49.334+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:49.378+02:00 level=DEBUG source=sched.go:1391 msg="evaluating already loaded" model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:49.379+02:00 level=DEBUG source=llama_server.go:1992 msg="llama-server chat request" messages=1 tools=0
+srv  server_strea: conv_id= (empty=1)
+srv    operator(): chat format: peg-native
+slot get_availabl: id  0 | task -1 |  - checking sim = 0.001 (52/50061) > 0.100
+slot get_availabl: id  0 | task -1 | selected slot by LRU, t_last = 58051270
+srv  get_availabl: updating prompt cache
+srv   prompt_save:  - saving prompt with length 304, total state size = 33.254 MiB (draft: 0.000 MiB)
+srv          load:  - looking for better prompt, base f_keep = 0.171, f_sim = 0.001
+srv          load:    - prompt with length     205, lcp =      52, f_keep = 0.254, f_sim = 0.001
+srv          load:    - prompt with length     304, lcp =      52, f_keep = 0.171, f_sim = 0.001
+srv        update:  - cache state: 2 prompts, 55.679 MiB (limits: 8192.000 MiB, 32768 tokens, 74888 est)
+srv        update:    - prompt 000001B4B0B4A450:     205 tokens, checkpoints:  0,    22.425 MiB
+srv        update:    - prompt 000001B4B0B3F3E0:     304 tokens, checkpoints:  0,    33.254 MiB
+srv  get_availabl: prompt cache update took 12.50 ms
+slot launch_slot_: id  0 | task -1 | sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> ?top-k -> ?typical -> ?top-p -> ?min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  0 | task -1 | sampler params: 
+	repeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 0.000
+	dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = 64
+	top_k = 0, top_p = 1.000, min_p = 0.000, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.000
+	mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -1.000, adaptive_decay = 0.900
+slot launch_slot_: id  0 | task 546 | processing task, is_child = 0
+slot   operator(): id  0 | task 546 | new prompt, n_ctx_slot = 32768, n_keep = 4, task.n_tokens = 50061
+srv    send_error: task id = 546, error: request (50061 tokens) exceeds the available context size (32768 tokens), try increasing it
+slot      release: id  0 | task 546 | stop processing: n_tokens = 304, truncated = 0
+srv          stop: cancel task, id_task = 546
+srv  update_slots: all slots are idle
+srv  update_slots: all slots are idle
+time=2026-10-04T00:21:49.512+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222149.498430600Z-000037_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222149.498430600Z-000037_api_chat_request.sh`"
+time=2026-10-04T00:21:49.513+02:00 level=DEBUG source=sched.go:494 msg="context for request finished" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:49.513+02:00 level=DEBUG source=sched.go:399 msg="runner with non-zero duration has gone idle, adding timer" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 duration=2562047h47m16.854775807s
+time=2026-10-04T00:21:49.513+02:00 level=DEBUG source=sched.go:417 msg="after processing request finished event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 refCount=0
+time=2026-10-04T00:21:49.588+02:00 level=DEBUG source=sched.go:420 msg="runner expired event received" runner.name=registry.ollama.ai/library/wla-qwen3-0.6b-q8:latest runner.inference="[{ID:0 Library:CUDA}]" runner.pid=21764 runner.num_ctx=32768 runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:49.588+02:00 level=DEBUG source=sched.go:435 msg="got lock to unload expired event" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:49.588+02:00 level=DEBUG source=sched.go:458 msg="starting background wait for VRAM recovery" runner.size="4.1 GiB" runner.vram="4.1 GiB" runner.parallel=1 runner.model=D:\ia\ollama-v0.35.1-models\blobs\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+time=2026-10-04T00:21:49.589+02:00 level=DEBUG source=runner.go:272 msg="refreshing free memory"
+time=2026-10-04T00:21:49.589+02:00 level=DEBUG source=runner.go:320 msg="existing runner discovery took" duration=0s
+time=2026-10-04T00:21:49.589+02:00 level=DEBUG source=runner.go:42 msg="overall device VRAM discovery took" duration=0s
+time=2026-10-04T00:21:49.589+02:00 level=DEBUG source=llama_server.go:2687 msg="stopping llama-server" pid=21764
+time=2026-10-04T00:21:49.589+02:00 level=DEBUG source=llama_server.go:2692 msg="waiting for llama-server to exit" pid=21764
+time=2026-10-04T00:21:49.592+02:00 level=INFO source=inference_request_log.go:124 msg="logged to C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222149.588136700Z-000038_api_chat_body.json, replay using curl with `sh C:\\Users\\Anael\\AppData\\Local\\Temp\\ollama-request-logs-2692482842\\20261003T222149.588136700Z-000038_api_chat_request.sh`"

@@ -14,12 +14,16 @@ from typing import Any, Literal
 
 from wave_local_ai_v2 import (
     aggregation,
+    code_generation_suite,
+    code_sandbox,
     cost,
     engines,
+    gpu,
     hardware,
     harness,
     judge,
     judge_protocol,
+    machines,
     prompt_provenance,
     prompt_variants,
     roster,
@@ -193,7 +197,79 @@ from wave_local_ai_v2 import (
 # `llama_cpp_build`. Owed only from "22": a row below "22" still validates
 # without them, is verified under projection "1", and is never back-filled
 # with `llama.cpp`.
-SCHEMA_VERSION = "22"
+# "23": `machine_id` and `compute_mode` became required on both row kinds
+# (Story: a GPU run and a CPU-only run never share a fiche; Methodology 21).
+# A runtime row and a local quality row name a machine the tracked registry
+# (`machines.py`) declares and `gpu` or `cpu_only`; a row no local model
+# produced (a cloud subject's quality row) states `not_applicable` for both.
+# From this version a cited fiche is hashed under projection "3"
+# (`MACHINE_FICHE_SCHEMA_VERSION`), which carries both inside the identity, so
+# a `gpu` and a `cpu_only` run of one model on one machine never share a
+# fiche. Owed only from "23": a row below "23" still validates without them,
+# is verified under projection "1" or "2", and is never back-filled.
+# "24": `campaign_id` became required on both row kinds (Story: a campaign is
+# declared as data, and an empty cell fails it; Methodology 22). A run started
+# under a campaign (`CAMPAIGN_ID`, `campaigns.py`) stamps that campaign's id on
+# every row; a run started under none states `NO_CAMPAIGN`, and a row no local
+# model produced (a cloud subject's quality row) always does, since a campaign
+# declares engines and a cloud subject runs on none. Owed only from "24": a row
+# below "24" still validates without it and is never back-filled.
+# "25": a `cpu_only` runtime row states `vram_used_mib: "not_applicable"`
+# (`VRAM_NOT_APPLICABLE`) at the row level (its peak aggregate) and on every
+# counted and warm-up repetition, and a `gpu` row never does (Story: every view
+# names the machine and the mode, and a cpu_only row's VRAM reads not
+# applicable; Methodology 21). `null` keeps meaning a VRAM read that failed.
+# No field is added; a row below "25" is not re-checked and never rewritten.
+# "26": `profile_id` and `profile_overrides` became required on both row kinds
+# (Story: each model, machine and mode runs under its own named profile;
+# Methodology 21). A runtime row and a local quality row name the run profile
+# of their (roster entry x machine x compute mode) triple (`profiles.py`) and
+# map every value the operator overrode to `{"profile": ..., "operator": ...}`
+# (`{}` when the run is the profile as declared), so a row never claims a
+# profile it did not run under. A row no local model produced (a cloud
+# subject's quality row) states `PROFILE_NOT_APPLICABLE` for both. Owed only
+# from "26": a row below "26" still validates without them and is never
+# back-filled.
+# "27": `prompt_variant_noop` became required on quality rows (Story: the
+# terse-output variant runs every item and meets baseline in a paired test;
+# Methodology 2, 22). A variant declares the task families it applies to; an
+# item of any other family is still run, with its authored prompt unchanged,
+# and its row states `true`. The gate checks the value against the registry
+# for the row's `task_suite`, and checks `prompt_before_template` against the
+# variant applied to the item's authored text for every variant, not only
+# `baseline`. Runtime rows run one fixed prompt of no task family and carry
+# no such field. Owed only from "27": a row below "27" still validates
+# without it and is never back-filled.
+# "28": `constraint_mechanism` and `constraint_grammar_hash` became required
+# on quality rows (Story: the constrained-output variant runs under a
+# llama.cpp grammar and names its mechanism; Methodology 2, 22). The
+# mechanism the item's answer was decoded under (`gbnf`, or `none`) and the
+# content hash of the grammar sent (null under `none`); the gate checks both
+# against the registry for the row's variant and `task_suite`. Runtime rows
+# run one fixed prompt of no task family and carry neither. Owed only from
+# "28": a row below "28" still validates without them and is never
+# back-filled.
+# "29": a quality row's `verdict` block names the subject rule it was decided
+# under (Story: a cloud subject re-run is decided per item under its suite's
+# declared tolerance; Methodology 8): `subject_rule` (`identical` for a local
+# subject, `within_tolerance` for a cloud one), `tolerance` (null for a local
+# subject; for a cloud one the value and unit it was decided under with the
+# `suite_id`/`suite_version` that declared it), `divergence` (the observed
+# share of diverging items, null when nothing was compared) and
+# `single_run_indicative` (null, or why a cloud batch cannot be re-run
+# deterministically: `model_not_served` or `no_seed`, never with
+# `not_reproduced`). Additive: no field is renamed or removed, runtime rows
+# are unchanged, and a quality row below "29" still validates without them
+# and is never back-filled.
+# "30": a code-generation row carries a code block (Story: generated code is
+# scored by its tests in a sandbox, or not run at all; Methodology 9): the
+# item's `programming_language`, the `sandbox` it ran in with its caps, and
+# the batch's `programming_language_breakdown` (`CODE_FIELDS`). Required only
+# on a row that carries any of it, the conditional shape "10" established, so
+# every other row validates unchanged and nothing is back-filled. A code row
+# is a graded row: `item_score` is 1.0 when every test passed and 0.0 with
+# its failure reason otherwise.
+SCHEMA_VERSION = "30"
 
 # The two subject-composition fields "19" added, and the version from which a
 # quality row owes them.
@@ -258,18 +334,71 @@ ENGINE_FIELDS: frozenset[str] = frozenset({"engine_id", "engine_build"})
 ENGINE_FICHE_SCHEMA_VERSION = "22"
 
 
+# The schema version from which a cited fiche is hashed under projection "3"
+# (`machine_id` and `compute_mode` inside the identity), and from which a row
+# owes `MACHINE_FIELDS`. Fixed at "23" like the two constants above.
+MACHINE_FIELDS: frozenset[str] = frozenset({"machine_id", "compute_mode"})
+MACHINE_FICHE_SCHEMA_VERSION = "23"
+
+# What a row no local model produced (a cloud subject's quality row) says in
+# both `machine_id` and `compute_mode`: neither a declared machine nor `gpu` /
+# `cpu_only` produced it, which the row states rather than leaving null.
+MACHINE_NOT_APPLICABLE = "not_applicable"
+
+# The schema version from which a row owes `campaign_id`, fixed at "24".
+CAMPAIGN_SCHEMA_VERSION = "24"
+
+# The schema version from which a runtime row's VRAM fields are checked
+# against its compute mode, fixed at "25"; and the marker a `cpu_only` row
+# carries in them, owned by `gpu.py` so the repetition loop can write it.
+VRAM_NOT_APPLICABLE_SCHEMA_VERSION = "25"
+VRAM_NOT_APPLICABLE = gpu.VRAM_NOT_APPLICABLE
+
+# The schema version from which a row owes the run profile fields, fixed at
+# "26"; the two fields; what a row no local model produced states in both; and
+# the values an operator may override.
+PROFILE_SCHEMA_VERSION = "26"
+PROFILE_FIELDS: frozenset[str] = frozenset({"profile_id", "profile_overrides"})
+PROFILE_NOT_APPLICABLE = MACHINE_NOT_APPLICABLE
+OVERRIDABLE_PROFILE_VALUES: frozenset[str] = frozenset({"n_cpu_moe", "threads"})
+
+# The schema version from which a quality row owes `prompt_variant_noop`.
+VARIANT_NOOP_SCHEMA_VERSION = "27"
+VARIANT_NOOP_FIELD = "prompt_variant_noop"
+
+# The schema version from which a quality row owes the two constraint fields.
+CONSTRAINT_SCHEMA_VERSION = "28"
+CONSTRAINT_FIELDS: frozenset[str] = frozenset(
+    {"constraint_mechanism", "constraint_grammar_hash"}
+)
+
+# The schema version from which a quality row's verdict block names its
+# subject rule, tolerance, divergence and single-run-indicative mark.
+VERDICT_RULE_SCHEMA_VERSION = "29"
+_DECIDING_TOLERANCE_KEYS = frozenset({"value", "unit", "suite_id", "suite_version"})
+
+# What a row run under no campaign says in `campaign_id`: it belongs to none,
+# stated rather than left null. Reserved: no campaign may take it as its id.
+NO_CAMPAIGN = "none"
+
+
 def fiche_projection_for(schema_version: object) -> str:
     """The `hardware.FICHE_PROJECTIONS` version a row at `schema_version` cites.
 
-    Below `ENGINE_FICHE_SCHEMA_VERSION`: "1". At or above it, and for a
-    version that cannot be read as a number: the current projection -- an
-    unreadable version cannot be proven old, so it is held to today's rule.
+    Below `ENGINE_FICHE_SCHEMA_VERSION`: "1". Below
+    `MACHINE_FICHE_SCHEMA_VERSION`: "2". At or above it, and for a version
+    that cannot be read as a number: the current projection -- an unreadable
+    version cannot be proven old, so it is held to today's rule.
     """
     try:
-        is_legacy = int(schema_version) < int(ENGINE_FICHE_SCHEMA_VERSION)  # type: ignore[call-overload]
+        version = int(schema_version)  # type: ignore[call-overload]
     except (TypeError, ValueError):
-        is_legacy = False
-    return "1" if is_legacy else hardware.CURRENT_FICHE_PROJECTION
+        return hardware.CURRENT_FICHE_PROJECTION
+    if version < int(ENGINE_FICHE_SCHEMA_VERSION):
+        return "1"
+    if version < int(MACHINE_FICHE_SCHEMA_VERSION):
+        return "2"
+    return hardware.CURRENT_FICHE_PROJECTION
 
 
 RowKind = Literal["runtime", "quality"]
@@ -306,6 +435,18 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             # live-probed build (schema "22")
             "engine_id",
             "engine_build",
+            # machines: the declared machine and the compute mode the run was
+            # executed under (schema "23")
+            "machine_id",
+            "compute_mode",
+            # profiles: the run profile the launch resolved and every value
+            # the operator overrode, or `PROFILE_NOT_APPLICABLE` for both on a
+            # cloud subject's row (schema "26")
+            "profile_id",
+            "profile_overrides",
+            # campaigns: the campaign the run belongs to, or `NO_CAMPAIGN`
+            # (schema "24")
+            "campaign_id",
             # fiche_registry: the hardware + run-specific fiche, cited by hash
             "fiche_hash",
             # verdict.runtime_verdict
@@ -408,6 +549,10 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             "prompt_variant_id",
             "prompt_variant_version",
             "prompt_before_template",
+            # whether the variant skipped this item's task family (schema "27")
+            VARIANT_NOOP_FIELD,
+            # the decoding constraint the answer ran under (schema "28")
+            *CONSTRAINT_FIELDS,
             "model_id",
             "provider",
             # Where the subject prompt went: `none` for a local subject, the
@@ -418,6 +563,19 @@ REQUIRED_FIELDS: dict[RowKind, frozenset[str]] = {
             # `ENGINE_NOT_APPLICABLE` when none did (schema "22")
             "engine_id",
             "engine_build",
+            # machines: the declared machine and compute mode a local subject
+            # ran under, or `MACHINE_NOT_APPLICABLE` for both on a cloud
+            # subject's row (schema "23")
+            "machine_id",
+            "compute_mode",
+            # profiles: the run profile the launch resolved and every value
+            # the operator overrode, or `PROFILE_NOT_APPLICABLE` for both on a
+            # cloud subject's row (schema "26")
+            "profile_id",
+            "profile_overrides",
+            # campaigns: the campaign the run belongs to, or `NO_CAMPAIGN`
+            # (schema "24")
+            "campaign_id",
             "fiche_hash",
             # energy.EnergyResult / emissions.local_emissions / scope3_cloud_emissions
             # -- same twelve fields as the runtime row (plan.md's Decisions:
@@ -555,6 +713,7 @@ PARTIAL_NULL_SCORE_FIELDS: tuple[str, ...] = (
     "score_breakdown",
     "judged_headline_score",
     "score_interval",
+    "programming_language_breakdown",
 )
 
 
@@ -677,9 +836,77 @@ GRADED_FIELDS: frozenset[str] = frozenset(
 # contract, for the same reason the judge block's inner key sets are.
 GRADED_LANGUAGE_CELL_FIELDS: frozenset[str] = frozenset({"score", "n", "indicative"})
 
+# The code block (schema "30"): what a sandboxed code-generation row carries
+# beside its graded block. Carrying any member is the declaration.
+CODE_FIELDS: frozenset[str] = frozenset(
+    {"programming_language", "sandbox", "programming_language_breakdown"}
+)
+# The sandbox and caps every code row records (`code_sandbox.describe`).
+SANDBOX_FIELDS: frozenset[str] = frozenset(
+    {
+        "runtime",
+        "image",
+        "image_id",
+        "network",
+        "host_mount",
+        "wall_clock_cap_s",
+        "memory_cap_mib",
+        "pids_cap",
+    }
+)
+_SANDBOX_CAPS = ("wall_clock_cap_s", "memory_cap_mib", "pids_cap")
+CODE_LANGUAGE_CELL_FIELDS: frozenset[str] = frozenset({"score", "n"})
+
 
 class RowContractError(ValueError):
     """Raised when a row is missing one or more of its kind's required fields."""
+
+
+# The refusal record (`preflight.py`): a run refused below its entry's declared
+# minimum. Its own small contract, versioned apart from the row schema: it
+# carries no `schema_version`, so no view's schema floor ever selects it as a
+# row, and it lives in its own per-machine file, never in a results store.
+REFUSAL_RECORD_KIND = "refusal"
+REFUSAL_CONTRACT_VERSION = "1"
+REFUSAL_FIELDS: frozenset[str] = frozenset(
+    {
+        "record_kind",
+        "refusal_contract_version",
+        "roster_entry_id",
+        "machine_id",
+        "compute_mode",
+        "profile_id",
+        "requirement",
+        "declared",
+        "observed",
+        "unit",
+        "release_version",
+        "commit_sha",
+        "refused_at",
+    }
+)
+
+
+def validate_refusal(record: dict[str, Any]) -> None:
+    """Raise `RowContractError` unless `record` is a complete refusal record.
+
+    Refuses a missing field by name, a `record_kind` other than `refusal`,
+    and a record carrying `schema_version`: a refusal is never a row.
+    """
+    missing = REFUSAL_FIELDS - record.keys()
+    if missing:
+        raise RowContractError(
+            f"refusal record missing required fields: {', '.join(sorted(missing))}"
+        )
+    if record["record_kind"] != REFUSAL_RECORD_KIND:
+        raise RowContractError(
+            f"refusal record has record_kind {record['record_kind']!r}, "
+            f"expected {REFUSAL_RECORD_KIND!r}"
+        )
+    if "schema_version" in record:
+        raise RowContractError(
+            "a refusal record carries no schema_version: it is never a row"
+        )
 
 
 def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
@@ -697,6 +924,16 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
         missing -= SCORE_INTERVAL_FIELDS
     if _predates(row, ENGINE_FICHE_SCHEMA_VERSION):
         missing -= ENGINE_FIELDS
+    if _predates(row, MACHINE_FICHE_SCHEMA_VERSION):
+        missing -= MACHINE_FIELDS
+    if _predates(row, CAMPAIGN_SCHEMA_VERSION):
+        missing -= {"campaign_id"}
+    if _predates(row, PROFILE_SCHEMA_VERSION):
+        missing -= PROFILE_FIELDS
+    if kind == "quality" and _predates(row, VARIANT_NOOP_SCHEMA_VERSION):
+        missing -= {VARIANT_NOOP_FIELD}
+    if kind == "quality" and _predates(row, CONSTRAINT_SCHEMA_VERSION):
+        missing -= CONSTRAINT_FIELDS
     if missing:
         raise RowContractError(
             f"row of kind {kind!r} is missing required field(s): "
@@ -714,8 +951,16 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
 
     _validate_prompt_variant(kind, row)
     _validate_subject_egress(kind, row)
+    if kind == "quality" and not _predates(row, VERDICT_RULE_SCHEMA_VERSION):
+        _validate_quality_verdict_rule(row)
     if not _predates(row, ENGINE_FICHE_SCHEMA_VERSION):
         _validate_engine(kind, row)
+    if not _predates(row, MACHINE_FICHE_SCHEMA_VERSION):
+        _validate_machine(kind, row)
+    if not _predates(row, CAMPAIGN_SCHEMA_VERSION):
+        _validate_campaign(kind, row)
+    if not _predates(row, PROFILE_SCHEMA_VERSION):
+        _validate_profile(kind, row)
 
     cost_total = row["cost_total"]
     # The two bases are the values the cost was actually computed from: a kWh
@@ -745,6 +990,8 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
                 f"row of kind 'runtime' has an unrecognised ttft_source: {ttft_source!r}"
             )
         _validate_runtime_repetition_structure(row)
+        if not _predates(row, VRAM_NOT_APPLICABLE_SCHEMA_VERSION):
+            _validate_vram_applicability(row)
 
     if kind == "quality":
         _validate_suite_level(row)
@@ -755,6 +1002,7 @@ def validate_row(kind: RowKind, row: dict[str, Any]) -> None:
         _validate_harness(row)
         _validate_judged_fields(row)
         _validate_graded_fields(row)
+        _validate_code_fields(row)
         # After the graded block: a malformed graded score is named as such
         # before the interval beside it is checked against it.
         _validate_score_interval(row)
@@ -1202,6 +1450,156 @@ def _validate_engine(kind: RowKind, row: dict[str, Any]) -> None:
         )
 
 
+def _validate_campaign(kind: RowKind, row: dict[str, Any]) -> None:
+    """Refuse a `campaign_id` that is not a non-empty string, and a campaign
+    id on a row no local model produced.
+
+    A cloud subject's quality row always states `NO_CAMPAIGN`: a campaign
+    declares engines, and a cloud subject runs on none.
+    """
+    campaign_id = row["campaign_id"]
+    if not isinstance(campaign_id, str) or not campaign_id.strip():
+        raise RowContractError(
+            f"row of kind {kind!r} has campaign_id {campaign_id!r}; it names "
+            f"its campaign, or {NO_CAMPAIGN!r} for a run under none"
+        )
+    if (
+        kind == "quality"
+        and row["provider"] != SUBJECT_PROVIDER_LOCAL
+        and campaign_id != NO_CAMPAIGN
+    ):
+        raise RowContractError(
+            f"row of kind {kind!r} from provider {row['provider']!r} names "
+            f"campaign {campaign_id!r}: a cloud subject belongs to no campaign "
+            f"and states {NO_CAMPAIGN!r}"
+        )
+
+
+def _validate_profile(kind: RowKind, row: dict[str, Any]) -> None:
+    """Refuse a row that does not name its run profile and its overrides.
+
+    A runtime row and a local quality row name a non-empty profile id and map
+    each overridden value (`n_cpu_moe`, `threads`) to exactly `profile` and
+    `operator`. Any other quality row states `PROFILE_NOT_APPLICABLE` for both.
+    """
+    profile_id = row["profile_id"]
+    overrides = row["profile_overrides"]
+    if kind == "runtime" or row["provider"] == SUBJECT_PROVIDER_LOCAL:
+        if (
+            not isinstance(profile_id, str)
+            or not profile_id.strip()
+            or profile_id == PROFILE_NOT_APPLICABLE
+        ):
+            raise RowContractError(
+                f"row of kind {kind!r} has profile_id {profile_id!r}; a locally "
+                "produced row names the run profile it launched under"
+            )
+        if not isinstance(overrides, dict):
+            raise RowContractError(
+                f"row of kind {kind!r} has profile_overrides {overrides!r}; it "
+                "maps each overridden value to its profile and operator values, "
+                "or is {} when nothing was overridden"
+            )
+        for name, record in overrides.items():
+            if name not in OVERRIDABLE_PROFILE_VALUES or not (
+                isinstance(record, dict) and set(record) == {"profile", "operator"}
+            ):
+                raise RowContractError(
+                    f"row of kind {kind!r} has profile_overrides entry "
+                    f"{name!r}: {record!r}; an override names one of "
+                    f"{', '.join(sorted(OVERRIDABLE_PROFILE_VALUES))} with "
+                    "exactly its 'profile' and 'operator' values"
+                )
+        return
+
+    if profile_id != PROFILE_NOT_APPLICABLE or overrides != PROFILE_NOT_APPLICABLE:
+        raise RowContractError(
+            f"row of kind {kind!r} from provider {row['provider']!r} was produced "
+            f"by no local model: it must carry profile_id and profile_overrides "
+            f"{PROFILE_NOT_APPLICABLE!r}, got {profile_id!r} / {overrides!r}"
+        )
+
+
+def _validate_machine(kind: RowKind, row: dict[str, Any]) -> None:
+    """Refuse an undeclared machine or an unknown mode, and either on a row no
+    local model produced.
+
+    A runtime row and a local quality row must name a machine the tracked
+    registry declares and a compute mode (`gpu` or `cpu_only`). Any other
+    quality row must state `MACHINE_NOT_APPLICABLE` for both: a cloud
+    subject's row never carries `gpu` or `cpu_only`.
+    """
+    machine_id = row["machine_id"]
+    compute_mode = row["compute_mode"]
+    if kind == "runtime" or row["provider"] == SUBJECT_PROVIDER_LOCAL:
+        try:
+            declared = machines.declared_machine_ids()
+        except machines.MachineRegistryError as exc:
+            raise RowContractError(
+                f"row of kind {kind!r}: the machine registry cannot be read: {exc}"
+            ) from exc
+        if machine_id not in declared:
+            raise RowContractError(
+                f"row of kind {kind!r} names machine_id {machine_id!r}, which is "
+                f"not a declared machine (declared: {', '.join(sorted(declared))})"
+            )
+        if compute_mode not in machines.COMPUTE_MODES:
+            raise RowContractError(
+                f"row of kind {kind!r} has compute_mode {compute_mode!r}; a "
+                f"locally produced row names {' or '.join(machines.COMPUTE_MODES)}"
+            )
+        return
+
+    if machine_id != MACHINE_NOT_APPLICABLE or compute_mode != MACHINE_NOT_APPLICABLE:
+        raise RowContractError(
+            f"row of kind {kind!r} from provider {row['provider']!r} was produced "
+            f"by no local model: it must carry machine_id and compute_mode "
+            f"{MACHINE_NOT_APPLICABLE!r}, got {machine_id!r} / {compute_mode!r}"
+        )
+
+
+def _validate_vram_applicability(row: dict[str, Any]) -> None:
+    """Refuse a VRAM figure on a `cpu_only` row and the marker on a `gpu` row.
+
+    A `cpu_only` row carries `VRAM_NOT_APPLICABLE` at the row level and on
+    every counted and warm-up repetition: no number, zero included. A `gpu`
+    row carries a number or `null` (a failed read) in each place, never the
+    marker, so the two absences stay distinct.
+    """
+    places: list[tuple[str, Any]] = [("vram_used_mib", row["vram_used_mib"])]
+    for field in ("repetitions", "warmup_repetitions"):
+        repetitions = row[field]
+        if not isinstance(repetitions, list):
+            raise RowContractError(
+                f"row of kind 'runtime' has a non-list {field}: {repetitions!r}"
+            )
+        for position, repetition in enumerate(repetitions):
+            if not isinstance(repetition, dict) or "vram_used_mib" not in repetition:
+                raise RowContractError(
+                    f"row of kind 'runtime' has {field}[{position}] without "
+                    "vram_used_mib"
+                )
+            places.append(
+                (f"{field}[{position}].vram_used_mib", repetition["vram_used_mib"])
+            )
+
+    cpu_only = row["compute_mode"] == machines.COMPUTE_MODE_CPU_ONLY
+    for where, value in places:
+        if cpu_only and value != VRAM_NOT_APPLICABLE:
+            raise RowContractError(
+                f"row of kind 'runtime' under compute_mode 'cpu_only' carries "
+                f"{where}={value!r}: a cpu_only run has no VRAM figure and "
+                f"states {VRAM_NOT_APPLICABLE!r}"
+            )
+        is_number = isinstance(value, int | float) and not isinstance(value, bool)
+        if not cpu_only and not (value is None or is_number):
+            raise RowContractError(
+                f"row of kind 'runtime' under compute_mode "
+                f"{row['compute_mode']!r} carries {where}={value!r}: a VRAM "
+                "figure is a number, or null when the read failed"
+            )
+
+
 def _validate_suite_level(row: dict[str, Any]) -> None:
     """Refuse an unknown level, a malformed item declaration, and a
     publication row missing any of the three item declarations its suite
@@ -1228,13 +1626,17 @@ def _validate_suite_level(row: dict[str, Any]) -> None:
 
 
 def _validate_prompt_variant(kind: RowKind, row: dict[str, Any]) -> None:
-    """Refuse a variant the registry does not hold, and an unchecked `baseline`.
+    """Refuse a variant the registry does not hold, and an unchecked prompt.
 
-    `baseline` is a claim this gate checks rather than a label it trusts: the
-    row's `prompt_before_template` must equal the authored text of the item
-    it names, resolved from the code that owns that text -- never from a
-    field on the row, which a hand-built row could forge alongside the
-    transformed prompt.
+    The variant is a claim this gate checks rather than a label it trusts:
+    the row's `prompt_before_template` must equal the variant applied to the
+    authored text of the item it names, resolved from the code that owns that
+    text -- never from a field on the row, which a hand-built row could forge
+    alongside the transformed prompt. `baseline` is checked on every row and
+    refused when its text cannot be resolved; another variant is checked
+    from schema "27" whenever its text resolves. From "27" a quality row's
+    `prompt_variant_noop` must equal the registry's answer for its
+    `task_suite`.
     """
     variant_id = row["prompt_variant_id"]
     version = row["prompt_variant_version"]
@@ -1249,20 +1651,146 @@ def _validate_prompt_variant(kind: RowKind, row: dict[str, Any]) -> None:
             f"prompt variant {variant_id!r} has no such registered version"
         )
 
-    if variant_id != prompt_variants.BASELINE_ID:
+    variant = prompt_variants.REGISTRY[(variant_id, version)]
+    # A quality row names its task family; a runtime row's fixed prompt
+    # belongs to none.
+    task_family = row.get("task_suite") if kind == "quality" else None
+    owes_noop = kind == "quality" and not _predates(row, VARIANT_NOOP_SCHEMA_VERSION)
+    if owes_noop:
+        noop = row[VARIANT_NOOP_FIELD]
+        expected_noop = not prompt_variants.applies(variant, task_family)
+        if noop is not expected_noop:
+            raise RowContractError(
+                f"row of kind {kind!r} has {VARIANT_NOOP_FIELD} {noop!r}: prompt "
+                f"variant {variant_id!r} version {version!r} "
+                f"{'does not apply' if expected_noop else 'applies'} to task "
+                f"family {task_family!r}, so it must be {expected_noop!r}"
+            )
+
+    if kind == "quality" and not _predates(row, CONSTRAINT_SCHEMA_VERSION):
+        expected_constraint = prompt_variants.constraint_row_fields(
+            variant, task_family
+        )
+        for field, expected_value in sorted(expected_constraint.items()):
+            if row[field] != expected_value:
+                raise RowContractError(
+                    f"row of kind {kind!r} has {field} {row[field]!r}: prompt "
+                    f"variant {variant_id!r} version {version!r} on task family "
+                    f"{task_family!r} sends {expected_value!r}"
+                )
+
+    if variant_id != prompt_variants.BASELINE_ID and not owes_noop:
         return
     authored, unresolved_reason = _authored_prompt(kind, row)
     if authored is None:
+        if variant_id != prompt_variants.BASELINE_ID:
+            return
         raise RowContractError(
             f"row of kind {kind!r} declares prompt variant 'baseline' but its "
             f"prompt_before_template cannot be checked: {unresolved_reason}"
         )
-    if row["prompt_before_template"] != authored:
+    expected = prompt_variants.apply_variant(variant, authored, task_family).prompt
+    if row["prompt_before_template"] != expected:
         raise RowContractError(
-            f"row of kind {kind!r} declares prompt variant 'baseline' but its "
-            "prompt_before_template differs from the item's authored text: a "
-            "baseline row carries the authored prompt unchanged"
+            f"row of kind {kind!r} declares prompt variant {variant_id!r} "
+            f"version {version!r} but its prompt_before_template differs from "
+            "that variant applied to the item's authored text: a "
+            f"{variant_id!r} row carries what the variant made of the authored "
+            "prompt"
         )
+
+
+def _validate_quality_verdict_rule(row: dict[str, Any]) -> None:
+    """Refuse a "29" quality verdict block that does not name its subject rule.
+
+    Imported here rather than at module level, for the reason
+    `_authored_prompt` gives.
+    """
+    from wave_local_ai_v2 import suite_gate, verdict
+
+    block = row["verdict"]
+    if not isinstance(block, dict):
+        raise RowContractError(f"quality row's verdict {block!r} is not a block")
+    missing = sorted(set(verdict.QUALITY_SUBJECT_RULE_KEYS) - block.keys())
+    if missing:
+        raise RowContractError(
+            f"quality row's verdict block is missing field(s): {', '.join(missing)}"
+        )
+
+    is_local = row.get("provider") == verdict.LOCAL_PROVIDER
+    expected_rule = (
+        verdict.SUBJECT_RULE_IDENTICAL
+        if is_local
+        else verdict.SUBJECT_RULE_WITHIN_TOLERANCE
+    )
+    if block["subject_rule"] != expected_rule:
+        raise RowContractError(
+            f"quality row of provider {row.get('provider')!r} has verdict "
+            f"subject_rule {block['subject_rule']!r}, expected {expected_rule!r}"
+        )
+
+    tolerance = block["tolerance"]
+    marked = block["single_run_indicative"]
+    if is_local:
+        if tolerance is not None or marked is not None:
+            raise RowContractError(
+                "a local quality row's verdict is decided on identical output: "
+                "its tolerance and single_run_indicative are null"
+            )
+    else:
+        _validate_deciding_tolerance(row, tolerance, suite_gate.TOLERANCE_UNITS)
+        if marked is not None and marked not in verdict.RERUN_BLOCKERS:
+            raise RowContractError(
+                f"quality row's verdict single_run_indicative {marked!r} is not "
+                f"one of {', '.join(sorted(verdict.RERUN_BLOCKERS))}"
+            )
+        if marked is not None and block["verdict"] != verdict.VERDICT_NOT_COMPARABLE:
+            raise RowContractError(
+                f"a single-run indicative quality row ({marked}) is "
+                f"not_comparable, never {block['verdict']!r}"
+            )
+
+    divergence = block["divergence"]
+    if divergence is not None and not _is_share(divergence):
+        raise RowContractError(
+            f"quality row's verdict divergence {divergence!r} is not a number in [0, 1]"
+        )
+
+
+def _validate_deciding_tolerance(
+    row: dict[str, Any], tolerance: object, units: frozenset[str]
+) -> None:
+    """A cloud verdict's tolerance names its value, unit and declaring suite."""
+    if not isinstance(tolerance, dict) or set(tolerance) != _DECIDING_TOLERANCE_KEYS:
+        raise RowContractError(
+            f"a cloud quality row's verdict tolerance {tolerance!r} does not "
+            f"name {', '.join(sorted(_DECIDING_TOLERANCE_KEYS))}"
+        )
+    declared_by = (tolerance["suite_id"], tolerance["suite_version"])
+    own_suite = (row.get("suite_id"), row.get("suite_version"))
+    if declared_by != own_suite:
+        raise RowContractError(
+            f"a cloud quality row's verdict tolerance is declared by "
+            f"{declared_by!r}, not by the row's own suite {own_suite!r}"
+        )
+    if tolerance["unit"] not in units:
+        raise RowContractError(
+            f"a cloud quality row's verdict tolerance unit {tolerance['unit']!r} "
+            "is not a declared unit"
+        )
+    if not _is_share(tolerance["value"]):
+        raise RowContractError(
+            f"a cloud quality row's verdict tolerance value {tolerance['value']!r} "
+            "is not a number in [0, 1]"
+        )
+
+
+def _is_share(value: object) -> bool:
+    return (
+        isinstance(value, int | float)
+        and not isinstance(value, bool)
+        and (0 <= value <= 1)
+    )
 
 
 def _authored_prompt(kind: RowKind, row: dict[str, Any]) -> tuple[str | None, str]:
@@ -1644,3 +2172,103 @@ def _validate_runtime_repetition_structure(row: dict[str, Any]) -> None:
             f"match the declared measurement set: {declared!r} != "
             f"{set(aggregation.MEASUREMENT_FIELDS)!r}"
         )
+
+
+def _validate_code_fields(row: dict[str, Any]) -> None:
+    """Hold a row that declares itself a code row to the whole code block.
+
+    A code row is a graded row run in the sandbox: no network, no host
+    mount, its caps recorded; a per-programming-language cell only for the
+    languages the suite tags.
+    """
+    present = CODE_FIELDS & row.keys()
+    if not present:
+        return
+    missing = CODE_FIELDS - row.keys()
+    if missing:
+        raise RowContractError(
+            f"row of kind 'quality' declares itself a code row by carrying "
+            f"{', '.join(sorted(present))} but is missing code field(s): "
+            f"{', '.join(sorted(missing))}"
+        )
+    if not GRADED_FIELDS <= row.keys():
+        raise RowContractError(
+            "row of kind 'quality' carries a code block without the graded "
+            "block its pass or fail score is published in"
+        )
+    language = row["programming_language"]
+    if language not in code_sandbox.PROGRAMMING_LANGUAGES:
+        raise RowContractError(
+            f"row of kind 'quality' has programming_language {language!r}, not "
+            f"one of {', '.join(code_sandbox.PROGRAMMING_LANGUAGES)}"
+        )
+    reason = row["failure_reason"]
+    if reason is not None and reason not in code_generation_suite.FAILURE_REASONS:
+        raise RowContractError(
+            f"row of kind 'quality' has code failure_reason {reason!r}, not one "
+            f"of {', '.join(code_generation_suite.FAILURE_REASONS)}"
+        )
+    if row["item_score"] not in (0.0, 1.0):
+        raise RowContractError(
+            f"row of kind 'quality' has code item_score {row['item_score']!r}: "
+            "an item scores 1.0 when every test passes and 0.0 otherwise"
+        )
+    _validate_sandbox(row["sandbox"])
+    breakdown = row["programming_language_breakdown"]
+    if row.get("partial_failure") is not None and breakdown is None:
+        return
+    _validate_code_breakdown(breakdown, language)
+
+
+def _validate_sandbox(sandbox: Any) -> None:
+    if not isinstance(sandbox, dict) or set(sandbox) != SANDBOX_FIELDS:
+        raise RowContractError(
+            f"row of kind 'quality' has a sandbox block {sandbox!r}, expected "
+            f"exactly: {', '.join(sorted(SANDBOX_FIELDS))}"
+        )
+    if sandbox["network"] != "none" or sandbox["host_mount"] is not False:
+        raise RowContractError(
+            "row of kind 'quality' records a sandbox with network "
+            f"{sandbox['network']!r} and host_mount {sandbox['host_mount']!r}: "
+            "generated code runs with no network and no host mount"
+        )
+    for key in ("runtime", "image", "image_id"):
+        if not (isinstance(sandbox[key], str) and sandbox[key]):
+            raise RowContractError(
+                f"row of kind 'quality' has a sandbox with a malformed {key}"
+            )
+    for cap in _SANDBOX_CAPS:
+        value = sandbox[cap]
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise RowContractError(
+                f"row of kind 'quality' has sandbox {cap}={value!r}: a cap is a "
+                "positive integer"
+            )
+
+
+def _validate_code_breakdown(breakdown: Any, language: str) -> None:
+    if not isinstance(breakdown, dict) or language not in breakdown:
+        raise RowContractError(
+            "row of kind 'quality' has a programming_language_breakdown "
+            f"{breakdown!r} with no cell for its own language {language!r}"
+        )
+    for key, cell in breakdown.items():
+        if key not in code_sandbox.PROGRAMMING_LANGUAGES:
+            raise RowContractError(
+                f"row of kind 'quality' has a programming_language_breakdown "
+                f"cell for {key!r}, a language no code suite tags"
+            )
+        if not (
+            isinstance(cell, dict)
+            and set(cell) == CODE_LANGUAGE_CELL_FIELDS
+            and isinstance(cell["n"], int)
+            and not isinstance(cell["n"], bool)
+            and cell["n"] > 0
+            and isinstance(cell["score"], int | float)
+            and not isinstance(cell["score"], bool)
+            and 0.0 <= cell["score"] <= 1.0
+        ):
+            raise RowContractError(
+                f"row of kind 'quality' has a malformed "
+                f"programming_language_breakdown cell for {key!r}: {cell!r}"
+            )

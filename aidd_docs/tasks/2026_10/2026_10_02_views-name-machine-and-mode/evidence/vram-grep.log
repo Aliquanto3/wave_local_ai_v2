@@ -1,0 +1,4 @@
+schema_version: 25 machine_id: laptop-mobile-gpu compute_mode: cpu_only
+vram_used_mib occurrences: 5 values: ['"not_applicable"', '"peak_over_counted_repetitions"']
+numeric vram_used_mib: []
+gpu_draw_w: 17.955 gpu_energy_method: measured_nvml aggregation.vram_used_mib: peak_over_counted_repetitions

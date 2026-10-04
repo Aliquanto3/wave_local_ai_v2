@@ -1,0 +1,63 @@
+﻿captured_at: 2026-10-04T02:14:39.0613127+02:00
+--- power source (Win32_Battery BatteryStatus: 2 = on AC power) ---
+
+
+BatteryStatus            : 2
+EstimatedChargeRemaining : 100
+
+
+
+
+--- active power plan ---
+GUID du mode de gestion de l’alimentation : 6fecc5ae-f350-48a5-b669-b472cb895ccf  (Turbo)
+--- nvidia-smi ---
+name, driver_version, memory.used [MiB], memory.total [MiB], utilization.gpu [%], temperature.gpu, power.draw [W], clocks_event_reasons.active
+NVIDIA GeForce RTX 3060 Laptop GPU, 572.70, 0 MiB, 6144 MiB, 0 %, 40, 23.99 W, 0x0000000000000024
+pid, process_name, used_gpu_memory [MiB]
+--- llama-server processes ---
+none
+--- memory (KB) ---
+
+
+FreePhysicalMemory     : 19277840
+TotalVisibleMemorySize : 32929076
+
+
+
+
+--- total CPU load (%) ---
+6
+--- top 10 processes by CPU time ---
+
+Name                     Id         CPU WS_MB
+----                     --         --- -----
+claude                22856 2521,453125   386
+PSExpressCore         26112 1929,578125   163
+claude                31224  1804,84375   468
+logioptionsplus_agent 33036   894,40625   156
+explorer              35560    882,3125   299
+msedge                14588  516,671875    13
+msedge                37084  410,484375   298
+Discord               32428  344,109375   390
+nvsphelper64           3448   322,65625    15
+WindowsTerminal       18028   303,78125   125
+
+
+
+--- top 10 processes by current CPU % (2 s sample) ---
+
+Name            IDProcess PercentProcessorTime
+----            --------- --------------------
+WmiPrvSE#2          23352                   15
+System                  4                   10
+services             1504                    0
+python#1            42296                    0
+powershell#5        48116                    0
+python              44152                    0
+sihost              43388                    0
+sleep#3             46864                    0
+nordvpn-service      6672                    0
+sleep#2             28568                    0
+
+
+

@@ -27,11 +27,15 @@ results/raw/
 # same live rows there that a bare-metal run writes under aidd_docs/results/.
 results/*.jsonl
 # Every live append target, whatever RESULTS_PATH points at, since both store
-# paths are configurable. The curated *-reference.jsonl snapshots next to them
-# are the committed acceptance evidence and are re-included.
+# paths are configurable. The *-reference.jsonl bundle files next to them are
+# derived by wave-local-ai-v2-merge-bundle and committed, so they are
+# re-included; the per-machine locations under machines/ are not matched.
 aidd_docs/results/*.jsonl
 !aidd_docs/results/*-reference.jsonl
 !aidd_docs/results/*-reference.schema-*.jsonl
+# The client-session reception record is hand-appended and tracked, not a
+# live store (docs/client-session-record.md).
+!aidd_docs/results/client-sessions.jsonl
 __pycache__/
 .pytest_cache/
 .ruff_cache/

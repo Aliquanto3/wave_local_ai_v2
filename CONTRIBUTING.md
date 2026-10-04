@@ -58,9 +58,16 @@ every matrix leg is green.
 1. Confirm `pyproject.toml`'s `[project].version` is the one being released.
 2. Move the `## [Unreleased]` entries in `CHANGELOG.md` into a new dated
    `## [X.Y.Z] - YYYY-MM-DD` section, in prose describing what shipped, not a
-   list of commit subjects.
-3. Land that change on `main` through the normal pull request path.
-4. Cut the annotated tag with the `aidd-vcs:03-release-tag` skill.
+   list of commit subjects. Directly under the heading, write the new
+   release's credibility verdict line, which no client session has yet
+   touched: `Credibility: not yet validated (0 of 3 qualifying sessions, 0
+   distinct clients, 0 backfilled, 0 dismissals)`, on one line.
+3. Run `uv run wave-local-ai-v2-client-sessions` and quote, in the release
+   pull request, the verdict line it prints for the outgoing release (the
+   one the new release supersedes). Only logged client sessions change a
+   verdict; no step validates a release because time has passed.
+4. Land that change on `main` through the normal pull request path.
+5. Cut the annotated tag with the `aidd-vcs:03-release-tag` skill.
 
 The `verify-tag` CI job (`.github/workflows/ci.yml`) fails the tag push if
 the tag name and the packaged version (`build_info.version()`) disagree, and

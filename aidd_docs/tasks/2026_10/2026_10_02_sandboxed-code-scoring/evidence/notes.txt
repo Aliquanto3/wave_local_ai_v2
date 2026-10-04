@@ -1,0 +1,36 @@
+Evidence for the code-generation sandbox story (night run 2026-10-02).
+
+sandbox-planted-python.txt
+  Planted generations for item py-en-04 run in the real Docker sandbox
+  (Docker 29.7.2), image pinned by local id
+  sha256:11b8a687f7d5386322d4a5ffe3d485acf985f859ef9122ddde551d9aae3a82c4
+  (ghcr.io/aliquanto3/wave_local_ai_v2:v0.1.0, the published image; Python
+  3.12, entrypoint overridden to python). Correct => passed; failing test,
+  compile error, network connection, write to /etc, write to $HOME, fork
+  bomb => scored as failures inside the sandbox; a wrong solution that
+  exits 0 on import (sys.exit(0), exit(), os._exit(0)) => tests_failed, since
+  a pass needs the host's per-run nonce printed after the last test; an
+  endless loop => timeout from the in-container watchdog at the 20 s cap.
+  Each row's sandbox block records the tag and the resolved image id. No
+  container left afterwards (--rm; host kill + rm -f only past the grace).
+  Refreshed after review round 1.
+
+sandbox-integration-tests.txt
+  tests/test_code_sandbox.py::test_planted_generations_fail_inside_the_real_sandbox
+  and the harness tests, run with CODE_SANDBOX_IT=1 against the same local
+  image: 25 passed (8 real-container planted cases, including the three
+  Python exit-0 spellings; the Node harness, run directly on test-authored
+  planted code only, refuses process.exit(0) as tests_failed).
+
+local-run-refusal.txt
+  wave-local-ai-v2-quality --suite code-generation-python-javascript on this
+  machine: no Node image is present locally (only the project's images,
+  alpine and hello-world) and none is pulled, so the suite refuses in one
+  line, exit 1, before settings or any process; no row written.
+
+Pending
+  - Local batch rows (MoE + tiny dense side by side): needs a local Node
+    image (CODE_SANDBOX_NODE_IMAGE, e.g. node:22-slim loaded by an operator)
+    on a machine with the roster models.
+  - Cloud batch rows: needs a paid Mistral or Google AI Studio call (owner
+    decision D2: none tonight).

@@ -19,7 +19,14 @@ Maps to: Methodology 22 ("every declared cell is actually run rather than left e
 
 Needs: a real local model run on the reference machine with the pinned Ollama build installed. No API key.
 
-Blocked: spike `aidd_docs/backlog/spikes/which-constrained-decoding-mechanism-does-ollama-expose.md`.
+Blocked: only through `depends_on` on `aidd_docs/backlog/stories/ollama-quality-rows-pass-a-prompt-parity-gate-or-publish-as-observations.md` (order 7, `proposed`), which waits on order 6 (`proposed`). Spike `aidd_docs/backlog/spikes/which-constrained-decoding-mechanism-does-ollama-expose.md` is `resolved` (live session on Ollama v0.35.1, 2026-10-04): the "different mechanism" outcome, `format` as a JSON Schema enum keeping every constrained output a JSON string in the label set, and no GBNF field. Its other `depends_on`, `the-constrained-output-variant-runs-under-a-llama-cpp-grammar-and-names-its-mechanism.md` (order 5), is `done`.
+
+Current state (verified on `main` at `c68b23e`, 2026-10-03):
+
+- `prompt_variants.REGISTERED_VARIANTS` holds `baseline` only; `constrained_output` is order 5's to add. `engines.REQUIRED_FIELDS` has no supported-mechanisms field and the `llama.cpp` entry declares none.
+- No campaign declaration or completeness check exists (`quality_cli.PROMPT_VARIANT_ID` is fixed to `baseline`, its comment naming the declaration as a later story), so a dropped cell has nowhere to be listed until order 3.
+- `scoring.normalize_label` returns the first `[a-z]+` token of the lowercased output that is a label, so a JSON-string label (`"billing"`) parses under the unchanged classification parser; the suite's labels are `account`, `billing`, `other`, `technical`.
+- Spike desk findings, unverified until the live generations: Ollama's API has no field for a GBNF grammar, so the "same mechanism" outcome is excluded; its one mechanism is `format` (a JSON Schema, or `"json"`), compiled to a grammar by the bundled llama-server `b11232`, which makes this cell at best the "different mechanism" outcome, or "none" if `format` does not restrict every generation.
 
 ## Acceptance
 

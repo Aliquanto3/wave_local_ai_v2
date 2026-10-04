@@ -70,6 +70,8 @@ def _fixture_fiche(**overrides):
         "engine_id": "llama.cpp",
         "engine_build": "b10537",
         "engine_config_hash": "e" * 64,
+        "machine_id": "laptop-mobile-gpu",
+        "compute_mode": "gpu",
         "roster_entry_id": "qwen3.6-35b-a3b-ud-iq4xs",
         "model_sha256": "0" * 64,
         "quant": "UD-IQ4_XS",
@@ -142,6 +144,41 @@ def test_a_fiche_lacking_a_projection_key_is_refused_naming_it() -> None:
         fiche_hash(legacy)
 
 
+def test_a_gpu_and_a_cpu_only_fiche_of_one_machine_hash_differently() -> None:
+    """Epic success check 1 at the identity: the flag lists differ only
+    outside the projection, so `compute_mode` alone must separate them."""
+    gpu = _fixture_fiche(compute_mode="gpu", flags=["-ngl", "99"])
+    cpu_only = _fixture_fiche(
+        compute_mode="cpu_only", flags=["-ngl", "0", "--device", "none"]
+    )
+
+    assert fiche_hash(gpu) != fiche_hash(cpu_only)  # type: ignore[arg-type]
+
+
+def test_two_machine_ids_with_identical_captured_fields_hash_differently() -> None:
+    laptop = _fixture_fiche(machine_id="laptop-mobile-gpu")
+    tower = _fixture_fiche(machine_id="tower-desktop-gpu")
+
+    assert fiche_hash(laptop) != fiche_hash(tower)  # type: ignore[arg-type]
+
+
+def test_projection_2_ignores_machine_and_mode_and_projection_3_requires_them() -> None:
+    fiche = _fixture_fiche()
+    without = {
+        key: value
+        for key, value in fiche.items()
+        if key not in {"machine_id", "compute_mode"}
+    }
+
+    assert set(normalise_fiche(fiche, "3")) == set(FICHE_PROJECTIONS["3"])
+    assert fiche_hash(fiche, "2") == fiche_hash(without, "2")
+    assert fiche_hash(fiche, "2") == fiche_hash(
+        {**fiche, "compute_mode": "cpu_only"}, "2"
+    )
+    with pytest.raises(FicheProjectionError, match="machine_id, compute_mode"):
+        fiche_hash(without)
+
+
 def test_hash_is_independent_of_dict_key_insertion_order() -> None:
     a = _fixture_fiche()
     # Rebuild with keys in reverse insertion order -- still equal by value.
@@ -165,6 +202,9 @@ def test_build_fiche_merges_machine_capture_with_run_specific_fields() -> None:
         engine_id="llama.cpp",
         engine_build="b10537",
         engine_config_hash="e" * 64,
+        machine_id="laptop-mobile-gpu",
+        compute_mode="cpu_only",
+        profile_id="fake-entry@laptop-mobile-gpu/cpu_only",
         roster_entry_id="fake-entry",
         model_sha256="0" * 64,
         quant="UD-IQ4_XS",
@@ -172,10 +212,50 @@ def test_build_fiche_merges_machine_capture_with_run_specific_fields() -> None:
     )
 
     assert fiche["cpu"] == "x"
+    assert fiche["profile_id"] == "fake-entry@laptop-mobile-gpu/cpu_only"
     assert fiche["engine_id"] == "llama.cpp"
     assert fiche["engine_build"] == "b10537"
     assert fiche["engine_config_hash"] == "e" * 64
+    assert fiche["machine_id"] == "laptop-mobile-gpu"
+    assert fiche["compute_mode"] == "cpu_only"
     assert fiche["roster_entry_id"] == "fake-entry"
     assert fiche["model_sha256"] == "0" * 64
     assert fiche["quant"] == "UD-IQ4_XS"
     assert fiche["flags"] == ["-ngl", "99"]
+
+
+def test_renaming_a_profile_does_not_move_the_fiche_hash() -> None:
+    """`profile_id` is evidence like `flags`, outside every projection."""
+    machine = {
+        "cpu": "x",
+        "ram_gb": 32.0,
+        "gpu_name": "y",
+        "gpu_driver_version": "1.2.3",
+        "os": "z",
+        "cuda_ceiling": "12.4",
+    }
+
+    def fiche_named(profile_id: str) -> dict[str, object]:
+        return dict(
+            build_fiche(
+                machine,  # type: ignore[arg-type]
+                engine_id="llama.cpp",
+                engine_build="b10537",
+                engine_config_hash="e" * 64,
+                machine_id="laptop-mobile-gpu",
+                compute_mode="gpu",
+                profile_id=profile_id,
+                roster_entry_id="fake-entry",
+                model_sha256="0" * 64,
+                quant="UD-IQ4_XS",
+                flags=["-ngl", "99"],
+            )
+        )
+
+    original = fiche_named("fake-entry@laptop-mobile-gpu/gpu")
+    renamed = fiche_named("a-renamed-profile")
+
+    assert original["profile_id"] != renamed["profile_id"]
+    for projection in FICHE_PROJECTIONS:
+        assert "profile_id" not in FICHE_PROJECTIONS[projection]
+    assert fiche_hash(original) == fiche_hash(renamed)

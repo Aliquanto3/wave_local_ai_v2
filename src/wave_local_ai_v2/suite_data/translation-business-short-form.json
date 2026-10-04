@@ -1,6 +1,6 @@
 {
   "suite_id": "translation-business-short-form",
-  "suite_version": "3",
+  "suite_version": "4",
   "task_suite": "translation",
   "scoring_rule": "chrf_against_reference",
   "max_output_tokens": 128,
@@ -8,6 +8,11 @@
   "context_length": 32768,
   "thinking_policy": "disabled",
   "level": "development",
+  "divergence_tolerance": {
+    "value": 0.1,
+    "unit": "fraction_of_items",
+    "reason": "Provisional, not yet set against an observed cloud re-run of this suite: none is published, and no paid call was made when it was declared. It mirrors the classification suite's 0.10 (2 of 20 items whose chrF item_score differs) until a Mistral or Google re-run of this suite against its published reference is observed and the value is re-set against it."
+  },
   "items": [
     {
       "item_id": "en-fr-01",

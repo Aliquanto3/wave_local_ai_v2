@@ -1,0 +1,205 @@
+{
+  "alpha": 0.05,
+  "family_definition": {
+    "compared_dimension": "prompt_variant",
+    "rule": "one suite crossed with one compared dimension, closed at analysis time: every comparison this invocation declared, which must include every comparison of the family's current record, so a family only grows and each growth is a new record superseding the old by id (PRD Methodology 24)",
+    "suite_id": "classification-support-routing",
+    "suite_version": "4"
+  },
+  "family_id": "44b9986b4ebf2cc05308d965b9044e9ae55e004bd2c0936c6f875e01bd899b29",
+  "family_size": 1,
+  "members": [
+    {
+      "adjusted_p_value": null,
+      "adjusted_p_value_null_reason": "no_discordant_pairs",
+      "candidate_row_count": 20,
+      "candidate_run_id": "6d16257704594d79b427826bcb696455",
+      "candidate_selector": {},
+      "compared_dimension": "prompt_variant",
+      "compared_field": "correct",
+      "comparison_kind": "test",
+      "confounds": [],
+      "difference_convention": "candidate minus reference",
+      "differing_fields": [
+        "constraint_grammar_hash",
+        "constraint_mechanism",
+        "prompt_variant_id"
+      ],
+      "observation_reason": null,
+      "paired_item_ids": [
+        "account-01",
+        "account-02",
+        "account-de-01",
+        "account-de-02",
+        "account-fr-01",
+        "billing-01",
+        "billing-02",
+        "billing-03",
+        "billing-de-01",
+        "billing-fr-01",
+        "other-01",
+        "other-02",
+        "other-de-01",
+        "other-fr-01",
+        "technical-01",
+        "technical-02",
+        "technical-03",
+        "technical-de-01",
+        "technical-fr-01",
+        "technical-fr-02"
+      ],
+      "paired_n": 20,
+      "paired_values": [
+        {
+          "candidate": false,
+          "item_id": "account-01",
+          "reference": false
+        },
+        {
+          "candidate": true,
+          "item_id": "account-02",
+          "reference": true
+        },
+        {
+          "candidate": false,
+          "item_id": "account-de-01",
+          "reference": false
+        },
+        {
+          "candidate": true,
+          "item_id": "account-de-02",
+          "reference": true
+        },
+        {
+          "candidate": false,
+          "item_id": "account-fr-01",
+          "reference": false
+        },
+        {
+          "candidate": false,
+          "item_id": "billing-01",
+          "reference": false
+        },
+        {
+          "candidate": false,
+          "item_id": "billing-02",
+          "reference": false
+        },
+        {
+          "candidate": false,
+          "item_id": "billing-03",
+          "reference": false
+        },
+        {
+          "candidate": false,
+          "item_id": "billing-de-01",
+          "reference": false
+        },
+        {
+          "candidate": false,
+          "item_id": "billing-fr-01",
+          "reference": false
+        },
+        {
+          "candidate": true,
+          "item_id": "other-01",
+          "reference": true
+        },
+        {
+          "candidate": false,
+          "item_id": "other-02",
+          "reference": false
+        },
+        {
+          "candidate": false,
+          "item_id": "other-de-01",
+          "reference": false
+        },
+        {
+          "candidate": false,
+          "item_id": "other-fr-01",
+          "reference": false
+        },
+        {
+          "candidate": true,
+          "item_id": "technical-01",
+          "reference": true
+        },
+        {
+          "candidate": true,
+          "item_id": "technical-02",
+          "reference": true
+        },
+        {
+          "candidate": true,
+          "item_id": "technical-03",
+          "reference": true
+        },
+        {
+          "candidate": true,
+          "item_id": "technical-de-01",
+          "reference": true
+        },
+        {
+          "candidate": true,
+          "item_id": "technical-fr-01",
+          "reference": true
+        },
+        {
+          "candidate": true,
+          "item_id": "technical-fr-02",
+          "reference": true
+        }
+      ],
+      "raw_p_value": null,
+      "reference_row_count": 20,
+      "reference_run_id": "962f939a9d674078844d582dba9e945c",
+      "reference_selector": {},
+      "refusal": [],
+      "result": {
+        "contingency": {
+          "both_correct": 9,
+          "both_wrong": 11,
+          "candidate_only_correct": 0,
+          "reference_only_correct": 0
+        },
+        "direction": "no_difference",
+        "discordant_n": 0,
+        "effect_size": null,
+        "effect_size_formula": "c / b: pairs only the candidate got right over pairs only the reference got right; above 1 favours the candidate",
+        "effect_size_name": "discordant_pair_odds_ratio",
+        "effect_size_null_reason": "odds_ratio_empty_cell",
+        "mean_difference": 0.0,
+        "p_value": null,
+        "p_value_null_reason": "no_discordant_pairs",
+        "statistic": 0,
+        "statistic_name": "min(b, c): the smaller of the two discordant counts (b = reference only correct, c = candidate only correct)",
+        "test": "mcnemar_exact",
+        "tie_count": 0,
+        "zero_difference_count": 20
+      },
+      "scoring_kind": "binary",
+      "suite_id": "classification-support-routing",
+      "suite_level": "development",
+      "suite_version": "4",
+      "test": "mcnemar_exact",
+      "test_chosen_because": "the score is binary (exact match): every non-zero paired difference is +1 or -1, so the information is in the discordant pairs, and McNemar's exact test is the two-sided binomial over them",
+      "unpaired_count": 0,
+      "unpaired_items": [],
+      "verdict": "not distinguishable"
+    }
+  ],
+  "multiplicity_correction": {
+    "adjusted_over": "every member that was not refused, tests and observations alike, so adjustment_size equals tested_count; a member whose p is left null with a named reason enters as p = 1, which never lowers another member's adjusted p, and keeps its own adjusted p null with that reason; a refused member carries no p and enters no count",
+    "adjustment_size": 1,
+    "formula": "adjusted p_(i) = max over j <= i of min(1, (m - j + 1) * p_(j)), the m raw p-values sorted ascending; computed exactly, so tied raw p-values share one adjusted value and with m = 1 the adjusted p equals the raw p",
+    "method": "holm"
+  },
+  "record_type": "comparison_family",
+  "record_version": "2",
+  "refused_count": 0,
+  "rows_source": "aidd_docs/tasks/2026_10/2026_10_02_constrained-output-variant/evidence/quality.jsonl",
+  "supersedes": [],
+  "tested_count": 1,
+  "verdict_rule": "distinguishable when the Holm-adjusted p over the family (adjusted_p_value) <= alpha; not distinguishable otherwise, including a p left null because the sides never disagree; not comparable for a refusal, an observation (the sides differ outside the compared dimension or not on it, so no difference is attributable to it; its p stays in result) or a paired n below the test's minimum"
+}

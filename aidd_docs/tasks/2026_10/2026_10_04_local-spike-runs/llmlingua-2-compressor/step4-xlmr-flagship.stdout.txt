@@ -1,0 +1,36 @@
+﻿`torch_dtype` is deprecated! Use `dtype` instead!
+torch 2.14.1+cpu cuda_available False
+whole_prompt en 17 median_s 1.3 max_s 3.038 median_ratio 1.62 unchanged 0
+  example: Classify the following support message into exactly one of these categories: account, billing, other, technical. Reply with only the single category word, nothing else.
+
+Message: I was charged twice for my subscription this month, can you refund one? => Classify support message categories: account, billing, technical. Reply single category word, nothing else.
+ Message charged twice subscription this month, refund one?
+whole_prompt fr 12 median_s 1.298 max_s 1.374 median_ratio 1.63 unchanged 0
+  example: Classify the following support message into exactly one of these categories: account, billing, other, technical. Reply with only the single category word, nothing else.
+
+Message: Le prélèvement automatique de ce mois ne correspond pas au montant indiqué sur mon devis, pouvez-vous vérifier ? => Classify support message categories: account, billing, other technical. Reply single category word, nothing else.
+ Message prélèvement automatique mois correspond montant indiqué devis, vérifier ?
+whole_prompt de 12 median_s 1.326 max_s 1.438 median_ratio 1.57 unchanged 0
+  example: Classify the following support message into exactly one of these categories: account, billing, other, technical. Reply with only the single category word, nothing else.
+
+Message: Auf meiner letzten Rechnung fehlt der vereinbarte Rabatt aus unserem Vertrag. => Classify support message categories account, billing, technical. Reply single category word, nothing else.
+ Message letzten Rechnung fehlt vereinbarte Rabatt Vertrag.
+payload_only en 17 median_s 1.301 max_s 1.357 median_ratio 1.17 unchanged 0
+  example: Classify the following support message into exactly one of these categories: account, billing, other, technical. Reply with only the single category word, nothing else.
+
+Message: I was charged twice for my subscription this month, can you refund one? => Classify the following support message into exactly one of these categories: account, billing, other, technical. Reply with only the single category word, nothing else.
+
+Message charged twice subscription this month, refund one?
+payload_only fr 12 median_s 1.28 max_s 1.37 median_ratio 1.22 unchanged 0
+  example: Classify the following support message into exactly one of these categories: account, billing, other, technical. Reply with only the single category word, nothing else.
+
+Message: Le prélèvement automatique de ce mois ne correspond pas au montant indiqué sur mon devis, pouvez-vous vérifier ? => Classify the following support message into exactly one of these categories: account, billing, other, technical. Reply with only the single category word, nothing else.
+
+prélèvement automatique mois ne correspond pas montant devis, vérifier ?
+payload_only de 12 median_s 1.276 max_s 1.41 median_ratio 1.15 unchanged 0
+  example: Classify the following support message into exactly one of these categories: account, billing, other, technical. Reply with only the single category word, nothing else.
+
+Message: Auf meiner letzten Rechnung fehlt der vereinbarte Rabatt aus unserem Vertrag. => Classify the following support message into exactly one of these categories: account, billing, other, technical. Reply with only the single category word, nothing else.
+
+letzten Rechnung fehlt vereinbarte Rabatt Vertrag.
+load_s 1.5 peak_rss_mb 1903 vram_mib 4377 -> 4377

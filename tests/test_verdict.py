@@ -1,5 +1,9 @@
 import json
+from pathlib import Path
 
+import pytest
+
+from wave_local_ai_v2 import suite_registry
 from wave_local_ai_v2.fiche_registry import write_fiche
 from wave_local_ai_v2.verdict import (
     VERDICT_NOT_COMPARABLE,
@@ -7,6 +11,7 @@ from wave_local_ai_v2.verdict import (
     VERDICT_REPRODUCED,
     quality_verdict,
     runtime_verdict,
+    select_quality_references,
 )
 
 BASE_FICHE = {
@@ -19,6 +24,8 @@ BASE_FICHE = {
     "engine_id": "llama.cpp",
     "engine_build": "b10537",
     "engine_config_hash": "e" * 64,
+    "machine_id": "laptop-mobile-gpu",
+    "compute_mode": "gpu",
     "roster_entry_id": "fake-entry",
     "model_sha256": "0" * 64,
     "quant": "UD-IQ4_XS",
@@ -235,7 +242,14 @@ def test_a_legacy_reference_fiche_with_no_engine_field_is_not_comparable(
     legacy = {
         key: value
         for key, value in BASE_FICHE.items()
-        if key not in ("engine_id", "engine_build", "engine_config_hash")
+        if key
+        not in (
+            "engine_id",
+            "engine_build",
+            "engine_config_hash",
+            "machine_id",
+            "compute_mode",
+        )
     }
     legacy["llama_cpp_build"] = "b10537"
     candidate_hash = _write_fiche(registry_dir)
@@ -254,7 +268,7 @@ def test_a_legacy_reference_fiche_with_no_engine_field_is_not_comparable(
     )
 
     assert result["verdict"] == VERDICT_NOT_COMPARABLE
-    assert result["differing_fields"] == ["engine_build", "engine_id"]
+    assert result["differing_fields"] == ["compute_mode", "engine_build", "engine_id"]
 
 
 def test_a_blocking_field_null_on_the_reference_only_is_not_comparable(
@@ -291,6 +305,137 @@ def test_a_blocking_field_null_on_the_candidate_only_is_not_comparable(
     assert "null" in result["reason"]
 
 
+def test_a_cpu_only_candidate_against_a_gpu_reference_is_not_comparable(
+    tmp_path,
+) -> None:
+    """Epic success check 1 at the verdict: one machine, one model, two modes.
+
+    The fiches hash apart and are both stored, so each row reads its own
+    flags, and the verdict names `compute_mode` instead of comparing a CPU
+    median against a GPU one."""
+    registry_dir = tmp_path / "fiches"
+    gpu_hash = _write_fiche(registry_dir)
+    cpu_hash = _write_fiche(
+        registry_dir,
+        compute_mode="cpu_only",
+        flags=["-ngl", "0", "--device", "none"],
+    )
+    assert gpu_hash != cpu_hash
+    reference = _runtime_row(gpu_hash)
+    candidate = _runtime_row(cpu_hash, run_id="run-candidate", gen_tok_per_s=26.0)
+
+    result = runtime_verdict(candidate, [reference], registry_dir, tolerance=0.10)
+
+    assert result["verdict"] == VERDICT_NOT_COMPARABLE
+    assert "compute_mode" in result["differing_fields"]
+
+
+def test_a_mode_mismatch_alone_is_not_comparable_naming_compute_mode(
+    tmp_path,
+) -> None:
+    """Even with an identical flag list, the mode alone blocks."""
+    registry_dir = tmp_path / "fiches"
+    gpu_hash = _write_fiche(registry_dir)
+    cpu_hash = _write_fiche(registry_dir, compute_mode="cpu_only")
+
+    result = runtime_verdict(
+        _runtime_row(cpu_hash, run_id="run-candidate"),
+        [_runtime_row(gpu_hash)],
+        registry_dir,
+        tolerance=0.10,
+    )
+
+    assert result["verdict"] == VERDICT_NOT_COMPARABLE
+    assert result["differing_fields"] == ["compute_mode"]
+
+
+def _no_gpu_fiche(registry_dir, **overrides) -> str:
+    return _write_fiche(
+        registry_dir,
+        machine_id="pro-pc-no-gpu",
+        compute_mode="cpu_only",
+        gpu_name=None,
+        gpu_driver_version=None,
+        cuda_ceiling=None,
+        flags=["-ngl", "0", "--device", "none"],
+        **overrides,
+    )
+
+
+def test_two_cpu_only_runs_on_a_declared_gpu_less_machine_can_reproduce(
+    tmp_path,
+) -> None:
+    registry_dir = tmp_path / "fiches"
+    fiche_hash = _no_gpu_fiche(registry_dir)
+
+    result = runtime_verdict(
+        _runtime_row(fiche_hash, run_id="run-candidate", gen_tok_per_s=25.0),
+        [_runtime_row(fiche_hash)],
+        registry_dir,
+        tolerance=0.10,
+    )
+
+    assert result["verdict"] == VERDICT_REPRODUCED
+    assert result["differing_fields"] == []
+
+
+def test_a_gpu_that_failed_capture_on_a_gpu_declaring_machine_never_matches(
+    tmp_path,
+) -> None:
+    """The null-never-matches rule still holds where a GPU is declared: the
+    laptop declares one, so its null `gpu_name` is a failed capture."""
+    registry_dir = tmp_path / "fiches"
+    fiche_hash = _write_fiche(
+        registry_dir, compute_mode="cpu_only", gpu_name=None, flags=["-ngl", "0"]
+    )
+
+    result = runtime_verdict(
+        _runtime_row(fiche_hash, run_id="run-candidate"),
+        [_runtime_row(fiche_hash)],
+        registry_dir,
+        tolerance=0.10,
+    )
+
+    assert result["verdict"] == VERDICT_NOT_COMPARABLE
+    assert result["differing_fields"] == ["gpu_name"]
+
+
+def test_an_undeclared_machine_never_declares_its_gpu_absent(tmp_path) -> None:
+    registry_dir = tmp_path / "fiches"
+    fiche_hash = _no_gpu_fiche(registry_dir, cpu="other")
+    # Re-stored under an id the registry does not declare.
+    undeclared_hash = _write_fiche(
+        registry_dir,
+        machine_id="someone-elses-box",
+        compute_mode="cpu_only",
+        gpu_name=None,
+        flags=["-ngl", "0", "--device", "none"],
+    )
+    assert fiche_hash != undeclared_hash
+
+    result = runtime_verdict(
+        _runtime_row(undeclared_hash, run_id="run-candidate"),
+        [_runtime_row(undeclared_hash)],
+        registry_dir,
+        tolerance=0.10,
+    )
+
+    assert result["verdict"] == VERDICT_NOT_COMPARABLE
+    assert result["differing_fields"] == ["gpu_name"]
+
+
+_TOLERANCE = {
+    "value": 0.1,
+    "unit": "fraction_of_items",
+    "suite_id": "fixture-suite",
+    "suite_version": "1",
+}
+
+
+def _local_verdict(candidate: list[dict], reference: list[dict]) -> dict:
+    return quality_verdict(candidate, reference, provider="local", tolerance=_TOLERANCE)
+
+
 def _quality_row(model_id="Fake Model", suite_version="1", seed=1, **overrides) -> dict:
     row = {
         "run_id": "run-ref",
@@ -308,7 +453,7 @@ def test_quality_identical_labels_are_reproduced() -> None:
     reference = [_quality_row()]
     candidate = [_quality_row(run_id="run-candidate")]
 
-    result = quality_verdict(candidate, reference)
+    result = _local_verdict(candidate, reference)
 
     assert result["verdict"] == VERDICT_REPRODUCED
 
@@ -319,7 +464,7 @@ def test_quality_one_differing_label_is_not_reproduced_and_names_the_item(
     reference = [_quality_row()]
     candidate = [_quality_row(run_id="run-candidate", predicted_label="refund")]
 
-    result = quality_verdict(candidate, reference)
+    result = _local_verdict(candidate, reference)
 
     assert result["verdict"] == VERDICT_NOT_REPRODUCED
     assert "billing-01" in result["differing_fields"]
@@ -351,10 +496,53 @@ def test_quality_reference_selection_never_crosses_task_suites() -> None:
         )
     ]
 
-    result = quality_verdict(candidate, reference)
+    result = _local_verdict(candidate, reference)
 
     assert result["verdict"] == VERDICT_REPRODUCED
     assert result["compared_field"] == "item_score"
+
+
+def test_a_publication_batch_never_selects_the_hand_written_suites_reference() -> None:
+    # Both classification suites share task_suite, and each versions itself
+    # independently: at a shared suite_version the hand-written suite's rows
+    # must not stand in as the reference of a MInDS-14 batch.
+    reference = [
+        _quality_row(
+            task_suite="classification",
+            suite_id="classification-support-routing",
+            item_id="billing-01",
+        )
+    ]
+    candidate = [
+        _quality_row(
+            run_id="run-candidate",
+            task_suite="classification",
+            suite_id="classification-banking-intents-minds14",
+            item_id="PolyAI/minds14:en-US~ABROAD/a.wav",
+            predicted_label="abroad",
+        )
+    ]
+
+    assert select_quality_references(candidate, reference) == []
+    result = _local_verdict(candidate, reference)
+    assert result["verdict"] == VERDICT_NOT_COMPARABLE
+    assert result["reference_run_id"] is None
+
+
+def test_a_row_without_a_suite_id_is_matched_on_task_suite_as_before() -> None:
+    reference = [_quality_row(task_suite="classification")]
+    with_id = [
+        _quality_row(
+            run_id="run-candidate",
+            task_suite="classification",
+            suite_id="classification-support-routing",
+        )
+    ]
+    without_id = [_quality_row(run_id="run-candidate", task_suite="classification")]
+
+    assert select_quality_references(with_id, reference) == reference
+    assert select_quality_references(without_id, reference) == reference
+    assert _local_verdict(with_id, reference)["verdict"] == VERDICT_REPRODUCED
 
 
 def _two_run_reference(first_label: str, second_label: str) -> list[dict]:
@@ -384,7 +572,7 @@ def _two_item_candidate() -> list[dict]:
 def test_quality_two_reference_runs_compare_against_the_named_run() -> None:
     reference = _two_run_reference(first_label="refund", second_label="billing")
 
-    result = quality_verdict(_two_item_candidate(), reference)
+    result = _local_verdict(_two_item_candidate(), reference)
 
     assert result["verdict"] == VERDICT_REPRODUCED
     assert result["reference_run_id"] == "run-ref-a"
@@ -393,7 +581,7 @@ def test_quality_two_reference_runs_compare_against_the_named_run() -> None:
 def test_quality_a_disagreement_in_the_named_run_alone_is_not_reproduced() -> None:
     reference = _two_run_reference(first_label="billing", second_label="refund")
 
-    result = quality_verdict(_two_item_candidate(), reference)
+    result = _local_verdict(_two_item_candidate(), reference)
 
     assert result["verdict"] == VERDICT_NOT_REPRODUCED
     assert result["reference_run_id"] == "run-ref-a"
@@ -404,7 +592,7 @@ def test_quality_no_matching_reference_is_not_comparable() -> None:
     reference = [_quality_row(model_id="Other Model")]
     candidate = [_quality_row(run_id="run-candidate")]
 
-    result = quality_verdict(candidate, reference)
+    result = _local_verdict(candidate, reference)
 
     assert result["verdict"] == VERDICT_NOT_COMPARABLE
 
@@ -413,7 +601,7 @@ def test_quality_batches_covering_no_common_item_are_not_comparable() -> None:
     reference = [_quality_row(item_id="billing-01")]
     candidate = [_quality_row(run_id="run-candidate", item_id="refund-09")]
 
-    result = quality_verdict(candidate, reference)
+    result = _local_verdict(candidate, reference)
 
     # Zero compared items must never read as agreement.
     assert result["verdict"] == VERDICT_NOT_COMPARABLE
@@ -427,14 +615,14 @@ def test_quality_a_reference_missing_one_item_is_not_comparable() -> None:
         _quality_row(run_id="run-candidate", item_id="refund-09"),
     ]
 
-    result = quality_verdict(candidate, reference)
+    result = _local_verdict(candidate, reference)
 
     assert result["verdict"] == VERDICT_NOT_COMPARABLE
     assert result["differing_fields"] == ["refund-09"]
 
 
 def test_quality_a_label_decided_verdict_names_the_field_it_decided_on() -> None:
-    result = quality_verdict([_quality_row(run_id="run-candidate")], [_quality_row()])
+    result = _local_verdict([_quality_row(run_id="run-candidate")], [_quality_row()])
 
     assert result["compared_field"] == "predicted_label"
 
@@ -458,7 +646,7 @@ def test_quality_identical_item_scores_are_reproduced_on_the_score() -> None:
     reference = [_graded_row()]
     candidate = [_graded_row(run_id="run-candidate")]
 
-    result = quality_verdict(candidate, reference)
+    result = _local_verdict(candidate, reference)
 
     assert result["verdict"] == VERDICT_REPRODUCED
     # Named, so a reader can tell a score reproduction from a label one
@@ -474,7 +662,7 @@ def test_quality_one_differing_item_score_is_not_reproduced_and_names_the_item()
         _graded_row(run_id="run-candidate", item_id="fr-de-03", item_score=0.68)
     ]
 
-    result = quality_verdict(candidate, reference)
+    result = _local_verdict(candidate, reference)
 
     assert result["verdict"] == VERDICT_NOT_REPRODUCED
     assert result["differing_fields"] == ["fr-de-03"]
@@ -490,7 +678,7 @@ def test_quality_two_batches_with_nothing_comparable_are_not_comparable() -> Non
         _quality_row(run_id="run-candidate", predicted_label=None, item_score=None)
     ]
 
-    result = quality_verdict(candidate, reference)
+    result = _local_verdict(candidate, reference)
 
     assert result["verdict"] == VERDICT_NOT_COMPARABLE
     assert result["compared_field"] is None
@@ -502,7 +690,7 @@ def test_quality_a_row_carrying_no_score_key_at_all_is_not_comparable() -> None:
     reference = [_quality_row(predicted_label=None)]
     candidate = [_quality_row(run_id="run-candidate", predicted_label=None)]
 
-    result = quality_verdict(candidate, reference)
+    result = _local_verdict(candidate, reference)
 
     assert result["verdict"] == VERDICT_NOT_COMPARABLE
 
@@ -513,7 +701,7 @@ def test_quality_a_label_on_one_side_alone_still_decides_on_the_label() -> None:
     reference = [_quality_row()]
     candidate = [_quality_row(run_id="run-candidate", predicted_label=None)]
 
-    result = quality_verdict(candidate, reference)
+    result = _local_verdict(candidate, reference)
 
     assert result["compared_field"] == "predicted_label"
     assert result["verdict"] == VERDICT_NOT_REPRODUCED
@@ -525,7 +713,7 @@ def test_quality_a_label_anywhere_in_the_batch_outranks_a_score() -> None:
     reference = [_quality_row(item_score=0.4)]
     candidate = [_quality_row(run_id="run-candidate", item_score=0.9)]
 
-    result = quality_verdict(candidate, reference)
+    result = _local_verdict(candidate, reference)
 
     assert result["compared_field"] == "predicted_label"
     assert result["verdict"] == VERDICT_REPRODUCED
@@ -542,8 +730,181 @@ def test_a_suite_version_bump_supersedes_rather_than_reproduces() -> None:
     untemplated = [_quality_row(suite_version="2")]
     templated = [_quality_row(suite_version="3", run_id="run-candidate")]
 
-    result = quality_verdict(templated, untemplated)
+    result = _local_verdict(templated, untemplated)
 
     assert result["verdict"] == "not_comparable"
     assert "suite_version" in result["reason"]
     assert result["reference_run_id"] is None
+
+
+# --- the subject rule: local identical, cloud within the declared tolerance --
+
+
+def _batch(
+    run_id: str, labels: list[str | None], provider: str = "mistral"
+) -> list[dict]:
+    return [
+        _quality_row(
+            run_id=run_id,
+            item_id=f"item-{index:02d}",
+            predicted_label=label,
+            provider=provider,
+        )
+        for index, label in enumerate(labels)
+    ]
+
+
+def _cloud_pair(diverging: int, total: int = 20) -> tuple[list[dict], list[dict]]:
+    reference = _batch("run-ref", ["billing"] * total)
+    candidate = _batch(
+        "run-candidate", ["technical"] * diverging + ["billing"] * (total - diverging)
+    )
+    return candidate, reference
+
+
+def _cloud_verdict(candidate, reference, **kwargs) -> dict:
+    return quality_verdict(
+        candidate, reference, provider="mistral", tolerance=_TOLERANCE, **kwargs
+    )
+
+
+def test_a_cloud_batch_diverging_within_its_tolerance_is_reproduced_naming_them() -> (
+    None
+):
+    candidate, reference = _cloud_pair(diverging=2)
+
+    result = _cloud_verdict(candidate, reference)
+
+    assert result["verdict"] == VERDICT_REPRODUCED
+    assert result["differing_fields"] == ["item-00", "item-01"]
+    assert result["divergence"] == 0.1
+    assert result["subject_rule"] == "within_tolerance"
+    assert result["tolerance"] == _TOLERANCE
+    assert result["single_run_indicative"] is None
+
+
+def test_a_cloud_batch_diverging_beyond_its_tolerance_is_not_reproduced() -> None:
+    candidate, reference = _cloud_pair(diverging=3)
+
+    result = _cloud_verdict(candidate, reference)
+
+    assert result["verdict"] == VERDICT_NOT_REPRODUCED
+    assert result["differing_fields"] == ["item-00", "item-01", "item-02"]
+    assert result["divergence"] == 0.15
+    assert result["tolerance"]["suite_version"] == "1"
+
+
+@pytest.mark.parametrize("blocker", ["model_not_served", "no_seed"])
+def test_a_cloud_batch_that_cannot_be_rerun_is_single_run_indicative(blocker) -> None:
+    candidate, reference = _cloud_pair(diverging=20)
+
+    result = _cloud_verdict(candidate, reference, rerun_blocker=blocker)
+
+    assert result["verdict"] == VERDICT_NOT_COMPARABLE
+    assert result["verdict"] != VERDICT_NOT_REPRODUCED
+    assert result["single_run_indicative"] == blocker
+    assert blocker in result["reason"]
+    assert result["reference_run_id"] == "run-ref"
+
+
+def test_a_local_batch_with_one_diverging_item_is_still_not_reproduced() -> None:
+    reference = _batch("run-ref", ["billing"] * 20, provider="local")
+    candidate = _batch(
+        "run-candidate", ["technical"] + ["billing"] * 19, provider="local"
+    )
+
+    result = quality_verdict(
+        candidate, reference, provider="local", tolerance=_TOLERANCE
+    )
+
+    assert result["verdict"] == VERDICT_NOT_REPRODUCED
+    assert result["differing_fields"] == ["item-00"]
+    assert result["subject_rule"] == "identical"
+    assert result["tolerance"] is None
+
+
+def test_a_local_batch_is_never_marked_single_run_indicative() -> None:
+    with pytest.raises(ValueError, match="only a cloud subject"):
+        quality_verdict(
+            [], [], provider="local", tolerance=_TOLERANCE, rerun_blocker="no_seed"
+        )
+
+
+def test_an_unknown_rerun_blocker_is_refused() -> None:
+    with pytest.raises(ValueError, match="model_not_served, no_seed"):
+        _cloud_verdict([], [], rerun_blocker="rate_limited")
+
+
+def test_an_all_null_cloud_batch_is_not_comparable() -> None:
+    reference = _batch("run-ref", [None] * 20)
+    candidate = _batch("run-candidate", [None] * 20)
+
+    result = _cloud_verdict(candidate, reference)
+
+    assert result["verdict"] == VERDICT_NOT_COMPARABLE
+    assert result["compared_field"] is None
+    assert result["tolerance"] == _TOLERANCE
+
+
+def test_a_cloud_item_null_on_one_side_counts_as_diverging() -> None:
+    reference = _batch("run-ref", ["billing"] * 20)
+    candidate = _batch("run-candidate", [None] * 3 + ["billing"] * 17)
+    # Null on both sides is not agreement on a cloud batch either.
+    reference[3]["predicted_label"] = candidate[3]["predicted_label"] = None
+
+    result = _cloud_verdict(candidate, reference)
+
+    assert result["verdict"] == VERDICT_NOT_REPRODUCED
+    assert result["differing_fields"] == ["item-00", "item-01", "item-02", "item-03"]
+
+
+@pytest.mark.parametrize(
+    ("candidate", "reference", "reason"),
+    [
+        ([], [], "no reference row"),
+        (_cloud_pair(0)[0][:19], _cloud_pair(0)[1], "on one side only"),
+    ],
+)
+def test_a_cloud_batch_keeps_the_existing_not_comparable_triggers(
+    candidate, reference, reason
+) -> None:
+    result = _cloud_verdict(candidate, reference)
+
+    assert result["verdict"] == VERDICT_NOT_COMPARABLE
+    assert reason in result["reason"]
+    assert result["subject_rule"] == "within_tolerance"
+
+
+def test_the_committed_mistral_rerun_is_reproduced_under_the_declared_tolerance() -> (
+    None
+):
+    """The one observed cloud re-run: the two committed mistral-small-2603
+    batches, which the identical rule published as not_reproduced on one
+    item, read back under the classification suite's declared tolerance.
+    Superseded with the schema-7 bundle on 2026-10-04 and kept unedited."""
+    rows = [
+        json.loads(line)
+        for line in Path("aidd_docs/results/quality-reference.schema-7.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line.strip()
+    ]
+    mistral = [row for row in rows if row["provider"] == "mistral"]
+    reference = [row for row in mistral if row["run_id"].startswith("5e13166d")]
+    candidate = [row for row in mistral if row["run_id"].startswith("d20afbda")]
+    suite = suite_registry.resolve("classification-support-routing")
+    tolerance = {
+        "value": suite.divergence_tolerance["value"],
+        "unit": suite.divergence_tolerance["unit"],
+        "suite_id": suite.suite_id,
+        "suite_version": suite.suite_version,
+    }
+
+    result = quality_verdict(
+        candidate, reference, provider="mistral", tolerance=tolerance
+    )
+
+    assert candidate[0]["verdict"]["verdict"] == VERDICT_NOT_REPRODUCED
+    assert result["verdict"] == VERDICT_REPRODUCED
+    assert result["differing_fields"] == ["other-de-01"]
+    assert result["divergence"] == 0.05

@@ -9,21 +9,12 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from wave_local_ai_v2 import google_client, machines, mistral_client, retry
+
 DEFAULT_RESULTS_PATH = "aidd_docs/results/runtime.jsonl"
 DEFAULT_QUALITY_RESULTS_PATH = "aidd_docs/results/quality.jsonl"
 DEFAULT_ROSTER_PATH = "aidd_docs/roster/models.json"
 DEFAULT_ROSTER_ENTRY_ID = "qwen3.6-35b-a3b-ud-iq4xs"
-# The MoE flagship's own `validated_host.n_cpu_moe`. Documentation of that
-# entry, not the resolution path: `SERVER_N_CPU_MOE` unset resolves to `None`
-# and `server.build_flags` reads the selected entry's own value, so a dense
-# entry (whose value is `null`) launches with no `--n-cpu-moe` at all while
-# the flagship's launch stays byte-identical. One definition, one meaning --
-# an operator who *does* set `SERVER_N_CPU_MOE` overrides the entry, and a
-# dense entry handed a value still refuses in `roster.validate_host_fit`.
-DEFAULT_HOST_N_CPU_MOE = 37
-# A genuine host value with no per-entry counterpart: every entry runs at the
-# same thread count on a given machine, so this one keeps a plain default.
-DEFAULT_HOST_THREADS = 8
 DEFAULT_FICHE_REGISTRY_DIR = "aidd_docs/results/fiches"
 # Where `suite_snapshot` exports each suite definition a published row cites.
 # A constant here rather than a literal in that module, for the reason
@@ -32,6 +23,22 @@ DEFAULT_FICHE_REGISTRY_DIR = "aidd_docs/results/fiches"
 DEFAULT_SUITE_DEFINITIONS_DIR = "aidd_docs/results/suite-definitions"
 DEFAULT_COMPARISONS_DIR = "aidd_docs/results/comparisons"
 DEFAULT_LEADER_SETS_DIR = "aidd_docs/results/leader-sets"
+# Where items drawn from a share-alike source and their rows travel apart,
+# one `<licence id>/` per licence (LICENSE-DATA section 2, `bundle_export.py`).
+DEFAULT_SHARE_ALIKE_DIR = "aidd_docs/results/share-alike"
+# Where campaign declarations live, one `<campaign_id>.json` each: beside the
+# results, outside the committed stores (`campaigns.py`).
+DEFAULT_CAMPAIGNS_DIR = "aidd_docs/campaigns"
+# The per-machine results root: one tracked location `<root>/<machine_id>/`
+# per declared machine (`machine_results.py`), holding the runtime and quality
+# rows promoted from that machine's live stores and the refusal records the
+# pre-flight appends there directly (`preflight.refusal_path`). Tracked,
+# unlike the live stores: the ignore rule covers only the top-level
+# `aidd_docs/results/*.jsonl`. The published bundle is merged from it
+# (`bundle_merge.py`).
+DEFAULT_MACHINE_RESULTS_ROOT = "aidd_docs/results/machines"
+# The bundle's third file: every location's refusal records, never a row.
+DEFAULT_REFUSALS_REFERENCE_PATH = "aidd_docs/results/refusals-reference.jsonl"
 # Where `use_case_coverage` publishes the coverage record, and only once every
 # PRD use case in it carries a resolvable state.
 DEFAULT_USE_CASE_COVERAGE_PATH = "aidd_docs/results/use-case-coverage.json"
@@ -136,9 +143,62 @@ DEFAULT_DASHBOARD_BUNDLE_DIR = "frontend/dist"
 # dashboard's own origin and the service's bound address are the same fact
 # and must not be able to drift apart.
 
+# The demo run console (`/api/console/*`) is off unless explicitly, exactly
+# turned on: it is the one surface through which a browser can start a CLI
+# run on this machine. Only these two literals are read; anything else
+# (`True`, `1`, `yes`, an empty value) is a SettingsError naming the
+# variable, never a guess in either direction.
+DEFAULT_SERVICE_DEMO_MODE = False
+_DEMO_MODE_VALUES = {"true": True, "false": False}
+
+# The playground's caps: a pasted document cannot hold the demo machine. The
+# prompt is capped in characters (checked before anything is sent), the answer
+# in generated tokens (sent as the request's `max_tokens`).
+DEFAULT_PLAYGROUND_MAX_PROMPT_CHARS = 4000
+DEFAULT_PLAYGROUND_MAX_TOKENS = 512
+
+# The playground's one cloud subject, `<provider>:<model>`, unset by default.
+# Its own setting on purpose: a `MISTRAL_API_KEY`/`GOOGLE_API_KEY` held to
+# send the repo's own suite items is not consent to send text a client typed,
+# so holding a key enables nothing. The model must be the one the provider's
+# client is pinned to: both clients send one dated model id and take no other.
+PLAYGROUND_CLOUD_SUBJECT_VAR = "PLAYGROUND_CLOUD_SUBJECT"
+# provider -> (pinned model, key variable, pacing variable, default pacing)
+_PLAYGROUND_CLOUD_PROVIDERS: dict[str, tuple[str, str, str, float]] = {
+    "mistral": (
+        mistral_client.MODEL,
+        "MISTRAL_API_KEY",
+        "MISTRAL_REQUEST_PACING_S",
+        DEFAULT_MISTRAL_REQUEST_PACING_S,
+    ),
+    "google": (
+        google_client.MODEL,
+        "GOOGLE_API_KEY",
+        "GOOGLE_REQUEST_PACING_S",
+        DEFAULT_GOOGLE_REQUEST_PACING_S,
+    ),
+}
+
 
 class SettingsError(RuntimeError):
     """Raised when required configuration is missing or invalid."""
+
+
+@dataclass(frozen=True)
+class PlaygroundCloudSubject:
+    """The configured playground cloud subject and what its calls run under.
+
+    `pacing_s` and `max_retries` are the provider's benchmark pacing interval
+    and the retry budget a one-item batch gets, so a playground send obeys the
+    same rules as a quality batch's call.
+    """
+
+    provider: str
+    model: str
+    # repr=False: a traceback or a logged settings object must not carry it.
+    api_key: str = field(repr=False)
+    pacing_s: float
+    max_retries: int
 
 
 @dataclass(frozen=True)
@@ -170,14 +230,30 @@ class Settings:
     runtime_cooldown_s: float = 10.0
     runtime_warmup_count: int = 1
     runtime_spread_threshold: float = 0.10
-    # Host-fitted flags: the only two launch flags that are not roster data.
-    # `None` is `host_n_cpu_moe`'s unset state and means "the selected entry
-    # decides" -- `server.build_flags` resolves it from that entry's own
-    # `validated_host.n_cpu_moe`. It is not "0": 0 is an explicit instruction
-    # to offload no experts, which a dense entry refuses, and `None` is the
-    # absence of an instruction.
+    # The operator's explicit overrides of the run profile (`profiles.py`),
+    # applied last in the resolution order (entry default, profile, operator).
+    # `None` is the unset state and means "the run profile decides"; a set
+    # value is recorded on every row as a deviation from the profile. `0` is
+    # an explicit instruction to offload no experts, which a dense entry and a
+    # `cpu_only` run refuse, never the absence of an instruction.
     host_n_cpu_moe: int | None = None
-    host_threads: int = DEFAULT_HOST_THREADS
+    host_threads: int | None = None
+    # The declared machine and the compute mode a run is executed under, as
+    # `MACHINE_ID` / `COMPUTE_MODE` named them, or `None` when unset. They are
+    # never defaulted: `load_settings` reads them with no fallback, and every
+    # row-writing CLI calls `require_run_profile` before anything else, which
+    # refuses an absent or undeclared value. `None` here only lets a command
+    # that writes no row (the candidate gate, the validator) load settings.
+    machine_id: str | None = None
+    compute_mode: str | None = None
+    # The campaign a run belongs to, as `CAMPAIGN_ID` named it, or `None`: a
+    # run under no campaign stays possible and its rows record that they
+    # belong to none. A named campaign is loaded from `campaigns_dir` and the
+    # run checked against it by `campaigns.require_run_campaign`.
+    campaign_id: str | None = None
+    campaigns_dir: Path = Path(DEFAULT_CAMPAIGNS_DIR)
+    # No existence check at load time: `results.append_refusal` creates it.
+    machine_results_root: Path = Path(DEFAULT_MACHINE_RESULTS_ROOT)
     # No existence check at load time, mirrors roster_path: fiche_registry.write_fiche
     # creates it via mkdir(parents=True, exist_ok=True), matching results.append_row's
     # own pattern.
@@ -241,6 +317,24 @@ class ServiceSettings:
     dashboard_origin: str
     tls_certfile: Path
     tls_keyfile: Path
+    # The declared machine registry a runtime row's `machine_id` resolves
+    # against: the tracked file, the same one the run CLIs check rows against.
+    machine_registry_path: Path = Path(machines.DEFAULT_REGISTRY_PATH)
+    demo_mode: bool = DEFAULT_SERVICE_DEMO_MODE
+    # The machine this service runs on, as `MACHINE_ID` names it, or `None`.
+    # Read raw and never required: the read routes need no machine. The demo
+    # console offers only this machine's run profiles and checks it against
+    # the registry itself, so a run is never launched under another machine.
+    machine_id: str | None = None
+    # The playground's local install, read raw from the same variables the run
+    # CLIs require and never required here: the read routes need no model.
+    llama_server_path: Path | None = None
+    slm_models_dir: Path | None = None
+    playground_max_prompt_chars: int = DEFAULT_PLAYGROUND_MAX_PROMPT_CHARS
+    playground_max_tokens: int = DEFAULT_PLAYGROUND_MAX_TOKENS
+    # `None` unless `PLAYGROUND_CLOUD_SUBJECT` names one: the playground's one
+    # path off the machine, opt-in only.
+    playground_cloud: PlaygroundCloudSubject | None = None
 
 
 def load_service_settings() -> ServiceSettings:
@@ -311,7 +405,95 @@ def load_service_settings() -> ServiceSettings:
         dashboard_origin=os.environ.get("DASHBOARD_ORIGIN", f"https://{host}:{port}"),
         tls_certfile=_require_existing_path("SERVICE_TLS_CERTFILE"),
         tls_keyfile=_require_existing_path("SERVICE_TLS_KEYFILE"),
+        demo_mode=_parse_demo_mode(os.environ.get("SERVICE_DEMO_MODE")),
+        machine_id=os.environ.get("MACHINE_ID") or None,
+        llama_server_path=_optional_path("LLAMA_SERVER_PATH"),
+        slm_models_dir=_optional_path("SLM_MODELS_DIR"),
+        playground_max_prompt_chars=_require_numeric(
+            "PLAYGROUND_MAX_PROMPT_CHARS",
+            DEFAULT_PLAYGROUND_MAX_PROMPT_CHARS,
+            int,
+            minimum=1,
+            minimum_reason="a playground prompt needs at least one character",
+        ),
+        playground_max_tokens=_require_numeric(
+            "PLAYGROUND_MAX_TOKENS",
+            DEFAULT_PLAYGROUND_MAX_TOKENS,
+            int,
+            minimum=1,
+            minimum_reason="a playground answer needs at least one token",
+        ),
+        playground_cloud=_playground_cloud_subject(),
     )
+
+
+def _playground_cloud_subject() -> PlaygroundCloudSubject | None:
+    """Read `PLAYGROUND_CLOUD_SUBJECT`; its provider's key only when it is set.
+
+    Unset or empty is `None`, whatever keys the environment holds. Set, it
+    must be `<provider>:<model>` with the model the provider's client is
+    pinned to, and the provider's key must be present: a misconfigured cloud
+    subject refuses service start rather than failing on the pitch screen.
+    """
+    raw = os.environ.get(PLAYGROUND_CLOUD_SUBJECT_VAR)
+    if not raw:
+        return None
+    provider, _, model = raw.partition(":")
+    if provider not in _PLAYGROUND_CLOUD_PROVIDERS:
+        raise SettingsError(
+            f"{PLAYGROUND_CLOUD_SUBJECT_VAR}={raw!r} names no known provider: "
+            f"must be '<provider>:<model>' with provider one of "
+            f"{sorted(_PLAYGROUND_CLOUD_PROVIDERS)}"
+        )
+    pinned, key_var, pacing_var, default_pacing = _PLAYGROUND_CLOUD_PROVIDERS[provider]
+    min_retries, per_item = _cloud_retry_settings()
+    if model != pinned:
+        raise SettingsError(
+            f"{PLAYGROUND_CLOUD_SUBJECT_VAR}={raw!r}: the {provider} client is "
+            f"pinned to {pinned!r}; the playground sends to no other model"
+        )
+    api_key = os.environ.get(key_var, "")
+    if not api_key:
+        raise SettingsError(
+            f"{PLAYGROUND_CLOUD_SUBJECT_VAR} names {provider} but {key_var} is not set"
+        )
+    return PlaygroundCloudSubject(
+        provider=provider,
+        model=model,
+        api_key=api_key,
+        pacing_s=_require_numeric(
+            pacing_var,
+            default_pacing,
+            float,
+            minimum=0.0,
+            minimum_reason="a pacing interval cannot be negative",
+        ),
+        max_retries=retry.derived_retry_budget(
+            1, per_item=per_item, minimum=min_retries
+        ),
+    )
+
+
+def _optional_path(env_var: str) -> Path | None:
+    """`env_var` as a path, or `None` when unset or empty; never checked here."""
+    raw = os.environ.get(env_var)
+    return Path(raw) if raw else None
+
+
+def _parse_demo_mode(raw: str | None) -> bool:
+    """Read `SERVICE_DEMO_MODE`: unset is off, and only `true`/`false` parse.
+
+    Case-sensitive on purpose: a strict parser accepting one spelling cannot
+    read a typo as either state.
+    """
+    if raw is None:
+        return DEFAULT_SERVICE_DEMO_MODE
+    if raw not in _DEMO_MODE_VALUES:
+        raise SettingsError(
+            f"SERVICE_DEMO_MODE={raw!r} is not recognised: must be exactly "
+            "'true' or 'false', or unset (off)"
+        )
+    return _DEMO_MODE_VALUES[raw]
 
 
 def fiche_registry_dir_from_env() -> Path:
@@ -326,6 +508,28 @@ def fiche_registry_dir_from_env() -> Path:
     """
     load_dotenv()
     return Path(os.environ.get("FICHE_REGISTRY_DIR", DEFAULT_FICHE_REGISTRY_DIR))
+
+
+def machine_results_root_from_env() -> Path:
+    """Resolve `MACHINE_RESULTS_ROOT` alone, without a full settings load.
+
+    Promotion and the bundle merge touch tracked files only, never a model or
+    a server, so they must not refuse on a machine with no local install.
+    """
+    load_dotenv()
+    return Path(os.environ.get("MACHINE_RESULTS_ROOT", DEFAULT_MACHINE_RESULTS_ROOT))
+
+
+def tracked_fiche_registry_dir_from_env() -> Path:
+    """The tracked fiche registry promotion copies cited fiches into.
+
+    `FICHE_REGISTRY_DIR` is where a run writes them; by default the two are
+    the same directory and the copy finds every file already there.
+    """
+    load_dotenv()
+    return Path(
+        os.environ.get("TRACKED_FICHE_REGISTRY_DIR", DEFAULT_FICHE_REGISTRY_DIR)
+    )
 
 
 def load_settings() -> Settings:
@@ -391,29 +595,37 @@ def load_settings() -> Settings:
         minimum=0.0,
         minimum_reason="a spread threshold cannot be negative",
     )
-    # Absent means `None`, the "read the selected entry" state -- not
-    # `DEFAULT_HOST_N_CPU_MOE`, which would put the flagship's 37 in front of
-    # every dense entry and make each one refuse. Present is validated
-    # exactly as before, so an out-of-range override still names its reason;
-    # the default handed to `_require_numeric` is unreachable on that branch
-    # and is the flagship's value only so the two never disagree.
+    # Absent means `None`: the run profile decides. Present is an operator
+    # override, validated so an out-of-range value names its reason.
     host_n_cpu_moe = (
         None
         if os.environ.get("SERVER_N_CPU_MOE") is None
         else _require_numeric(
             "SERVER_N_CPU_MOE",
-            DEFAULT_HOST_N_CPU_MOE,
+            0,
             int,
             minimum=0,
             minimum_reason="--n-cpu-moe cannot offload a negative number of experts",
         )
     )
-    host_threads = _require_numeric(
-        "SERVER_THREADS",
-        DEFAULT_HOST_THREADS,
-        int,
-        minimum=1,
-        minimum_reason="-t needs at least one thread",
+    # Required run inputs with no default (Methodology 21: "never as a
+    # fallback"); validated by `require_run_profile`, not here, so a command
+    # that writes no row still loads.
+    machine_id = os.environ.get("MACHINE_ID") or None
+    compute_mode = os.environ.get("COMPUTE_MODE") or None
+    campaign_id = os.environ.get("CAMPAIGN_ID") or None
+    campaigns_dir = Path(os.environ.get("CAMPAIGNS_DIR", DEFAULT_CAMPAIGNS_DIR))
+    machine_results_root = machine_results_root_from_env()
+    host_threads = (
+        None
+        if os.environ.get("SERVER_THREADS") is None
+        else _require_numeric(
+            "SERVER_THREADS",
+            1,
+            int,
+            minimum=1,
+            minimum_reason="-t needs at least one thread",
+        )
     )
     runtime_reproduction_tolerance = _require_numeric(
         "RUNTIME_REPRODUCTION_TOLERANCE",
@@ -464,27 +676,7 @@ def load_settings() -> Settings:
         minimum=0.0,
         minimum_reason="a pacing interval cannot be negative",
     )
-    cloud_retry_min_retries = _require_numeric(
-        "CLOUD_RETRY_MIN_RETRIES",
-        DEFAULT_CLOUD_RETRY_MIN_RETRIES,
-        int,
-        # Zero would let a small batch refuse every retry: not "no retry
-        # configuration" but a batch that gives up on its first 429.
-        minimum=1,
-        minimum_reason="every batch must be allowed at least one retry",
-    )
-    cloud_retry_retries_per_item = _require_numeric(
-        "CLOUD_RETRY_RETRIES_PER_ITEM",
-        DEFAULT_CLOUD_RETRY_RETRIES_PER_ITEM,
-        float,
-        minimum=0.0,
-        minimum_reason="a per-item retry rate cannot be negative",
-    )
-    if not math.isfinite(cloud_retry_retries_per_item):
-        raise SettingsError(
-            f"CLOUD_RETRY_RETRIES_PER_ITEM={cloud_retry_retries_per_item!r} is "
-            "not finite: a retry budget is a whole number of retries"
-        )
+    cloud_retry_min_retries, cloud_retry_retries_per_item = _cloud_retry_settings()
     contested_ordinal_max_delta = _require_numeric(
         "CONTESTED_ORDINAL_MAX_DELTA",
         DEFAULT_CONTESTED_ORDINAL_MAX_DELTA,
@@ -510,6 +702,11 @@ def load_settings() -> Settings:
         runtime_spread_threshold=runtime_spread_threshold,
         host_n_cpu_moe=host_n_cpu_moe,
         host_threads=host_threads,
+        machine_id=machine_id,
+        compute_mode=compute_mode,
+        campaign_id=campaign_id,
+        campaigns_dir=campaigns_dir,
+        machine_results_root=machine_results_root,
         runtime_reference_path=runtime_reference_path,
         quality_reference_path=quality_reference_path,
         judge_probe_reference_path=judge_probe_reference_path,
@@ -526,6 +723,59 @@ def load_settings() -> Settings:
         cloud_retry_retries_per_item=cloud_retry_retries_per_item,
         contested_ordinal_max_delta=contested_ordinal_max_delta,
     )
+
+
+@dataclass(frozen=True)
+class RunProfile:
+    """The declared machine and the compute mode one run is executed under."""
+
+    machine: machines.MachineEntry
+    compute_mode: str
+
+    @property
+    def machine_id(self) -> str:
+        return self.machine.machine_id
+
+
+def require_run_profile(settings: Settings) -> RunProfile:
+    """The run's machine and mode, or `SettingsError` naming what is wrong.
+
+    Called by every row-writing CLI right after `load_settings`, before the
+    roster, the build probe, the fiche or any process: a run with no machine
+    id, an undeclared one, no compute mode, an unknown one, or `gpu` on a
+    machine declared GPU-less never starts a server.
+    """
+    try:
+        registry = machines.tracked_registry()
+    except machines.MachineRegistryError as exc:
+        raise SettingsError(f"the machine registry cannot be read: {exc}") from exc
+    declared = ", ".join(sorted(registry.entries))
+    if settings.machine_id is None:
+        raise SettingsError(
+            f"MACHINE_ID is not set: a run names the declared machine it runs "
+            f"on (declared: {declared})"
+        )
+    if settings.machine_id not in registry.entries:
+        raise SettingsError(
+            f"MACHINE_ID={settings.machine_id!r} is not a declared machine "
+            f"(declared: {declared})"
+        )
+    modes = " or ".join(machines.COMPUTE_MODES)
+    if settings.compute_mode is None:
+        raise SettingsError(
+            f"COMPUTE_MODE is not set: a run declares {modes}, never a default"
+        )
+    if settings.compute_mode not in machines.COMPUTE_MODES:
+        raise SettingsError(
+            f"COMPUTE_MODE={settings.compute_mode!r} is not a compute mode ({modes})"
+        )
+    machine = registry.entries[settings.machine_id]
+    if settings.compute_mode == machines.COMPUTE_MODE_GPU and not machine.gpu_present:
+        raise SettingsError(
+            f"COMPUTE_MODE=gpu on machine {machine.machine_id!r}, which is "
+            "declared to have no GPU: run it as cpu_only"
+        )
+    return RunProfile(machine=machine, compute_mode=settings.compute_mode)
 
 
 def _parse_quality_providers(raw: str) -> frozenset[str]:
@@ -554,6 +804,32 @@ def _require_existing_path(env_var: str) -> Path:
     if not path.exists():
         raise SettingsError(f"{env_var}={raw} does not exist on disk")
     return path
+
+
+def _cloud_retry_settings() -> tuple[int, float]:
+    """`CLOUD_RETRY_MIN_RETRIES` and `CLOUD_RETRY_RETRIES_PER_ITEM`, validated."""
+    min_retries = _require_numeric(
+        "CLOUD_RETRY_MIN_RETRIES",
+        DEFAULT_CLOUD_RETRY_MIN_RETRIES,
+        int,
+        # Zero would let a small batch refuse every retry: not "no retry
+        # configuration" but a batch that gives up on its first 429.
+        minimum=1,
+        minimum_reason="every batch must be allowed at least one retry",
+    )
+    per_item = _require_numeric(
+        "CLOUD_RETRY_RETRIES_PER_ITEM",
+        DEFAULT_CLOUD_RETRY_RETRIES_PER_ITEM,
+        float,
+        minimum=0.0,
+        minimum_reason="a per-item retry rate cannot be negative",
+    )
+    if not math.isfinite(per_item):
+        raise SettingsError(
+            f"CLOUD_RETRY_RETRIES_PER_ITEM={per_item!r} is "
+            "not finite: a retry budget is a whole number of retries"
+        )
+    return min_retries, per_item
 
 
 def _require_numeric[T: (int, float)](

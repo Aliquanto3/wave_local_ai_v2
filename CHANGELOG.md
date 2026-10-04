@@ -9,6 +9,208 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A release is called credible only by its logged client sessions** --
+  `aidd_docs/results/client-sessions.jsonl` is the tracked, append-only
+  record of each showing to a client (procedure:
+  `docs/client-session-record.md`), checked by
+  `wave-local-ai-v2-client-sessions`, which refuses a malformed line naming
+  the line and the field, reports incomplete records, and is run on the
+  committed file on every push together with a walk of its history that
+  fails on any edited or removed line. A challenge with no resolving
+  evidence named reads as sustained and must point at a defect or spike
+  carrying the record's client and session ids. Each dated release section
+  now carries one `Credibility:` line the check computes from the record:
+  `validated` at three qualifying sessions, `not yet validated (n of 3)`
+  otherwise, or `blocked` for good by a sustained challenge on fiche
+  disclosure, table separation or judge agreement before an outside
+  audience, with the distinct clients, backfilled sessions and dismissals
+  behind the count; elapsed time never validates a release, and a test
+  fails when a section's line differs from the check's.
+- **Each release attaches one archive that needs no clone** -- on a `v*`
+  tag, once `test`, `build` and `verify-tag` pass, a new `release` job (the
+  only job holding `contents: write`) runs `scripts/assemble_release_archive.py`
+  and creates the GitHub Release with one asset, `wave-local-ai-v2-<version>.zip`:
+  the five export tables, their column dictionary and manifest, the reference
+  bundle they were derived from at its repository paths, `LICENSE`,
+  `LICENSE-DATA`, `CITATION.cff` stamped with the tagged commit, and a README
+  naming the release, the commit, the bundle schema version and each file.
+  The build refuses an archive whose tables differ from those regenerated
+  from the bundle at the tagged commit, whose files name a repository path
+  the archive does not hold (beyond a reviewed list the README links at the
+  commit), or whose tag, packaged version, citation version or commit
+  disagree. Three column-dictionary meanings (`machine_id`, `profile_id`,
+  `campaign_id`) no longer name repository paths.
+- **A run started from the browser streams until its row lands** -- the
+  service gains a demo console, off unless `SERVICE_DEMO_MODE=true` and keyed
+  on every route from loopback too: the options route lists the kinds, the
+  registered suites, the roster entries and the service machine's declared
+  run profiles (`MACHINE_ID`); a run request carries identifiers only, is
+  checked against those sets before anything spawns (another machine's
+  profile is refused), takes the one in-process lock (a second request is
+  refused naming the holder), and launches the unchanged runtime or quality
+  CLI without a shell, the profile's machine and mode in its environment and
+  the service key blanked out of it. Its merged output streams as NDJSON over
+  `fetch`, never a URL-borne key, and ends with the row read back through the
+  existing view route or the exit status and the CLI's own `error:` line.
+  Both CLIs announce their `run_id` as their first stdout line and tear their
+  llama-server down on a graceful stop signal. The dashboard shows a
+  "Console" entry with select-only controls when demo mode is on.
+- **The constrained-output variant runs under a llama.cpp grammar and names
+  its mechanism (schema "28")** -- the prompt variant registry gains
+  `constrained_output` v1: per task family it applies to, the output format,
+  any instruction it adds (none on `classification`, whose authored prompt
+  already states the format) and the GBNF grammar that expresses it, all in
+  the hashed definition; `translation` records a no-op. The local path sends
+  the grammar with each answer through the engine's declared request field
+  (`aidd_docs/roster/engines.json`'s new `constraint_mechanisms`: llama.cpp
+  `gbnf` in `grammar`), and every quality row names `constraint_mechanism`
+  and `constraint_grammar_hash`, checked by the gate. A campaign pairing the
+  variant with an engine declaring none of its mechanisms is refused at
+  declaration, and a run beside an enabled cloud provider is refused before
+  launch. The two fields sit on the comparison's `prompt_variant` axis. A
+  laptop pair (`qwen3-0.6b-q8`, classification) is compared in
+  `aidd_docs/results/README.md`.
+- **The terse-output variant runs every item and meets baseline in a paired
+  test (schema "27")** -- the prompt variant registry gains
+  `output_compressed` v1, a terse-output instruction appended to the
+  authored prompt, whose wording is its hashed definition. A variant may
+  declare the task families it `applies_to` with its
+  `applicability_reason` (`output_compressed`: `classification` only). An
+  item outside them still runs with its authored prompt, and its quality row
+  states `prompt_variant_noop: true`; the row gate checks that value against
+  the registry and, for every variant, `prompt_before_template` against the
+  variant applied to the item's authored text. `wave-local-ai-v2-quality
+  --prompt-variant ID[@VERSION]` picks the variant (default `baseline`). Tests
+  hold caps, stop sequences, context length, thinking policy, scorer, parser,
+  expected output and item set identical across the two variants on every
+  suite. A laptop pair (`qwen3-0.6b-q8`, classification) is compared in
+  `aidd_docs/results/README.md`.
+
+- **Each machine returns its rows by pull request, and a hash collision is
+  refused** -- every declared machine owns a tracked results location,
+  `aidd_docs/results/machines/<machine_id>/` (`runtime.jsonl`,
+  `quality.jsonl`, `refusals.jsonl`; `MACHINE_RESULTS_ROOT`).
+  `wave-local-ai-v2-promote` copies named runs' rows line-for-line and their
+  fiches file-for-file into it, refusing a foreign `machine_id`, an unknown
+  `run_id` and a missing or differing fiche, idempotently.
+  `wave-local-ai-v2-merge-bundle` derives the bundle
+  (`runtime-reference.jsonl`, `quality-reference.jsonl` and the new
+  `refusals-reference.jsonl`) from every location, deterministically, and
+  refuses a fiche hash claimed under two machine ids (naming both rows, both
+  machine ids and the hash), an undeclared machine id, a misfiled row and one
+  run in two locations. CI's new **Derived bundle** step fails a bundle that
+  differs from the merge; the schema-"7" snapshot is pinned by digest until
+  its republication. `tests/test_reference_bundle.py` asserts every row's
+  machine id resolves, no two machines share a fiche hash, and every refusal
+  record resolves its roster entry, machine and profile. `docs/setup.md`
+  section 6 walks the per-machine loop and the operator-carried fallback.
+
+- **A model below its declared minimum refuses, and the refusal is published
+  (roster_version 6)** -- every roster entry declares, per compute mode, a
+  minimum total RAM, VRAM (`gpu` only) and free disk (`requirements`, each
+  `{value, source, read_from}` in decimal GB), required by `load_roster`. The
+  first declarations are calibrated from published peaks (the flagship's
+  15.23 GB and the 0.6B's 1.08 GB `gpu` RSS, the 0.6B's 4.77 GB `cpu_only`
+  RSS) and the weights' size; the other `cpu_only` RAM minimums are labelled
+  lower bounds, and no VRAM minimum is declared yet (the published
+  `vram_used_mib` is device-wide). A pre-flight (`preflight.py`), called by
+  the runtime, quality and judge-probe writers before the weights are looked
+  for or `llama-server` starts, compares them with the machine's total RAM,
+  its declared allocatable VRAM and, while the weights are absent, its free
+  disk. A run below a minimum exits non-zero naming the requirement, the mode,
+  the declared and the observed value, writes no row, substitutes nothing (a
+  refused `gpu` run names the `cpu_only` profile and runs nothing), and
+  appends one refusal record under its own contract
+  (`row_contract.REFUSAL_FIELDS`, no `schema_version`) to the machine's tracked
+  results location, `aidd_docs/results/machines/<machine_id>/refusals.jsonl`
+  (`MACHINE_RESULTS_ROOT`). The
+  requirement table is `docs/setup.md` section 1.2, which replaces the
+  README's hardware prose.
+- **Each model, machine and mode runs under its own named run profile (row
+  schema "26", roster_version 5)** -- the host-fitted launch values of every
+  (roster entry x machine x compute mode) triple are declared in the tracked
+  run profile registry `aidd_docs/roster/profiles.json` (`profiles.py`): one
+  default per (machine, mode) and per-entry overrides only where a model
+  differs, every value `{value, source, read_from}`. The declared set is `gpu`
+  and `cpu_only` on the laptop and the tower and `cpu_only` on the
+  professional PC; the tower's and the professional PC's thread counts and the
+  flagship's tower `--n-cpu-moe` are `not_yet_declared`. One resolution order,
+  roster entry default, then profile, then operator override, and
+  `server.build_flags(entry, profile, model_path)` stays the only flag builder,
+  with the profile a required argument. A triple with no declared profile, or
+  a profile value nobody has declared that the operator did not override,
+  refuses before any server starts, naming the triple and the declared
+  profiles. Every row carries `profile_id` and `profile_overrides` (each
+  overridden value with the profile's and the operator's), `not_applicable`
+  on a cloud subject's row; every fiche carries `profile_id` outside the
+  hashed projection, so a renamed profile never moves a hash. The MoE
+  flagship's laptop `gpu` launch is byte-identical to the validated baseline.
+
+- **Every view names the machine and the mode, and a `cpu_only` row's VRAM
+  reads not applicable (row schema "25")** -- a `cpu_only` runtime run no
+  longer reads NVML's device-wide VRAM figure: `vram_used_mib` is
+  `"not_applicable"` on the row (its peak aggregate) and on every counted and
+  warm-up repetition, never a number, zero included, while `gpu_draw_w` and
+  the GPU energy channel keep their own measurement and labels. A `gpu` row is
+  unchanged, and a `gpu` row whose VRAM read failed still carries `null`. The
+  writer gate refuses a VRAM number on a `cpu_only` row and the marker on a
+  `gpu` row; rows below "25" are not re-checked. The results service reports
+  the marker as a fourth absence reason, `not_applicable`, which the dashboard
+  renders as "not applicable", distinct from "not reported". The runtime view
+  shows the row's `machine_id` and `compute_mode` and resolves the machine id
+  against the declared machine registry (`ServiceSettings.machine_registry_path`,
+  default `aidd_docs/roster/machines.json`) to show memory type, rated and
+  configured speed and whether a GPU is present, each marked declared or not
+  yet declared; an undeclared id is a named unresolved pointer. The
+  comparison view appends `machine` and `compute_mode` to its column
+  dimensions, so a column names its machine and mode rather than differing
+  only by fiche hash.
+- **A campaign is declared as data, and an empty cell fails it (row schema
+  "24")** -- a campaign is one tracked file,
+  `aidd_docs/campaigns/<campaign_id>.json` (`campaigns.py`), naming its
+  engines, prompt variants (id and version), roster entries, suites and one
+  declared machine with its compute mode, plus the cells it will not run
+  (`refused` or `dropped`, each with its reason and evidence). Loading
+  refuses, naming the offending value, more than 2 engines, more than 4
+  variants, any id absent from its registry and an engine entry the engine
+  registry refuses. `CAMPAIGN_ID` puts a runtime or quality run under a
+  campaign: the run is checked against the declaration before the build
+  probe or any server starts (engine, variant, roster entry, suite, machine
+  and mode, an excluded cell, and any cloud provider enabled), and every row
+  carries `campaign_id`; a run with no campaign records `none`, as every
+  cloud subject's row does. The judge probe refuses `CAMPAIGN_ID`. A resume
+  under another campaign is refused. `wave-local-ai-v2-campaign-completeness
+  --campaign <id>` lists every declared cell (engine x variant x roster entry
+  x suite) with the run ids filling it, lists refused and dropped cells with
+  their reason, and exits `1` naming each empty cell (or an excluded cell
+  holding rows), `2` when the declaration or the rows do not load. Rows below
+  "24" are not back-filled.
+
+- **A GPU run and a CPU-only run never share a fiche (row schema "23")** --
+  a tracked machine registry (`aidd_docs/roster/machines.json`,
+  `machines.py`) declares the three PRD machines (`laptop-mobile-gpu`,
+  `tower-desktop-gpu`, `pro-pc-no-gpu`), each fact marked `declared` with
+  how it was read, or `not_yet_declared` with a null value until the
+  machine-readiness check reads it; an entry missing a fact refuses to load.
+  `MACHINE_ID` and `COMPUTE_MODE` (`gpu` or `cpu_only`) are required run
+  inputs with no default: the runtime CLI, the quality CLI and the judge
+  probe refuse a missing or undeclared machine, a missing mode, or `gpu` on
+  a machine declared GPU-less, before any server starts. `cpu_only`
+  launches `-ngl 0 --device none` (observed: `-ngl 0` alone still uses the
+  GPU on the CUDA build) and no `--n-cpu-moe`; a `SERVER_N_CPU_MOE` value
+  under `cpu_only` is refused naming the mode. The `gpu` launch is
+  byte-identical. The fiche carries `machine_id` and `compute_mode` inside a
+  third hashed projection, chosen by the citing row's `schema_version`, so
+  committed fiches keep verifying unedited. Runtime rows and local quality
+  rows carry both fields and the writer gate refuses an undeclared machine;
+  a cloud subject's row states `not_applicable` for both. `compute_mode`
+  is verdict-blocking (a `cpu_only` run against a `gpu` reference is
+  `not_comparable` naming it), and a null GPU on a machine declared GPU-less
+  reads as declared absent, so two `cpu_only` runs there can reproduce. A
+  `--resume` under another machine or mode is refused; along the
+  comparison's `model` dimension both move with the axis only between a
+  local and a cloud side. Rows below "23" are not back-filled.
+
 - **Every row names the engine that produced it, and the fiche hashes it
   (row schema "22")** -- a tracked engine registry
   (`aidd_docs/roster/engines.json`, `engines.py`) holds one entry,
@@ -268,7 +470,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   renders the `no-use-case-is-silently-absent` absence once, at the page
   level.
 
+### Fixed
+
+- **The export reads a current-schema cloud row and suite** --
+  `wave-local-ai-v2-export` refused the republished bundle: a cloud row's
+  `retry_budget` (keyed by provider) is now one JSON cell, and a suite
+  definition's `level` and `divergence_tolerance` are described columns.
+  The release's Parquet copy types `runtime_aggregates.vram_used_mib` as a
+  string (unit "MiB (2^20 bytes), or the identifier not_applicable"), so a
+  `cpu_only` row's `not_applicable` stays itself instead of failing the
+  float parse or folding into the null a failed read produces.
+
+- **A batch interval is no longer a comparison confound** -- `comparison.py`
+  exempts `score_interval` (schema "21") with the other batch outcomes: two
+  batches that score differently always publish different intervals, so
+  every real pair was published as an observation naming it.
+
 ### Changed
+
+- **The bundle is republished from the laptop's own location (schema "30")**
+  -- one bench session from a fresh clone: the flagship runtime pair, the
+  flagship and `mistral-small-2603` quality pair on
+  `classification-support-routing@5`, and Qwen3-0.6B under the laptop's
+  `gpu` and `cpu_only` profiles, each second run `reproduced` against its own
+  first. The rows sit in `aidd_docs/results/machines/laptop-mobile-gpu/` and
+  the bundle is derived from it. The schema-"7" snapshot is kept unedited as
+  `*-reference.schema-7.jsonl`, with the comparison and leader-set records
+  computed over it in `comparisons.schema-7/` and `leader-sets.schema-7/`;
+  `bundle_merge.PRE_MERGE_SNAPSHOT` and its pin are gone. `docs/setup.md`
+  gains the two steps the walk needed (empty the placeholder cloud keys;
+  decide a second run against its own first).
+
+- The pre-flight's refusal records move from
+  `aidd_docs/results/refusals/<machine_id>.jsonl` (`REFUSALS_DIR`, removed) to
+  the machine's location, `aidd_docs/results/machines/<machine_id>/refusals.jsonl`.
+
+- **`validated_host` leaves the roster** -- its thread count and `--n-cpu-moe`
+  moved into the laptop's run profiles and its `fiche_summary` is replaced by
+  the machine registry entry. `SERVER_N_CPU_MOE` and `SERVER_THREADS` are
+  operator overrides with no default (`DEFAULT_HOST_N_CPU_MOE` and
+  `DEFAULT_HOST_THREADS` are gone). `roster.validate_host_fit` reads the
+  resolved profile. The candidate gate's declaration carries `load_profile`
+  (`n_cpu_moe`, `threads`) in place of `validated_host`, its passed entry
+  block carries neither, and its record version is 2.
 
 - **`wave-local-ai-v2-quality --suite` takes a suite id** —
   `classification-support-routing` (the default) or
@@ -278,6 +522,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--suite` is unchanged.
 
 ## [0.2.0] - 2026-09-22
+
+Credibility: not yet validated (0 of 3 qualifying sessions, 0 distinct clients, 0 backfilled, 0 dismissals)
 
 ### Added
 
@@ -818,6 +1064,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `"2"`; quality rows move with it since the constant is shared.
 
 ## [0.1.0] - 2026-08-22
+
+Credibility: not yet validated (0 of 3 qualifying sessions, 0 distinct clients, 0 backfilled, 0 dismissals)
 
 ### Added
 

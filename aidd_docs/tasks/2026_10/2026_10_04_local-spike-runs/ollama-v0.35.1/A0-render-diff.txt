@@ -1,0 +1,7 @@
+﻿billing-01 think=false ollama_bytes=319 llamacpp_bytes=319 first_difference=identical
+billing-01 think=true ollama_bytes=300 llamacpp_bytes=300 first_difference=identical
+billing-01 think on/off renders differ: ollama=True llamacpp=True
+billing-fr-01 think=false ollama_bytes=364 llamacpp_bytes=364 first_difference=identical
+billing-fr-01 think=true ollama_bytes=345 llamacpp_bytes=345 first_difference=identical
+billing-fr-01 think on/off renders differ: ollama=True llamacpp=True
+raw vs templated billing-01: prompt_eval_count raw=61 chat=61; output raw=[technical] chat=[technical]

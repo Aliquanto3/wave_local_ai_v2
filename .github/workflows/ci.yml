@@ -5,6 +5,10 @@ on:
     branches: [main]
     tags: ["v*"]
   pull_request:
+  # On demand: release-build builds and verifies the archive, Parquet
+  # copies included, with no tag, no Release and no image push, so the
+  # release path is proven between releases instead of rotting unnoticed.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -19,6 +23,10 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # The client-session record's append-only test walks every committed
+          # version along the first-parent line; a shallow clone fails it.
+          fetch-depth: 0
 
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
@@ -32,6 +40,12 @@ jobs:
 
       - name: Tests (coverage-gated)
         run: uv run pytest
+
+      # The published bundle is derived from the per-machine locations, never
+      # hand-edited: this fails when the committed bundle differs from what
+      # the merge produces (tests/test_bundle_merge.py backs it).
+      - name: Derived bundle
+        run: uv run wave-local-ai-v2-merge-bundle --check
 
       - name: Upload coverage report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -179,7 +193,8 @@ jobs:
   publish:
     name: publish
     needs: [test, build, verify-tag]
-    if: startsWith(github.ref, 'refs/tags/v')
+    # A tag push only: an on-demand run on a tag ref pushes no image.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -208,6 +223,120 @@ jobs:
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
+
+  release-build:
+    name: release-build
+    # The archive a third party reads with no clone, built and verified with
+    # a read-only token: every dependency this job runs (pyarrow included)
+    # never sits beside a write token. On a `v*` tag push it runs after test,
+    # build and verify-tag; on demand (workflow_dispatch) after test alone
+    # (build and verify-tag are tag-gated). Either way it uploads the archive
+    # as a run artifact; only `release-publish` turns it into a Release.
+    needs: [test, build, verify-tag]
+    if: >-
+      needs.test.result == 'success' && !cancelled() && (
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+      && needs.build.result == 'success' && needs.verify-tag.result == 'success')
+      || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      archive-sha256: ${{ steps.archive.outputs.sha256 }}
+    steps:
+      # No token in .git/config while `uv sync` and `uv run` execute
+      # dependency code, and no uv cache: this job's inputs are not restored
+      # from a shared cache.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          python-version: "3.12"
+
+      # The `release` dependency group holds the pinned pyarrow that writes
+      # the Parquet copies; no other job, and not the image, installs it.
+      - run: uv sync --locked --group release
+
+      # A tag push releases its tag; an on-demand run rehearses the release
+      # the packaged version names, without any tag.
+      - name: Name the release
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            release_tag="$GITHUB_REF_NAME"
+          else
+            release_tag="v$(uv run --group release python -c "from wave_local_ai_v2.build_info import version; print(version())")"
+          fi
+          echo "RELEASE_TAG=$release_tag" >> "$GITHUB_ENV"
+        shell: bash
+
+      # The Parquet check itself, where pyarrow is installed: a copy with one
+      # altered cell must fail it. The test matrix skips these tests.
+      - name: Parquet check tests
+        run: uv run --group release pytest tests/test_release_parquet.py --no-cov
+
+      # Builds the tables from the bundle at the checked-out commit, writes a
+      # typed Parquet copy of each, assembles the archive, then verifies it: a
+      # hand-edited table, a Parquet copy that differs from its CSV in any
+      # cell, a clone-only path, or a tag, version or commit disagreement
+      # fails here, before any Release. The log lists every table compared.
+      - name: Assemble and verify the release archive
+        run: >-
+          uv run --group release python scripts/assemble_release_archive.py build
+          --tag "$RELEASE_TAG" --commit "$GITHUB_SHA" --output-dir dist --parquet
+        shell: bash
+
+      # The digest `release-publish` checks the downloaded archive against.
+      - name: Record the archive digest
+        id: archive
+        run: |
+          digest=$(sha256sum "dist/wave-local-ai-v2-${RELEASE_TAG#v}.zip" | cut -d' ' -f1)
+          echo "sha256=$digest" >> "$GITHUB_OUTPUT"
+          echo "archive sha256: $digest"
+        shell: bash
+
+      - name: Upload the release archive
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-archive
+          path: dist/*.zip
+          if-no-files-found: error
+
+  release-publish:
+    name: release-publish
+    # The GitHub Release and its one asset. The only job holding
+    # `contents: write`, which creating a Release needs, and it runs no
+    # project or dependency code: no checkout, no uv. A tag push only, so an
+    # on-demand run never reaches it.
+    needs: [test, build, verify-tag, release-build]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      # The archive `release-build` verified, checked against the digest it
+      # computed before anything is published.
+      - name: Download the verified archive
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ARCHIVE_SHA256: ${{ needs.release-build.outputs.archive-sha256 }}
+        run: |
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name release-archive --dir dist
+          echo "$ARCHIVE_SHA256  dist/wave-local-ai-v2-${GITHUB_REF_NAME#v}.zip" | sha256sum -c -
+        shell: bash
+
+      - name: Create the Release and attach the archive
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME"
+          "dist/wave-local-ai-v2-${GITHUB_REF_NAME#v}.zip"
+          --repo "$GITHUB_REPOSITORY"
+          --verify-tag --title "$GITHUB_REF_NAME"
+          --notes "One archive: the result tables with typed Parquet copies, their column dictionary, the reference bundle they were derived from, LICENSE, LICENSE-DATA and CITATION.cff. See its README.md."
+        shell: bash
 
   required:
     name: required

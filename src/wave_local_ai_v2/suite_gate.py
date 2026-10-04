@@ -20,6 +20,12 @@ Duck-typed against any object exposing `item_id`, `language`, `provenance`,
 `ClassificationItem` shape, per the story's "validates fields, not a suite
 shape" and the epic's boundary that the suite-shape/registry work belongs to
 a sibling epic.
+
+Every suite also declares the per-item divergence tolerance its cloud
+subjects' re-runs are decided under (Methodology 8): a value, its unit and the
+reason for that value. `gate_divergence_tolerance` refuses a suite that
+declares none or a malformed one; the registry runs it on every load beside
+`gate_suite`, so no suite without a tolerance can be resolved.
 """
 
 from __future__ import annotations
@@ -51,11 +57,25 @@ ITEM_SOURCE_DECLARATIONS = ("licence", "source", "source_revision")
 
 _VALID_PROVENANCE = {"hand_written", "licensed", "public"}
 
+# The divergence tolerance's one unit: the share of a batch's items whose
+# compared per-item value (`verdict.quality_verdict`'s `compared_field`)
+# differs from the reference. One unit serves an exact-match and a graded
+# suite alike, since both are compared on one per-item value.
+TOLERANCE_UNIT_FRACTION_OF_ITEMS = "fraction_of_items"
+TOLERANCE_UNITS = frozenset({TOLERANCE_UNIT_FRACTION_OF_ITEMS})
+DIVERGENCE_TOLERANCE_KEY = "divergence_tolerance"
+
 
 class SuiteGateError(ValueError):
     """Raised when an item's declaration is missing, out of range, or
     internally inconsistent, or when a suite falls short of the level it
     declares."""
+
+
+class DivergenceTolerance(TypedDict):
+    value: float
+    unit: str
+    reason: str
 
 
 class SuiteGateResult(TypedDict):
@@ -153,6 +173,48 @@ def gate_suite(
         indicative_reasons=indicative_reasons,
         per_language_indicative=per_language_indicative,
     )
+
+
+def gate_divergence_tolerance(declaration: object) -> DivergenceTolerance:
+    """Refuse a missing or malformed divergence tolerance; return it checked.
+
+    The declaration is `{"value", "unit", "reason"}`: a number in `[0, 1]`
+    under `TOLERANCE_UNITS`, and a non-empty reason recording what the value
+    was set against, so a reader can dispute the value itself. Its truth is
+    not checked here, only its presence and shape.
+    """
+    if declaration is None:
+        raise SuiteGateError(
+            f"suite declares no {DIVERGENCE_TOLERANCE_KEY}: every suite states "
+            "the per-item divergence a cloud subject's re-run is decided under"
+        )
+    if not isinstance(declaration, Mapping):
+        raise SuiteGateError(
+            f"suite declares a malformed {DIVERGENCE_TOLERANCE_KEY}: "
+            f"{declaration!r} is not an object with value, unit and reason"
+        )
+    value = declaration.get("value")
+    if (
+        not isinstance(value, int | float)
+        or isinstance(value, bool)
+        or not 0 <= value <= 1
+    ):
+        raise SuiteGateError(
+            f"{DIVERGENCE_TOLERANCE_KEY} value {value!r} is not a number in [0, 1]"
+        )
+    unit = declaration.get("unit")
+    if unit not in TOLERANCE_UNITS:
+        raise SuiteGateError(
+            f"{DIVERGENCE_TOLERANCE_KEY} unit {unit!r} is not one of "
+            f"{', '.join(sorted(TOLERANCE_UNITS))}"
+        )
+    reason = declaration.get("reason")
+    if not (isinstance(reason, str) and reason.strip()):
+        raise SuiteGateError(
+            f"{DIVERGENCE_TOLERANCE_KEY} reason is missing: a suite records why "
+            "its tolerance has the value it has"
+        )
+    return DivergenceTolerance(value=float(value), unit=unit, reason=reason)
 
 
 def _publication_shortfalls(

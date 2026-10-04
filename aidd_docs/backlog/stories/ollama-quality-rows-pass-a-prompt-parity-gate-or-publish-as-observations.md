@@ -19,7 +19,15 @@ Maps to: PRD AC "given a claim that two models, engines or prompt variants diffe
 
 Needs: a real local model run on the reference machine with the pinned Ollama build installed (order 6). No API key.
 
-Blocked: spike `aidd_docs/backlog/spikes/does-ollama-expose-the-prompt-it-finally-rendered.md` (which `prompt_capture` value Ollama rows can carry, and whether its thinking switch can be verified by render comparison).
+Blocked: only through `depends_on` on `aidd_docs/backlog/stories/ollama-runtime-rows-stand-beside-llama-cpp-rows-on-the-same-artifact.md` (order 6, `proposed`), which no spike blocks any more. Spike `aidd_docs/backlog/spikes/does-ollama-expose-the-prompt-it-finally-rendered.md` is `resolved` (live session on Ollama v0.35.1, 2026-10-04: `_debug_render_only` renders byte-identical to llama.cpp b10537 `/apply-template` for `billing-01` and `billing-fr-01`, `think` on and off; `prompt_capture: reconstructed`, never `captured`). Its other `depends_on` is `done`.
+
+Current state (verified on `main` at `c68b23e`, 2026-10-03):
+
+- Local llama.cpp quality rows carry `prompt_capture: reconstructed` (`quality_cli._local_call_path`: the string comes from `/apply-template`, not from the generation's response); `prompt_provenance` knows `captured` and `reconstructed` only, with no value for an absent render.
+- `thinking_policy` is the suite's declared policy, published unchanged on every row of a batch (`row_contract` comment above `THINKING_POLICY_DISABLED`; `quality_cli` writes `spec.thinking_policy`); both suites in `suite_data/` declare `disabled`.
+- `local_client.thinking_kwargs` refuses a `disabled` batch on an engine whose `thinking_switch` is `none`, and `local_client.check_engine_carries` refuses a roster control not spelled in the engine's `request_field`. Every roster entry's `thinking_control` is spelled `{"chat_template_kwargs": {"enable_thinking": false}}` (`aidd_docs/roster/models.json`), so an Ollama entry whose field is `think` refuses every entry under `disabled` until the control has a per-engine spelling.
+- `local_client.verify_thinking_control` verifies a switch by rendering through `/apply-template` with and without it; no parity command or parity record exists; `comparison.DIMENSIONS` has no engine axis, and `thinking_policy` is among `comparison._ABSENCE_REFUSAL_FIELDS`.
+- Spike desk findings, unverified until the live session: no `captured` path exists on Ollama, so its rows can carry `reconstructed` at most; the candidate render path `_debug_render_only` is undocumented, so the engine entry must pin the version it was verified on; the switch is spelled `think` and reaches the template as `chat_template_kwargs.enable_thinking`.
 
 ## Acceptance
 
@@ -27,18 +35,18 @@ Blocked: spike `aidd_docs/backlog/spikes/does-ollama-expose-the-prompt-it-finall
 - Each Ollama quality row publishes the prompt Ollama received with its `prompt_capture` kind, or carries an explicit absence of a rendered prompt; it never publishes the authored or pre-template prompt as if it were the rendered one.
 - A parity command compares, for one model and the same items, the two engines' rendered prompts byte for byte and writes a tracked parity record: `identical`, or `divergent` naming the first divergence per item, or `unavailable` where one engine cannot expose its prompt. It runs for at least one model and its record is published (epic success check 3).
 - A cross-engine quality comparison whose parity record is `divergent` or `unavailable`, or absent, is published as an observation naming the parity result, never as a paired comparison.
-- Ollama's thinking switch is declared in its engine entry and verified as order 1 verifies llama.cpp's. Where Ollama offers no control, or the control cannot be verified, its rows declare `thinking_policy: allowed`, and a cross-engine comparison then refuses on `thinking_policy` under the paired-test story's rule rather than comparing `disabled` against `allowed`.
+- Ollama's thinking switch is declared in its engine entry and verified as order 1 verifies llama.cpp's. Where Ollama offers no control, or the control cannot be verified, an Ollama quality batch of a suite declaring `thinking_policy: disabled` is refused before any generation, under the shipped rule (`local_client.thinking_kwargs`, `local_client.check_engine_carries`, `local_client.verify_thinking_control`), and that suite's cross-engine quality cells are listed as refused in order 3's completeness listing, with the spike `does-ollama-expose-the-prompt-it-finally-rendered.md` as their reason. `thinking_policy` keeps meaning the suite's declaration (owner answer Q117 (a), 2026-10-03).
 
 ## Code it changes
 
-- The Ollama client from order 6 extended to the quality path and to prompt capture; the parity command and its record; the Ollama thinking switch in the registry.
+- The Ollama client from order 6 extended to the quality path and to prompt capture; the parity command and its record; the Ollama thinking switch in the registry, and the roster entry's thinking control carried in that switch's spelling.
 - The comparison command from `two-configurations-on-the-same-items-receive-a-paired-test-or-a-refusal`: reads the parity record for a cross-engine pair.
 
 ## Tests it needs
 
 - Parity: identical, divergent (first divergence named) and unavailable records from constructed renders; a cross-engine comparison is an observation unless parity is `identical`.
 - An Ollama row never carries the authored prompt in the rendered field; an absent render is explicit.
-- An unverifiable switch yields `allowed` and the comparison refuses on `thinking_policy`.
+- An absent or unverifiable Ollama switch refuses a `disabled` batch before any generation, and the suite's cross-engine quality cells are listed as refused with the render spike as their reason.
 
 ## Evidence it publishes
 

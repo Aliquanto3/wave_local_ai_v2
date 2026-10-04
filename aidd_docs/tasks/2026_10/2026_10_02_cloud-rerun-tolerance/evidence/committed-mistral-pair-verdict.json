@@ -1,0 +1,29 @@
+{
+  "note": "Read-only re-decision of the committed mistral-small-2603 classification pair (schema 7, suite v2) under the suite's declared tolerance; no API call. The published rows keep their identical-rule verdict.",
+  "published_verdict": {
+    "verdict": "not_reproduced",
+    "reference_run_id": "5e13166da0654390a7d63f346ea5d4f1",
+    "differing_fields": [
+      "other-de-01"
+    ],
+    "reason": null
+  },
+  "under_declared_tolerance": {
+    "verdict": "reproduced",
+    "reference_run_id": "5e13166da0654390a7d63f346ea5d4f1",
+    "differing_fields": [
+      "other-de-01"
+    ],
+    "compared_field": "predicted_label",
+    "reason": null,
+    "subject_rule": "within_tolerance",
+    "tolerance": {
+      "value": 0.1,
+      "unit": "fraction_of_items",
+      "suite_id": "classification-support-routing",
+      "suite_version": "5"
+    },
+    "divergence": 0.05,
+    "single_run_indicative": null
+  }
+}

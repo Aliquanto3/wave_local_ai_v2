@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from conftest import mark_prompt
+from store_fixtures import ROSTER_REQUIREMENTS, single_refusal, write_raised_roster
 
 from wave_local_ai_v2 import (
     agreement,
@@ -56,6 +57,7 @@ FAKE_ROSTER = {
             "file": "fake.gguf",
             "quant": "UD-IQ4_XS",
             "sha256": "0" * 64,
+            "requirements": ROSTER_REQUIREMENTS,
             "family": "qwen",
             "thinking_control": {"chat_template_kwargs": {"enable_thinking": False}},
             "architecture": {
@@ -77,11 +79,6 @@ FAKE_ROSTER = {
                     "min_p": 0,
                     "presence_penalty": 1.5,
                 },
-            },
-            "validated_host": {
-                "n_cpu_moe": 37,
-                "threads": 8,
-                "fiche_summary": "fake fiche",
             },
         }
     },
@@ -184,6 +181,8 @@ def stubbed_probe(tmp_path, monkeypatch):
     server_path.write_text("")
 
     fake_settings = Settings(
+        machine_id="laptop-mobile-gpu",
+        compute_mode="gpu",
         slm_models_dir=model_dir,
         llama_server_path=server_path,
         results_path=tmp_path / "runtime.jsonl",
@@ -614,6 +613,20 @@ def test_local_probe_rows_name_the_engine_and_the_cloud_row_states_none(
     assert {
         (row["provider"], row["engine_id"], row["engine_build"]) for row in rows
     } == {("local", "llama.cpp", "b10537"), ("google", "not_applicable", None)}
+    assert {
+        (row["provider"], row["machine_id"], row["compute_mode"]) for row in rows
+    } == {
+        ("local", "laptop-mobile-gpu", "gpu"),
+        ("google", "not_applicable", "not_applicable"),
+    }
+    assert {row["campaign_id"] for row in rows} == {"none"}
+    assert {
+        (row["provider"], row["profile_id"].endswith("@laptop-mobile-gpu/gpu"))
+        for row in rows
+    } == {("local", True), ("google", False)}
+    assert {row["profile_id"] for row in rows if row["provider"] == "google"} == {
+        "not_applicable"
+    }
 
 
 def test_the_local_probe_row_publishes_the_rendered_prompt_and_the_policy(
@@ -884,6 +897,9 @@ def test_the_run_id_is_printed_before_the_batches(stubbed_probe, capsys) -> None
             frozenset({"local", "mistral"}),
             "google is not enabled in QUALITY_PROVIDERS",
         ),
+        ("machine_id", None, "MACHINE_ID is not set"),
+        ("compute_mode", "hybrid", "COMPUTE_MODE='hybrid'"),
+        ("campaign_id", "some-campaign", "the judge probe runs under no campaign"),
     ],
 )
 def test_a_missing_judge_refuses_the_run_before_anything_is_generated(
@@ -1243,6 +1259,7 @@ def _judged_by_another_model(row: dict) -> dict:
         # agreement over two builds.
         (lambda row: {**row, "engine_build": "b1"}, "engine_build="),
         (lambda row: {**row, "engine_id": "ollama"}, "engine_id="),
+        (lambda row: {**row, "compute_mode": "cpu_only"}, "compute_mode="),
     ],
 )
 def test_a_probe_resume_over_rows_of_another_configuration_is_refused(
@@ -1287,3 +1304,35 @@ def test_a_probe_resume_under_the_same_configuration_completes_the_batch(
     assert len(local) == len(JUDGE_PROBE_ITEMS)
     assert local[-1]["partial_failure"] is None
     assert local[-1]["agreement"]["n_items"] == len(JUDGE_PROBE_ITEMS)
+
+
+def test_a_run_below_its_declared_minimum_refuses_before_the_weights_and_any_spawn(
+    stubbed_probe, tmp_path, capsys
+) -> None:
+    probe_path, quality_results_path, started, _ = stubbed_probe
+    settings = started["load_settings"].return_value
+    # The weights are absent too: the RAM refusal must not be masked by them.
+    (
+        settings.slm_models_dir
+        / FAKE_ROSTER["entries"][DEFAULT_ROSTER_ENTRY_ID]["file"]
+    ).unlink()
+    started["load_settings"].return_value = dataclasses.replace(
+        settings,
+        roster_path=write_raised_roster(FAKE_ROSTER, tmp_path),
+        machine_results_root=tmp_path / "refusals",
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        judge_probe.main()
+
+    assert exit_info.value.code == 1
+    err = capsys.readouterr().err
+    assert "refused:" in err and "ram_gb" in err and "compute mode 'gpu'" in err
+    assert "model file not found" not in err
+    started["running_server"].assert_not_called()
+    started["probe_build"].assert_not_called()
+    record = single_refusal(tmp_path / "refusals", "laptop-mobile-gpu")
+    assert record["requirement"] == "ram_gb"
+    assert record["profile_id"] == f"{DEFAULT_ROSTER_ENTRY_ID}@laptop-mobile-gpu/gpu"
+    assert not probe_path.exists()
+    assert not quality_results_path.exists()

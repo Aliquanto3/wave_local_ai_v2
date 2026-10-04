@@ -22,6 +22,13 @@ dependencies = [
 module = "pynvml"
 ignore_missing_imports = true
 
+# Installed only by the release-build job (the `release` group) and by the
+# benchmark loader (the `loaders` group), so absent from the default
+# environment mypy runs in.
+[[tool.mypy.overrides]]
+module = ["pyarrow", "pyarrow.*"]
+ignore_missing_imports = true
+
 # --cov-fail-under is coverage.py's only floor; it combines statements and
 # branches into one percentage (no separate branch-only gate exists), so the
 # floor must sit near the measured combined total (95.66%) or branch misses
@@ -42,6 +49,10 @@ wave-local-ai-v2-export = "wave_local_ai_v2.bundle_export:main"
 wave-local-ai-v2-compare = "wave_local_ai_v2.comparison:main"
 wave-local-ai-v2-candidate-gate = "wave_local_ai_v2.candidate_gate:main"
 wave-local-ai-v2-composition-check = "wave_local_ai_v2.composition_check:main"
+wave-local-ai-v2-campaign-completeness = "wave_local_ai_v2.campaigns:main"
+wave-local-ai-v2-promote = "wave_local_ai_v2.machine_results:main"
+wave-local-ai-v2-merge-bundle = "wave_local_ai_v2.bundle_merge:main"
+wave-local-ai-v2-client-sessions = "wave_local_ai_v2.client_sessions:main"
 
 [build-system]
 requires = ["uv_build>=0.11.7,<0.12.0"]
@@ -62,4 +73,15 @@ dev = [
     "types-psutil>=7.2.2.20260518",
     "types-pyyaml>=6.0.12.20260815",
     "types-requests>=2.33.0.20260712",
+]
+# Installed only to load a public benchmark into the JSONL source table a
+# publication suite is drawn from (`uv run --group loaders python
+# scripts/minds14_suite.py`): not a runtime dependency, not in the default sync.
+loaders = [
+    "pyarrow==25.0.1",
+]
+# Installed by the release-build job alone (`uv sync --locked --group release`):
+# not a runtime dependency, not in the default `uv sync`, not in the image.
+release = [
+    "pyarrow==25.0.1",
 ]

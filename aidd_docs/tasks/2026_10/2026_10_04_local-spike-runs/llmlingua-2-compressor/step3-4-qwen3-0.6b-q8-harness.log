@@ -1,0 +1,9 @@
+﻿2026-10-04T00:27:59.4419464+02:00 pre gpu_used_mib=0 compute_apps=[]
+2026-10-04T00:28:00.0889392+02:00 STARTED llama-server PID=4396 args=-m D:\ia\models\Qwen3-0.6B\Qwen3-0.6B-Q8_0.gguf -ngl 99 -c 32768 -fa on -t 8 --jinja -np 1 --load-mode auto --host 127.0.0.1 --port 8080
+2026-10-04T00:28:04.3112894+02:00 READY gpu_used_mib=4377 server_ws_mb=1015 server_private_mb=4821 host_total_gb 31.4 host_available_gb 14.9
+2026-10-04T00:28:04.3112894+02:00 RUN xlmr -> C:\Users\Anael\AppData\Local\Temp\compressor-xlmr-qwen3-0.6b-q8.json
+2026-10-04T00:30:14.8655665+02:00 DONE xlmr exit=0 wall_s=130.5 gpu_used_mib=4377
+2026-10-04T00:30:14.8853631+02:00 RUN mbert -> C:\Users\Anael\AppData\Local\Temp\compressor-mbert-qwen3-0.6b-q8.json
+2026-10-04T00:30:51.0947669+02:00 DONE mbert exit=0 wall_s=36.2 gpu_used_mib=4377
+2026-10-04T00:30:51.2395825+02:00 STOPPED llama-server PID=4396 exited=True
+2026-10-04T00:30:55.4912999+02:00 post gpu_used_mib=0 port8080_listening=False

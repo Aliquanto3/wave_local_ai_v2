@@ -3,9 +3,12 @@
 The suite itself is data: `suite_data/classification-support-routing.json`
 holds its identity, its caps and its twenty items, resolved by id through
 `suite_registry`, and is scored by the `exact_label_match` rule
-(`scoring_rules.py`). This module keeps only what that scoring needs -- the
-closed label set and the item shape -- and the reasoning behind the
-declarations the data file cannot carry as comments.
+(`scoring_rules.py`). This module keeps the suite's closed label set, the
+item shape and the reasoning behind the declarations the data file cannot
+carry as comments. The scorer does not read `LABELS`: it parses against the
+label set of the suite being scored (`SuiteDefinition.labels`, every
+`expected_label` its items hold), which for this suite is exactly `LABELS`,
+and a test holds the two equal.
 
 Domain: a consultant's client support inbox, where each incoming message must be
 routed to exactly one queue. Chosen over sentiment because the four routing

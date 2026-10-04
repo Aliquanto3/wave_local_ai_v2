@@ -26,6 +26,8 @@ FICHE = {
     "engine_id": "llama.cpp",
     "engine_build": "b10537",
     "engine_config_hash": "e" * 64,
+    "machine_id": "laptop-mobile-gpu",
+    "compute_mode": "gpu",
     "roster_entry_id": "fake-entry",
     "model_sha256": "0" * 64,
     "quant": "UD-IQ4_XS",
@@ -93,7 +95,9 @@ def test_a_legacy_fiche_verifies_under_the_projection_its_row_selects(
     registry_dir = tmp_path / "fiches"
     registry_dir.mkdir()
     legacy = {
-        key: value for key, value in FICHE.items() if not key.startswith("engine_")
+        key: value
+        for key, value in FICHE.items()
+        if not key.startswith("engine_") and key not in {"machine_id", "compute_mode"}
     }
     legacy["llama_cpp_build"] = "b10537"
     legacy_hash = hardware.fiche_hash(legacy, "1")
@@ -117,6 +121,7 @@ def test_an_unreadable_schema_version_is_held_to_the_current_projection() -> Non
     assert fiche_projection_for("7") == "1"
     assert fiche_projection_for("21") == "1"
     assert fiche_projection_for("22") == "2"
+    assert fiche_projection_for("23") == "3"
 
 
 def test_verify_fiche_names_the_changed_field_inside_a_committed_git_repo(

@@ -1,0 +1,12 @@
+# SUPERSEDED: dirty-tree run (tree_dirty true, commit 4cf22a17), not published; see run-summary.md and clean-rerun/
+# preconditions 2026-10-04T03:29:49+02:00
+0 MiB
+Informationÿ: aucune tƒche en service ne correspond aux critŠres sp‚cifi‚s.
+29295f9be29f4901998e6958de0cfa65
+pre-flight: vram_gb not checked under gpu: roster entry 'granite-4.0-h-350m-q8' declares no minimum yet (awaits a per-process VRAM peak, as for every roster entry)
+[codecarbon INFO @ 03:29:52] offline tracker init
+[codecarbon WARNING @ 03:29:52] Multiple instances of codecarbon are allowed to run at the same time.
+mistral skipped: not enabled in QUALITY_PROVIDERS
+google skipped: not enabled in QUALITY_PROVIDERS
+model=Granite-4.0-H-350M provider=local accuracy=0.50
+exit 0

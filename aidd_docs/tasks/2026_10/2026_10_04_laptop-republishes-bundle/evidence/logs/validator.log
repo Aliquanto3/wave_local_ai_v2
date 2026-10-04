@@ -1,0 +1,12 @@
+== clean pass
+checked 86 row(s)
+exit 0
+== one fiche field hand-edited (gpu_name) on the Qwen3-0.6B gpu fiche
+checked 86 row(s)
+edited (2):
+  {'results_path': 'aidd_docs\\results\\runtime-reference.jsonl', 'run_id': '49d99f73e09e4291be3ca78bcd324082', 'position': 2, 'fiche_path': 'aidd_docs\\results\\fiches\\73ec536e09346ef914cf61b5412bfc87d36b22436543f1204cb628a6f79e97a0.json', 'changed_fields': ["unavailable: fatal: path 'aidd_docs/results/fiches/73ec536e09346ef914cf61b5412bfc87d36b22436543f1204cb628a6f79e97a0.json' exists on disk, but not in 'HEAD'"]}
+  {'results_path': 'aidd_docs\\results\\runtime-reference.jsonl', 'run_id': 'a05834da5c31407db755bdd6d0223387', 'position': 3, 'fiche_path': 'aidd_docs\\results\\fiches\\73ec536e09346ef914cf61b5412bfc87d36b22436543f1204cb628a6f79e97a0.json', 'changed_fields': ["unavailable: fatal: path 'aidd_docs/results/fiches/73ec536e09346ef914cf61b5412bfc87d36b22436543f1204cb628a6f79e97a0.json' exists on disk, but not in 'HEAD'"]}
+exit 1
+== edit reverted
+checked 86 row(s)
+exit 0

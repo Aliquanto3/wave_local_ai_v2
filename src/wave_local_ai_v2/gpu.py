@@ -6,6 +6,14 @@ from typing import TypedDict
 
 from wave_local_ai_v2.nvml import nvml_device
 
+# What `vram_used_mib` holds on a `cpu_only` run (Methodology 21): the run put
+# no layer on the GPU, so no VRAM figure is its own. NVML's `memory_info.used`
+# is device-wide -- on a `cpu_only` run it reads the CUDA context and whatever
+# else holds the card -- so it is not read at all, and the field states the
+# non-applicability rather than a zero a reader would take for a measurement.
+# Distinct from `None`, which means a VRAM read was due and failed.
+VRAM_NOT_APPLICABLE = "not_applicable"
+
 
 class GpuStats(TypedDict):
     vram_used_mib: float | None

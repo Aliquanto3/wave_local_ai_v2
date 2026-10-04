@@ -1,0 +1,8 @@
+﻿llama-server.exe : version: 0.1.2-dev (build 10537, commit bf0040e15)
+Au caractère Ligne:3 : 1
++ & $llama --version *>&1 | Out-File -Encoding utf8 "$cap\00-llama-serv ...
++ ~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (version: 0.1.2-...mmit bf0040e15):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+built with Clang 20.1.8 for Windows x86_64

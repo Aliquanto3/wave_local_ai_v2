@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from wave_local_ai_v2 import comparison, leader_set
+from wave_local_ai_v2 import comparison, leader_set, settings
 
 LAPTOP = {
     "cpu": "a cpu",
@@ -513,12 +513,19 @@ def test_build_record_refuses_a_group_it_cannot_read() -> None:
         leader_set.build_record(group, family, rows_source="rows")
 
 
-PUBLISHED_SETS = sorted(leader_set.LEADER_SETS_DIR.glob("*.json"))
+# The leader set published over the schema-"7" bundle, superseded with it on
+# 2026-10-04: its records and the rows they were computed over are kept under
+# their `.schema-7` names, unedited.
+RESULTS_DIR = leader_set.LEADER_SETS_DIR.parent
+SCHEMA_7_SETS_DIR = RESULTS_DIR / "leader-sets.schema-7"
+SCHEMA_7_COMPARISONS_DIR = RESULTS_DIR / "comparisons.schema-7"
+SCHEMA_7_ROWS = RESULTS_DIR / "quality-reference.schema-7.jsonl"
+PUBLISHED_SETS = sorted(SCHEMA_7_SETS_DIR.glob("*.json"))
 
 
 @pytest.mark.parametrize("published", PUBLISHED_SETS, ids=lambda path: path.name)
 def test_a_published_leader_set_recomputes_from_the_bundle_alone(
-    published: Path, tmp_path: Path
+    published: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Only what it was computed against is on file: the family records but
     # the one it cites (so the family is grown again) and the leader sets it
@@ -528,7 +535,7 @@ def test_a_published_leader_set_recomputes_from_the_bundle_alone(
     sets_dir = tmp_path / "leader-sets"
     records_dir.mkdir()
     sets_dir.mkdir()
-    for path in comparison.COMPARISONS_DIR.glob("*.json"):
+    for path in SCHEMA_7_COMPARISONS_DIR.glob("*.json"):
         if json.loads(path.read_text("utf-8"))["family_id"] != record["family_id"]:
             (records_dir / path.name).write_bytes(path.read_bytes())
     by_id = {
@@ -537,6 +544,14 @@ def test_a_published_leader_set_recomputes_from_the_bundle_alone(
     }
     for superseded in leader_set.superseded_ids(record):
         (sets_dir / by_id[superseded].name).write_bytes(by_id[superseded].read_bytes())
+    # Its rows now live in the superseded file: put them back at the path the
+    # record names, relative to a working directory of their own.
+    rows = tmp_path / record["rows_source"]
+    rows.parent.mkdir(parents=True)
+    rows.write_bytes(SCHEMA_7_ROWS.read_bytes())
+    fiche_dir = Path(settings.DEFAULT_FICHE_REGISTRY_DIR).resolve()
+    expected = published.read_text(encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
 
     assert (
         comparison.main(
@@ -548,18 +563,18 @@ def test_a_published_leader_set_recomputes_from_the_bundle_alone(
                 str(records_dir),
                 "--leader-sets-dir",
                 str(sets_dir),
+                "--fiche-registry-dir",
+                str(fiche_dir),
             ]
         )
         == 0
     )
 
-    assert (sets_dir / published.name).read_text(encoding="utf-8") == (
-        published.read_text(encoding="utf-8")
-    )
+    assert (sets_dir / published.name).read_text(encoding="utf-8") == expected
 
 
-def test_the_bundle_publishes_the_first_real_leader_set() -> None:
-    (record,) = leader_set.current_leader_sets(leader_set.LEADER_SETS_DIR)
+def test_the_schema_7_bundle_published_the_first_real_leader_set() -> None:
+    (record,) = leader_set.current_leader_sets(SCHEMA_7_SETS_DIR)
     assert (record["suite_id"], record["suite_version"]) == (
         "classification-support-routing",
         "2",

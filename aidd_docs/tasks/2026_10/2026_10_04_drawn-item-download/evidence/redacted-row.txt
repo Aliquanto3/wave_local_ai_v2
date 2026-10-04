@@ -1,0 +1,26 @@
+One redacted row of quality_items.csv, from the constructed
+no-redistribution bundle (tests/drawn_bundle_fixtures.py; no live source
+sits on this rung). Empty text cells are explained by item_redaction.
+
+item_id = 'example/closed-corpus:en-US~ABROAD/602ba22c963e11ccd901cc57.wav'
+provenance = 'public'
+item_licence = 'LicenseRef-closed-corpus'
+item_source = 'example/closed-corpus'
+item_source_revision = '0123456789abcdef0123456789abcdef01234567'  # pragma: allowlist secret
+item_content_hash = '4fdf4aeae14ce181be88b01e47afaab956acd0360c15932de812828c9a8e21e0'  # pragma: allowlist secret
+item_source_key = 'en-US~ABROAD/602ba22c963e11ccd901cc57.wav'
+item_redaction = 'no_redistribution'
+item_licence_file = ''
+prompt = ''
+prompt_before_template = ''
+expected_label = ''
+predicted_label = 'app_error'
+correct = 'false'
+fields_not_carried = '["item_score","subject_output","reference_output","metric_id","metric_version","metric_params_char_order","metric_params_beta","metric_params_whitespace","metric_params_scale","suite_score","score_breakdown_en_score","score_breakdown_en_n","score_breakdown_en_indicative","score_breakdown_fr_score","score_breakdown_fr_n","score_breakdown_fr_indicative","score_breakdown_de_score","score_breakdown_de_n","score_breakdown_de_indicative","suite_definition_max_output_tokens_basis_factor","suite_definition_max_output_tokens_basis_longest_reference_item_id","suite_definition_max_output_tokens_basis_longest_reference_tokens","suite_definition_max_output_tokens_basis_reason","suite_definition_max_output_tokens_basis_tokenizer"]'
+
+The fixture source row a reader would fetch:
+
+{'source': 'example/closed-corpus', 'path': 'en-US~ABROAD/602ba22c963e11ccd901cc57.wav', 'language': 'en', 'transcription': "  hi I'm going to be traveling abroad in Japan and I just wondered if I'm going to be able to use my bank card when I'm there if you could let me know that would be great thank you\n", 'intent_class': 'abroad'}
+
+column_dictionary.csv, item_redaction meaning:
+not_redacted: the item's text is in the row and its suite definition. no_redistribution: the item's source may not be redistributed, so the row's item text fields (prompt, prompt_before_template, expected_label, reference_output) and its suite definition's item text are withheld, and the row names item_source, item_source_revision, item_source_key and item_content_hash instead; the archive README says how to obtain the text and join it by item_source_key. Such a row's score cannot be recomputed from the download alone. A row that does not carry the field predates redaction and carries its text: not_redacted.

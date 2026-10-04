@@ -1,0 +1,41 @@
+{
+  "entry_id": "phi-4-mini-instruct-q4km",
+  "repo": "unsloth/Phi-4-mini-instruct-GGUF",
+  "revision": "78eb92a46fc37e6b524df991ed9aca9bc6aa7b80",
+  "repo_file": "Phi-4-mini-instruct-Q4_K_M.gguf",
+  "file": "Phi-4-mini-instruct/Phi-4-mini-instruct-Q4_K_M.gguf",
+  "display_id": "Phi-4-mini-instruct",
+  "quant": "Q4_K_M",
+  "family": "microsoft",
+  "thinking_control": "none",
+  "active_params_b": 3.84,
+  "client_commercial_use": true,
+  "language_claim": {
+    "languages": [
+      "en",
+      "fr",
+      "de"
+    ],
+    "source_url": "https://huggingface.co/microsoft/Phi-4-mini-instruct/blob/cfbefacb99257ffa30c83adab238a50856ac3083/README.md",
+    "statement": "language: multilingual, ar, zh, cs, da, nl, en, fi, fr, de, he, hu, it, ja, ko, no, pl, pt, ru, es, sv, th, tr, uk"
+  },
+  "server_flags": {
+    "n_gpu_layers": 99,
+    "context_size": 32768,
+    "flash_attention": "on",
+    "jinja": true,
+    "parallel_slots": 1,
+    "load_mode": "auto",
+    "sampler": {
+      "temperature": 0.6,
+      "top_p": 0.95,
+      "top_k": 20,
+      "min_p": 0,
+      "presence_penalty": 1.5
+    }
+  },
+  "load_profile": {
+    "n_cpu_moe": null,
+    "threads": 8
+  }
+}

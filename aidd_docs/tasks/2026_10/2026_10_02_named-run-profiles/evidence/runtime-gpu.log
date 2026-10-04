@@ -1,0 +1,4 @@
+[codecarbon INFO @ 12:33:03] offline tracker init
+[codecarbon WARNING @ 12:33:03] Multiple instances of codecarbon are allowed to run at the same time.
+gen_tok_per_s=211.1 prompt_tok_per_s=13064.9 ttft_ms=114.4 repetitions_n=2 unreliable=False emissions_kg=3.299437726434753e-06 cost_total=1.1422240206433772e-05 -> aidd_docs\tasks\2026_10\2026_10_02_named-run-profiles\evidence\runtime.jsonl
+exit 0

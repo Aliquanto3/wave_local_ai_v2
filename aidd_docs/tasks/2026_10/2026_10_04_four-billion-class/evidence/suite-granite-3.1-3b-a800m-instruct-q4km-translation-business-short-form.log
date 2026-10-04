@@ -1,0 +1,19 @@
+# preconditions 2026-10-04T05:28:07+02:00 HEAD 3008ef92fa86b203d633815f154f2d329b8f1d66
+?? aidd_docs/tasks/2026_10/2026_10_04_four-billion-class/evidence/fiches/
+?? aidd_docs/tasks/2026_10/2026_10_04_four-billion-class/evidence/quality.jsonl
+?? aidd_docs/tasks/2026_10/2026_10_04_four-billion-class/evidence/suite-granite-3.1-3b-a800m-instruct-q4km-classification-support-routing.log
+?? aidd_docs/tasks/2026_10/2026_10_04_four-billion-class/evidence/suite-granite-3.1-3b-a800m-instruct-q4km-translation-business-short-form.log
+0 MiB
+Informationÿ: aucune tƒche en service ne correspond aux critŠres sp‚cifi‚s.
+listeners on 8080: 0
+316508c8f6ad4ff3a899b4341f481a9a
+pre-flight: vram_gb not checked under gpu: roster entry 'granite-3.1-3b-a800m-instruct-q4km' declares no minimum yet (awaits a per-process VRAM peak, as for every roster entry)
+[codecarbon INFO @ 05:28:09] offline tracker init
+[codecarbon WARNING @ 05:28:09] Multiple instances of codecarbon are allowed to run at the same time.
+mistral skipped: not enabled in QUALITY_PROVIDERS
+google skipped: not enabled in QUALITY_PROVIDERS
+model=Granite-3.1-3B-A800M-Instruct provider=local suite_score=0.71
+exit 0
+# after
+0 MiB
+InformationÂ : aucune tÃ¢che en service ne correspond aux critÃ¨res spÃ©cifiÃ©s.

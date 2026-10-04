@@ -1,0 +1,8 @@
+﻿
+D:\ia\ollama-v0.35.1-captures\30-serve-roster.log:53:time=2026-10-04T00:20:51.154+02:00 level=INFO 
+source=llama_server.go:436 msg="starting llama-server" cmd="D:\\ia\\ollama-v0.35.1\\lib\\ollama\\llama-server.exe 
+--model D:\\ia\\ollama-v0.35.1-models\\blobs\\sha256-9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031 
+--port 51964 --host 127.0.0.1 --no-webui --offline -c 32768 -np 1 --log-verbosity 4 --no-log-prefix 
+--no-log-timestamps --load-mode none --flash-attn on -b 512 -ub 512 -ngl 99"
+
+

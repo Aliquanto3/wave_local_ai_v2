@@ -44,6 +44,36 @@ def write_fiche(fiche: Mapping[str, Any], registry_dir: Path) -> str:
     return fiche_hash_value
 
 
+class FicheCopyError(ValueError):
+    """Raised when a fiche cannot be copied into another registry as it is."""
+
+
+def copy_fiche(fiche_hash: str, source_dir: Path, target_dir: Path) -> bool:
+    """Copy the file stored under `fiche_hash` from one registry to another.
+
+    File-for-file, never re-serialised: the copy is the bytes the run wrote.
+    Content-addressed, so a target already holding the identical file is left
+    alone (returns `False`); one holding other bytes under that name is
+    refused, never overwritten, and so is a hash the source does not hold.
+    Returns `True` when a file was written.
+    """
+    source = path_guard.resolve_within_root(source_dir, f"{fiche_hash}.json")
+    target = path_guard.resolve_within_root(target_dir, f"{fiche_hash}.json")
+    if source is None or target is None or not source.exists():
+        raise FicheCopyError(f"fiche {fiche_hash!r} is not in registry {source_dir}")
+    content = source.read_bytes()
+    if target.exists():
+        if target.read_bytes() != content:
+            raise FicheCopyError(
+                f"fiche {fiche_hash!r} in registry {target_dir} differs from the "
+                f"one in {source_dir}; a stored fiche is never overwritten"
+            )
+        return False
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(content)
+    return True
+
+
 def read_fiche(fiche_hash: str, registry_dir: Path) -> dict[str, Any] | None:
     """Return the fiche stored under `fiche_hash`, or `None` if absent.
 

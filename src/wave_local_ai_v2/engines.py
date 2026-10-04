@@ -24,7 +24,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, TypedDict
 
-from wave_local_ai_v2 import build_probe
+from wave_local_ai_v2 import build_probe, prompt_variants
 
 DEFAULT_REGISTRY_PATH = "aidd_docs/roster/engines.json"
 
@@ -70,6 +70,7 @@ REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
         "thinking_switch",
         "config_normalisation",
         "configuration_defaults",
+        "constraint_mechanisms",
     ),
     "build_probe": ("method",),
     "endpoints": ("chat", "health", "prompt_rendering", "template_source"),
@@ -109,6 +110,11 @@ class EngineEntry:
     model_path_flag: str
     location_flags: tuple[str, ...]
     configuration_defaults: dict[str, dict[str, Any]]
+    # The output-constraint mechanisms the engine supports, each mapped to
+    # the request field that carries a constraint in it (llama.cpp: `gbnf`
+    # in `grammar`). Empty: the engine declares none, and no campaign may pair
+    # it with a constraining variant.
+    constraint_mechanisms: dict[str, str]
 
 
 @dataclass(frozen=True)
@@ -249,7 +255,39 @@ def _parse_entry(engine_id: str, raw: Any) -> EngineEntry:
         configuration_defaults=_parse_defaults(
             engine_id, raw["configuration_defaults"]
         ),
+        constraint_mechanisms=_parse_mechanisms(
+            engine_id, raw["constraint_mechanisms"]
+        ),
     )
+
+
+def _parse_mechanisms(engine_id: str, mechanisms: Any) -> dict[str, str]:
+    """`{mechanism: {request_field, read_from}}` as `{mechanism: request_field}`.
+
+    `{}` declares none. Each mechanism must be one a variant can express
+    (`prompt_variants.CONSTRAINT_MECHANISMS`) and name where it was read.
+    """
+    if not isinstance(mechanisms, dict):
+        raise _malformed(
+            engine_id, "constraint_mechanisms", "an object ({} for none)", mechanisms
+        )
+    parsed: dict[str, str] = {}
+    for mechanism, block in mechanisms.items():
+        field = f"constraint_mechanisms.{mechanism}"
+        if mechanism not in prompt_variants.CONSTRAINT_MECHANISMS:
+            raise _malformed(
+                engine_id,
+                "constraint_mechanisms",
+                f"keyed by mechanisms in {sorted(prompt_variants.CONSTRAINT_MECHANISMS)}",
+                mechanism,
+            )
+        if not isinstance(block, dict) or set(block) != {"request_field", "read_from"}:
+            raise _malformed(engine_id, field, "{'request_field', 'read_from'}", block)
+        _text(engine_id, f"{field}.read_from", block["read_from"])
+        parsed[mechanism] = _text(
+            engine_id, f"{field}.request_field", block["request_field"]
+        )
+    return parsed
 
 
 def _parse_thinking_switch(engine_id: str, switch: Any) -> str | dict[str, str]:

@@ -1,6 +1,6 @@
 {
   "suite_id": "classification-support-routing",
-  "suite_version": "4",
+  "suite_version": "5",
   "task_suite": "classification",
   "scoring_rule": "exact_label_match",
   "max_output_tokens": 32,
@@ -8,6 +8,11 @@
   "context_length": 32768,
   "thinking_policy": "disabled",
   "level": "development",
+  "divergence_tolerance": {
+    "value": 0.1,
+    "unit": "fraction_of_items",
+    "reason": "Set against the one observed cloud re-run of this suite: the two committed mistral-small-2603 batches in quality-reference.jsonl (run d20afbda710c40378e6ad5ca8d9b6558 against reference 5e13166da0654390a7d63f346ea5d4f1, seed 20260821, temperature 0) differed on 1 of 20 items (other-de-01), a divergence of 0.05. The tolerance allows twice that, 2 of 20 items, so the observed provider non-determinism reads as reproduced while a batch whose labels move on three or more items does not. One observed pair is thin evidence: re-calibrate when a second cloud re-run is published."
+  },
   "items": [
     {
       "item_id": "billing-01",

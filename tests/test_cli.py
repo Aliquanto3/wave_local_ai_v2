@@ -1,4 +1,5 @@
 import json
+import runpy
 from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -7,9 +8,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 from conftest import mark_prompt
+from store_fixtures import ROSTER_REQUIREMENTS, single_refusal, write_raised_roster
 
 import wave_local_ai_v2
-from wave_local_ai_v2 import FIXED_MAX_TOKENS, FIXED_PROMPT, _run, engines, main
+from wave_local_ai_v2 import FIXED_MAX_TOKENS, FIXED_PROMPT, _run, engines, main, server
 from wave_local_ai_v2.aggregation import AGGREGATION_LABELS
 from wave_local_ai_v2.fiche_registry import read_fiche
 from wave_local_ai_v2.results import read_rows
@@ -30,6 +32,7 @@ FAKE_ROSTER = {
             "file": "fake.gguf",
             "quant": "UD-IQ4_XS",
             "sha256": "0" * 64,
+            "requirements": ROSTER_REQUIREMENTS,
             "architecture": {
                 "kind": "moe",
                 "expert_count": 40,
@@ -49,11 +52,6 @@ FAKE_ROSTER = {
                     "min_p": 0,
                     "presence_penalty": 1.5,
                 },
-            },
-            "validated_host": {
-                "n_cpu_moe": 37,
-                "threads": 8,
-                "fiche_summary": "fake fiche",
             },
         }
     },
@@ -174,6 +172,8 @@ def stubbed_run(tmp_path, monkeypatch):
     server_path.write_text("")
 
     fake_settings = Settings(
+        machine_id="laptop-mobile-gpu",
+        compute_mode="gpu",
         slm_models_dir=model_dir,
         llama_server_path=server_path,
         results_path=results_path,
@@ -524,6 +524,8 @@ def test_run_takes_the_mean_of_the_two_middle_values_when_n_is_even(
     server_path.write_text("")
 
     fake_settings = Settings(
+        machine_id="laptop-mobile-gpu",
+        compute_mode="gpu",
         slm_models_dir=model_dir,
         llama_server_path=server_path,
         results_path=results_path,
@@ -611,6 +613,8 @@ def test_run_appends_zero_rows_when_request_fails(tmp_path, monkeypatch) -> None
     server_path.write_text("")
 
     fake_settings = Settings(
+        machine_id="laptop-mobile-gpu",
+        compute_mode="gpu",
         slm_models_dir=model_dir,
         llama_server_path=server_path,
         results_path=results_path,
@@ -664,6 +668,8 @@ def test_run_appends_zero_rows_when_server_never_becomes_ready(tmp_path) -> None
     server_path.write_text("")
 
     fake_settings = Settings(
+        machine_id="laptop-mobile-gpu",
+        compute_mode="gpu",
         slm_models_dir=model_dir,
         llama_server_path=server_path,
         results_path=results_path,
@@ -962,3 +968,297 @@ def test_main_exits_one_on_a_failing_warmup_with_no_retry(stubbed_run, capsys) -
     assert "repetition 0 failed: empty" in capsys.readouterr().err
     assert started["post"].call_count == 1
     assert _bytes_or_empty(results_path) == before
+
+
+def test_a_gpu_and_a_cpu_only_run_store_two_fiches_and_never_reproduce(
+    stubbed_run, tmp_path
+) -> None:
+    """Epic success check 1 through the runtime CLI: one machine, one model,
+    one run per mode. Two fiche hashes, two stored fiches each with its own
+    flags, and the second row's verdict names `compute_mode`."""
+    results_path, started = stubbed_run
+    gpu_settings = started["load_settings"].return_value
+    started["load_settings"].return_value = replace(
+        gpu_settings, runtime_reference_path=results_path
+    )
+    _run()
+    started["load_settings"].return_value = replace(
+        gpu_settings, runtime_reference_path=results_path, compute_mode="cpu_only"
+    )
+    _run()
+
+    gpu_row, cpu_row = read_rows(results_path)
+    assert (gpu_row["machine_id"], gpu_row["compute_mode"]) == (
+        "laptop-mobile-gpu",
+        "gpu",
+    )
+    assert (cpu_row["machine_id"], cpu_row["compute_mode"]) == (
+        "laptop-mobile-gpu",
+        "cpu_only",
+    )
+    assert gpu_row["fiche_hash"] != cpu_row["fiche_hash"]
+    gpu_fiche = read_fiche(gpu_row["fiche_hash"], tmp_path / "fiches")
+    cpu_fiche = read_fiche(cpu_row["fiche_hash"], tmp_path / "fiches")
+    assert gpu_fiche is not None and cpu_fiche is not None
+    assert gpu_fiche["compute_mode"] == "gpu"
+    assert cpu_fiche["compute_mode"] == "cpu_only"
+    assert "--device" not in gpu_fiche["flags"]
+    assert cpu_fiche["flags"][2:6] == ["-ngl", "0", "--device", "none"]
+    assert len(list((tmp_path / "fiches").glob("*.json"))) == 2
+    assert cpu_row["verdict"]["verdict"] == "not_comparable"
+    assert "compute_mode" in cpu_row["verdict"]["differing_fields"]
+
+
+def test_every_row_and_fiche_names_its_run_profile(stubbed_run, tmp_path) -> None:
+    results_path, _ = stubbed_run
+
+    _run()
+
+    [row] = read_rows(results_path)
+    profile_id = f"{DEFAULT_ROSTER_ENTRY_ID}@laptop-mobile-gpu/gpu"
+    assert row["profile_id"] == profile_id
+    assert row["profile_overrides"] == {}
+    fiche = read_fiche(row["fiche_hash"], tmp_path / "fiches")
+    assert fiche is not None and fiche["profile_id"] == profile_id
+    # The flagship's laptop gpu profile: its 37 and 8, now profile data.
+    flags = fiche["flags"]
+    assert flags[flags.index("--n-cpu-moe") + 1] == "37"
+    assert flags[flags.index("-t") + 1] == "8"
+
+
+def test_an_overridden_run_names_the_values_it_overrode(stubbed_run, tmp_path) -> None:
+    results_path, started = stubbed_run
+    started["load_settings"].return_value = replace(
+        started["load_settings"].return_value, host_n_cpu_moe=30, host_threads=6
+    )
+
+    _run()
+
+    [row] = read_rows(results_path)
+    assert row["profile_id"] == f"{DEFAULT_ROSTER_ENTRY_ID}@laptop-mobile-gpu/gpu"
+    assert row["profile_overrides"] == {
+        "n_cpu_moe": {"profile": 37, "operator": 30},
+        "threads": {"profile": 8, "operator": 6},
+    }
+    fiche = read_fiche(row["fiche_hash"], tmp_path / "fiches")
+    assert fiche is not None
+    flags = fiche["flags"]
+    assert flags[flags.index("--n-cpu-moe") + 1] == "30"
+    assert flags[flags.index("-t") + 1] == "6"
+
+
+def _vram_values(row: dict) -> list:
+    """Every `vram_used_mib` a row holds: the peak, then each repetition."""
+    return [
+        row["vram_used_mib"],
+        *(rep["vram_used_mib"] for rep in row["warmup_repetitions"]),
+        *(rep["vram_used_mib"] for rep in row["repetitions"]),
+    ]
+
+
+def test_a_cpu_only_run_publishes_no_vram_number_anywhere_on_the_row(
+    stubbed_run,
+) -> None:
+    # The stubbed NVML read still answers 3161 MiB, as the device-wide figure
+    # would on a GPU-bearing machine: none of it may reach the row.
+    results_path, started = stubbed_run
+    started["load_settings"].return_value = replace(
+        started["load_settings"].return_value, compute_mode="cpu_only"
+    )
+
+    _run()
+
+    [row] = read_rows(results_path)
+    assert row["schema_version"] == "30"
+    values = _vram_values(row)
+    assert len(values) == 1 + row["warmup_count"] + row["repetitions_n"]
+    assert set(values) == {"not_applicable"}
+    assert '"vram_used_mib": 3161' not in results_path.read_text(encoding="utf-8")
+    # Power and the GPU energy channel keep their own measurement and labels.
+    assert row["gpu_draw_w"] == 45.0
+    assert row["gpu_energy_method"] is not None
+
+
+def test_a_gpu_run_keeps_its_vram_figure(stubbed_run) -> None:
+    results_path, _ = stubbed_run
+
+    _run()
+
+    [row] = read_rows(results_path)
+    assert set(_vram_values(row)) == {3161.0}
+
+
+def test_a_gpu_run_whose_vram_read_failed_stays_null_not_not_applicable(
+    stubbed_run,
+) -> None:
+    results_path, started = stubbed_run
+    started["gpu_stats"].return_value = {"vram_used_mib": None, "gpu_draw_w": None}
+
+    _run()
+
+    [row] = read_rows(results_path)
+    assert set(_vram_values(row)) == {None}
+
+
+@pytest.mark.parametrize(
+    ("changes", "named"),
+    [
+        ({"machine_id": None}, "MACHINE_ID"),
+        ({"machine_id": "my-box"}, "MACHINE_ID"),
+        ({"compute_mode": None}, "COMPUTE_MODE"),
+        ({"machine_id": "pro-pc-no-gpu"}, "pro-pc-no-gpu"),
+        # A declared profile whose thread count nobody has read yet.
+        ({"machine_id": "tower-desktop-gpu"}, "SERVER_THREADS"),
+    ],
+)
+def test_a_run_without_a_valid_run_profile_refuses_before_any_server_starts(
+    stubbed_run, capsys, changes: dict, named: str
+) -> None:
+    results_path, started = stubbed_run
+    started["load_settings"].return_value = replace(
+        started["load_settings"].return_value, **changes
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        main()
+
+    assert exit_info.value.code == 1
+    assert named in capsys.readouterr().err
+    started["running_server"].assert_not_called()
+    started["probe_build"].assert_not_called()
+    assert not results_path.exists()
+
+
+def _declare_campaign(tmp_path: Path, **overrides) -> Path:
+    campaigns_dir = tmp_path / "campaigns"
+    campaigns_dir.mkdir()
+    declaration = {
+        "campaign_id": "test-campaign",
+        "description": "Test campaign.",
+        "engines": ["llama.cpp"],
+        "prompt_variants": [{"id": "baseline", "version": "1"}],
+        "roster_entries": [DEFAULT_ROSTER_ENTRY_ID],
+        "suites": ["classification-support-routing"],
+        "machine": {"machine_id": "laptop-mobile-gpu", "compute_mode": "gpu"},
+        "exclusions": [],
+        **overrides,
+    }
+    (campaigns_dir / "test-campaign.json").write_text(
+        json.dumps(declaration), encoding="utf-8"
+    )
+    return campaigns_dir
+
+
+def test_a_runtime_row_with_no_campaign_belongs_to_none(stubbed_run) -> None:
+    results_path, _ = stubbed_run
+
+    _run()
+
+    (row,) = read_rows(results_path)
+    assert row["campaign_id"] == "none"
+
+
+def test_a_runtime_row_under_a_campaign_carries_its_id(stubbed_run, tmp_path) -> None:
+    results_path, started = stubbed_run
+    started["load_settings"].return_value = replace(
+        started["load_settings"].return_value,
+        campaign_id="test-campaign",
+        campaigns_dir=_declare_campaign(tmp_path),
+    )
+
+    _run()
+
+    (row,) = read_rows(results_path)
+    assert row["campaign_id"] == "test-campaign"
+
+
+def test_a_runtime_run_outside_its_campaign_refuses_before_any_server_starts(
+    stubbed_run, tmp_path, capsys
+) -> None:
+    results_path, started = stubbed_run
+    started["load_settings"].return_value = replace(
+        started["load_settings"].return_value,
+        campaign_id="test-campaign",
+        campaigns_dir=_declare_campaign(
+            tmp_path,
+            machine={"machine_id": "laptop-mobile-gpu", "compute_mode": "cpu_only"},
+        ),
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        main()
+
+    assert exit_info.value.code == 1
+    assert "run refused under campaign 'test-campaign'" in capsys.readouterr().err
+    started["running_server"].assert_not_called()
+    started["probe_build"].assert_not_called()
+    assert not results_path.exists()
+
+
+def test_a_run_below_its_declared_minimum_refuses_before_the_weights_and_any_spawn(
+    stubbed_run, tmp_path, capsys
+) -> None:
+    results_path, started = stubbed_run
+    settings = started["load_settings"].return_value
+    # The weights are absent too: the RAM refusal must not be masked by them.
+    (
+        settings.slm_models_dir
+        / FAKE_ROSTER["entries"][DEFAULT_ROSTER_ENTRY_ID]["file"]
+    ).unlink()
+    started["load_settings"].return_value = replace(
+        settings,
+        roster_path=write_raised_roster(FAKE_ROSTER, tmp_path),
+        machine_results_root=tmp_path / "refusals",
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        main()
+
+    assert exit_info.value.code == 1
+    err = capsys.readouterr().err
+    assert "refused:" in err and "ram_gb" in err and "compute mode 'gpu'" in err
+    assert "model file not found" not in err
+    started["running_server"].assert_not_called()
+    started["probe_build"].assert_not_called()
+    record = single_refusal(tmp_path / "refusals", "laptop-mobile-gpu")
+    assert record["requirement"] == "ram_gb"
+    assert record["profile_id"] == f"{DEFAULT_ROSTER_ENTRY_ID}@laptop-mobile-gpu/gpu"
+    assert not results_path.exists()
+
+
+def test_run_announces_its_run_id_as_the_first_stdout_line(stubbed_run, capsys) -> None:
+    results_path, _ = stubbed_run
+
+    _run()
+
+    first_line = capsys.readouterr().out.splitlines()[0]
+    assert first_line == read_rows(results_path)[0]["run_id"]
+
+
+def test_main_installs_the_graceful_stop_and_exits_one_when_stopped(
+    monkeypatch, capsys
+) -> None:
+    installed: list[bool] = []
+    monkeypatch.setattr(server, "install_graceful_stop", lambda: installed.append(True))
+
+    def stopped() -> None:
+        raise server.StopRequested("run stopped by signal 21")
+
+    monkeypatch.setattr("wave_local_ai_v2._run", stopped)
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+
+    assert installed == [True]
+    assert exc_info.value.code == 1
+    assert "error: run stopped by signal 21" in capsys.readouterr().err
+
+
+def test_python_dash_m_runs_the_runtime_cli(monkeypatch) -> None:
+    # The entry point the demo console launches (`python -m wave_local_ai_v2`).
+    called: list[bool] = []
+    monkeypatch.setattr(wave_local_ai_v2, "main", lambda: called.append(True))
+
+    runpy.run_module("wave_local_ai_v2", run_name="__main__")
+
+    assert called == [True]

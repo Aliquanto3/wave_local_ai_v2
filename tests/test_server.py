@@ -1,4 +1,6 @@
 import dataclasses
+import json
+import signal
 import subprocess
 import sys
 import tempfile
@@ -8,48 +10,66 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from wave_local_ai_v2 import engines, roster, server
-from wave_local_ai_v2.settings import Settings
+from wave_local_ai_v2 import engines, profiles, roster, server
 
 REAL_ROSTER_PATH = Path("aidd_docs/roster/models.json")
 REAL_ROSTER_ENTRY_ID = "qwen3.6-35b-a3b-ud-iq4xs"
+SHIPPED_DENSE_ENTRY_ID = "qwen3-0.6b-q8"
+LAPTOP = "laptop-mobile-gpu"
+TOWER = "tower-desktop-gpu"
 
 
-def _shipped_entry() -> roster.RosterEntry:
+def _shipped_entry(entry_id: str = REAL_ROSTER_ENTRY_ID) -> roster.RosterEntry:
     loaded = roster.load_roster(REAL_ROSTER_PATH)
-    return roster.resolve_entry(loaded, REAL_ROSTER_ENTRY_ID)
+    return roster.resolve_entry(loaded, entry_id)
 
 
-def _default_settings() -> Settings:
-    """`Settings` with only its required paths given: the host flags stay default."""
-    placeholder = Path("unused")
-    return Settings(
-        slm_models_dir=placeholder,
-        llama_server_path=placeholder,
-        results_path=placeholder,
+def _shipped_profile(
+    entry: roster.RosterEntry,
+    mode: str = "gpu",
+    *,
+    n_cpu_moe: int | None = None,
+    threads: int | None = None,
+) -> profiles.ResolvedProfile:
+    """The shipped laptop profile of `entry`, with any operator override."""
+    return profiles.resolve_for_run(
+        entry, LAPTOP, mode, operator_n_cpu_moe=n_cpu_moe, operator_threads=threads
+    )
+
+
+def _explicit_profile(
+    entry: roster.RosterEntry,
+    *,
+    n_cpu_moe: int | None,
+    mode: str = "gpu",
+    n_gpu_layers: int | None = None,
+) -> profiles.ResolvedProfile:
+    if n_gpu_layers is None:
+        n_gpu_layers = 0 if mode == "cpu_only" else entry.server_flags["n_gpu_layers"]
+    return profiles.ResolvedProfile(
+        profile_id=profiles.profile_id_for(entry.entry_id, "test-machine", mode),
+        entry_id=entry.entry_id,
+        machine_id="test-machine",
+        compute_mode=mode,
+        n_gpu_layers=n_gpu_layers,
+        n_cpu_moe=n_cpu_moe,
+        threads=8,
     )
 
 
 def test_build_flags_matches_baseline() -> None:
     entry = _shipped_entry()
-    settings = _default_settings()
 
     flags = server.build_flags(
-        entry,
-        settings.host_n_cpu_moe,
-        settings.host_threads,
-        model_path=Path("model.gguf"),
+        entry, _shipped_profile(entry), model_path=Path("model.gguf")
     )
 
-    # The shipped roster entry plus the shipped host defaults must reproduce
-    # the exact flag list the old hardcoded-constant version built: this is
-    # the phase's first byte-identical checkpoint. The host values come from
-    # `Settings`' defaults, not from literals here, so a default edit fails
-    # this test rather than silently changing what the CLIs launch. Since the
-    # dense ladder landed, `host_n_cpu_moe` defaults to `None` and the `37`
-    # below is resolved from the entry's own `validated_host` -- the same
-    # command, reached through the entry instead of through a settings
-    # constant, which is exactly what this assertion is here to prove.
+    # The shipped roster entry under its shipped laptop `gpu` run profile must
+    # reproduce the exact flag list the old hardcoded-constant version built.
+    # The host values come from the profile registry, not from literals here,
+    # so a profile edit fails this test rather than silently changing what the
+    # CLIs launch. `37` and `8` moved from the roster's `validated_host` into
+    # the profile: the same command, reached through the profile.
     assert flags == [
         "-m",
         "model.gguf",
@@ -85,6 +105,69 @@ def test_build_flags_matches_baseline() -> None:
     ]
 
 
+def test_the_laptop_and_tower_gpu_profiles_launch_different_host_values(
+    tmp_path: Path,
+) -> None:
+    """One model on two machines is two named profiles, never one reused."""
+
+    def fact(value: int) -> dict[str, object]:
+        return {"value": value, "source": "declared", "read_from": "test"}
+
+    path = tmp_path / "profiles.json"
+    path.write_text(
+        json.dumps(
+            {
+                "registry_version": 1,
+                "defaults": {
+                    LAPTOP: {"gpu": {"threads": fact(8)}},
+                    TOWER: {"gpu": {"threads": fact(12)}},
+                },
+                "entries": {
+                    REAL_ROSTER_ENTRY_ID: {
+                        LAPTOP: {"gpu": {"n_cpu_moe": fact(37)}},
+                        TOWER: {"gpu": {"n_cpu_moe": fact(20)}},
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    registry = profiles.load_registry(path)
+    entry = _shipped_entry()
+    laptop = profiles.resolve(registry, entry, LAPTOP, "gpu")
+    tower = profiles.resolve(registry, entry, TOWER, "gpu")
+
+    laptop_flags = server.build_flags(entry, laptop, Path("model.gguf"))
+    tower_flags = server.build_flags(entry, tower, Path("model.gguf"))
+
+    def value(flags: list[str], flag: str) -> str:
+        return flags[flags.index(flag) + 1]
+
+    assert laptop.profile_id != tower.profile_id
+    assert (value(laptop_flags, "-t"), value(laptop_flags, "--n-cpu-moe")) == (
+        "8",
+        "37",
+    )
+    assert (value(tower_flags, "-t"), value(tower_flags, "--n-cpu-moe")) == (
+        "12",
+        "20",
+    )
+
+
+def test_build_flags_refuses_a_profile_resolved_for_another_entry() -> None:
+    entry = _shipped_entry()
+    other = _shipped_profile(_shipped_entry(SHIPPED_DENSE_ENTRY_ID))
+    with pytest.raises(roster.RosterError, match="resolved for roster entry"):
+        server.build_flags(entry, other, Path("model.gguf"))
+
+
+def test_build_flags_refuses_a_cpu_only_profile_that_keeps_gpu_layers() -> None:
+    entry = _shipped_entry()
+    profile = _explicit_profile(entry, n_cpu_moe=None, mode="cpu_only", n_gpu_layers=99)
+    with pytest.raises(roster.RosterError, match="n_gpu_layers=99"):
+        server.build_flags(entry, profile, Path("model.gguf"))
+
+
 def test_build_flags_refuses_a_dense_entry_given_a_host_n_cpu_moe() -> None:
     dense_entry = _make_entry(
         entry_id="fake-dense-model",
@@ -97,7 +180,9 @@ def test_build_flags_refuses_a_dense_entry_given_a_host_n_cpu_moe() -> None:
         patch("wave_local_ai_v2.server.subprocess.Popen") as mock_popen,
     ):
         server.build_flags(
-            dense_entry, host_n_cpu_moe=1, host_threads=8, model_path=Path("model.gguf")
+            dense_entry,
+            _explicit_profile(dense_entry, n_cpu_moe=1),
+            model_path=Path("model.gguf"),
         )
 
     mock_popen.assert_not_called()
@@ -115,34 +200,25 @@ def test_build_flags_refuses_an_over_ceiling_host_n_cpu_moe() -> None:
         patch("wave_local_ai_v2.server.subprocess.Popen") as mock_popen,
     ):
         server.build_flags(
-            moe_entry, host_n_cpu_moe=41, host_threads=8, model_path=Path("model.gguf")
+            moe_entry,
+            _explicit_profile(moe_entry, n_cpu_moe=41),
+            model_path=Path("model.gguf"),
         )
 
     mock_popen.assert_not_called()
 
 
-SHIPPED_DENSE_ENTRY_ID = "qwen3-0.6b-q8"
-
-
 def test_build_flags_for_a_dense_entry_omits_the_moe_offload() -> None:
-    """A dense entry at default settings: the same list, minus `--n-cpu-moe`.
+    """A dense entry under its laptop `gpu` profile: no `--n-cpu-moe`.
 
-    Not a `kind == "dense"` branch in the flag builder -- the entry's own
-    `validated_host["n_cpu_moe"]` is `null`, `host_n_cpu_moe` is unset, and
-    the resolution of the two produces no flag. Every other flag keeps its
-    position, so the only difference from the baseline above is the pair that
-    is gone and the values the entry itself declares.
+    Not a `kind == "dense"` branch in the flag builder -- the profile declares
+    no `n_cpu_moe` for the entry and no operator override is set, so the
+    resolution produces no flag. Every other flag keeps its position.
     """
-    loaded = roster.load_roster(REAL_ROSTER_PATH)
-    entry = roster.resolve_entry(loaded, SHIPPED_DENSE_ENTRY_ID)
-    settings = _default_settings()
+    entry = _shipped_entry(SHIPPED_DENSE_ENTRY_ID)
 
-    assert settings.host_n_cpu_moe is None
     flags = server.build_flags(
-        entry,
-        settings.host_n_cpu_moe,
-        settings.host_threads,
-        model_path=Path("model.gguf"),
+        entry, _shipped_profile(entry), model_path=Path("model.gguf")
     )
 
     assert "--n-cpu-moe" not in flags
@@ -179,22 +255,52 @@ def test_build_flags_for_a_dense_entry_omits_the_moe_offload() -> None:
     ]
 
 
+def test_cpu_only_puts_every_layer_on_the_cpu_and_emits_no_moe_offload() -> None:
+    """`cpu_only` on the MoE flagship: `-ngl 0 --device none`, no `--n-cpu-moe`.
+
+    The flagship's `n_cpu_moe` 37 is its laptop `gpu` profile's value only;
+    the `cpu_only` profile overrides the roster's `-ngl` with 0 and declares
+    no offload. Every other flag keeps its place.
+    """
+    entry = _shipped_entry()
+    gpu = server.build_flags(
+        entry, _shipped_profile(entry), model_path=Path("model.gguf")
+    )
+
+    flags = server.build_flags(
+        entry, _shipped_profile(entry, "cpu_only"), model_path=Path("model.gguf")
+    )
+
+    assert flags[:6] == ["-m", "model.gguf", "-ngl", "0", "--device", "none"]
+    assert "--n-cpu-moe" not in flags
+    # The gpu list minus its `-m`/`-ngl` head and its `--n-cpu-moe 37` pair.
+    assert flags[6:] == gpu[6:]
+
+
+def test_cpu_only_refuses_a_supplied_n_cpu_moe_naming_the_mode() -> None:
+    entry = _shipped_entry()
+    with pytest.raises(roster.RosterError, match="cpu_only"):
+        server.build_flags(
+            entry,
+            _shipped_profile(entry, "cpu_only", n_cpu_moe=37),
+            model_path=Path("model.gguf"),
+        )
+
+
 def test_build_flags_refuses_a_shipped_dense_entry_given_an_explicit_zero() -> None:
     """`SERVER_N_CPU_MOE=0` is an instruction, not the absence of one.
 
     The unset state is `None`. An operator who writes `0` has asked for MoE
-    offload of no experts, which a dense entry cannot honour, and the
-    refusal it already produced must survive the resolution change.
+    offload of no experts, which a dense entry cannot honour.
     """
-    loaded = roster.load_roster(REAL_ROSTER_PATH)
-    entry = roster.resolve_entry(loaded, SHIPPED_DENSE_ENTRY_ID)
+    entry = _shipped_entry(SHIPPED_DENSE_ENTRY_ID)
 
     with (
         pytest.raises(roster.RosterError, match=SHIPPED_DENSE_ENTRY_ID),
         patch("wave_local_ai_v2.server.subprocess.Popen") as mock_popen,
     ):
         server.build_flags(
-            entry, host_n_cpu_moe=0, host_threads=8, model_path=Path("model.gguf")
+            entry, _shipped_profile(entry, n_cpu_moe=0), model_path=Path("model.gguf")
         )
 
     mock_popen.assert_not_called()
@@ -227,7 +333,6 @@ def _make_entry(*, entry_id: str, kind: str, expert_count: int) -> roster.Roster
                 "presence_penalty": 1.5,
             },
         },
-        validated_host={"n_cpu_moe": None, "threads": 8, "fiche_summary": "fake"},
     )
 
 
@@ -262,6 +367,43 @@ def test_start_server_returns_once_health_reports_ready() -> None:
         result = server.start_server(Path("llama-server.exe"), [])
 
     assert result is fake_process
+
+
+def test_a_stop_during_the_readiness_wait_stops_the_half_started_server() -> None:
+    # A large model loads for tens of seconds; a stop landing then happens
+    # before `running_server`'s own teardown covers the process.
+    fake_process = MagicMock()
+    fake_process.poll.return_value = None
+
+    with (
+        patch("wave_local_ai_v2.server._port_is_open", return_value=False),
+        patch("wave_local_ai_v2.server.subprocess.Popen", return_value=fake_process),
+        patch(
+            "wave_local_ai_v2.server.requests.get",
+            return_value=MagicMock(status_code=503),
+        ),
+        patch(
+            "wave_local_ai_v2.server.time.sleep",
+            side_effect=server.StopRequested("run stopped by signal 21"),
+        ),
+        patch("wave_local_ai_v2.server.stop_server") as mock_stop,
+        pytest.raises(server.StopRequested),
+    ):
+        server.start_server(Path("llama-server.exe"), [])
+
+    mock_stop.assert_called_once_with(fake_process)
+
+
+def test_the_graceful_stop_signal_raises_stop_requested() -> None:
+    # The conftest fixture restores the previous handler after this test.
+    stop_signal = signal.SIGBREAK if sys.platform == "win32" else signal.SIGTERM
+
+    server.install_graceful_stop()
+    handler = signal.getsignal(stop_signal)
+
+    assert callable(handler)
+    with pytest.raises(server.StopRequested, match="stopped by signal"):
+        handler(stop_signal, None)
 
 
 def test_start_server_raises_immediately_when_process_dies() -> None:
@@ -412,7 +554,10 @@ def test_host_port_and_health_path_are_read_from_the_engine_entry() -> None:
     fake_process = MagicMock()
     fake_process.poll.return_value = None
 
-    flags = server.build_flags(_shipped_entry(), None, 8, Path("<gguf>"), engine=engine)
+    entry = _shipped_entry()
+    flags = server.build_flags(
+        entry, _shipped_profile(entry), Path("<gguf>"), engine=engine
+    )
     with (
         patch("wave_local_ai_v2.server._port_is_open", return_value=False) as probe,
         patch("wave_local_ai_v2.server.subprocess.Popen", return_value=fake_process),

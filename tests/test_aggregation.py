@@ -7,6 +7,7 @@ from wave_local_ai_v2.aggregation import (
     PEAK_METRICS,
     UNRELIABLE_SPREAD_METRIC,
     AggregationError,
+    aggregate_peaks,
     aggregate_timings,
     mean,
     median,
@@ -207,3 +208,32 @@ def test_power_is_not_labelled_a_peak_because_it_is_sampled_after_decode() -> No
     assert AGGREGATION_LABELS["gpu_draw_w"] == (
         "max_post_completion_sample_over_counted_repetitions"
     )
+
+
+def test_aggregate_peaks_takes_each_channels_maximum() -> None:
+    counted = [_rep(1, 100.0, 270.0, 24.0), _rep(2, 110.0, 280.0, 25.0)]
+
+    assert aggregate_peaks(counted) == {  # type: ignore[arg-type]
+        "vram_used_mib": 3002.0,
+        "process_rss_bytes": 500_000_002,
+        "gpu_draw_w": 42.0,
+    }
+
+
+def test_a_channel_marked_not_applicable_throughout_peaks_to_the_marker() -> None:
+    counted = [_rep(1, 100.0, 270.0, 24.0), _rep(2, 110.0, 280.0, 25.0)]
+    for rep in counted:
+        rep["vram_used_mib"] = "not_applicable"
+
+    peaks = aggregate_peaks(counted)  # type: ignore[arg-type]
+
+    assert peaks["vram_used_mib"] == "not_applicable"
+    assert peaks["gpu_draw_w"] == 42.0
+
+
+def test_a_channel_mixing_the_marker_and_a_reading_has_no_peak() -> None:
+    counted = [_rep(1, 100.0, 270.0, 24.0), _rep(2, 110.0, 280.0, 25.0)]
+    counted[0]["vram_used_mib"] = "not_applicable"
+
+    with pytest.raises(AggregationError, match="vram_used_mib mixes"):
+        aggregate_peaks(counted)  # type: ignore[arg-type]

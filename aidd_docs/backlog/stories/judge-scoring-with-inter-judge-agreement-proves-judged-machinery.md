@@ -21,7 +21,15 @@ Maps to: PRD AC "Given an open-ended task result from a subject independent of b
 
 Needs: a real local model run of one roster entry on the development laptop, paid API keys for Z.ai and DeepSeek (the judge pair), and the chosen cloud subject's key (Mistral or Google).
 
-Blocked: through `depends_on` on `glm-and-deepseek-are-the-only-judges-and-mistral-and-google-never-judge-again.md`, which waits on the GLM and DeepSeek judge stories and their open spikes (`aidd_docs/backlog/spikes/is-z-ai-glm-callable-as-a-pinned-judge-and-on-what-data-terms.md`, `aidd_docs/backlog/spikes/is-deepseek-callable-as-a-pinned-judge-and-on-what-data-terms.md`), and on `the-judged-probe-runs-both-paths-in-three-languages.md`, which waits on the same judge chain. Neither waits on calibration (Q54).
+Current state (verified on `main` at `c68b23e`, 2026-10-03):
+
+- `suite_registry.registered_ids()` returns only `classification-support-routing` and `translation-business-short-form` (`src/wave_local_ai_v2/suite_data/`, both `level: development`); resolving `rewriting-business-email` raises `SuiteRegistryError`. A definition declares every key of `suite_registry._CORE_KEYS`, `level` included; `prompt_set_hash` is computed at load, never declared.
+- `src/wave_local_ai_v2/use_case_coverage.json` already declares `text-rewriting` `exercised` by `rewriting-business-email` and lists that id under `multilingual-en-fr-de`. The coverage story chose the id; the record refuses on both entries until this story registers it or the record is edited, and `tests/test_use_case_coverage.py::test_run_today_the_command_refuses_naming_what_is_not_yet_covered` asserts that refusal.
+- `scoring_rules.SCORING_RULES` holds only `exact_label_match` and `chrf_against_reference`: no rule scores an item by judges, and the registry refuses a suite naming an unknown rule.
+- The judged pieces exist: `judge_protocol` renders an EN, FR or DE judge prompt shell per item language; `agreement` computes quadratic-weighted Cohen's kappa with raw agreement, and `is_contested` against `DEFAULT_CONTESTED_THRESHOLD` (`settings.DEFAULT_CONTESTED_ORDINAL_MAX_DELTA = 1`); `row_contract.JUDGED_FIELDS` requires the judged block, `judge_cost` included and kept out of `cost_total`. `judge_protocol.OPEN_ENDED_QUALITY_1_TO_5` is the probe's generic rubric, not this suite's.
+- `judge_backends.py` binds only `mistral` and `google` judges and `judge_probe.py` calls them; no GLM or DeepSeek backend exists.
+
+Blocked: only through `depends_on`. `aidd_docs/backlog/stories/glm-and-deepseek-are-the-only-judges-and-mistral-and-google-never-judge-again.md` (judge epic order 10, `proposed`) waits on the GLM and DeepSeek judge stories (orders 8 and 9, `proposed`), each blocked by its spike's outstanding live calls with a paid key (`aidd_docs/backlog/spikes/is-z-ai-glm-callable-as-a-pinned-judge-and-on-what-data-terms.md`, `aidd_docs/backlog/spikes/is-deepseek-callable-as-a-pinned-judge-and-on-what-data-terms.md`, both `blocked`). `aidd_docs/backlog/stories/the-judged-probe-runs-both-paths-in-three-languages.md` (`proposed`) waits on order 10. The other two predecessors are `done`. Neither waits on calibration (Q54).
 
 ## Acceptance
 

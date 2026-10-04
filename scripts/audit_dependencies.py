@@ -35,12 +35,15 @@ def run_pip_audit() -> dict[str, Any]:
     directly, so `uv.lock` is exported to one in a scratch directory first —
     this is what makes pip-audit see the exact locked dependency set,
     including platform-marker-only packages that may not be installed here.
+    `--all-groups` takes in the groups a default sync leaves out (the release
+    job's `release` group), so no locked dependency goes unaudited.
     """
     with tempfile.TemporaryDirectory() as scratch_dir:
         export = subprocess.run(
             [
                 "uv",
                 "export",
+                "--all-groups",
                 "--format",
                 "pylock.toml",
                 "-o",

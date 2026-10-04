@@ -23,22 +23,31 @@ Each path in this list is covered. A path ending in "/" is a directory:
 the data files in it are covered, and it holds a NOTICE.md stating these
 terms, so that a copy of the directory carries them. The README.md and
 NOTICE.md files in a covered directory are documentation, not data, and
-this file does not license them. A path ending in ".py" is a code module:
+this file does not license them; a LICENSE-APACHE-2.0.txt file in one is
+the licence text of the drawn items it holds (section 2.2), not data
+either. A path ending in ".py" is a code module:
 only the hand-written item literals it names are covered, the code around
 them is MIT, and the module's header says so.
 
-- `aidd_docs/results/`: the published results directory. Covers the reference bundle's row files listed below and any record a project command publishes into it, such as the use-case coverage record (`use-case-coverage.json`), in every case except the model-generated content they hold, which 1.3 governs.
+- `aidd_docs/results/`: the published results directory. Covers the reference bundle's row files listed below and any record a project command publishes into it, such as the use-case coverage record (`use-case-coverage.json`), in every case except the model-generated content they hold, which 1.3 governs, and the drawn items they hold, which section 2 governs.
 - `aidd_docs/results/runtime-reference.jsonl`: the reference bundle's current runtime rows.
-- `aidd_docs/results/quality-reference.jsonl`: the reference bundle's current quality rows, including the hand-written suite items they carry in their item fields (`item_id`, `prompt`, `expected_label`, and `reference_output` on graded rows); the model-output fields excepted, see 1.3.
+- `aidd_docs/results/quality-reference.jsonl`: the reference bundle's current quality rows, including the hand-written suite items they carry in their item fields (`item_id`, `prompt`, `expected_label`, and `reference_output` on graded rows); the model-output fields excepted, see 1.3, and the item fields of a row whose item is drawn, see 2.
 - `aidd_docs/results/runtime-reference.schema-1.jsonl`: superseded runtime rows, retained beside the current ones.
 - `aidd_docs/results/quality-reference.schema-1.jsonl`: superseded quality rows, retained beside the current ones, item fields included; the model-output fields excepted, see 1.3.
+- `aidd_docs/results/runtime-reference.schema-7.jsonl`: superseded runtime rows (schema "7"), retained beside the current ones.
+- `aidd_docs/results/quality-reference.schema-7.jsonl`: superseded quality rows (schema "7"), retained beside the current ones, item fields included; the model-output fields excepted, see 1.3.
+- `aidd_docs/results/refusals-reference.jsonl`: the reference bundle's current refusal records, one per run a machine refused below a model's declared minimum.
+- `aidd_docs/results/machines/`: each declared machine's tracked results, the rows and refusal records the reference bundle is derived from; the model-output fields excepted, see 1.3, and the item fields of a row whose item is drawn, see 2.
+- `aidd_docs/results/client-sessions.jsonl`: the client-session reception record, one hand-written record per session in which a benchmark result was shown to a client or their engineer, carrying pseudonymous ids only.
 - `aidd_docs/results/fiches/`: the hardware fiches the rows cite by `fiche_hash`.
-- `aidd_docs/results/suite-definitions/`: the published suite-definition snapshots the rows cite by `suite_id` and `suite_version`, including the hand-written suite items as published.
+- `aidd_docs/results/suite-definitions/`: the published suite-definition snapshots the rows cite by `suite_id` and `suite_version`, including the hand-written suite items as published; the drawn items they publish excepted, see 2.
 - `aidd_docs/results/comparisons/`: the paired-comparison family records computed over the published rows.
 - `aidd_docs/results/leader-sets/`: the leader-set records derived from the published rows and the comparison family records.
+- `aidd_docs/results/comparisons.schema-7/`: superseded comparison family records, computed over the schema "7" rows, retained unedited.
+- `aidd_docs/results/leader-sets.schema-7/`: superseded leader-set records, derived from the schema "7" rows, retained unedited.
 - `aidd_docs/roster/`: the model roster's directory.
 - `aidd_docs/roster/models.json`: the model roster the rows cite by `roster_entry_id`, including each entry's licence block and language claim as records. The licences those blocks record are not granted here; see 1.2.
-- `src/wave_local_ai_v2/suite_data/`: the hand-written suite items as stored in the source tree, one suite definition per file.
+- `src/wave_local_ai_v2/suite_data/`: the hand-written suite items as stored in the source tree, one suite definition per file; the drawn items it stores excepted, see 2.
 - `src/wave_local_ai_v2/use_case_coverage.json`: the declared use-case coverage record, the source of the copy published into `aidd_docs/results/`.
 - `src/wave_local_ai_v2/judge_probe.py`: its hand-written item literals only (`JUDGE_PROBE_ITEMS`).
 
@@ -80,23 +89,138 @@ those terms.
 
 ## 2. Drawn items
 
-The bundle holds no item drawn from a public benchmark today. Every item
-in the suite-definition snapshots and in `src/wave_local_ai_v2/suite_data/`
-declares `provenance` `hand_written` and carries no `source`, and so does
-every row of `quality-reference.jsonl`. The superseded
-`quality-reference.schema-1.jsonl` rows predate the provenance fields and
-declare none; their items are the same hand-written items.
-
 An item drawn from a public benchmark is not covered by CC-BY 4.0 through
 this file. It carries its source's licence, recorded per item in its
-`licence`, `source` and `source_revision` fields, and this section names
-each drawn source and its terms once the first drawn item is published.
-None is listed today.
+`licence`, `source` and `source_revision` fields, and on every row that
+publishes it in `item_licence`, `item_source` and `item_source_revision`.
+Each drawn source is named below with its terms, the rung its licence puts
+it on (permissive, share-alike or no-redistribution), what that rung does to
+its items and rows, and the attribution it requires.
+
+What each rung does to a source's items and to the rows carrying them:
+
+- Permissive: the items and their rows ship unchanged beside the
+  hand-written ones, in the same files, under their source's licence and
+  with the notices that licence requires on redistribution.
+- Share-alike: the items and their rows ship apart, under their source's
+  licence. In the published results directory, the suite-definition
+  snapshots of a source under licence <licence id> sit in
+  `share-alike/<licence id>/suite-definitions/`, its rows in
+  `share-alike/<licence id>/quality-reference.jsonl`, and that licence's
+  full text in `share-alike/<licence id>/LICENSE`, none of them in the
+  CC-BY 4.0 `suite-definitions/` or `quality-reference.jsonl`. The exported
+  quality table names that licence file on each such row, in
+  `item_licence_file`.
+- No redistribution: the items' text is published nowhere. Each row
+  carrying such an item records its item text fields (`prompt`,
+  `prompt_before_template`, `expected_label`, `reference_output`) as null
+  and carries `item_redaction` `no_redistribution`, `item_content_hash`,
+  `item_source`, `item_source_revision` and `item_source_key`; its
+  suite-definition snapshot keeps the item's `item_id`, `language`,
+  `licence`, `source`, `source_revision`, `content_hash` and `source_key`
+  and drops its text. A reader obtains the text from the source, under its
+  terms, and joins it to the rows by `item_source_key`; such a row's score
+  cannot be recomputed from the published data alone. No script or other
+  code that downloads a source's corpus ships with the data.
+
+Every drawn item carries a content hash (`content_hash` on the item,
+`item_content_hash` in the exported quality table), with which a reader
+proves that a source row they fetched is the one that was scored. It is
+the SHA-256 hex digest of the UTF-8 bytes of the JSON object with keys
+`licence`, `source`, `source_revision` and `text`, serialised with sorted
+keys, separators `,` and `:` and non-ASCII characters written as
+themselves. `licence`, `source` and `source_revision` are the source's as
+the suite's selection rule records them (`selection_rule.benchmarks`);
+`text` lists, in the rule's `content_fields` order, each of those fields
+of the source row, NFC-normalised with every whitespace run collapsed to
+one space and leading and trailing whitespace dropped. It hashes the source
+row as the suite's loader wrote it, not the prompt the model was sent.
+
+### 2.1 MInDS-14
+
+- Source: `PolyAI/minds14` on the Hugging Face Hub, at revision
+  `40ce77cb32a384e4d50a568e1ec39ac804019d33`
+  (https://huggingface.co/datasets/PolyAI/minds14/tree/40ce77cb32a384e4d50a568e1ec39ac804019d33),
+  configs `en-US`, `fr-FR` and `de-DE`.
+- Creator: PolyAI (Gerz, Su, Kusztos, Mondal, Lis, Singhal, Mrksic, Wen and
+  Vulic, "Multilingual and Cross-Lingual Intent Detection from Spoken Data",
+  2021, https://arxiv.org/abs/2104.08524).
+- Copyright notice: the dataset card states none; the work is attributed to
+  its creator.
+- Licence: Creative Commons Attribution 4.0 International (CC BY 4.0),
+  https://creativecommons.org/licenses/by/4.0/. The dataset card at the
+  pinned revision is the licence of record (`license: cc-by-4.0`, and
+  "All datasets are licensed under the Creative Commons license (CC-BY)"):
+  the revision ships no licence file, and the original `MInDS-14.zip`
+  release was not fetched. A licence file at that revision naming anything
+  other than CC BY 4.0 would reopen the licence decision.
+- Rung: permissive. The drawn items and the rows carrying them ship
+  unchanged inside this repository and its bundle, with no segregation and
+  no redaction.
+- What is drawn: 300 utterance transcriptions and their intent labels, 100
+  per language, published as the suite
+  `classification-banking-intents-minds14` in
+  `src/wave_local_ai_v2/suite_data/` and
+  `aidd_docs/results/suite-definitions/`, and in the item fields (`item_id`,
+  `prompt`, `expected_label`) of the rows citing that suite.
+- Changes made: each transcription is wrapped in a prompt template, an
+  instruction naming the fourteen intents; each intent is mapped from its
+  class index to its name. The transcriptions are otherwise verbatim.
+- Attribution, as CC BY 4.0 Section 3(a) requires: "MInDS-14 by PolyAI
+  (https://huggingface.co/datasets/PolyAI/minds14, revision
+  40ce77cb32a384e4d50a568e1ec39ac804019d33), licensed under CC BY 4.0
+  (https://creativecommons.org/licenses/by/4.0/); each item wrapped in a
+  prompt template."
+
+### 2.2 WMT24++
+
+- Source: `google/wmt24pp` on the Hugging Face Hub, at revision
+  `fd7405c06494bc66a57b25f55d217a72f96e60dc`
+  (https://huggingface.co/datasets/google/wmt24pp/tree/fd7405c06494bc66a57b25f55d217a72f96e60dc),
+  pair files `en-fr_FR.jsonl` and `en-de_DE.jsonl`.
+- Creator: Google (Deutsch et al., "WMT24++: Expanding the Language
+  Coverage of WMT24 to 55 Languages & Dialects", 2025,
+  https://arxiv.org/abs/2502.12404, as the dataset card cites it). The
+  English sources are the WMT24 general test set's (see section 3,
+  declaration 3).
+- Copyright notice: the dataset card states none; the work is attributed to
+  its creator.
+- Licence: Apache License, Version 2.0 (Apache-2.0),
+  https://www.apache.org/licenses/LICENSE-2.0. The dataset card at the
+  pinned revision is the licence of record (`license: apache-2.0`): the
+  revision ships no licence or NOTICE file. A copy of the Apache-2.0 text,
+  `LICENSE-APACHE-2.0.txt`, ships in each directory holding drawn WMT24++
+  items: `src/wave_local_ai_v2/suite_data/`,
+  `aidd_docs/results/suite-definitions/`, `aidd_docs/results/` and
+  `aidd_docs/results/machines/`. A licence
+  file at that revision naming anything other than Apache-2.0 would reopen
+  the licence decision.
+- Rung: permissive. The drawn items and the rows carrying them ship
+  unchanged inside this repository and its bundle, with no segregation and
+  no redaction.
+- What is drawn: 300 segments, 100 per direction (English to French,
+  French to German, German to English), each with its reference
+  translation, published as the suite `translation-mixed-domain-wmt24pp` in
+  `src/wave_local_ai_v2/suite_data/` and
+  `aidd_docs/results/suite-definitions/`, and in the item fields (`item_id`,
+  `prompt`, `reference_output`) of the rows citing that suite. The French
+  and German source texts are themselves translations from English.
+- Changes made, as Apache-2.0 Section 4(b) requires: each segment's source
+  text is wrapped in the suite's prompt template, an instruction naming the
+  source and target languages; the reference is unchanged. The two pair
+  files are joined on `segment_id`, segments marked `is_bad_source` are
+  dropped, and each segment is assigned to one direction
+  (`scripts/wmt24pp_suite.py`).
+- Attribution: "WMT24++ by Google
+  (https://huggingface.co/datasets/google/wmt24pp, revision
+  fd7405c06494bc66a57b25f55d217a72f96e60dc), licensed under the Apache
+  License, Version 2.0; each source text wrapped in a prompt template, the
+  references unchanged."
 
 
 ## 3. Assumptions this licence rests on
 
-Two statements in this file are the author's declarations, not verified
+Three statements in this file are the author's declarations, not verified
 facts. They are disclosed here so that a reuser can weigh them.
 
 1. The hand-written items are the owner's to license. The CC-BY 4.0 grant
@@ -107,16 +231,27 @@ facts. They are disclosed here so that a reuser can weigh them.
 2. The model outputs in the rows may be redistributed (1.3). This is
    unverified against any model's licence or provider's terms until the
    spike named in 1.3 concludes.
+3. The WMT24++ items may be redistributed under Apache-2.0 (2.2). Their
+   English sources are the WMT24 general test set's, which WMT released
+   "for research purposes" only
+   (https://www2.statmt.org/wmt24/translation-task.html); the items rest on
+   Google's Apache-2.0 label over the dataset, taken at face value over
+   source text Google did not author. If that label is ever withdrawn, the
+   items move to the no-redistribution rung under the
+   supersede-don't-backfill discipline: their rows are superseded, not
+   edited.
 
 
 ## 4. Attribution
 
 CC-BY 4.0 requires attribution (Section 3(a) of the legal text below). The
-attribution string a reuser reproduces will be stated in the "Licence"
-section of README.md, together with a CITATION.cff file. Until it is,
-attribute the covered parts as Section 3(a) requires: name the licensor
-(Aliquanto3) and the work (wave-local-ai-v2), state the licence (CC-BY 4.0)
-with a link to it, link to this repository, and indicate any changes made.
+attribution string a reuser reproduces is stated in the "Licence" section of
+README.md and derived from CITATION.cff, which is also the citation: copy
+that one string, for the release you used, and indicate any changes made.
+While the author fields in CITATION.cff are placeholders, attribute as
+Section 3(a) requires: name the licensor (Aliquanto3), the work
+(wave-local-ai-v2), the licence (CC-BY 4.0) with a link to it, this
+repository, and any changes made.
 
 
 ## 5. CC-BY 4.0 legal text

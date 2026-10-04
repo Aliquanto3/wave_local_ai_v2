@@ -1,0 +1,40 @@
+$ promote laptop run-laptop-1 run-laptop-2
+promoted into <scratch>/dryrun\repo\machines\laptop-mobile-gpu: 1 runtime row(s), 1 quality row(s) added, 0 already present; 1 fiche(s) copied, 0 already tracked
+exit 0
+$ promote laptop again (idempotent)
+promoted into <scratch>/dryrun\repo\machines\laptop-mobile-gpu: 0 runtime row(s), 0 quality row(s) added, 2 already present; 0 fiche(s) copied, 1 already tracked
+exit 0
+$ promote laptop run-tower-1 (foreign row)
+error: promotion refused: runtime row of run 'run-tower-1' names machine_id 'tower-desktop-gpu', not 'laptop-mobile-gpu': only the machine that produced a row promotes it
+exit 1
+$ promote laptop no-such-run
+error: promotion refused: run_id(s) 'no-such-run' have no row in <scratch>/dryrun\laptop-live\runtime.jsonl, <scratch>/dryrun\laptop-live\quality.jsonl
+exit 1
+$ promote tower run-tower-1
+promoted into <scratch>/dryrun\repo\machines\tower-desktop-gpu: 1 runtime row(s), 0 quality row(s) added, 0 already present; 1 fiche(s) copied, 0 already tracked
+exit 0
+$ merge
+bundle written from <scratch>/dryrun\repo\machines: 2 runtime, 1 quality, 0 refusals
+exit 0
+$ merge again, byte-compare
+bundle written from <scratch>/dryrun\repo\machines: 2 runtime, 1 quality, 0 refusals
+exit 0
+byte-identical
+$ merge --check
+bundle check: committed bundle equals the merge (2 runtime, 1 quality, 0 refusals)
+exit 0
+$ hand-edit the bundle, merge --check
+error: <scratch>/dryrun\repo\bundle\runtime-reference.jsonl differs from what the merge derives from the per-machine locations (2 line(s)); the bundle is never hand-edited
+exit 1
+$ inject a collision: a tower row citing the laptop fiche aaa111
+error: merge refused: fiche hash collision on 'aaa111': runtime row of run 'run-laptop-1' names machine_id 'laptop-mobile-gpu', runtime row of run 'run-tower-2' names machine_id 'tower-desktop-gpu'; the merge does not choose between them
+exit 1
+$ an undeclared machine id
+error: merge refused: location(s) 'garage-box' under <scratch>/dryrun\repo\machines name no declared machine
+exit 1
+$ bundle files
+quality-reference.jsonl
+refusals-reference.jsonl
+runtime-reference.jsonl
+{"run_id": "run-laptop-1", "machine_id": "laptop-mobile-gpu", "compute_mode": "gpu", "fiche_hash": "aaa111", "schema_version": "26"}
+{"run_id": "run-tower-1", "machine_id": "tower-desktop-gpu", "compute_mode": "gpu", "fiche_hash": "bbb222", "schema_version": "26"}

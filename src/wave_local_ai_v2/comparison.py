@@ -196,6 +196,9 @@ EXCLUDED_FROM_DIFFERING: frozenset[str] = frozenset(
         "schema_version",
         "run_id",
         "captured_at",
+        # campaign membership: a campaign row and a no-campaign row of one
+        # configuration are not a confound
+        "campaign_id",
         "release_version",
         "commit_sha",
         "tree_dirty",
@@ -208,6 +211,8 @@ EXCLUDED_FROM_DIFFERING: frozenset[str] = frozenset(
         "item_id",
         "prompt",
         "prompt_before_template",
+        # derived from the variant and the suite's family, never a confound
+        "prompt_variant_noop",
         "expected_label",
         "predicted_label",
         "correct",
@@ -227,6 +232,9 @@ EXCLUDED_FROM_DIFFERING: frozenset[str] = frozenset(
         "suite_score",
         "score_breakdown",
         "failure_counts",
+        # the batch's interval (schema "21"): computed from the outcomes, so
+        # two batches that score differently always differ on it
+        "score_interval",
         "judges",
         "agreement",
         "agreement_statistic",
@@ -317,6 +325,10 @@ DIMENSIONS: dict[str, Dimension] = {
                 "size_class",
                 "roster_entry_id",
                 "roster_version",
+                # The run profile is named after its roster entry (schema
+                # "26"), so it moves with the model axis; a machine or mode
+                # change it also carries is already its own confound.
+                "profile_id",
                 "endpoint",
                 "prompt_template_id",
                 "prompt_template_hash",
@@ -328,19 +340,33 @@ DIMENSIONS: dict[str, Dimension] = {
         key_fields=("model_id",),
     ),
     "prompt_variant": Dimension(
-        fields=frozenset({"prompt_variant_id", "prompt_variant_version"}),
+        fields=frozenset(
+            {
+                "prompt_variant_id",
+                "prompt_variant_version",
+                # The decoding constraint (schema "28") is part of the
+                # variant's definition, so it moves with the variant axis and
+                # is named there; on any other axis it stays compared.
+                "constraint_mechanism",
+                "constraint_grammar_hash",
+            }
+        ),
         key_fields=("prompt_variant_id", "prompt_variant_version"),
     ),
 }
 DEFAULT_DIMENSION = "model"
 
-# The engine that produced a row and its build (schema "22"). Along `model`
-# they move with the axis only where they differ by construction: one side's
-# subject was served by a local engine and the other's by a cloud provider,
-# whose rows state that no engine applies. Between two locally served sides a
-# different engine or build is a confound, not part of what a model
+# The engine that produced a row and its build (schema "22"), the declared
+# machine and compute mode it ran under (schema "23"), and the operator
+# overrides of its run profile (schema "26"). Along `model` they move with the
+# axis only where they differ by construction: one side's subject was served
+# by a local engine and the other's by a cloud provider, whose rows state that
+# none of them applies. Between two locally served sides a different engine,
+# build, machine, mode or override is a confound, not part of what a model
 # comparison compares.
-ENGINE_FIELDS: frozenset[str] = frozenset({"engine_id", "engine_build"})
+ENGINE_FIELDS: frozenset[str] = frozenset(
+    {"engine_id", "engine_build", "machine_id", "compute_mode", "profile_overrides"}
+)
 
 
 class ComparisonInputError(ValueError):
@@ -842,7 +868,8 @@ def _axis(
     reference_rows: Sequence[Mapping[str, Any]],
     candidate_rows: Sequence[Mapping[str, Any]],
 ) -> Dimension:
-    """`dimension`'s axis for these two sides, with the engine rule applied."""
+    """`dimension`'s axis for these two sides, with the local-producer rule
+    (engine, machine, mode) applied."""
     axis = DIMENSIONS[dimension]
     if dimension != DEFAULT_DIMENSION:
         return axis

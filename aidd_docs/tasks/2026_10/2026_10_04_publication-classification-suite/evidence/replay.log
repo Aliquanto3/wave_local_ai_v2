@@ -1,0 +1,2 @@
+suite classification-banking-intents-minds14@1: sampler 1, seed 20261004 (attempts 1, seeds tried [20261004]), recorded loader pyarrow 25.0.1, recorded generator CPython random.Random 3.12
+reproduced: 300 items, same ids, same order

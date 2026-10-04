@@ -3,12 +3,12 @@
     {
       "use_case": "classification",
       "state": "exercised",
-      "suite_ids": ["classification-support-routing"]
+      "suite_ids": ["classification-support-routing", "classification-banking-intents-minds14"]
     },
     {
       "use_case": "translation",
       "state": "exercised",
-      "suite_ids": ["translation-business-short-form"]
+      "suite_ids": ["translation-business-short-form", "translation-mixed-domain-wmt24pp"]
     },
     {
       "use_case": "document-comparison",
@@ -21,7 +21,8 @@
     },
     {
       "use_case": "code-generation",
-      "state": null
+      "state": "exercised",
+      "suite_ids": ["code-generation-python-javascript"]
     },
     {
       "use_case": "agentic-planning",

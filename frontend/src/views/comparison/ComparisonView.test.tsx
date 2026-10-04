@@ -51,6 +51,42 @@ describe('ComparisonView', () => {
     expect(screen.getByText('run d4d2e0d5d9a94aa98d7c2eb1569fd60c')).toBeInTheDocument()
   })
 
+  it('names each column machine and compute mode, not only its fiche hash', async () => {
+    vi.spyOn(client, 'apiFetch').mockResolvedValueOnce(comparisonViewFixture)
+
+    renderWithGate()
+
+    expect((await screen.findAllByText('machine laptop-mobile-gpu')).length).toBe(4)
+    expect(screen.getAllByText('mode gpu').length).toBe(4)
+  })
+
+  it('renders a dimension a row predates as a named absence', async () => {
+    const [suite] = comparisonViewFixture.suites
+    const predates = {
+      absent: true as const,
+      reason: 'predates_schema',
+      detail: { row_schema_version: '12' },
+    }
+    const fixture = {
+      ...comparisonViewFixture,
+      suites: [
+        {
+          ...suite,
+          columns: suite.columns.map((column) => ({
+            ...column,
+            dimensions: { ...column.dimensions, machine: predates },
+          })),
+        },
+      ],
+    }
+    vi.spyOn(client, 'apiFetch').mockResolvedValueOnce(fixture)
+
+    renderWithGate()
+
+    expect((await screen.findAllByText(/predates this field/)).length).toBe(4)
+    expect(screen.queryByText(/^machine /)).toBeNull()
+  })
+
   it('renders a not-compared cell as its own label, never blank or "0"', async () => {
     vi.spyOn(client, 'apiFetch').mockResolvedValueOnce(comparisonViewFixture)
 

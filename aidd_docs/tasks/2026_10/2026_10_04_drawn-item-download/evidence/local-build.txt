@@ -1,0 +1,99 @@
+$ uv run --isolated --locked --group release python scripts/assemble_release_archive.py build --tag v0.2.0 --commit 3b2fc5a486dc2c49cf9647943b340ba9dbcd9587 --output-dir <temp> --parquet
+(working tree: HEAD 3b2fc5a486dc2c49cf9647943b340ba9dbcd9587 with this story's changes uncommitted; the zip is not kept)
+Installed 93 packages in 1.44s
+quality_items.parquet: 926 rows x 246 columns compared with quality_items.csv cell by cell under the dictionary's types: equal
+runtime_aggregates.parquet: 6 rows x 137 columns compared with runtime_aggregates.csv cell by cell under the dictionary's types: equal
+fiches.parquet: 13 rows x 19 columns compared with fiches.csv cell by cell under the dictionary's types: equal
+roster.parquet: 9 rows x 51 columns compared with roster.csv cell by cell under the dictionary's types: equal
+comparison_records.parquet: 0 rows x 1 columns compared with comparison_records.csv cell by cell under the dictionary's types: equal
+built and verified <temp>/wave-local-ai-v2-0.2.0.zip
+exit 0
+
+two builds without --parquet: byte-identical
+archive: wave-local-ai-v2-0.2.0.zip (51 entries)
+
+  CITATION.cff
+  LICENSE
+  LICENSE-DATA
+  README.md
+  aidd_docs/results/LICENSE-APACHE-2.0.txt
+  aidd_docs/results/NOTICE.md
+  aidd_docs/results/comparisons/NOTICE.md
+  aidd_docs/results/fiches/067530efd6944e8bb09ddc91e61ce45364fcd6261bd22edeed9d33a82276a2f4.json
+  aidd_docs/results/fiches/1463d39de5743e6b8e1b0f866d18f97703bd2989e20c3c43190674257c933f16.json
+  aidd_docs/results/fiches/197d2732769ec3056776fa671bfd77e059f61147ac42488d83b44f3aa97a87f8.json
+  aidd_docs/results/fiches/53fa3307407eb748f9b16654064b4a9f979b5b6399500995cd1ac17d029d8444.json
+  aidd_docs/results/fiches/5ce2bf219e51b68996b81b4bc8ee97690f9c575d207c7bd5f6d60bfa3f652c74.json
+  aidd_docs/results/fiches/6159f6b5d5c1e153152a4e27c2d5306643a268a649fb52c8cb4b7d6829265669.json
+  aidd_docs/results/fiches/73ec536e09346ef914cf61b5412bfc87d36b22436543f1204cb628a6f79e97a0.json
+  aidd_docs/results/fiches/NOTICE.md
+  aidd_docs/results/fiches/add6a3175d9327a39a06ca4b9e8b7ea27c8a3623da20ad61015ca87205e335c3.json
+  aidd_docs/results/fiches/b9d1af56db2b6a26bfb265842bfd757dc78ed2d95e4ad3fce0088b8396d9003a.json
+  aidd_docs/results/fiches/c9db1dea2fcd6de7e616745b555624ee6d76585a25c8371c3718143ddb8bf77c.json
+  aidd_docs/results/fiches/d85245776b892c47e9105362b9c15fb74711cdcb790db3133b1a52fec2de67db.json
+  aidd_docs/results/fiches/dfd5a5eaa441cff2f7aee55b6d2206561eb9d19cb955bddc566d3e9d7fcb2ab2.json
+  aidd_docs/results/fiches/f804bee0d215c89c05289907fd2573fa722d290896775749f3c6d16329efca18.json
+  aidd_docs/results/leader-sets/NOTICE.md
+  aidd_docs/results/quality-reference.jsonl
+  aidd_docs/results/runtime-reference.jsonl
+  aidd_docs/results/suite-definitions/LICENSE-APACHE-2.0.txt
+  aidd_docs/results/suite-definitions/NOTICE.md
+  aidd_docs/results/suite-definitions/classification-banking-intents-minds14@1.json
+  aidd_docs/results/suite-definitions/classification-support-routing@2.json
+  aidd_docs/results/suite-definitions/classification-support-routing@3.json
+  aidd_docs/results/suite-definitions/classification-support-routing@4.json
+  aidd_docs/results/suite-definitions/classification-support-routing@5.json
+  aidd_docs/results/suite-definitions/code-generation-python-javascript@1.json
+  aidd_docs/results/suite-definitions/translation-business-short-form@1.json
+  aidd_docs/results/suite-definitions/translation-business-short-form@2.json
+  aidd_docs/results/suite-definitions/translation-business-short-form@3.json
+  aidd_docs/results/suite-definitions/translation-business-short-form@4.json
+  aidd_docs/results/suite-definitions/translation-mixed-domain-wmt24pp@1.json
+  aidd_docs/roster/NOTICE.md
+  aidd_docs/roster/models.json
+  bundle_manifest.csv
+  column_dictionary.csv
+  comparison_records.csv
+  comparison_records.parquet
+  fiches.csv
+  fiches.parquet
+  quality_items.csv
+  quality_items.parquet
+  roster.csv
+  roster.parquet
+  runtime_aggregates.csv
+  runtime_aggregates.parquet
+
+quality_items.csv, one row per (provenance, item_source):
+  item_id = 'billing-01'
+  provenance = 'hand_written'
+  item_licence = 'CC-BY-4.0'
+  item_source = ''
+  item_source_revision = ''
+  item_content_hash = ''
+  item_source_key = ''
+  item_redaction = 'not_redacted'
+  item_licence_file = ''
+
+  item_id = 'PolyAI/minds14:en-US~ABROAD/602ba22c963e11ccd901cc57.wav'
+  provenance = 'public'
+  item_licence = 'CC-BY-4.0'
+  item_source = 'PolyAI/minds14'
+  item_source_revision = '40ce77cb32a384e4d50a568e1ec39ac804019d33'  # pragma: allowlist secret
+  item_content_hash = 'f5d264e10e0db46ef49945c8d3a417284cc4c2c8c9e25454e2ac6d55363b9110'  # pragma: allowlist secret
+  item_source_key = ''
+  item_redaction = 'not_redacted'
+  item_licence_file = ''
+
+  item_id = 'google/wmt24pp:354'
+  provenance = 'public'
+  item_licence = 'Apache-2.0'
+  item_source = 'google/wmt24pp'
+  item_source_revision = 'fd7405c06494bc66a57b25f55d217a72f96e60dc'  # pragma: allowlist secret
+  item_content_hash = '41ea1b408e9a1677d3c07c941782cac2d814488e16fa2a0326377178b4bf6659'  # pragma: allowlist secret
+  item_source_key = ''
+  item_redaction = 'not_redacted'
+  item_licence_file = ''
+
+code entries: []
+redaction problems: []

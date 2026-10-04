@@ -14,27 +14,237 @@ beside it: `fiche_hash` resolves only against `fiches/`, `roster_entry_id` only 
 `suite-definitions/`. `tests/test_reference_bundle.py` asserts every pointer on every
 row of the current-schema bundle resolves.
 
-The two `*-reference.jsonl` files are curated snapshots: no CLI ever writes to them, and
-nothing appends to them on a benchmark run. The two files the CLIs actually append to,
-`runtime.jsonl` and `quality.jsonl`, are per-machine output and stay untracked
-(`.gitignore`). Tracking them instead would dirty the working tree on every run and would
-ship rows that do not belong to any acceptance criterion.
+The bundle is derived, never hand-edited. This replaces the earlier rule that the
+`*-reference.jsonl` files were curated snapshots no CLI ever writes to. Each declared
+machine owns one tracked location, `machines/<machine_id>/` (`runtime.jsonl`,
+`quality.jsonl`, `refusals.jsonl`); the operator promotes named runs from the machine's
+live stores into it (`wave-local-ai-v2-promote`), each machine through its own pull
+request, and `wave-local-ai-v2-merge-bundle` writes `runtime-reference.jsonl`,
+`quality-reference.jsonl` and `refusals-reference.jsonl` from every location, refusing a
+fiche-hash collision between two machines, an undeclared machine id, a misfiled row and
+a run promoted by two machines. CI runs `wave-local-ai-v2-merge-bundle --check` and fails
+when the committed bundle differs from what the merge derives. The loop, and the
+operator-carried fallback for a machine that cannot push, are `docs/setup.md` section 6.
 
-## The published bundle is one schema behind the code
+The first bundle derived this way is the laptop's republication of 2026-10-04 (see
+"This regeneration (the laptop, both modes, 2026-10-04)" below), from
+`machines/laptop-mobile-gpu/`. The schema-"7" curated snapshot of 2026-08-27 it replaced,
+whose rows predate `machine_id` and so could never be derived, is kept unedited as
+`runtime-reference.schema-7.jsonl` and `quality-reference.schema-7.jsonl`, and the
+comparison and leader-set records computed over it as `comparisons.schema-7/` and
+`leader-sets.schema-7/`.
 
-The bundle's rows carry `schema_version` `"7"`; `row_contract.SCHEMA_VERSION` is `"8"`
-(`retries` and `resumed` became required on quality rows). The bytes are **not**
-back-filled to `"8"`: adding two fields to eighty rows produced on 2026-08-27 would make
+The two files the CLIs actually append to, `runtime.jsonl` and `quality.jsonl`, are
+per-machine output and stay untracked (`.gitignore`). Tracking them instead would dirty
+the working tree on every run and would ship rows that do not belong to any acceptance
+criterion.
+
+## Drawn items: MInDS-14 on the permissive rung (2026-10-04)
+
+The bundle is no longer hand-written items only. The publication-level classification
+suite `classification-banking-intents-minds14` (snapshot
+`suite-definitions/classification-banking-intents-minds14@1.json`) holds 300 items drawn
+from MInDS-14, `PolyAI/minds14` at revision `40ce77cb32a384e4d50a568e1ec39ac804019d33`
+(https://huggingface.co/datasets/PolyAI/minds14/tree/40ce77cb32a384e4d50a568e1ec39ac804019d33), configs `en-US`, `fr-FR` and
+`de-DE`: 100 per language, 7 or 8 per intent, each marked `provenance` `public` and
+contamination-risk (Methodology 5), each naming its licence, source, source revision and
+content hash, under the selection rule its definition records.
+
+- **Rung applied: permissive.** MInDS-14 is CC BY 4.0, so its items and the rows carrying
+  them ship unchanged in this bundle: no segregation, no redaction (the epic's three-rung
+  ladder, applied as written in advance).
+- **The licence rests on the card.** The Hugging Face dataset card at the pinned revision
+  is the licence of record (`license: cc-by-4.0`; "All datasets are licensed under the
+  Creative Commons license (CC-BY)"). The loader read the revision's file list: it ships
+  no licence file (`source_table.licence_file_at_revision` is `false`), and the original
+  `MInDS-14.zip` release was not fetched. A licence file at that revision naming anything
+  other than CC BY 4.0 would reopen the licence spike.
+- **Attribution, as CC BY 4.0 requires.** Creator: PolyAI (Gerz et al., "Multilingual and
+  Cross-Lingual Intent Detection from Spoken Data", 2021,
+  https://arxiv.org/abs/2104.08524). Copyright notice: the card states none; the work is
+  attributed to its creator. Licence: CC BY 4.0,
+  https://creativecommons.org/licenses/by/4.0/. Source: https://huggingface.co/datasets/PolyAI/minds14,
+  revision `40ce77cb32a384e4d50a568e1ec39ac804019d33`. Changes: each transcription was wrapped in a prompt template (an
+  instruction naming the fourteen intents) and each intent mapped from its class index to
+  its name. `LICENSE-DATA` section 2 states the same terms.
+- **How the items were picked** is the recorded rule, checked by replaying it. CI replays
+  the draw over a constructed table (`tests/test_minds14_suite.py`). The operator replay
+  re-fetches the source table from the pinned revision, checks its SHA-256 against the one
+  the definition records (`source_table.sha256`), then replays the rule over it:
+  `uv run --group loaders python scripts/minds14_suite.py verify` (exit 0 only when both
+  hold). The loader's parquet reader, pyarrow, sits in the locked `loaders` dependency
+  group, never in the runtime dependencies.
+- **Never averaged with the 20-item score.** The hand-written `classification-support-routing`
+  stays the development-level score and leads; the MInDS-14 score sits beside it as the
+  scale check, on its own suite id and level, and no table here averages the two
+  (Methodology 4). Their label sets differ (four routing queues against fourteen banking
+  intents), so the two accuracies are not on one scale either.
+
+### Both levels on one subject: Granite 4.0 H 350M (2026-10-04)
+
+One bench session on `laptop-mobile-gpu` (`gpu`), from commit `95040a7` with no tracked
+change, so every row carries `tree_dirty: false`: one development-level batch of the
+hand-written suite and one publication-level batch over MInDS-14, on the same subject.
+Rows carry no session id, so the pair is defined by the three fields both batches share,
+checkable from the rows (`tests/test_reference_bundle.py`): `roster_entry_id`
+`granite-4.0-h-350m-q8`, `fiche_hash` `5ce2bf21...` (the fiche its earlier batches
+cite) and `engine_build` `b10537`. The development score leads; the publication score
+sits beside it as the scale check. The two are never averaged, and they are not on one
+scale: four routing queues against fourteen banking intents.
+
+| Level | Suite | run_id | Items | Accuracy | 95% interval | Minimum detectable effect |
+| ----- | ----- | ------ | ----- | -------- | ------------ | ------------------------- |
+| development (leads) | `classification-support-routing@5` | `1c5a5471245e458d80dea8393383b59e` | 20 | 0.50 | [0.30, 0.70] | 0.200 |
+| publication (beside it) | `classification-banking-intents-minds14@1` | `7b8f2569a2044a9e9f8f62a0b7770098` | 300 | 0.227 | [0.180, 0.277] | 0.048 |
+
+Per language, the publication batch holds 100 items in each cell: EN [0.20, 0.37], FR
+[0.11, 0.26], DE [0.15, 0.30], each with a minimum detectable effect of 0.075 to 0.085;
+the development batch's cells hold 10, 5 and 5 items, with minimum detectable effects of
+0.30 to 0.40. At 20 items nothing under 20 points is resolvable; at 300, about 5 points
+is, which is the scale the epic asks the publication level to reach.
+
+Read the publication score with its failure shape. The subject named an intent on 294 of
+300 items (6 `unparseable`, no truncation), and 143 of those answers were `app_error`:
+a 0.34B model collapsing onto a few labels, not a scoring artefact. Every intent it did
+name, `app_error`, `business_loan` and `cash_deposit` among them, parsed to itself
+through the multi-word label match. The development batch repeats this subject's earlier
+published 0.50 on the same suite version.
+
+Commands, logs and the live stores: `aidd_docs/tasks/2026_10/2026_10_04_publication-classification-suite/evidence/`.
+
+## Drawn items: WMT24++ on the permissive rung (2026-10-04)
+
+The publication-level translation suite `translation-mixed-domain-wmt24pp` (snapshot
+`suite-definitions/translation-mixed-domain-wmt24pp@1.json`) holds 300 segments drawn from
+WMT24++, `google/wmt24pp` at revision `fd7405c06494bc66a57b25f55d217a72f96e60dc`
+(https://huggingface.co/datasets/google/wmt24pp/tree/fd7405c06494bc66a57b25f55d217a72f96e60dc), pair files `en-fr_FR.jsonl` and
+`en-de_DE.jsonl`: 100 per direction (EN->FR, FR->DE, DE->EN, the hand-written suite's
+three), each marked `provenance` `public` and contamination-risk (Methodology 5), each
+naming its licence, source, source revision, content hash and WMT24++ `domain`, under the
+selection rule its definition records.
+
+- **Rung applied: permissive.** WMT24++ is Apache-2.0 at its publisher, and the owner
+  accepted Google's label over the WMT24 source text (owner answer Q106 (a)), so its items
+  and the rows carrying them ship unchanged in this bundle: no segregation, no redaction
+  (the epic's three-rung ladder, applied as written in advance). Each item carries
+  `licence` `Apache-2.0`. The dataset card at the pinned revision is the licence of record
+  (`license: apache-2.0`); the revision ships no licence or NOTICE file
+  (`source_table.licence_file_at_revision` is `false`). A copy of the Apache-2.0 text,
+  `LICENSE-APACHE-2.0.txt`, sits in each directory holding drawn WMT24++ items: this one
+  (the bundle rows), `machines/` (the per-machine rows), `suite-definitions/` and
+  `src/wave_local_ai_v2/suite_data/`. The change
+  made: each segment's source text is wrapped in the suite's prompt template, the
+  hand-written suite's instruction shell; the reference is unchanged.
+- **The English sources are WMT24's**, which WMT released for research use; the items
+  rest on Google's Apache-2.0 label, disclosed as a declaration in `LICENSE-DATA`
+  section 3. Attribution: WMT24++ by Google (Deutsch et al., 2025,
+  https://arxiv.org/abs/2502.12404), Apache-2.0; `LICENSE-DATA` section 2.2 states the
+  terms.
+- **Two directions translate translations.** The FR->DE and DE->EN source texts are
+  themselves translations from English (WMT24++'s French and German post-edited
+  references), and DE->EN's reference is the original English. Only EN->FR translates an
+  original text (spike assumption A4).
+- **How the items were picked** is the recorded rule, checked by replaying it. The loader
+  (`scripts/wmt24pp_suite.py`, standard library only) joins the two pair files on
+  `segment_id`, drops every segment with `is_bad_source` true (the canary and 37 social
+  segments: 38 of 998), and assigns each remaining segment to exactly one direction by
+  `segment_id` modulo 3 (0 EN->FR, 1 FR->DE, 2 DE->EN), so no segment is drawn in two
+  directions and the items stay independent for the bootstrap (owner answer Q133 (a)).
+  The post-filter pool per direction: EN->FR 315, FR->DE 322, DE->EN 323 (960 segments, the
+  source table's `row_count`). The draw is stratified by language only, under sampler
+  version "1", seed 20261004, accepted on the first attempt. CI replays the draw over a
+  constructed table (`tests/test_wmt24pp_suite.py`). The operator replay re-fetches the
+  two files from the pinned revision (each checked against the git object id the Hub
+  lists), checks the table's SHA-256 against `source_table.sha256`
+  (`db57a8a457dce9ae2f38e0b4595a582bf9bf471475dc545b3b4bc89e2546f4ed`), then replays the rule over it:
+  `uv run python scripts/wmt24pp_suite.py verify` (exit 0 only when both hold).
+- **The output cap is derived from the references.** `max_output_tokens` is 608, twice
+  the longest drawn reference (304 tokens, `google/wmt24pp:805`) as the tokenizer of
+  `granite-4.0-h-350m-q8`, the model the published batches run, counts it
+  (`llama-server` b10537 `/tokenize`, no special tokens); the definition records the
+  basis (`max_output_tokens_basis`) and each item its `reference_tokens`. It does not
+  inherit the hand-written suite's 128 (owner answer Q118 (a)).
+- **Never averaged with the 21-item score.** The hand-written
+  `translation-business-short-form` stays the development-level score and leads; the
+  WMT24++ score sits beside it as the scale check, on its own suite id and level, and no
+  table here averages the two (Methodology 4). Their items differ in length and register
+  (one business sentence against paragraph-level news, social, literary and speech
+  segments), so the two chrF scores are not on one scale either.
+
+The draw's per-domain counts (owner answer Q119 (a)), recomputed from the suite
+definition by `tests/test_wmt24pp_suite.py`:
+
+| Domain | EN->FR | FR->DE | DE->EN | Total |
+| ------ | ------ | ------ | ------ | ----- |
+| literary | 12 | 21 | 28 | 61 |
+| news | 19 | 16 | 14 | 49 |
+| social | 55 | 53 | 50 | 158 |
+| speech | 14 | 10 | 8 | 32 |
+| all | 100 | 100 | 100 | 300 |
+
+### Both levels on one subject: Granite 4.0 H 350M, translation (2026-10-04)
+
+One bench session on `laptop-mobile-gpu` (`gpu`), from commit `0f69b60` with no tracked
+change, so every row carries `tree_dirty: false`: one publication-level batch over
+WMT24++ and one development-level batch of the hand-written suite, on the same subject.
+Rows carry no session id, so the pair is defined by the fields both batches share,
+checkable from the rows (`tests/test_reference_bundle.py`): `roster_entry_id`
+`granite-4.0-h-350m-q8`, `fiche_hash` `5ce2bf21...` (the fiche its earlier batches cite),
+`engine_build` `b10537` and `commit_sha` `0f69b60`. The development score leads; the
+publication score sits beside it as the scale check. The two are never averaged, and they
+are not on one scale: one business sentence against paragraph-level segments in four
+domains, with two directions translating translations.
+
+| Level | Suite | run_id | Items | chrF | 95% interval | Minimum detectable effect |
+| ----- | ----- | ------ | ----- | ---- | ------------ | ------------------------- |
+| development (leads) | `translation-business-short-form@4` | `da8737246ed54cbf88ddce02e1d1d26b` | 21 | 0.484 | [0.358, 0.614] | 0.128 |
+| publication (beside it) | `translation-mixed-domain-wmt24pp@1` | `525734d8b1a44d3681a77aed5b3baee2` | 300 | 0.367 | [0.347, 0.387] | 0.020 |
+
+Per direction, the publication batch holds 100 items in each cell: EN->FR [0.32, 0.40],
+FR->DE [0.28, 0.34], DE->EN [0.40, 0.46], each with a minimum detectable effect of 0.030
+to 0.039; the development batch's cells hold 7 items each, with minimum detectable effects
+of 0.14 to 0.15. At 21 items nothing under about 13 chrF points is resolvable; at 300,
+about 2 points is. The development batch repeats this subject's earlier published 0.484
+on the same suite version (`be0dda5e...`), interval for interval.
+
+Read the publication score with its failure shape. The cap held: 0 rows failed
+`truncated_max_tokens` (the longest completion was 320 tokens against the cap of 608),
+and one row failed `empty` (`google/wmt24pp:118`, FR->DE), scored 0. By domain, the mean
+item chrF is social 0.339 (158 items), literary 0.385 (61), news 0.410 (49) and speech
+0.408 (32); these are descriptive means, not intervals.
+
+The heading "The translation suite's first live run (2026-09-06)" further down predates
+this bundle: its statement that the committed `quality-reference.jsonl` holds no
+translation row is no longer true, and the section stands as the record of that day.
+
+Commands, logs and the live stores: `aidd_docs/tasks/2026_10/2026_10_04_publication-translation-suite/evidence/`.
+
+## The client-session record (`client-sessions.jsonl`)
+
+`client-sessions.jsonl` is not part of the bundle: it records how the results were
+received. Each line is one session in which a benchmark result was shown to a client or
+their engineer, appended by hand the same day: the release shown, whether the audience
+was outside the consultant's own firm, the outcome, and per challenge the challenger's
+role, the criterion disputed, the claims it bears on and the evidence that resolved it,
+under a pseudonymous client id only. The file is tracked, append-only (a test walks its
+committed history), and holds no real session yet; it ships empty.
+`wave-local-ai-v2-client-sessions` checks it, refusing a malformed record by line and
+field and reporting an incomplete one. The procedure that takes a consultant from the
+end of a session to a committed record, with a worked example, is
+[`docs/client-session-record.md`](../../docs/client-session-record.md).
+
+## The published bundle's schema, and why it can lag the code
+
+The bundle's rows carry `schema_version` `"30"`, the code's own since the 2026-10-04
+republication. Before it, they carried `"7"` while the code moved to `"30"`: the bytes
+were **not** back-filled, because adding fields to rows produced on 2026-08-27 would make
 them rows no harness ever wrote, which is the discipline this file states twice below and
 which Story 19's acceptance requires. `tests/test_reference_bundle.py` therefore asserts
 the bundle against its own `PUBLISHED_BUNDLE_SCHEMA_VERSION` rather than the live
-constant, and separately that the published version is never *ahead* of the code.
-
-A row of this bundle read beside a row a current CLI writes is short those two fields.
-Regenerating it under `"8"` is a bench-time job on the Story 19 protocol (two runtime
-runs in a quiet thermal window, two quality runs, the validator proof, this README's
-tables rebuilt), filed in `aidd_docs/backlog/tech-debt.md`, not something a schema bump
-does to the published bytes on its way past.
+constant, and separately that the published version is never *ahead* of the code. The
+next schema bump puts the bundle behind again until a bench-time regeneration on the same
+protocol (two runtime runs in a quiet thermal window, two quality runs, the validator
+proof, this README's tables rebuilt) moves that constant.
 
 ## The bundle as five flat tables (`wave-local-ai-v2-export`)
 
@@ -48,7 +258,7 @@ uses the standard library alone.
 
 | File | One row per | What it holds |
 | ---- | ----------- | ------------- |
-| `quality_items.csv` | quality row | every row field, nested blocks as named columns (`sampling_seed`, `language_breakdown_en_accuracy`, `failure_counts_unparseable`, `verdict_verdict`, ...), the cited fiche as `fiche_*`, the cited roster entry's model fields as `roster_entry_*` plus `roster_file_version`, and the cited suite definition as `suite_definition_*` |
+| `quality_items.csv` | quality row | every row field, nested blocks as named columns (`sampling_seed`, `language_breakdown_en_accuracy`, `failure_counts_unparseable`, `verdict_verdict`, ...), the cited fiche as `fiche_*`, the cited roster entry's model fields as `roster_entry_*` plus `roster_file_version`, the cited suite definition as `suite_definition_*`, and each item's terms (`item_content_hash`, `item_source_key`, `item_redaction`, `item_licence_file`; `LICENSE-DATA` section 2) |
 | `runtime_aggregates.csv` | runtime row | the same, minus the suite; the per-repetition arrays (`repetitions`, `warmup_repetitions`, `verdict.reference_repetitions`) stay in the bundle |
 | `fiches.csv` | stored fiche | `fiche_hash` (the file name) and every fiche field |
 | `roster.csv` | roster entry | every entry field, launch flags, validated host, licence block and language claim included |
@@ -455,6 +665,11 @@ bundle is republished under this epic's final schema; it is not back-filled.
 
 ## Paired comparisons: both committed pairs are refused (2026-10-02)
 
+Superseded on 2026-10-04 with the schema-"7" rows they compare: the records named here
+are now in `comparisons.schema-7/`, unedited, and their rows in
+`quality-reference.schema-7.jsonl` (the `rows_source` they record,
+`aidd_docs/results/quality-reference.jsonl`, is where those rows were published then).
+
 `comparisons/` holds the comparison records `wave-local-ai-v2-compare` writes over this
 bundle. They are derived artifacts, not a sixth input, and none is ever rewritten. The two
 records below are `record_version` `"1"`: each is a family of one comparison (its
@@ -536,6 +751,10 @@ file and requires identical bytes.
 
 ## The leader set: the local models not distinguishable from the best (2026-10-02)
 
+Superseded on 2026-10-04 with the schema-"7" rows it was derived from: the records named
+here are now in `leader-sets.schema-7/` and `comparisons.schema-7/`, unedited. No leader
+set has been derived from the republished bundle yet.
+
 The leader set of a suite on a machine class is a published derived output (PRD Non-goals,
 owner answer Q42 (a)): the best local subject plus every local subject the paired tests
 cannot tell from it. It is its own record in `leader-sets/`, written by the analysis
@@ -566,8 +785,8 @@ comparison ran. A changed group is a new record superseding the old by
 
 | Record | Group | Reference | Members | Excluded | Not compared | Family |
 | --- | --- | --- | --- | --- | --- | --- |
-| `leader-sets/classification-support-routing@2.053c65354ff8.json` | `classification-support-routing@2`, the RTX 3060 laptop (`machine_id`, `compute_mode` not recorded) | `5e13166d` `Qwen3.6-35B-A3B`, 0.8 (tied with `d20afbda`) | 1 | 0 | 1 (`thinking_policy` absent) | `837e5355b954` |
-| `comparisons/classification-support-routing@2.model.837e5355b954.json` | the family grown by the leader comparison: 3 members, 0 tested, 3 refused | | | | | supersedes `1e1658cbe073` |
+| `leader-sets.schema-7/classification-support-routing@2.053c65354ff8.json` | `classification-support-routing@2`, the RTX 3060 laptop (`machine_id`, `compute_mode` not recorded) | `5e13166d` `Qwen3.6-35B-A3B`, 0.8 (tied with `d20afbda`) | 1 | 0 | 1 (`thinking_policy` absent) | `837e5355b954` |
+| `comparisons.schema-7/classification-support-routing@2.model.837e5355b954.json` | the family grown by the leader comparison: 3 members, 0 tested, 3 refused | | | | | supersedes `1e1658cbe073` |
 
 The bundle's two local batches are the same model at the same score, and their comparison
 is refused on `thinking_policy` like both committed pairs, so the first real leader set
@@ -578,6 +797,74 @@ identical bytes. Command output:
 `aidd_docs/tasks/2026_10/2026_10_01_local-models-not-distinguishable-from-the-best/evidence/leader-sets-output.txt`.
 The export flattens these records into its fifth table, `comparison_records.csv` (see "The
 bundle as five flat tables" above).
+
+## Terse output against baseline: not distinguishable, and no shorter (2026-10-03)
+
+One campaign cell pair on the laptop (`laptop-mobile-gpu`, `gpu`, pinned
+build `b10537`, `llama.cpp`), campaign `terse-output-laptop`: roster entry
+`qwen3-0.6b-q8`, suite `classification-support-routing@4`, `baseline` v1
+(run `9a68cbaf`) against `output_compressed` v1 (run `13ade3c5`), local only,
+schema "27". Both cells filled, all 20 items in each, every
+`output_compressed` row `prompt_variant_noop: false`.
+
+| Arm | Accuracy | Mean output tokens per item | Unparseable |
+| --- | --- | --- | --- |
+| `baseline` | 0.45 (9/20) | 2.0 | 0 |
+| `output_compressed` | 0.30 (6/20) | 2.0 | 0 |
+
+`wave-local-ai-v2-compare --dimension prompt_variant`: McNemar exact, 6 both
+right, 11 both wrong, 3 right under `baseline` only, 0 under the variant
+only, p = 0.25, direction `reference_higher`, **verdict `not
+distinguishable`**; differing fields `prompt_variant_id` alone (both arms are
+version "1"), no confound. The output-token comparison
+(`--quantity item_tokens_out`, Wilcoxon) is `not distinguishable` with all 20
+differences zero: this model already answers with one label word, so the
+instruction had nothing to cut. The three lost items (`account-02`,
+`account-de-02`, `other-01`) were each relabelled `technical`, not left
+unparseable. Read it as: on this suite and model, a terse-output instruction
+saves no tokens and, if anything, costs accuracy, at a sample too small to
+say so. The records, rows, fiche and logs are in
+`aidd_docs/tasks/2026_10/2026_10_02_terse-output-variant/evidence/`; no row
+here entered a committed store.
+
+The first run of this pair also surfaced a defect, fixed in the same change:
+`comparison.py` counted `score_interval` as a configuration field, so any two
+batches that scored differently were published as an observation naming it.
+
+## A grammar-constrained output against baseline: identical answers (2026-10-03)
+
+One campaign cell pair on the laptop (`laptop-mobile-gpu`, `gpu`, pinned
+build `b10537`, `llama.cpp`), campaign `constrained-output-laptop`: roster
+entry `qwen3-0.6b-q8`, suite `classification-support-routing@4`, `baseline`
+v1 (run `962f939a`) against `constrained_output` v1 (run `6d162577`), local
+only, schema "28". Both cells filled, 20 items each. Every
+`constrained_output` row names `constraint_mechanism: gbnf` and
+`constraint_grammar_hash` `302f90eb...` (the grammar
+`root ::= "account" | "billing" | "other" | "technical"`); every `baseline`
+row names `none`. A live request on the same build first showed the
+per-request `grammar` field is applied on `/v1/chat/completions`: a grammar
+admitting only `billing` turned a `technical` answer into `billing`.
+
+| Arm | Accuracy | Mean output tokens per item | Unparseable |
+| --- | --- | --- | --- |
+| `baseline` | 0.45 (9/20) | 2.0 | 0 |
+| `constrained_output` | 0.45 (9/20) | 2.0 | 0 |
+
+**Share of baseline outputs outside the declared format: 0 of 20 (0%).** A
+classification row does not carry the raw answer, so the baseline requests
+were replayed on the same build, model, launch flags and sampling: every
+answer was a bare lowercase label, each equal to its row's
+`predicted_label`. `wave-local-ai-v2-compare --dimension prompt_variant`:
+McNemar exact, 9 both right, 11 both wrong, no discordant item (p null,
+reason `no_discordant_pairs`), **verdict `not distinguishable`**;
+differing fields `constraint_grammar_hash`, `constraint_mechanism` and
+`prompt_variant_id`, no confound. Read it as: this model already answers
+inside the format, so a grammar on this suite has nothing to correct; the
+variant's effect, if any, needs a model or a suite where baseline strays. The
+records, rows, replay and logs are in
+`aidd_docs/tasks/2026_10/2026_10_02_constrained-output-variant/evidence/`;
+the run's fiche is byte-identical to `73ec536e...` already tracked by the
+named-run-profiles evidence. No row here entered a committed store.
 
 ## The use-case coverage record, and why it is not here yet
 
@@ -606,7 +893,7 @@ which names that same suite. That refusal is the current coverage reading
 the record appears here once the last entry resolves, and until then the
 overview's coverage absence above stays true.
 
-## Roster composition: four unlabelled single-family classes (2026-10-02)
+## Roster composition: every class spans two families (2026-10-04)
 
 Methodology 13's composition rule is a command, not prose:
 `uv run wave-local-ai-v2-composition-check [--roster <models.json>]`
@@ -643,45 +930,393 @@ class's entries. A class spanning two families passes; a labelled
 single-family ladder passes; a class with no entries publishes nothing and
 is not failed. Exit `2` means the roster file could not be loaded at all.
 
-**Today it fails, which is the honest state.** Run on the shipped roster
-(`roster_version` 4) before any new entry is authored, it reports four
+**It failed at first, which was the honest state.** Run on the shipped roster
+(`roster_version` 4) before any new entry was authored, it reported four
 classes, each spanning exactly one family (`qwen`), none labelled, and the
 three dense classes with no MoE searched for and no reason recorded. The
 roster is deliberately not labelled here: the search that would justify a
 ladder label or a MoE absence is the per-class stories' work. A check that
-passed on this roster would not be checking the rule.
+passed on this roster would not be checking the rule. Since `roster_version` 7
+the `~0.5B` class passes, since `roster_version` 8 the `~2B` class, and since
+`roster_version` 9 the `~4B` class, and since `roster_version` 10 the top
+class (their sections below): the check now passes on the shipped roster.
 `tests/test_composition_check.py` fails when the block below drifts from the
 command's output.
 
 <!-- composition-check:start -->
 ```text
-Roster composition: aidd_docs/roster/models.json (roster_version 4)
+Roster composition: aidd_docs/roster/models.json (roster_version 10)
 Size classes, banded on total parameters: ~0.5B < 1,000,000,000 <= ~2B < 3,000,000,000 <= ~4B < 6,000,000,000 <= ~8B-and-up
-  ~0.5B: 1 entry; families: qwen; dense: yes; MoE: no; label: none; MoE sought: no; MoE absence reason: none
-  ~2B: 1 entry; families: qwen; dense: yes; MoE: no; label: none; MoE sought: no; MoE absence reason: none
-  ~4B: 1 entry; families: qwen; dense: yes; MoE: no; label: none; MoE sought: no; MoE absence reason: none
-  ~8B-and-up: 1 entry; families: qwen; dense: no; MoE: yes (qwen3.6-35b-a3b-ud-iq4xs); label: none; MoE sought: yes; MoE absence reason: n/a
+  ~0.5B: 2 entries; families: ibm, qwen; dense: yes; MoE: no; label: none; MoE sought: yes; MoE absence reason: sought, none found: no MoE GGUF below 1B total parameters in the epic's candidate families (Granite, LFM2, Gemma 4, Ministral, Phi); the smallest MoE the search found is Granite 3.1 1B-A400M (1,334,628,352 total, ~2B) (GGUF spike which-candidate-ggufs-exist-per-size-class-and-does-the-pinned-build-load-them, read 2026-10-02)
+  ~2B: 3 entries; families: ibm, liquid, qwen; dense: yes; MoE: yes (granite-3.1-1b-a400m-instruct-q8); label: none; MoE sought: yes; MoE absence reason: n/a
+  ~4B: 2 entries; families: ibm, qwen; dense: yes; MoE: yes (granite-3.1-3b-a800m-instruct-q4km); label: none; MoE sought: yes; MoE absence reason: n/a
+  ~8B-and-up: 2 entries; families: google, qwen; dense: yes; MoE: yes (qwen3.6-35b-a3b-ud-iq4xs); label: none; MoE sought: yes; MoE absence reason: n/a
 Entries
   qwen3.6-35b-a3b-ud-iq4xs: ~8B-and-up; family qwen; moe; 34,660,610,688 total params; 17,730,509,792 bytes on disk; licence Apache-2.0, client commercial use yes, read 2026-10-02
   qwen3-0.6b-q8: ~0.5B; family qwen; dense; 596,049,920 total params; 639,446,688 bytes on disk; licence Apache-2.0, client commercial use yes, read 2026-10-02
   qwen3-1.7b-q8: ~2B; family qwen; dense; 1,720,574,976 total params; 1,834,426,016 bytes on disk; licence Apache-2.0, client commercial use yes, read 2026-10-02
   qwen3-4b-q4km: ~4B; family qwen; dense; 4,022,468,096 total params; 2,497,280,256 bytes on disk; licence Apache-2.0, client commercial use yes, read 2026-10-02
-Failures (7)
-  size class ~0.5B: spans one family (qwen) without the single-family-ladder label
-  size class ~0.5B: has no MoE represented and no reason recorded
-  size class ~2B: spans one family (qwen) without the single-family-ladder label
-  size class ~2B: has no MoE represented and no reason recorded
-  size class ~4B: spans one family (qwen) without the single-family-ladder label
-  size class ~4B: has no MoE represented and no reason recorded
-  size class ~8B-and-up: spans one family (qwen) without the single-family-ladder label
-FAIL: 7 failure(s)
+  granite-4.0-h-350m-q8: ~0.5B; family ibm; dense; 340,332,224 total params; 366,195,616 bytes on disk; licence apache-2.0, client commercial use yes, read 2026-10-04
+  lfm2.5-1.2b-instruct-q8: ~2B; family liquid; dense; 1,170,340,608 total params; 1,246,253,888 bytes on disk; licence lfm1.0, client commercial use no, read 2026-10-04
+  granite-3.1-1b-a400m-instruct-q8: ~2B; family ibm; moe; 1,334,628,352 total params; 1,422,239,776 bytes on disk; licence apache-2.0, client commercial use yes, read 2026-10-04
+  granite-3.1-3b-a800m-instruct-q4km: ~4B; family ibm; moe; 3,298,793,472 total params; 2,016,888,384 bytes on disk; licence apache-2.0, client commercial use yes, read 2026-10-04
+  gemma-4-12b-it-iq4xs: ~8B-and-up; family google; dense; 11,907,350,576 total params; 6,375,734,080 bytes on disk; licence apache-2.0, client commercial use yes, read 2026-10-04
+PASS: every published size class spans two families or says it does not
 ```
 <!-- composition-check:end -->
 
 **When to run it.** Before a roster table is published, run the check and
 publish its output beside the table; a class it names is either fixed in the
 roster or published with the failure stated. It is not part of the merge gate
-or CI while the shipped roster is expected to fail it.
+or CI: it was kept out while the shipped roster was expected to fail it, and
+wiring it in now that it passes (`roster_version` 10) is open work, not done
+here.
+
+### The ~0.5B class: Granite 4.0 H 350M beside Qwen3-0.6B (2026-10-04)
+
+**The class spans two families.** `granite-4.0-h-350m-q8` (IBM, `granitehybrid`,
+dense, 340,332,224 total parameters, 366,195,616 bytes on disk) entered the roster
+at `roster_version` 7 from its candidate-gate pass record
+(`aidd_docs/roster/candidate-records.jsonl`, 2026-10-04) beside `qwen3-0.6b-q8`, and
+completed both suites on the laptop. The search stops there (owner answer Q127 (a)):
+one non-Qwen entry that passed the gate and completed both suites suffices, so the
+class seeks no third family and is not a single-family ladder.
+
+| Candidate, in gate order | Pin | Outcome |
+| --- | --- | --- |
+| Granite 4.0 H 350M (`granitehybrid`) | `ibm-granite/granite-4.0-h-350m-GGUF@a864f823cce6e6048b5752e2816fe7a23987d790`, `granite-4.0-h-350m-Q8_0.gguf` | **passed** every step; entered |
+| Granite 4.0 350M (`granite`) | `ibm-granite/granite-4.0-350m-GGUF@b8208a86a58427e1739265318028eb5895b74bf2` | not reached: class stopped at `granite-4.0-h-350m-q8` |
+| LFM2.5-350M (`lfm2`) | `LiquidAI/LFM2.5-350M-GGUF@657e078c94084481950a2d555a941481f715536b` | not reached: class stopped at `granite-4.0-h-350m-q8` |
+
+No candidate was refused or deferred, so the pinned build `b10537` held and no
+build-upgrade question arises. `LFM2.5-230M` was never a candidate (owner answer
+Q107 (a)).
+
+**Quant.** Both entries are `Q8_0`: IBM ships the class's Qwen quant, so the
+class compares families, not quants.
+
+**Licences.** Granite 4.0 H 350M: `apache-2.0` (the hub's identifier, read off the
+GGUF repository's card at its pinned revision, which carries no LICENSE file),
+client-side commercial use permitted. Had LFM2.5-350M been reached, it would have
+entered with `client_commercial_use: false` (its declaration says so): section 5 of
+the LFM Open License v1.0 conditions commercial use on a legal entity below USD 10M
+annual revenue, read against a user above that threshold; the licence bans no
+publication of benchmark results, so the gate's licence step would pass either way.
+
+**MoE.** Sought, none found: the GGUF spike's search found no MoE GGUF below 1B
+total parameters in the epic's candidate families; the smallest it found is
+Granite 3.1 1B-A400M, in `~2B`. The class's declaration records that reason, so the
+class is dense-only by nature, not by omission.
+
+**The GGUF spike's architectures at this class** (owner answer Q125 (a)):
+
+- `granitehybrid`: loaded under `b10537`; closed by the pass record of
+  `granite-4.0-h-350m-q8` (`observed`: `llama_cpp_build` `b10537`,
+  `chat_template_hash` `9524df67b77a7b25a2dfee898f75b316a157eb9d855b51e32aeac79d7c8a83ce`,
+  `thinking` `{"declared": "none", "verified": true}`).
+- `granite`: not reached: class stopped at `granite-4.0-h-350m-q8`.
+- `lfm2`: not reached: class stopped at `granite-4.0-h-350m-q8`.
+
+**The new rows.** Both runs on `laptop-mobile-gpu`, `compute_mode` `gpu`, profile
+`granite-4.0-h-350m-q8@laptop-mobile-gpu/gpu` (`-ngl 99`, the declared value,
+launched; `-t 8`; no override), `thinking_policy` `disabled` with the entry's `none`
+control (no switch sent), fiche `5ce2bf21...`. They ran from the commit that added
+the entry, on a clean tree: every row carries `commit_sha`
+`8852bf0252cd90ca08a6e0473d998c282b60dc34` (`tree_dirty: false`).
+
+| Suite | `run_id` | Rows | Score [95% interval] | `en` | `fr` | `de` |
+| --- | --- | --- | --- | --- | --- | --- |
+| `classification-support-routing@5` | `cb8cb4ffa7754de4b567e3f901953706` | 20 | accuracy **0.50** [0.30, 0.70] | 0.50 (n=10) | 0.40 * (n=5) | 0.60 * (n=5) |
+| `translation-business-short-form@4` | `be0dda5eeaa24862ad4ffbd11d10d61e` | 21 | chrF **0.484** [0.358, 0.614] | 0.328 * (EN->FR) | 0.326 * (FR->DE) | 0.799 * (DE->EN) |
+
+`*` = `indicative`. The bundle now holds 121 quality rows: the 80 of the 2026-10-04
+regeneration and these 41, promoted into `machines/laptop-mobile-gpu/` and merged.
+Every classification answer parsed; nine of the ten misrouted items were answered
+`account`, and no item was routed to `billing`. No `Qwen3-0.6B` quality row at these
+suite versions is in the bundle, so the class's side-by-side reading rests on the
+earlier, superseded tables below (classification `@3` 0.45, translation `@2` 0.5121),
+not on rows of the same suite version.
+
+**Finding: the rows contradict the EN/FR/DE claim on output into French and German.**
+The entry claims `en`, `fr` and `de` (the base model card's "English, German, Spanish,
+French, ..."). Translating into French, 4 of 7 items (`en-fr-01`, `-02`, `-03`, `-07`)
+came back in English; translating into German, none of 7 items is German alone: two
+came back in English (`fr-de-02`, `-05`), one is the single word "Not" (`fr-de-06`),
+and four mix French words into German (`fr-de-01`, `-03`, `-04`, `-07`). Into English
+it scores 0.799. The claim stays on the entry, as the epic decides; this is a finding
+about the model at this size, not a reason to remove it.
+
+### The ~2B class: LFM2.5-1.2B-Instruct and Granite 3.1 1B-A400M beside Qwen3-1.7B (2026-10-04)
+
+**The class spans three families, dense and MoE.** `lfm2.5-1.2b-instruct-q8`
+(Liquid, `lfm2`, dense, 1,170,340,608 total parameters, 1,246,253,888 bytes on disk)
+and `granite-3.1-1b-a400m-instruct-q8` (IBM, `granitemoe`, MoE of 32 experts,
+1,334,628,352 total parameters, 1,422,239,776 bytes on disk) entered the roster at
+`roster_version` 8 from their candidate-gate pass records
+(`aidd_docs/roster/candidate-records.jsonl`, 2026-10-04) beside `qwen3-1.7b-q8`.
+LFM2.5-1.2B-Instruct, the first candidate in gate order, passed, so no further dense
+candidate was tried (owner answer Q127 (a): one non-Qwen family suffices); the MoE
+candidate was still taken through the gate, because the story's MoE question is
+answered only by its outcome. It passed too, so the class holds a MoE and is not a
+single-family ladder.
+
+| Candidate, in gate order | Pin | Outcome |
+| --- | --- | --- |
+| LFM2.5-1.2B-Instruct (`lfm2`) | `LiquidAI/LFM2.5-1.2B-Instruct-GGUF@8ed288026e23958ad9dfa92d53ed773a8eee7125`, `LFM2.5-1.2B-Instruct-Q8_0.gguf` | **passed** every step; entered |
+| Granite 3.1 1B-A400M Instruct (`granitemoe`, MoE) | `bartowski/granite-3.1-1b-a400m-instruct-GGUF@940d2e1f9f65330615c7c8e980e6c5ac73d3360c`, `granite-3.1-1b-a400m-instruct-Q8_0.gguf` | **passed** every step; entered as the class's MoE |
+| Granite 4.0 H 1B (`granitehybrid`) | `ibm-granite/granite-4.0-h-1b-GGUF@c2cb1972f511add21f3bae244990b8ff3a3ffb23` | not tried: a non-Qwen family had passed, so further dense candidates are skipped |
+| Granite 4.0 1B (`granite`) | `ibm-granite/granite-4.0-1b-GGUF@b27c2fe3f211b7f44e80fa620177aea371099aaa` | not tried: as above |
+
+No candidate was refused or deferred, so the pinned build `b10537` held and no
+build-upgrade question arises. `LFM2.5-2.6B` was never a candidate: it always thinks
+and its template has no switch (owner answer Q107 (a)).
+
+**Quant.** All three entries are `Q8_0`: both publishers' files ship the class's Qwen
+quant, so the class compares families, not quants. IBM ships no GGUF of Granite 3.1
+1B-A400M; the file is bartowski's quantization of IBM's weights (made with llama.cpp
+`b4381`, per its card), a packager difference stated here rather than a quant one.
+
+**Licences.** LFM2.5-1.2B-Instruct: `lfm1.0` (the LFM Open License v1.0, read off the
+GGUF repository's LICENSE at its pinned revision), published with
+`client_commercial_use: false`: section 5 conditions commercial use on a legal entity
+below USD 10M annual revenue, read against a user above that threshold. The licence
+bans no publication of benchmark results, so the gate's licence step passed either
+way. Granite 3.1 1B-A400M: `apache-2.0` (the hub's identifier, read off bartowski's
+card at its pinned revision, which carries no LICENSE file), client-side commercial
+use permitted.
+
+**MoE.** Present: the gate read `granitemoe.expert_count` 32 off the file's header, so
+the entry is `moe`, and the class's declaration names it (`moe_sought: true`,
+`moe_entry: granite-3.1-1b-a400m-instruct-q8`). It fits the laptop's 6 GB GPU whole
+and launches with no `--n-cpu-moe`.
+
+**The GGUF spike's architectures at this class** (owner answer Q125 (a)):
+
+- `granitemoe`: loaded under `b10537`; closed by the pass record of
+  `granite-3.1-1b-a400m-instruct-q8` (`observed`: `llama_cpp_build` `b10537`,
+  `chat_template_hash` `22da301945ac6b617a8835d435cbbdc780c0ac08d69c07e1e17e6c6799eed800`,
+  `thinking` `{"declared": "none", "verified": true}`).
+- `lfm2`: loaded under `b10537`; closed by the pass record of
+  `lfm2.5-1.2b-instruct-q8` (`observed`: `llama_cpp_build` `b10537`,
+  `chat_template_hash` `f05bf4b967dc993bdc7a2fe6e43759ee218eb0eb340d68b063e1c4f8ad148176`,
+  `thinking` `{"declared": "none", "verified": true}`).
+- `granitehybrid`: already closed at `~0.5B` (pass record of `granite-4.0-h-350m-q8`).
+- `granite`: not reached: class stopped at `granite-3.1-1b-a400m-instruct-q8`.
+
+**The new rows.** All four runs on `laptop-mobile-gpu`, `compute_mode` `gpu`, each
+under its entry's profile (`<entry_id>@laptop-mobile-gpu/gpu`: `-ngl 99`, the declared
+value, launched; `-t 8`; no override; no `--n-cpu-moe` for the MoE),
+`thinking_policy` `disabled` with each entry's `none` control (no switch sent). They
+ran from the commit that added the entries, on a clean tree: every row carries
+`commit_sha` `5fc6901d573ad10848e03309ad1d6c44e1179f4b` (`tree_dirty: false`) and
+`roster_version` 8. Fiches `53fa3307...` (LFM2.5) and `add6a317...` (Granite). Both
+entries completed both suites with no failed item, so the search's stop condition
+(owner answer Q127 (a)) holds.
+
+| Entry | Suite | `run_id` | Rows | Score [95% interval] | `en` | `fr` | `de` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `lfm2.5-1.2b-instruct-q8` | `classification-support-routing@5` | `02d855b6b1b24edab26b6e32e59a9e26` | 20 | accuracy **0.85** [0.70, 1.00] | 0.80 (n=10) | 1.00 * (n=5) | 0.80 * (n=5) |
+| `lfm2.5-1.2b-instruct-q8` | `translation-business-short-form@4` | `e6acc5a1051745ae80c325b3ce61fb32` | 21 | chrF **0.723** [0.647, 0.799] | 0.777 * (EN->FR) | 0.602 * (FR->DE) | 0.791 * (DE->EN) |
+| `granite-3.1-1b-a400m-instruct-q8` | `classification-support-routing@5` | `7122bd3e67624735aad92dbcdb82f5be` | 20 | accuracy **0.60** [0.40, 0.80] | 0.70 (n=10) | 0.40 * (n=5) | 0.60 * (n=5) |
+| `granite-3.1-1b-a400m-instruct-q8` | `translation-business-short-form@4` | `4db0b4be4cb54e43a16e2ecffa927387` | 21 | chrF **0.561** [0.497, 0.631] | 0.547 * (EN->FR) | 0.432 * (FR->DE) | 0.703 * (DE->EN) |
+
+`*` = `indicative`. The bundle now holds 203 quality rows: the 121 before and these
+82, promoted into `machines/laptop-mobile-gpu/` and merged. Every classification
+answer parsed. LFM2.5-1.2B-Instruct misrouted three items (`billing-03` as
+`account`, `technical-03` and `account-de-01` as `other`); Granite 3.1 1B-A400M
+misrouted eight, four of them as `account`. No `Qwen3-1.7B` quality row at these
+suite versions is in the bundle, so the class's side-by-side reading rests on the
+earlier, superseded tables below (classification `@3` 0.60, translation `@2` 0.7107),
+not on rows of the same suite version.
+
+**No row contradicts the EN/FR/DE claims.** Both entries claim `en`, `fr` and `de`.
+Every translation output of both is in its target language (French for EN->FR,
+German for FR->DE, English for DE->EN); Granite's `fr-de-07` keeps one English
+compound ("signed-document") inside a German sentence. The weakest reading is
+Granite's French classification, 0.40 on five items, an indicative figure rather
+than a contradiction. The claims stay on the entries either way, as the epic decides.
+
+### The ~4B class: Granite 3.1 3B-A800M beside Qwen3-4B (2026-10-04)
+
+**The class spans two families, dense and MoE.** `granite-3.1-3b-a800m-instruct-q4km`
+(IBM, `granitemoe`, MoE of 40 experts, 3,298,793,472 total parameters, 2,016,888,384
+bytes on disk) entered the roster at `roster_version` 9 from its candidate-gate pass
+record (`aidd_docs/roster/candidate-records.jsonl`, 2026-10-04) beside `qwen3-4b-q4km`.
+It was the first candidate in gate order (smallest download first) and is non-Qwen and
+MoE at once, so its pass ends the search (owner answers Q127 (a) and Q128 (a)): no
+further candidate was tried, and `mistral3`, `phi3` and `phimoe` were not reached.
+Ministral and Phi stay the families Q12 names for the shortlist, not a requirement on
+the class.
+
+| Candidate, in gate order | Pin | Outcome |
+| --- | --- | --- |
+| Granite 3.1 3B-A800M Instruct (`granitemoe`, MoE) | `bartowski/granite-3.1-3b-a800m-instruct-GGUF@be9a36f042806cb586bc65556c527079782b78e0`, `granite-3.1-3b-a800m-instruct-Q4_K_M.gguf` | **passed** every step; entered as the class's second family and its MoE |
+| Ministral 3 3B Instruct 2512 (`mistral3`) | `mistralai/Ministral-3-3B-Instruct-2512-GGUF@eb599d408350ea2bb60452cb86be7c7b2fc28227`, `Ministral-3-3B-Instruct-2512-Q4_K_M.gguf` | not tried: a non-Qwen MoE had passed, which answers both stop conditions |
+| Phi-4-mini-instruct (`phi3`) | `unsloth/Phi-4-mini-instruct-GGUF@78eb92a46fc37e6b524df991ed9aca9bc6aa7b80`, `Phi-4-mini-instruct-Q4_K_M.gguf` | not tried: as above |
+| Phi-tiny-MoE-instruct (`phimoe`, MoE) | `tripathyShaswata/Phi-tiny-MoE-instruct-GGUF@873ccb08cd3380ee2c08573d45267fac9a6cc81b`, `Phi-tiny-MoE-instruct-Q8_0.gguf` | not tried: the class's MoE question was already answered |
+
+No candidate was refused or deferred, so the pinned build `b10537` held and no
+build-upgrade question arises.
+
+**Quant.** Both entries are `Q4_K_M`: bartowski ships the class's Qwen quant, so the
+class compares families, not quants. IBM ships no GGUF of Granite 3.1 3B-A800M; the
+file is bartowski's quantization of IBM's weights, a packager difference stated here
+rather than a quant one.
+
+**Licence.** `apache-2.0` (the hub's identifier, read off bartowski's card at its
+pinned revision, which carries no LICENSE file), client-side commercial use permitted.
+
+**MoE.** Present: the gate read `granitemoe.expert_count` 40 off the file's header, so
+the entry is `moe`, and the class's declaration names it (`moe_sought: true`,
+`moe_entry: granite-3.1-3b-a800m-instruct-q4km`). Its gate load ran with the declared
+launch block (`-ngl 99`, 32,768-token context, no `--n-cpu-moe`) on the laptop's 6 GB
+GPU.
+
+**The GGUF spike's architectures at this class** (owner answer Q125 (a)):
+
+- `granitemoe`: already closed at `~2B` (pass record of
+  `granite-3.1-1b-a400m-instruct-q8`); loaded again here (pass record of
+  `granite-3.1-3b-a800m-instruct-q4km`: `llama_cpp_build` `b10537`,
+  `chat_template_hash` `22da301945ac6b617a8835d435cbbdc780c0ac08d69c07e1e17e6c6799eed800`,
+  `thinking` `{"declared": "none", "verified": true}`).
+- `mistral3`: not reached: class stopped at `granite-3.1-3b-a800m-instruct-q4km`.
+- `phi3`: not reached: class stopped at `granite-3.1-3b-a800m-instruct-q4km`.
+- `phimoe`: not reached: class stopped at `granite-3.1-3b-a800m-instruct-q4km`.
+
+**The new rows.** Both runs on `laptop-mobile-gpu`, `compute_mode` `gpu`, under the
+entry's profile (`granite-3.1-3b-a800m-instruct-q4km@laptop-mobile-gpu/gpu`: `-ngl 99`,
+the declared value, launched; `-c 32768`; `-t 8`; no override; no `--n-cpu-moe`),
+`thinking_policy` `disabled` with the entry's `none` control (no switch sent). They ran
+from the commit that added the entry, on a clean tree: every row carries `commit_sha`
+`3008ef92fa86b203d633815f154f2d329b8f1d66` (`tree_dirty: false`) and `roster_version`
+9. Fiche `6159f6b5...`. The entry completed both suites with no failed item, so the
+search's stop condition (owner answers Q127 (a), Q128 (a)) holds.
+
+| Entry | Suite | `run_id` | Rows | Score [95% interval] | `en` | `fr` | `de` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `granite-3.1-3b-a800m-instruct-q4km` | `classification-support-routing@5` | `6630e70b3bf842d2820b8dfa5acab5dd` | 20 | accuracy **0.75** [0.55, 0.90] | 0.70 (n=10) | 0.80 * (n=5) | 0.80 * (n=5) |
+| `granite-3.1-3b-a800m-instruct-q4km` | `translation-business-short-form@4` | `316508c8f6ad4ff3a899b4341f481a9a` | 21 | chrF **0.710** [0.627, 0.792] | 0.659 * (EN->FR) | 0.566 * (FR->DE) | 0.904 * (DE->EN) |
+
+`*` = `indicative`. The bundle now holds 244 quality rows: the 203 before and these
+41, promoted into `machines/laptop-mobile-gpu/` and merged. Every classification
+answer parsed. Granite 3.1 3B-A800M misrouted five items: `account-01`,
+`billing-03` and `account-de-01` as `technical`, `technical-03` and `account-fr-01`
+as `other`. No `Qwen3-4B` quality row at these suite versions is in the bundle, so the
+class's side-by-side reading rests on the earlier, superseded tables below
+(chat-templated classification `@3` 0.70, translation `@2` 0.7252), not on rows of the
+same suite version.
+
+**No row contradicts the EN/FR/DE claim.** The entry claims `en`, `fr` and `de`. Every
+translation output is in its target language (French for EN->FR, German for FR->DE,
+English for DE->EN). Two outputs carry errors inside the right language: `fr-de-06`
+opens its German sentence with the French article "Un", and `en-fr-05` writes
+"L'bureau". The weakest reading is FR->DE at 0.566 on seven items, an indicative figure
+rather than a contradiction. The claim stays on the entry either way, as the epic
+decides.
+
+### The top class: Gemma 4 12B beside Qwen3.6-35B-A3B (2026-10-04)
+
+**The class spans two families, dense and MoE.** `gemma-4-12b-it-iq4xs` (Google,
+`gemma4`, dense, 11,907,350,576 total parameters, 6,375,734,080 bytes on disk) entered
+the roster at `roster_version` 10 from its candidate-gate pass record
+(`aidd_docs/roster/candidate-records.jsonl`, 2026-10-04) beside the MoE flagship
+`qwen3.6-35b-a3b-ud-iq4xs`. It was the first candidate in gate order (smallest download
+first). It is non-Qwen and dense, and the flagship already represents MoE, so its pass
+ends the search (owner answers Q127 (a) and Q129 (a)): the Gemma 4 26B-A4B was not
+tried.
+
+| Candidate, in gate order | Pin | Outcome |
+| --- | --- | --- |
+| Gemma 4 12B it (`gemma4`, dense) | `unsloth/gemma-4-12b-it-GGUF@fc034cfff751157913579611efad8462ac1be606`, `gemma-4-12b-it-IQ4_XS.gguf` | **passed** every step; entered as the class's second family and its dense model |
+| Gemma 4 26B-A4B it (`gemma4`, MoE) | `unsloth/gemma-4-26B-A4B-it-GGUF@c099eb48e663fd284577b04978a94ffccb261841`, `gemma-4-26B-A4B-it-UD-IQ4_XS.gguf` | not tried: a non-Qwen dense model had passed and the flagship represents MoE (Q129 (a)) |
+
+No candidate was refused or deferred, so the pinned build `b10537` held and no
+build-upgrade question arises. GPT-OSS 20B, Qwen3-Coder-30B-A3B and Mellum2-12B-A2.5B
+stay out of the shortlist, being outside the epic's families (Q12).
+
+**Quant: not the flagship's.** The flagship is `UD-IQ4_XS`; no packager ships
+`UD-IQ4_XS` for the Gemma 4 12B (unsloth's repository at its pinned revision lists
+`IQ4_XS`, `IQ4_NL` and `UD-*` files at other bit widths only), so the 12B is taken at
+`IQ4_XS`, the nearest: the same `IQ4_XS` base type without Unsloth Dynamic's per-layer
+upcasting. A gap between the two entries is therefore a family, size and dense-versus-MoE
+difference read through a small quant difference, not a family difference alone.
+Google ships no `IQ4_XS` GGUF; the file is unsloth's quantization of Google's weights.
+
+**Licence.** `apache-2.0` (the hub's identifier, read off unsloth's card at its pinned
+revision, which carries no LICENSE file; the card links Google's Gemma 4 licence page,
+Apache 2.0), client-side commercial use permitted.
+
+**Dense and MoE.** Dense: the gate found no `gemma4.expert_count` key in the file's
+header, so the entry is `dense` and launches with no `--n-cpu-moe` and `load_mode`
+`auto`, as the dense Qwen entries do. MoE: the flagship, so the class's declaration is
+unchanged (`moe_sought: true`, `moe_entry: qwen3.6-35b-a3b-ud-iq4xs`). The flagship's
+entry is untouched: it keeps its `revision: "main"` pin and its byte-identical launch
+(the tech-debt row owns that fix), and its hand-written `expert_count: 40` (its layer
+count; its header says 256 experts) stays the open point it was.
+
+**Launch on the laptop's 6 GB GPU: the declared value launched, on a full GPU.** The
+gate's load ran the declared block (`-ngl 99`, 32,768-token context, `-t 8`, no
+`--n-cpu-moe`) and the server came up and answered `/props` and the thinking probe, so
+no load refusal occurred and no stepped-down `-ngl` was needed: 99 is the value that
+launched. The weights are 6,080 MiB (6,375,734,080 B), which alone would fit under the
+GPU's 6,144 MiB, but a full offload also places the KV cache for the 32,768-token
+context and the compute buffers on the GPU. Dedicated memory plateaued at 5,959 MiB
+while the server was up (sampled every 2 s, `gate-gemma-4-12b-it-iq4xs.vram.csv` in the
+story's evidence) and at 5,973 MiB during the suites, below what weights, cache and
+buffers together need. So part of the model most likely sits outside dedicated VRAM,
+in the shared system memory the Windows driver falls back to; this is inferred, since
+the logs hold no llama-server buffer lines. The model loads and answers; its speed on
+this laptop is, by the same inference, not a full-offload figure.
+
+**The GGUF spike's architecture at this class** (owner answer Q125 (a)):
+
+- `gemma4`: loaded, closed by the pass record of `gemma-4-12b-it-iq4xs`
+  (`llama_cpp_build` `b10537`, `chat_template_hash`
+  `aa3185dfc65051046349995de1cfc2fbb275491b9a3832b71595f1ff5b31d61b`, `thinking`
+  declared `{"chat_template_kwargs": {"enable_thinking": false}}` and verified: the
+  template renders differently with and without it). The 12B also exercised the
+  `gemma4_unified` conversion path.
+
+**Untested: whether the tower holds a Gemma-4-class 26B-A4B MoE at a usable quant.**
+The 26B-A4B was not run (owner answer Q129 (a)), so the epic's closing record lists
+that dependency as untested; the epic asks it of the tower, not of this laptop.
+
+**Language claim.** Gemma 4's card names no language, only counts ("Out-of-the-box
+support for 35+ languages, pre-trained on 140+ languages.", unsloth's card l.157 at the
+pinned revision), so the entry's claim lists none, as the flagship's does.
+
+**The new rows.** Both runs on `laptop-mobile-gpu`, `compute_mode` `gpu`, under the
+entry's profile (`gemma-4-12b-it-iq4xs@laptop-mobile-gpu/gpu`: `-ngl 99`, the declared
+value, launched; `-c 32768`; `-t 8`; no override; no `--n-cpu-moe`), `thinking_policy`
+`disabled` with the entry's switch, verified before the first item of each run (the
+two renders differ). They ran from the commit that added the entry, on a clean tree:
+every row carries `commit_sha` `6de6888a08be48a40da297e287b7bcd8e9ded324`
+(`tree_dirty: false`) and `roster_version` 10. Fiche `c9db1dea...`. Dedicated GPU
+memory peaked at 5,973 of 6,144 MiB during the runs, the same
+dedicated-memory plateau the gate showed (not evidence of a full offload). The entry completed both suites with no failed item, so the search's stop
+condition (owner answers Q127 (a), Q129 (a)) holds and the 26B-A4B stays untried.
+
+| Entry | Suite | `run_id` | Rows | Score [95% interval] | `en` | `fr` | `de` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `gemma-4-12b-it-iq4xs` | `classification-support-routing@5` | `51bcde3e05814d2097a6be81a83d1e54` | 20 | accuracy **1.00** (interval `zero_width`) | 1.00 (n=10) | 1.00 * (n=5) | 1.00 * (n=5) |
+| `gemma-4-12b-it-iq4xs` | `translation-business-short-form@4` | `ff30926f02184ff387c08e5dfafa0ac9` | 21 | chrF **0.866** [0.803, 0.921] | 0.893 * (EN->FR) | 0.785 * (FR->DE) | 0.920 * (DE->EN) |
+
+`*` = `indicative`. The bundle now holds 285 quality rows: the 244 before and these
+41, promoted into `machines/laptop-mobile-gpu/` and merged. Every classification
+answer parsed and every item was routed correctly. The flagship's local rows at the
+same suite version (`classification-support-routing@5`, runs `acb6e894...` and
+`68ac4f21...`, `disabled`, same laptop) also score 1.00, so on this suite the dense
+12B and the MoE flagship cannot be told apart: both intervals are zero-width, and the
+suite cannot separate them. No flagship row at `translation-business-short-form@4` is
+in the bundle, so the translation figure has no same-version counterpart in its class
+yet.
+
+**Language claim against the rows.** The claim names no language, so no row can
+contradict it. The rows themselves are all in the target language (French for
+EN->FR, German for FR->DE, English for DE->EN). The weakest direction is FR->DE at
+0.785 on seven items, an indicative figure whose lowest items are paraphrases rather
+than errors (`fr-de-04` 0.453, "nennen Sie uns einen verfügbaren Zeitraum";
+`fr-de-05` 0.625, "in unseren Räumlichkeiten").
 
 Every quality row written from schema `"19"` on carries `family` (its
 subject's: the local entry's, or a cloud model's own) and `size_class` (the
@@ -699,7 +1334,143 @@ the item's own rendered prompt with its tool definitions, or `null` with a
 the engine count's own reason). Only `direct` is written today. Rows below
 `"20"` are not back-filled.
 
-## This regeneration (Story 19 + Story 20, 2026-08-27)
+## This regeneration (the laptop, both modes, 2026-10-04)
+
+The bundle was regenerated under the code's schema (`schema_version` `"30"`) in one bench
+session on the laptop (`machine_id` `laptop-mobile-gpu`), from a fresh clone that followed
+`docs/setup.md` alone, and returned the way every machine returns rows: the eight runs
+were promoted into `machines/laptop-mobile-gpu/` (`wave-local-ai-v2-promote`) and the
+bundle derived from it (`wave-local-ai-v2-merge-bundle`, then `--check`). Every row carries
+`commit_sha` `32da6f9709738426f3a7d34abdcf79275c4091ec` with `tree_dirty: false` (the
+clone's tree was clean), engine `llama.cpp` build `b10537`, and its run's declared profile
+with no operator override. The quality pair runs `classification-support-routing@5`.
+
+**The quiet thermal window was asserted, not confirmed.** No operator was present (an
+unattended run under the owner's instruction), so the window rests on the machine state
+captured before the session
+(`aidd_docs/tasks/2026_10/2026_10_04_laptop-republishes-bundle/evidence/machine-state.txt`):
+on mains power, power plan "Turbo", GPU at 0 MiB used and 40 C, no `llama-server`
+running, 19.3 GB of 32.9 GB RAM free, total CPU load 6%. Other user processes were
+running. Each step ran alone, with no `llama-server` process and the GPU at 0 MiB before
+it. The GPU was not unthrottled: the capture's active clock-event reasons read `0x24`
+(`sw_power_cap` and `sw_thermal_slowdown`) at idle, and every repetition of every `gpu`
+run in this bundle (and some repetitions of both `cpu_only` runs) records the same two in
+`machine_state.gpu_throttle_reasons`, where both schema-7 runtime rows record only
+`gpu_idle`. An owner who does not accept the asserted window re-runs the session.
+
+### `runtime-reference.jsonl`: the flagship pair and Qwen3-0.6B in both modes
+
+| Model | Mode | Run | `run_id` | `gen_tok_per_s` | `prompt_tok_per_s` | `ttft_ms` | `vram_used_mib` | `verdict` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `Qwen3.6-35B-A3B` | `gpu` | 1 | `78e5d7ef9a6f4743b5c4985d9a79b590` | 21.200 | 264.917 | 5624.4 | 4548.7 | `not_comparable` (no reference) |
+| `Qwen3.6-35B-A3B` | `gpu` | 2 | `12d19a0cdede4fda9512c57885d826d2` | 21.118 | 260.446 | 5721.0 | 4548.7 | `reproduced` against run 1 |
+| `Qwen3-0.6B` | `gpu` | 1 | `49d99f73e09e4291be3ca78bcd324082` | 125.168 | 4070.779 | 364.8 | 4526.7 | `not_comparable` (no reference) |
+| `Qwen3-0.6B` | `gpu` | 2 | `a05834da5c31407db755bdd6d0223387` | 127.865 | 3741.374 | 396.9 | 4526.7 | `reproduced` against `gpu` run 1 |
+| `Qwen3-0.6B` | `cpu_only` | 1 | `e4a0ef9fb77b474b9b81c0f729d22a5a` | 32.048 | 202.670 | 7327.2 | `not_applicable` | `not_comparable` (no reference) |
+| `Qwen3-0.6B` | `cpu_only` | 2 | `1212b9b15c68476ea95a449eeeb8137d` | 32.159 | 203.346 | 7302.8 | `not_applicable` | `reproduced` against `cpu_only` run 1 |
+
+The throughput figures are the medians over each run's five counted repetitions. Each run 1
+was decided against an empty reference file and each run 2 against a file holding only its
+own run 1 (`docs/setup.md` section 4.2), so no second run was decided against the
+superseded bundle or the other mode. The `gen_tok_per_s` deltas the verdicts judge against
+the 10% tolerance: flagship **0.39%**, Qwen3-0.6B `gpu` **2.15%**, Qwen3-0.6B `cpu_only`
+**0.35%**; every run's own `unreliable` is `false`. The three configurations are three
+fiches (`1463d39d...`, `73ec536e...`, `d8524577...`): the `gpu` and the `cpu_only` runs of
+Qwen3-0.6B do not share one, so no verdict reads one mode against the other. A `cpu_only`
+row's `vram_used_mib` is `not_applicable` on the row and on every repetition, never a
+number; the GPU fields stay on its fiche, since the laptop has a GPU and the run chose not
+to use it.
+
+**Observation, not a verdict: `cpu_only` against `gpu` on the laptop, Qwen3-0.6B.** Over
+the two runs of each mode, `cpu_only` generates at **0.254x** the `gpu` rate (32.10 against
+126.52 tok/s, the GPU 3.9x faster) and processes the prompt at **0.052x** (203.0 against
+3906.1 tok/s, 19.2x), and its first token arrives 19.2x later (7315 against 381 ms). The
+two modes are different measurements of one model on one machine, not a reproduction of
+each other, and this ratio is never a verdict.
+
+Two further observations. The flagship's `gen_tok_per_s` (21.2) sits below the schema-7
+bundle's 25.4 of 2026-08-27; the two runs share no fiche (the identity now carries the
+engine, the machine and the mode), so nothing decides between them. The throttle
+reasons above differ too: `sw_power_cap` and `sw_thermal_slowdown` on every repetition
+now, `gpu_idle` alone then. This pair cannot say which difference, if either, is the
+cause. The `cpu_only` peak `process_rss_bytes` (4872921088 and 4873011200,
+4.87 GB) sits above the `cpu_only` RAM minimum the roster declares for Qwen3-0.6B (4.77
+GB, `docs/setup.md` section 1.2): the declaration is about 2% low, filed in
+`aidd_docs/backlog/tech-debt.md`.
+
+### `quality-reference.jsonl`: two runs, local + mistral each, second against the first
+
+| Model | Provider | `run_id` | Accuracy | `de` accuracy | `verdict` |
+| --- | --- | --- | --- | --- | --- |
+| `Qwen3.6-35B-A3B` | local | `acb6e89475f740508b3e07b6707d2930` | 1.00 | 1.00 | `not_comparable` (run 1) |
+| `mistral-small-2603` | mistral | `acb6e89475f740508b3e07b6707d2930` | 0.90 | 0.60 | `not_comparable` (run 1) |
+| `Qwen3.6-35B-A3B` | local | `68ac4f21b11d4e4fad5675bba7fb8836` | 1.00 | 1.00 | `reproduced` against run 1, identical on every item |
+| `mistral-small-2603` | mistral | `68ac4f21b11d4e4fad5675bba7fb8836` | 0.95 | 0.80 | `reproduced` against run 1, divergence 0.05 (`account-de-01`) within the suite's 0.10 |
+
+Both subjects score 1.00 on `en` and `fr` in both runs. The local flagship now answers all
+20 items: the four `unparseable` EN completions of the schema-7 runs are gone (the local
+writers have since moved to the chat endpoint under `thinking_policy: disabled`; this
+pair does not isolate which change did it). The Mistral batches are seeded
+(`random_seed` 20260821, `temperature` 0), took no retry, and cost 0.000231 USD each
+(`cost_currency` `USD`, never converted against the local rows' EUR). They are this
+bundle's only paid calls: 40 chat completions, plus one model-catalog pre-flight per
+batch; no Google and no judge call was made.
+
+**The German routing item, deferred again by name.** The 2026-08-27 tech-debt row defers
+rewording `account-de-01` "to the next regeneration", which this is. It is **not**
+reworded here: rewording moves `prompt_set_hash` and forces
+`classification-support-routing@6`, outside the owner's paid scope for this session (two
+Mistral batches on `@5`) and under every record and campaign that cites `@5`. The new runs
+sharpen the finding instead of closing it: `mistral-small-2603` routed `account-de-01` to
+`technical` in run 1 and to `account` in run 2, and `other-de-01` to `technical` in both,
+so both German items the schema-7 rows flagged still misroute, one of them only in one
+run. The rewording of both items, with the re-run it forces, is deferred again to the
+first regeneration that bumps the suite.
+
+### Superseded files and records: kept, not edited
+
+| Superseded | Replaced by | Why kept |
+| --- | --- | --- |
+| `runtime-reference.schema-7.jsonl` (2 rows, schema `"7"`) | `runtime-reference.jsonl` (6 rows, schema `"30"`) | a reader following an old citation still finds the row |
+| `quality-reference.schema-7.jsonl` (80 rows, schema `"7"`) | `quality-reference.jsonl` (80 rows, schema `"30"`) | same |
+| `comparisons.schema-7/` (4 family records) | none yet over the new rows | computed over the schema-7 rows; the export reads only records whose runs the bundle holds |
+| `leader-sets.schema-7/` (1 leader-set record) | none yet over the new rows | same |
+
+Unlike `.schema-1` (a count of bundle generations, see below), `.schema-7` is the
+`schema_version` the superseded rows carry. All are `git mv`-renamed, never back-filled.
+`refusals-reference.jsonl` is new and empty: no run of this session was refused. The
+export (`wave-local-ai-v2-export`) refused the republished bundle at first, because a
+cloud row's `retry_budget` (keyed by provider) and a suite definition's `level` and
+`divergence_tolerance` had no column-dictionary entry; both are now described, and the
+interval blocks the new rows carry recompute from the tables alone
+(`scripts/recompute_from_export.py`, every value equal).
+
+### Validator proof (this regeneration)
+
+`uv run wave-local-ai-v2-validate aidd_docs/results/runtime-reference.jsonl
+aidd_docs/results/quality-reference.jsonl`:
+
+| Run | Result |
+| --- | --- |
+| Clean pass over the merged bundle | `checked 86 row(s)`, exit **0** |
+| One fiche field hand-edited (`gpu_name` of the Qwen3-0.6B `gpu` fiche `73ec536e...`) | exit **1**, `edited (2)` naming both rows citing it (`49d99f73...`, `a05834da...`); `changed_fields` reads "unavailable" because the fiche was not yet committed for `git show HEAD:` to diff against |
+| Edit reverted (byte-identical to the live fiche) | `checked 86 row(s)`, exit **0** again |
+
+### Setup gaps the fresh-clone walk found
+
+Both are now in `docs/setup.md`; the walk is logged in
+`aidd_docs/tasks/2026_10/2026_10_04_laptop-republishes-bundle/evidence/setup-walk.md`.
+
+- `.env.example` ships placeholder cloud keys that the quality CLI reads as real keys, so a
+  key-less walk sends them to the providers: section 4 now says to empty both lines until
+  real keys are set.
+- Deciding a second run against its own first needs the reference path pointed at the
+  first run's rows (and the first run at an empty file): section 4.2 now says how.
+
+## The schema-7 regeneration (Story 19 + Story 20, 2026-08-27)
+
+Superseded on 2026-10-04: these rows are now `runtime-reference.schema-7.jsonl` and
+`quality-reference.schema-7.jsonl`, unedited.
 
 Both files were regenerated from scratch under the current schema (`schema_version` `"7"`),
 against the 20-item suite (`suite_version` `"2"`, `en`/`fr`/`de` all >=25% share) Story 20

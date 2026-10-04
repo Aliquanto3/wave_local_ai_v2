@@ -5,22 +5,44 @@ from pathlib import Path
 import pytest
 from subset_fixtures import drawn_definition
 
-from wave_local_ai_v2 import scoring_rules, suite_registry, suite_snapshot
+from wave_local_ai_v2 import (
+    classification_suite,
+    scoring_rules,
+    suite_registry,
+    suite_snapshot,
+)
 from wave_local_ai_v2.suite_gate import SuiteGateError
 from wave_local_ai_v2.suite_registry import SuiteRegistryError
 
 # Today's identities, pinned as literals: the migration onto data must move
-# neither the version nor the prompt-set hash of either shipped suite.
+# neither the version nor the prompt-set hash of either shipped suite. The
+# versions moved once since, when each suite declared its divergence
+# tolerance; the items, and so the hashes, did not.
 _SHIPPED = {
     "classification-support-routing": (
-        "4",
+        "5",
         "d41a2134274cf1c8036022d2b68396d04bfd14ff263d2f8699dbefd7a2e4596a",  # pragma: allowlist secret
     ),
     "translation-business-short-form": (
-        "3",
+        "4",
         "16150e4406042a8940093740640627b7ce4ce9e80ae64bc080b7b4d80f6f7574",  # pragma: allowlist secret
     ),
+    "code-generation-python-javascript": (
+        "1",
+        "ec4d5c46bb3179644533aa6c7331f43ba4999661f43dc46945b80bc3c8f9c3fc",  # pragma: allowlist secret
+    ),
+    "classification-banking-intents-minds14": (
+        "1",
+        "b728719fc6db4f52e203980ae77745b36e0eaef3998ebe43417ba7b92ad934c1",  # pragma: allowlist secret
+    ),
+    "translation-mixed-domain-wmt24pp": (
+        "1",
+        "842b7fc7deb5be059b89806082e544a982056b82e44ed51ebbc2e9a23b1b6e0a",  # pragma: allowlist secret
+    ),
 }
+_MINDS14_REVISION = (
+    "40ce77cb32a384e4d50a568e1ec39ac804019d33"  # pragma: allowlist secret
+)
 
 _VALID = {
     "suite_id": "fixture-suite",
@@ -32,6 +54,11 @@ _VALID = {
     "context_length": 2048,
     "thinking_policy": "disabled",
     "level": "development",
+    "divergence_tolerance": {
+        "value": 0.1,
+        "unit": "fraction_of_items",
+        "reason": "Fixture tolerance.",
+    },
     "items": [
         {
             "item_id": f"item-{language}",
@@ -88,6 +115,78 @@ def test_resolving_twice_returns_the_one_cached_definition() -> None:
     first = suite_registry.resolve("classification-support-routing")
 
     assert suite_registry.resolve("classification-support-routing") is first
+
+
+def test_the_minds14_suite_certifies_at_publication_with_its_recorded_draw() -> None:
+    definition = suite_registry.resolve("classification-banking-intents-minds14")
+    rule = definition.extra["selection_rule"]
+
+    assert definition.level == definition.gate["level"] == "publication"
+    assert definition.gate["indicative"] is False
+    assert len(definition.items) == definition.extra["size_target"] == 300
+    assert definition.extra["size_target_reason"]
+    assert definition.gate["language_counts"] == {"en": 100, "fr": 100, "de": 100}
+    assert min(definition.gate["language_shares"].values()) >= 0.25
+    assert rule["benchmarks"] == [
+        {
+            "source": "PolyAI/minds14",
+            "licence": "CC-BY-4.0",
+            "source_revision": _MINDS14_REVISION,
+        }
+    ]
+    assert (rule["stable_source_key"], rule["size"]) == ("path", 300)
+    assert rule["stratify_by"] == ["language", "intent_class"]
+    assert rule["content_fields"] == ["transcription", "intent_class"]
+    assert rule["seeds_tried"] == [rule["seed"]]
+    table = definition.extra["source_table"]
+    assert len(table["sha256"]) == 64
+    assert table["licence_file_at_revision"] is False
+    # Every drawn item: public, contamination-risk (Methodology 5), under its
+    # benchmark's licence and revision, with its content hash.
+    for item in definition.items:
+        assert item["item_id"].startswith("PolyAI/minds14:")
+        assert (item["provenance"], item["contamination_risk"]) == ("public", True)
+        assert (item["licence"], item["source"], item["source_revision"]) == (
+            "CC-BY-4.0",
+            "PolyAI/minds14",
+            _MINDS14_REVISION,
+        )
+        assert len(item["content_hash"]) == 64
+        assert "app_error, atm_limit" in item["prompt"]
+        assert "\n\nMessage: " in item["prompt"]
+    assert len(definition.labels) == 14
+    assert "app_error" in definition.labels
+
+
+def test_the_label_set_is_every_expected_label_the_suite_holds() -> None:
+    classification = suite_registry.resolve("classification-support-routing")
+
+    assert classification.labels == classification_suite.LABELS
+    assert suite_registry.resolve("translation-business-short-form").labels == (
+        frozenset()
+    )
+
+
+def test_a_resumed_subset_is_parsed_against_the_whole_suites_labels() -> None:
+    definition = suite_registry.resolve("classification-support-routing")
+    # A resumed batch whose missing items are all `billing`: a completion
+    # naming `technical` is a wrong label, not an unparseable one.
+    missing = [item for item in definition.items if item["expected_label"] == "billing"]
+    completions = [
+        {
+            "content": "technical",
+            "truncated": False,
+            "generated_tokens": 1,
+            "truncation_reason": None,
+        }
+        for _ in missing
+    ]
+
+    per_item = definition.score_items(missing, completions)
+
+    assert {fields["predicted_label"] for fields in per_item} == {"technical"}
+    assert {fields["failure_reason"] for fields in per_item} == {None}
+    assert {fields["correct"] for fields in per_item} == {False}
 
 
 def test_a_resolved_item_cannot_be_edited_in_place() -> None:
@@ -190,6 +289,27 @@ def test_an_item_missing_its_tag_is_refused_by_the_gate_at_load(
 
     with pytest.raises(SuiteGateError, match=f"missing '{missing}'"):
         suite_registry.load_definition(path)
+
+
+def test_a_definition_declaring_no_divergence_tolerance_is_refused_at_load(
+    tmp_path,
+) -> None:
+    data = _variant()
+    del data["divergence_tolerance"]
+
+    with pytest.raises(SuiteGateError, match="declares no divergence_tolerance"):
+        suite_registry.load_definition(_write(tmp_path, data))
+
+
+@pytest.mark.parametrize("suite_id", sorted(_SHIPPED))
+def test_a_shipped_suite_declares_its_tolerance_with_unit_and_reason(
+    suite_id,
+) -> None:
+    tolerance = suite_registry.resolve(suite_id).divergence_tolerance
+
+    assert tolerance["unit"] == "fraction_of_items"
+    assert 0 <= tolerance["value"] <= 1
+    assert tolerance["reason"].strip()
 
 
 def test_a_definition_the_gate_refuses_is_never_registered(
@@ -333,7 +453,9 @@ def test_the_interval_epics_fields_are_additions_to_the_one_shape(
     registered.append(definition.suite_id)
 
     assert definition.level == "development"
-    assert dict(definition.extra) == {}
+    assert dict(definition.extra) == {
+        "divergence_tolerance": _VALID["divergence_tolerance"]
+    }
     assert all(item["licence"] == "CC-BY-4.0" for item in definition.items)
     snapshot = suite_snapshot.build_snapshot(definition)
     assert snapshot["level"] == "development"

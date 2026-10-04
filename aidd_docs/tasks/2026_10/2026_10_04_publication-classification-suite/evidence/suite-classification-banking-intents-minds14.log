@@ -1,0 +1,16 @@
+# preconditions 2026-10-04T07:37:00+02:00
+# HEAD 95040a7b0e7fa891e406c63e7e0cee46909d9292
+?? aidd_docs/tasks/2026_10/2026_10_04_publication-classification-suite/evidence/suite-classification-banking-intents-minds14.log
+0 MiB
+Informationÿ: aucune tƒche en service ne correspond aux critŠres sp‚cifi‚s.
+7b8f2569a2044a9e9f8f62a0b7770098
+pre-flight: vram_gb not checked under gpu: roster entry 'granite-4.0-h-350m-q8' declares no minimum yet (awaits a per-process VRAM peak, as for every roster entry)
+[codecarbon INFO @ 07:37:03] offline tracker init
+[codecarbon WARNING @ 07:37:03] Multiple instances of codecarbon are allowed to run at the same time.
+mistral skipped: not enabled in QUALITY_PROVIDERS
+google skipped: not enabled in QUALITY_PROVIDERS
+model=Granite-4.0-H-350M provider=local accuracy=0.23
+exit 0
+# after 2026-10-04T07:37:56+02:00
+0 MiB
+InformationÂ : aucune tÃ¢che en service ne correspond aux critÃ¨res spÃ©cifiÃ©s.

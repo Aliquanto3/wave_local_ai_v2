@@ -1,5 +1,6 @@
 import dataclasses
 import json
+import re
 from datetime import datetime, timedelta
 from importlib import metadata
 from pathlib import Path
@@ -8,13 +9,19 @@ from unittest.mock import DEFAULT, MagicMock, patch
 import pytest
 import requests
 from conftest import mark_prompt
+from store_fixtures import ROSTER_REQUIREMENTS, single_refusal, write_raised_roster
 
 from wave_local_ai_v2 import (
     chrf,
+    code_sandbox,
+    comparison,
+    engines,
     google_client,
     local_client,
     mistral_client,
+    prompt_variants,
     quality_cli,
+    row_contract,
     score_interval,
     scoring_rules,
     suite_registry,
@@ -79,6 +86,7 @@ FAKE_ROSTER = {
             "file": "fake.gguf",
             "quant": "UD-IQ4_XS",
             "sha256": "0" * 64,
+            "requirements": ROSTER_REQUIREMENTS,
             "family": "qwen",
             "size_class": "~8B-and-up",
             "thinking_control": QWEN_THINKING_CONTROL,
@@ -101,11 +109,6 @@ FAKE_ROSTER = {
                     "min_p": 0,
                     "presence_penalty": 1.5,
                 },
-            },
-            "validated_host": {
-                "n_cpu_moe": 37,
-                "threads": 8,
-                "fiche_summary": "fake fiche",
             },
         }
     },
@@ -213,6 +216,8 @@ def stubbed_run(tmp_path, monkeypatch):
     server_path.write_text("")
 
     fake_settings = Settings(
+        machine_id="laptop-mobile-gpu",
+        compute_mode="gpu",
         slm_models_dir=model_dir,
         llama_server_path=server_path,
         results_path=tmp_path / "runtime.jsonl",
@@ -371,6 +376,70 @@ def test_one_verdict_shared_across_every_row_of_one_batch(stubbed_run) -> None:
     }
     assert len(local_verdicts) == 1
     assert len(mistral_verdicts) == 1
+
+
+def test_each_batch_verdict_names_its_subject_rule_and_the_suites_tolerance(
+    stubbed_run,
+) -> None:
+    quality_results_path, _ = stubbed_run
+    suite = suite_registry.resolve("classification-support-routing")
+
+    quality_cli._run()
+
+    blocks = {
+        row["provider"]: row["verdict"] for row in read_rows(quality_results_path)
+    }
+    assert blocks["local"]["subject_rule"] == "identical"
+    assert blocks["local"]["tolerance"] is None
+    assert blocks["mistral"]["subject_rule"] == "within_tolerance"
+    assert blocks["mistral"]["tolerance"] == {
+        "value": suite.divergence_tolerance["value"],
+        "unit": suite.divergence_tolerance["unit"],
+        "suite_id": suite.suite_id,
+        "suite_version": suite.suite_version,
+    }
+    assert blocks["mistral"]["single_run_indicative"] is None
+
+
+def test_a_cloud_batch_sent_with_no_seed_is_single_run_indicative(
+    stubbed_run, monkeypatch
+) -> None:
+    quality_results_path, _ = stubbed_run
+    monkeypatch.setattr(quality_cli, "_carries_seed", lambda sampling: False)
+
+    quality_cli._run()
+
+    blocks = {
+        row["provider"]: row["verdict"] for row in read_rows(quality_results_path)
+    }
+    assert blocks["mistral"]["single_run_indicative"] == "no_seed"
+    assert blocks["mistral"]["verdict"] == "not_comparable"
+    # A local subject is never marked: its own seed is not what is asked.
+    assert blocks["local"]["single_run_indicative"] is None
+
+
+@pytest.mark.parametrize(
+    ("sampling", "carries"),
+    [
+        ({"seed": 7}, True),
+        ({"random_seed": 7}, True),
+        ({"temperature": 0}, False),
+        ({"seed": None}, False),
+    ],
+)
+def test_a_seed_is_found_under_either_providers_name(sampling, carries) -> None:
+    assert quality_cli._carries_seed(sampling) is carries
+
+
+def test_a_cloud_model_no_longer_served_is_named_single_run_indicative(
+    stubbed_run, capsys
+) -> None:
+    _, started = stubbed_run
+    started["check_model"].side_effect = ModelUnavailableError("gone")
+
+    quality_cli._run()
+
+    assert "single-run indicative (model_not_served)" in capsys.readouterr().err
 
 
 def test_local_rows_carry_scope_2_energy_emissions_and_a_kwh_derived_cost(
@@ -549,6 +618,210 @@ def test_local_rows_name_the_engine_and_cloud_rows_state_it_does_not_apply(
         ("local", "llama.cpp", "b10537"),
         ("mistral", "not_applicable", None),
     }
+
+
+def test_local_rows_name_the_machine_and_mode_and_cloud_rows_state_neither_applies(
+    stubbed_run, tmp_path
+) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    assert {
+        (row["provider"], row["machine_id"], row["compute_mode"]) for row in rows
+    } == {
+        ("local", "laptop-mobile-gpu", "gpu"),
+        ("mistral", "not_applicable", "not_applicable"),
+    }
+    stored_fiche = read_fiche(rows[0]["fiche_hash"], tmp_path / "fiches")
+    assert stored_fiche is not None
+    assert (stored_fiche["machine_id"], stored_fiche["compute_mode"]) == (
+        "laptop-mobile-gpu",
+        "gpu",
+    )
+    # The run profile: named on the local rows and the fiche, stated not
+    # applicable on the cloud subject's rows.
+    local_profiles = {row["profile_id"] for row in rows if row["provider"] == "local"}
+    [profile_id] = local_profiles
+    assert profile_id.endswith("@laptop-mobile-gpu/gpu")
+    assert stored_fiche["profile_id"] == profile_id
+    assert {
+        (row["provider"], json.dumps(row["profile_overrides"])) for row in rows
+    } == {("local", "{}"), ("mistral", '"not_applicable"')}
+    assert {row["profile_id"] for row in rows if row["provider"] == "mistral"} == {
+        "not_applicable"
+    }
+
+
+def test_an_overridden_quality_run_names_its_override(stubbed_run) -> None:
+    quality_results_path, started = stubbed_run
+    started["load_settings"].return_value = dataclasses.replace(
+        started["load_settings"].return_value, host_threads=6
+    )
+
+    quality_cli._run()
+
+    local = [r for r in read_rows(quality_results_path) if r["provider"] == "local"]
+    assert local
+    assert all(
+        row["profile_overrides"] == {"threads": {"profile": 8, "operator": 6}}
+        for row in local
+    )
+
+
+def test_a_cpu_only_batch_launches_cpu_only_and_names_it(stubbed_run, tmp_path) -> None:
+    quality_results_path, started = stubbed_run
+    started["load_settings"].return_value = dataclasses.replace(
+        started["load_settings"].return_value, compute_mode="cpu_only"
+    )
+
+    quality_cli._run()
+
+    local = [
+        row for row in read_rows(quality_results_path) if row["provider"] == "local"
+    ]
+    assert {row["compute_mode"] for row in local} == {"cpu_only"}
+    stored_fiche = read_fiche(local[0]["fiche_hash"], tmp_path / "fiches")
+    assert stored_fiche is not None
+    assert stored_fiche["flags"][2:6] == ["-ngl", "0", "--device", "none"]
+
+
+def test_a_batch_without_a_machine_refuses_before_any_server_starts(
+    stubbed_run, capsys
+) -> None:
+    quality_results_path, started = stubbed_run
+    started["load_settings"].return_value = dataclasses.replace(
+        started["load_settings"].return_value, machine_id=None
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        quality_cli.main()
+
+    assert exit_info.value.code == 1
+    assert "MACHINE_ID is not set" in capsys.readouterr().err
+    assert started["running_server"].call_count == 0
+    assert not quality_results_path.exists()
+
+
+def _declare_campaign(tmp_path, **overrides) -> Path:
+    campaigns_dir = tmp_path / "campaigns"
+    campaigns_dir.mkdir()
+    declaration = {
+        "campaign_id": "test-campaign",
+        "description": "Test campaign.",
+        "engines": ["llama.cpp"],
+        "prompt_variants": [{"id": "baseline", "version": "1"}],
+        "roster_entries": [DEFAULT_ROSTER_ENTRY_ID],
+        "suites": ["classification-support-routing"],
+        "machine": {"machine_id": "laptop-mobile-gpu", "compute_mode": "gpu"},
+        "exclusions": [],
+        **overrides,
+    }
+    (campaigns_dir / "test-campaign.json").write_text(
+        json.dumps(declaration), encoding="utf-8"
+    )
+    return campaigns_dir
+
+
+def test_a_run_with_no_campaign_records_that_it_belongs_to_none(stubbed_run) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    assert {(row["provider"], row["campaign_id"]) for row in rows} == {
+        ("local", "none"),
+        ("mistral", "none"),
+    }
+
+
+def test_a_run_under_a_campaign_records_its_id_on_every_row(
+    stubbed_run, tmp_path
+) -> None:
+    quality_results_path, started = stubbed_run
+    started["load_settings"].return_value = dataclasses.replace(
+        started["load_settings"].return_value,
+        campaign_id="test-campaign",
+        campaigns_dir=_declare_campaign(tmp_path),
+        quality_providers=frozenset({"local"}),
+    )
+
+    quality_cli._run()
+
+    rows = read_rows(quality_results_path)
+    assert rows
+    assert {(row["provider"], row["campaign_id"]) for row in rows} == {
+        ("local", "test-campaign")
+    }
+
+
+@pytest.mark.parametrize(
+    ("declared", "providers", "named"),
+    [
+        (
+            {"suites": ["translation-business-short-form"]},
+            frozenset({"local"}),
+            "suite 'classification-support-routing' is not declared",
+        ),
+        (
+            {
+                "machine": {
+                    "machine_id": "laptop-mobile-gpu",
+                    "compute_mode": "cpu_only",
+                }
+            },
+            frozenset({"local"}),
+            "machine 'laptop-mobile-gpu' in mode 'gpu' is not the declared",
+        ),
+        ({}, frozenset({"local", "mistral"}), r"cloud provider\(s\) mistral"),
+    ],
+)
+def test_a_run_outside_its_campaign_refuses_before_any_server_starts(
+    stubbed_run, tmp_path, capsys, declared, providers, named
+) -> None:
+    quality_results_path, started = stubbed_run
+    started["load_settings"].return_value = dataclasses.replace(
+        started["load_settings"].return_value,
+        campaign_id="test-campaign",
+        campaigns_dir=_declare_campaign(tmp_path, **declared),
+        quality_providers=providers,
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        quality_cli.main()
+
+    assert exit_info.value.code == 1
+    stderr = capsys.readouterr().err
+    assert "run refused under campaign 'test-campaign'" in stderr
+    assert re.search(named, stderr)
+    assert started["running_server"].call_count == 0
+    assert not quality_results_path.exists()
+
+
+def test_a_resume_under_another_campaign_is_refused(stubbed_run, capsys) -> None:
+    quality_results_path, started = stubbed_run
+    run_id = "resume-other-campaign"
+    quality_cli._run(resume_run_id=run_id)
+    rows = read_rows(quality_results_path)
+    kept = [
+        {**row, "campaign_id": "another-campaign"}
+        for row in rows
+        if row["provider"] == "local"
+    ][:5]
+    quality_results_path.write_text(
+        "".join(f"{json.dumps(row)}\n" for row in kept), encoding="utf-8"
+    )
+    started["running_server"].reset_mock()
+    with (
+        patch("sys.argv", ["wave-local-ai-v2-quality", "--resume", run_id]),
+        pytest.raises(SystemExit) as exit_info,
+    ):
+        quality_cli.main()
+
+    assert exit_info.value.code == 1
+    assert "campaign_id='another-campaign'" in capsys.readouterr().err
+    assert started["running_server"].call_count == 0
 
 
 def test_the_verified_thinking_switch_is_recorded(stubbed_run, capsys) -> None:
@@ -746,9 +1019,7 @@ def test_the_variant_runs_before_templating_on_the_local_and_cloud_paths(
 ) -> None:
     quality_results_path, started = stubbed_run
     _enable_google(started)
-    monkeypatch.setattr(quality_cli, "PROMPT_VARIANT_ID", marking_variant)
-
-    quality_cli._run()
+    quality_cli._run(prompt_variant_ref=(marking_variant, None))
 
     marked = [mark_prompt(item["prompt"]) for item in CLASSIFICATION_TASK_SUITE]
     local_bodies = [call.kwargs["json"] for call in item_posts(started["post"])]
@@ -981,8 +1252,10 @@ def test_run_surfaces_a_deprecation_notice_and_still_writes_every_row(
     captured = capsys.readouterr()
     assert notice in captured.err
     # Positively, not just "the notice is absent": stdout is what the operator
-    # parses, so any line added to it beyond the two accuracy lines must fail here.
-    accuracy_lines = captured.out.splitlines()
+    # parses, so any line added to it beyond the announced run_id and the two
+    # accuracy lines must fail here.
+    run_id_line, *accuracy_lines = captured.out.splitlines()
+    assert run_id_line == read_rows(quality_results_path)[0]["run_id"]
     assert len(accuracy_lines) == 2
     assert all(line.startswith("model=") for line in accuracy_lines)
     assert len(read_rows(quality_results_path)) == 2 * len(CLASSIFICATION_TASK_SUITE)
@@ -1283,7 +1556,7 @@ def test_every_row_names_its_subjects_family_and_size_class(stubbed_run) -> None
         ("mistral", "mistral", None),
         ("google", "google", None),
     }
-    assert {row["schema_version"] for row in rows} == {"22"}
+    assert {row["schema_version"] for row in rows} == {"30"}
 
 
 def test_every_row_names_direct_its_version_and_its_measured_overhead(
@@ -1962,6 +2235,11 @@ _PUBLICATION_SIZE_DEFINITION = {
     "context_length": 4096,
     "thinking_policy": "disabled",
     "level": "development",
+    "divergence_tolerance": {
+        "value": 0.1,
+        "unit": "fraction_of_items",
+        "reason": "Fixture tolerance.",
+    },
     "items": [
         {
             "item_id": f"hundred-{number:03d}",
@@ -2202,6 +2480,11 @@ _FIXTURE_DEFINITION = {
     "context_length": 4096,
     "thinking_policy": "disabled",
     "level": "development",
+    "divergence_tolerance": {
+        "value": 0.1,
+        "unit": "fraction_of_items",
+        "reason": "Fixture tolerance.",
+    },
     "items": [
         {
             "item_id": f"fixture-{language}",
@@ -2220,10 +2503,10 @@ _FIXTURE_DEFINITION = {
 def fixture_suite(tmp_path, monkeypatch):
     calls: list[int] = []
 
-    def fixture_rule(items, completions, *, max_output_tokens):
+    def fixture_rule(items, completions, *, max_output_tokens, labels):
         calls.append(max_output_tokens)
         return scoring_rules.exact_label_match(
-            items, completions, max_output_tokens=max_output_tokens
+            items, completions, max_output_tokens=max_output_tokens, labels=labels
         )
 
     monkeypatch.setitem(scoring_rules.SCORING_RULES, _FIXTURE_RULE, fixture_rule)
@@ -2729,6 +3012,40 @@ def _truncate_mistral_half(path: Path, keep: int, **edits: object) -> list[dict]
     return kept
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("compute_mode", "cpu_only"),
+        ("machine_id", "tower-desktop-gpu"),
+        ("profile_id", "another-entry@laptop-mobile-gpu/gpu"),
+    ],
+)
+def test_a_resume_of_a_local_batch_under_another_machine_or_mode_is_refused(
+    stubbed_run, capsys, field: str, value: str
+) -> None:
+    # One local score over two machines or two modes is refused, writing nothing.
+    quality_results_path, started = stubbed_run
+    run_id = "resume-other-profile"
+    quality_cli._run(resume_run_id=run_id)
+    rows = read_rows(quality_results_path)
+    kept = [{**row, field: value} for row in rows if row["provider"] == "local"][:5]
+    quality_results_path.write_text(
+        "".join(f"{json.dumps(row)}\n" for row in kept), encoding="utf-8"
+    )
+    started["running_server"].reset_mock()
+    with (
+        patch("sys.argv", ["wave-local-ai-v2-quality", "--resume", run_id]),
+        pytest.raises(SystemExit) as exit_info,
+    ):
+        quality_cli.main()
+
+    assert exit_info.value.code == 1
+    stderr = capsys.readouterr().err
+    assert f"refusing --resume {run_id}: the local batch's" in stderr
+    assert f"{field}='{value}'" in stderr
+    assert started["running_server"].call_count == 0
+
+
 def test_a_resume_of_a_local_batch_under_another_engine_build_is_refused(
     stubbed_run, capsys
 ) -> None:
@@ -2772,6 +3089,8 @@ def test_a_resume_of_a_local_batch_under_another_engine_build_is_refused(
         ("thinking_policy", "enabled"),
         # A cloud batch is held to the engine not applying.
         ("engine_id", "llama.cpp"),
+        # ...and to the machine and the mode not applying.
+        ("compute_mode", "gpu"),
     ],
 )
 def test_a_resume_over_rows_of_another_configuration_is_refused_writing_nothing(
@@ -2889,3 +3208,526 @@ def test_a_batch_whose_interval_covers_other_items_is_refused_before_writing(
     with pytest.raises(score_interval.IntervalInvariantError, match="n=5"):
         quality_cli._run()
     assert not quality_results_path.exists() or read_rows(quality_results_path) == []
+
+
+def test_a_run_below_its_declared_minimum_refuses_before_the_weights_and_any_spawn(
+    stubbed_run, tmp_path, capsys
+) -> None:
+    quality_results_path, started = stubbed_run
+    settings = started["load_settings"].return_value
+    # The weights are absent too: the RAM refusal must not be masked by them.
+    (
+        settings.slm_models_dir
+        / FAKE_ROSTER["entries"][DEFAULT_ROSTER_ENTRY_ID]["file"]
+    ).unlink()
+    started["load_settings"].return_value = dataclasses.replace(
+        settings,
+        roster_path=write_raised_roster(FAKE_ROSTER, tmp_path),
+        machine_results_root=tmp_path / "refusals",
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        quality_cli.main()
+
+    assert exit_info.value.code == 1
+    err = capsys.readouterr().err
+    assert "refused:" in err and "ram_gb" in err and "compute mode 'gpu'" in err
+    assert "model file not found" not in err
+    started["running_server"].assert_not_called()
+    started["probe_build"].assert_not_called()
+    record = single_refusal(tmp_path / "refusals", "laptop-mobile-gpu")
+    assert record["requirement"] == "ram_gb"
+    assert record["profile_id"] == f"{DEFAULT_ROSTER_ENTRY_ID}@laptop-mobile-gpu/gpu"
+    assert not quality_results_path.exists()
+
+
+# --------------------------------------------------------------------------
+# The terse-output variant (schema "27"): every item of every suite runs under
+# it, a family it does not declare records a no-op, and nothing but the
+# prompt moves between it and `baseline`.
+
+_OUTPUT_COMPRESSED = (prompt_variants.OUTPUT_COMPRESSED_ID, "1")
+
+# What a suite fixes for every variant: its identity, caps, stop sequences,
+# context length, thinking policy, scorer (the metric triple on a graded
+# suite) and expected output. The stubbed engine answers every prompt alike,
+# so the per-item outcome fields equal too exactly when the parser and the
+# scorer are the same.
+_VARIANT_INVARIANT_FIELDS = (
+    "suite_id",
+    "suite_version",
+    "task_suite",
+    "prompt_set_hash",
+    "suite_level",
+    "max_output_tokens",
+    "stop_sequences",
+    "context_length",
+    "thinking_policy",
+    "sampling",
+    "metric_id",
+    "metric_version",
+    "metric_params",
+    "expected_label",
+    "reference_output",
+    "predicted_label",
+    "correct",
+    "item_score",
+    "failure_reason",
+    "suite_accuracy",
+    "suite_score",
+)
+
+
+def _rows_by_variant(quality_results_path, provider="local"):
+    by_variant: dict[str, list[dict]] = {}
+    for row in read_rows(quality_results_path):
+        if row["provider"] == provider:
+            by_variant.setdefault(row["prompt_variant_id"], []).append(row)
+    return by_variant
+
+
+def test_the_prompt_variant_flag_parses_an_id_and_an_optional_version() -> None:
+    assert quality_cli._parse_args([]).prompt_variant == ("baseline", None)
+    assert quality_cli._parse_args(
+        ["--prompt-variant", "output_compressed"]
+    ).prompt_variant == ("output_compressed", None)
+    assert (
+        quality_cli._parse_args(
+            ["--prompt-variant", "output_compressed@1"]
+        ).prompt_variant
+        == _OUTPUT_COMPRESSED
+    )
+
+
+def test_an_unregistered_prompt_variant_exits_1_before_any_process(
+    stubbed_run, monkeypatch, capsys
+) -> None:
+    _, started = stubbed_run
+    monkeypatch.setattr(
+        "sys.argv", ["wave-local-ai-v2-quality", "--prompt-variant", "caveman"]
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        quality_cli.main()
+
+    assert excinfo.value.code == 1
+    assert "'caveman' is not in the registry" in capsys.readouterr().err
+    started["running_server"].assert_not_called()
+
+
+# A suite larger than this runs the variant check over `_covering_slice`.
+_VARIANT_CHECK_MAX_ITEMS = 50
+
+
+def _covering_slice(items):
+    """The suite's items, in suite order, keeping each one that brings a
+    language, a target language, an expected label or an item shape (its key
+    set) no earlier kept item has: every kind of item the suite holds, each
+    at least once."""
+    seen: set[tuple[str, object]] = set()
+    kept = []
+    for item in items:
+        marks = {
+            ("language", item["language"]),
+            ("target", item.get("target_language")),
+            ("label", item.get("expected_label")),
+            ("shape", frozenset(item)),
+        }
+        if not marks <= seen:
+            kept.append(item)
+            seen |= marks
+    return tuple(kept)
+
+
+def _variant_check_suite(suite_id, monkeypatch):
+    """The suite a variant check runs: itself, or its covering slice when it
+    holds more than `_VARIANT_CHECK_MAX_ITEMS` items.
+
+    A variant transforms each item's prompt on its own, by the suite's task
+    family alone (`prompt_variants.apply_variant`), and the CLI writes each
+    row's other fields from the item, the suite and the run, never from
+    another item. So what a 300-item drawn suite can add over a slice is more
+    items of kinds the slice already holds: the slice keeps every language,
+    every direction, every expected label and every item shape, and the full
+    suite is checked to hold no other kind.
+    """
+    spec = suite_registry.resolve(suite_id)
+    if len(spec.items) <= _VARIANT_CHECK_MAX_ITEMS:
+        return spec
+    sliced = _covering_slice(spec.items)
+    for kind in (
+        frozenset,
+        lambda item: item["language"],
+        lambda item: item.get("target_language"),
+        lambda item: item.get("expected_label"),
+    ):
+        assert {kind(item) for item in spec.items} == {kind(item) for item in sliced}
+    spec = dataclasses.replace(spec, items=sliced)
+    monkeypatch.setitem(suite_registry._LOADED, suite_id, spec)
+    return spec
+
+
+@pytest.mark.parametrize("suite_id", suite_registry.registered_ids())
+def test_a_variant_changes_the_prompt_and_nothing_else_on_every_suite(
+    stubbed_run, suite_id, monkeypatch
+) -> None:
+    quality_results_path, _ = stubbed_run
+    spec = _variant_check_suite(suite_id, monkeypatch)
+
+    quality_cli._run(suite=suite_id)
+    quality_cli._run(suite=suite_id, prompt_variant_ref=_OUTPUT_COMPRESSED)
+
+    for provider in ("local", "mistral"):
+        by_variant = _rows_by_variant(quality_results_path, provider)
+        baseline = by_variant["baseline"]
+        compressed = by_variant["output_compressed"]
+        # No variant removes an item: the same ids, in the same order.
+        assert [row["item_id"] for row in compressed] == [
+            row["item_id"] for row in baseline
+        ]
+        assert [row["item_id"] for row in baseline] == [
+            item["item_id"] for item in spec.items
+        ]
+        for base_row, variant_row in zip(baseline, compressed, strict=True):
+            for field in _VARIANT_INVARIANT_FIELDS:
+                assert variant_row.get(field) == base_row.get(field), field
+
+
+def test_a_declared_family_sends_the_instruction_and_records_no_noop(
+    stubbed_run,
+) -> None:
+    quality_results_path, _ = stubbed_run
+    variant = prompt_variants.resolve(*_OUTPUT_COMPRESSED)
+
+    quality_cli._run(prompt_variant_ref=_OUTPUT_COMPRESSED)
+
+    rows = _rows_by_variant(quality_results_path)["output_compressed"]
+    by_item = {item["item_id"]: item for item in CLASSIFICATION_TASK_SUITE}
+    for row in rows:
+        expected = prompt_variants.apply_variant(
+            variant, by_item[row["item_id"]]["prompt"], "classification"
+        ).prompt
+        assert row["prompt_variant_noop"] is False
+        assert row["prompt_before_template"] == expected
+        assert expected.endswith(variant.definition["instruction"])
+
+
+def test_an_undeclared_family_records_a_noop_and_keeps_every_item(
+    stubbed_run,
+) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run(
+        suite="translation-business-short-form",
+        prompt_variant_ref=_OUTPUT_COMPRESSED,
+    )
+
+    rows = _rows_by_variant(quality_results_path)["output_compressed"]
+    by_item = {item["item_id"]: item for item in TRANSLATION_TASK_SUITE}
+    assert set(by_item) == {row["item_id"] for row in rows}
+    for row in rows:
+        assert row["prompt_variant_noop"] is True
+        assert row["prompt_before_template"] == by_item[row["item_id"]]["prompt"]
+
+
+def test_an_unparseable_terse_answer_scores_0_with_its_reason_and_is_counted(
+    stubbed_run,
+) -> None:
+    quality_results_path, started = stubbed_run
+    # A terse abbreviation the unchanged parser cannot map onto a label.
+    started["post"].side_effect = local_post_router(content="bill.")
+
+    quality_cli._run(prompt_variant_ref=_OUTPUT_COMPRESSED)
+
+    rows = _rows_by_variant(quality_results_path)["output_compressed"]
+    assert len(rows) == len(CLASSIFICATION_TASK_SUITE)
+    for row in rows:
+        assert row["correct"] is False
+        assert row["predicted_label"] is None
+        assert row["failure_reason"] == "unparseable"
+        assert row["suite_accuracy"] == 0.0
+
+
+def test_a_baseline_and_variant_pair_differs_only_on_the_variant_fields(
+    stubbed_run,
+) -> None:
+    quality_results_path, _ = stubbed_run
+    quality_cli._run()
+    quality_cli._run(prompt_variant_ref=_OUTPUT_COMPRESSED)
+    by_variant = _rows_by_variant(quality_results_path)
+    reference, candidate = by_variant["baseline"], by_variant["output_compressed"]
+
+    member = comparison.compare_sides(
+        reference,
+        candidate,
+        comparison.Side(reference[0]["run_id"], {"provider": "local"}),
+        comparison.Side(candidate[0]["run_id"], {"provider": "local"}),
+        dimension="prompt_variant",
+    )
+
+    assert member["comparison_kind"] == comparison.KIND_TEST
+    assert member["confounds"] == []
+    # Both arms are at version "1", so the id is the one field that moves;
+    # nothing outside the variant's own fields does.
+    assert member["differing_fields"] == ["prompt_variant_id"]
+    assert set(member["differing_fields"]) <= {
+        "prompt_variant_id",
+        "prompt_variant_version",
+    }
+
+
+# --------------------------------------------------------------------------
+# The constrained-output variant (schema "28"): the grammar goes with each
+# local answer only for a declared family, every row names the mechanism and
+# the grammar's hash, and nothing else moves against `baseline`.
+
+_CONSTRAINED = (prompt_variants.CONSTRAINED_OUTPUT_ID, "1")
+_GRAMMAR = 'root ::= "account" | "billing" | "other" | "technical"'
+
+
+def _local_only(started) -> None:
+    started["load_settings"].return_value = dataclasses.replace(
+        started["load_settings"].return_value, quality_providers=frozenset({"local"})
+    )
+
+
+def _chat_bodies(started) -> list[dict]:
+    return [
+        call.kwargs["json"]
+        for call in started["post"].call_args_list
+        if call.args[0].endswith("/v1/chat/completions")
+    ]
+
+
+def test_the_grammar_is_sent_with_every_classification_answer_and_hashed(
+    stubbed_run,
+) -> None:
+    quality_results_path, started = stubbed_run
+    _local_only(started)
+
+    quality_cli._run(prompt_variant_ref=_CONSTRAINED)
+
+    bodies = _chat_bodies(started)
+    assert len(bodies) == len(CLASSIFICATION_TASK_SUITE)
+    assert all(body["grammar"] == _GRAMMAR for body in bodies)
+    # Only the answer is constrained: the render carries no grammar.
+    renders = [
+        call.kwargs["json"]
+        for call in started["post"].call_args_list
+        if call.args[0].endswith("/apply-template")
+    ]
+    assert renders and all("grammar" not in body for body in renders)
+    rows = _rows_by_variant(quality_results_path)["constrained_output"]
+    assert {row["constraint_mechanism"] for row in rows} == {"gbnf"}
+    assert {row["constraint_grammar_hash"] for row in rows} == {
+        prompt_variants.grammar_hash(_GRAMMAR)
+    }
+    # No instruction is added: the published prompt is the authored one.
+    by_item = {item["item_id"]: item for item in CLASSIFICATION_TASK_SUITE}
+    for row in rows:
+        assert row["prompt_before_template"] == by_item[row["item_id"]]["prompt"]
+        assert row["prompt_variant_noop"] is False
+
+
+@pytest.mark.parametrize(
+    ("suite_id", "variant_ref"),
+    [
+        ("translation-business-short-form", _CONSTRAINED),
+        ("classification-support-routing", (prompt_variants.BASELINE_ID, "1")),
+        ("classification-support-routing", _OUTPUT_COMPRESSED),
+    ],
+)
+def test_no_grammar_is_sent_outside_the_constrained_variant_and_its_families(
+    stubbed_run, suite_id, variant_ref
+) -> None:
+    quality_results_path, started = stubbed_run
+    _local_only(started)
+
+    quality_cli._run(suite=suite_id, prompt_variant_ref=variant_ref)
+
+    assert all("grammar" not in body for body in _chat_bodies(started))
+    for row in read_rows(quality_results_path):
+        assert row["constraint_mechanism"] == "none"
+        assert row["constraint_grammar_hash"] is None
+
+
+def test_the_constrained_variant_beside_a_cloud_provider_exits_1_before_any_process(
+    stubbed_run, monkeypatch, capsys
+) -> None:
+    quality_results_path, started = stubbed_run
+    monkeypatch.setattr(
+        "sys.argv",
+        ["wave-local-ai-v2-quality", "--prompt-variant", "constrained_output"],
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        quality_cli.main()
+
+    assert excinfo.value.code == 1
+    assert (
+        "QUALITY_PROVIDERS=local (enabled: google, mistral)" in capsys.readouterr().err
+    )
+    started["running_server"].assert_not_called()
+    assert not quality_results_path.exists()
+
+
+def test_the_constrained_variant_on_an_engine_without_gbnf_is_refused(
+    stubbed_run, monkeypatch
+) -> None:
+    _, started = stubbed_run
+    _local_only(started)
+    reference = engines.tracked_reference_engine()
+    monkeypatch.setattr(
+        engines,
+        "tracked_reference_engine",
+        lambda: dataclasses.replace(reference, constraint_mechanisms={}),
+    )
+
+    with pytest.raises(prompt_variants.PromptVariantError, match="does not declare"):
+        quality_cli._run(prompt_variant_ref=_CONSTRAINED)
+    started["running_server"].assert_not_called()
+
+
+def test_a_constrained_run_changes_nothing_but_the_variant_on_every_suite(
+    stubbed_run, monkeypatch
+) -> None:
+    quality_results_path, started = stubbed_run
+    _local_only(started)
+    for suite_id in suite_registry.registered_ids():
+        _variant_check_suite(suite_id, monkeypatch)
+        quality_cli._run(suite=suite_id)
+        quality_cli._run(suite=suite_id, prompt_variant_ref=_CONSTRAINED)
+
+    by_variant = _rows_by_variant(quality_results_path)
+    baseline, constrained = by_variant["baseline"], by_variant["constrained_output"]
+    assert [row["item_id"] for row in constrained] == [
+        row["item_id"] for row in baseline
+    ]
+    for base_row, variant_row in zip(baseline, constrained, strict=True):
+        for field in _VARIANT_INVARIANT_FIELDS:
+            assert variant_row.get(field) == base_row.get(field), field
+
+
+def test_a_grammar_admitted_but_truncated_answer_scores_0_with_its_reason(
+    stubbed_run,
+) -> None:
+    quality_results_path, started = stubbed_run
+    _local_only(started)
+    # The cap cut a grammar-admitted label short: a prefix the grammar
+    # admits, which the unchanged parser cannot map onto a label.
+    started["post"].side_effect = local_post_router(
+        content="bill", finish_reason="length"
+    )
+
+    quality_cli._run(prompt_variant_ref=_CONSTRAINED)
+
+    rows = _rows_by_variant(quality_results_path)["constrained_output"]
+    assert len(rows) == len(CLASSIFICATION_TASK_SUITE)
+    for row in rows:
+        assert row["correct"] is False
+        assert row["predicted_label"] is None
+        assert row["failure_reason"] is not None
+        assert row["suite_accuracy"] == 0.0
+
+
+def test_a_baseline_and_constrained_pair_names_the_variant_and_the_mechanism(
+    stubbed_run,
+) -> None:
+    quality_results_path, started = stubbed_run
+    _local_only(started)
+    quality_cli._run()
+    quality_cli._run(prompt_variant_ref=_CONSTRAINED)
+    by_variant = _rows_by_variant(quality_results_path)
+    reference, candidate = by_variant["baseline"], by_variant["constrained_output"]
+
+    member = comparison.compare_sides(
+        reference,
+        candidate,
+        comparison.Side(reference[0]["run_id"], {"provider": "local"}),
+        comparison.Side(candidate[0]["run_id"], {"provider": "local"}),
+        dimension="prompt_variant",
+    )
+
+    assert member["comparison_kind"] == comparison.KIND_TEST
+    assert member["confounds"] == []
+    assert member["differing_fields"] == [
+        "constraint_grammar_hash",
+        "constraint_mechanism",
+        "prompt_variant_id",
+    ]
+
+
+def test_main_installs_the_graceful_stop_and_exits_one_when_stopped(
+    monkeypatch, capsys
+) -> None:
+    monkeypatch.setattr("sys.argv", ["wave-local-ai-v2-quality"])
+    installed: list[bool] = []
+    monkeypatch.setattr(
+        quality_cli.server, "install_graceful_stop", lambda: installed.append(True)
+    )
+
+    def stopped(**_kwargs: object) -> None:
+        raise quality_cli.server.StopRequested("run stopped by signal 15")
+
+    monkeypatch.setattr(quality_cli, "_run", stopped)
+
+    with pytest.raises(SystemExit) as exc_info:
+        quality_cli.main()
+
+    assert installed == [True]
+    assert exc_info.value.code == 1
+    assert "error: run stopped by signal 15" in capsys.readouterr().err
+
+
+# --- the sandboxed code-generation suite --------------------------------------
+
+_CODE_SUITE_ID = "code-generation-python-javascript"
+
+
+def test_a_code_suite_with_no_container_runtime_exits_1_before_any_process(
+    stubbed_run, monkeypatch, capsys
+) -> None:
+    quality_results_path, started = stubbed_run
+    host_runs: list[object] = []
+    monkeypatch.setattr(code_sandbox, "active_runner", code_sandbox.DockerSandbox)
+    monkeypatch.setattr(code_sandbox.shutil, "which", lambda name: None)
+    monkeypatch.setattr(
+        code_sandbox.subprocess, "run", lambda *a, **k: host_runs.append(a)
+    )
+    monkeypatch.setattr(
+        "sys.argv", ["wave-local-ai-v2-quality", "--suite", _CODE_SUITE_ID]
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        quality_cli.main()
+
+    assert exit_info.value.code == 1
+    err = capsys.readouterr().err
+    assert err.count("\n") == 1 and "no container runtime" in err
+    assert started["load_settings"].call_count == 0
+    assert started["running_server"].call_count == 0
+    assert host_runs == []
+    assert not quality_results_path.exists()
+
+
+def test_a_code_suite_run_publishes_code_rows_per_programming_language(
+    stubbed_run, fake_sandbox
+) -> None:
+    quality_results_path, _ = stubbed_run
+
+    quality_cli._run(suite=_CODE_SUITE_ID)
+
+    rows = [
+        row for row in read_rows(quality_results_path) if row["provider"] == "local"
+    ]
+    spec = suite_registry.resolve(_CODE_SUITE_ID)
+    assert [row["item_id"] for row in rows] == [item["item_id"] for item in spec.items]
+    for row, item in zip(rows, spec.items, strict=True):
+        assert row["schema_version"] == "30"
+        assert row["programming_language"] == item["programming_language"]
+        assert row["sandbox"]["network"] == "none"
+        assert row["sandbox"]["host_mount"] is False
+        assert set(row["programming_language_breakdown"]) == {"python", "javascript"}
+        assert row["item_score"] == 0.0 and row["failure_reason"] is not None
+        assert not row_contract.JUDGED_FIELDS & row.keys()
+    assert fake_sandbox.checked == [("python", "javascript")]

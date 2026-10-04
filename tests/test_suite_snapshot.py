@@ -37,19 +37,31 @@ def test_snapshot_carries_the_registered_suites_identity() -> None:
 def test_snapshot_publishes_exactly_the_keys_it_always_published() -> None:
     # The scoring-rule name and task_suite are definition fields, never
     # snapshot fields: exporting them would rewrite every committed file.
-    # `level` joined with the version bump that declared it.
+    # `level` joined with the version bump that declared it, and
+    # `divergence_tolerance` with the next one. A suite drawn from a public
+    # benchmark also publishes its size target, its selection rule and its
+    # source table; no development suite carries them.
+    published = {
+        "suite_id",
+        "suite_version",
+        "level",
+        "divergence_tolerance",
+        "prompt_set_hash",
+        "max_output_tokens",
+        "stop_sequences",
+        "thinking_policy",
+        "context_length",
+        "items",
+    }
+    drawn = {"size_target", "size_target_reason", "selection_rule", "source_table"}
+    # A drawn translation suite derives its output cap from its references
+    # and publishes that basis too.
+    derived_cap = {"max_output_tokens_basis"}
     for snapshot in all_snapshots():
-        assert set(snapshot) == {
-            "suite_id",
-            "suite_version",
-            "level",
-            "prompt_set_hash",
-            "max_output_tokens",
-            "stop_sequences",
-            "thinking_policy",
-            "context_length",
-            "items",
-        }
+        if snapshot["level"] == "publication":
+            assert published | drawn <= set(snapshot) <= published | drawn | derived_cap
+        else:
+            assert set(snapshot) == published
 
 
 def test_classification_snapshot_items_carry_exactly_the_published_fields() -> None:
@@ -68,6 +80,59 @@ def test_classification_snapshot_items_carry_exactly_the_published_fields() -> N
             "provenance",
             "contamination_risk",
             "licence",
+        }
+
+
+def test_a_drawn_snapshots_items_carry_their_source_and_content_hash() -> None:
+    snapshot = build_snapshot(
+        suite_registry.resolve("classification-banking-intents-minds14")
+    )
+
+    for item in snapshot["items"]:
+        assert set(item) == {
+            "item_id",
+            "prompt",
+            "expected_label",
+            "language",
+            "provenance",
+            "contamination_risk",
+            "licence",
+            "source",
+            "source_revision",
+            "content_hash",
+        }
+
+
+def test_the_drawn_translation_snapshot_publishes_its_cap_basis_and_item_domains() -> (
+    None
+):
+    snapshot = build_snapshot(
+        suite_registry.resolve("translation-mixed-domain-wmt24pp")
+    )
+
+    assert set(snapshot["max_output_tokens_basis"]) == {
+        "tokenizer",
+        "longest_reference_item_id",
+        "longest_reference_tokens",
+        "factor",
+        "reason",
+    }
+    for item in snapshot["items"]:
+        assert set(item) == {
+            "item_id",
+            "prompt",
+            "source_text",
+            "reference",
+            "language",
+            "target_language",
+            "domain",
+            "reference_tokens",
+            "provenance",
+            "contamination_risk",
+            "licence",
+            "source",
+            "source_revision",
+            "content_hash",
         }
 
 
@@ -111,7 +176,10 @@ def test_every_registered_suite_is_exported() -> None:
 
     assert ids == {
         "classification-support-routing",
+        "classification-banking-intents-minds14",
         "translation-business-short-form",
+        "translation-mixed-domain-wmt24pp",
+        "code-generation-python-javascript",
     }
 
 

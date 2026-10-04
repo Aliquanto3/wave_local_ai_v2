@@ -142,6 +142,7 @@ def test_the_scope_names_what_the_story_requires() -> None:
         "aidd_docs/results/quality-reference.jsonl",
         "aidd_docs/results/runtime-reference.schema-1.jsonl",
         "aidd_docs/results/quality-reference.schema-1.jsonl",
+        "aidd_docs/results/client-sessions.jsonl",
         "src/wave_local_ai_v2/suite_data/",
         "src/wave_local_ai_v2/judge_probe.py",
     } <= set(covered)
@@ -302,3 +303,135 @@ def test_an_item_literal_module_without_its_header_or_scope_entry_fails(
         "src/wave_local_ai_v2/other.py: holds item literals but is not in the scope"
         in (problems)
     )
+
+
+def test_section_two_names_the_drawn_source_its_terms_and_its_attribution() -> None:
+    licence_data = _read(REPO / "LICENSE-DATA")
+    section = licence_data.split("## 2. Drawn items", 1)[1].split("\n## 3.", 1)[0]
+    covered = licence_data.split(COVERED_HEADING, 1)[1].split("\n### ", 1)[0]
+
+    for needle in (
+        "PolyAI/minds14",
+        "40ce77cb32a384e4d50a568e1ec39ac804019d33",  # pragma: allowlist secret
+        "CC BY 4.0",
+        "https://creativecommons.org/licenses/by/4.0/",
+        "Rung: permissive",
+        "dataset card at the",
+        "prompt template",
+        "Creator: PolyAI",
+        "Copyright notice",
+    ):
+        assert needle in section, needle
+    assert "holds no item drawn" not in licence_data
+    # The covered entries holding items cover the hand-written ones only.
+    for entry in (
+        "`aidd_docs/results/suite-definitions/`",
+        "`src/wave_local_ai_v2/suite_data/`",
+        "`aidd_docs/results/quality-reference.jsonl`",
+    ):
+        line = next(
+            line for line in covered.splitlines() if line.startswith(f"- {entry}")
+        )
+        assert "see 2" in line, entry
+
+
+def test_neither_suite_notice_claims_a_drawn_item_under_cc_by() -> None:
+    for notice in (
+        REPO / "src/wave_local_ai_v2/suite_data" / NOTICE,
+        REPO / "aidd_docs/results/suite-definitions" / NOTICE,
+    ):
+        text = _read(notice)
+        assert "No item here is drawn today" not in text
+        assert "carries its\nown source's licence, recorded on the item" in text
+        for needle in ("CC-BY 4.0", "LICENSE-DATA", "MIT"):
+            assert needle in text
+
+
+# sha256 of https://www.apache.org/licenses/LICENSE-2.0.txt, the canonical
+# Apache-2.0 text: each copy beside drawn WMT24++ items is carried verbatim.
+APACHE_SHA256 = "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"  # pragma: allowlist secret
+APACHE_TEXT = "LICENSE-APACHE-2.0.txt"
+WMT24PP_DIRECTORIES = (
+    "src/wave_local_ai_v2/suite_data",
+    "aidd_docs/results/suite-definitions",
+    "aidd_docs/results",
+    "aidd_docs/results/machines",
+)
+
+
+def test_every_directory_holding_drawn_wmt24pp_items_carries_the_apache_text() -> None:
+    for directory in WMT24PP_DIRECTORIES:
+        # Read as text, so a checkout's platform newlines fold back to the
+        # canonical file's.
+        text = _read(REPO / directory / APACHE_TEXT)
+        assert hashlib.sha256(text.encode("utf-8")).hexdigest() == APACHE_SHA256
+        notice = _read(REPO / directory / NOTICE)
+        assert APACHE_TEXT in notice, directory
+        assert "prompt template" in notice, directory
+        assert "unchanged" in notice, directory
+
+
+def test_section_two_names_wmt24pp_and_section_three_its_research_use_origin() -> None:
+    licence_data = _read(REPO / "LICENSE-DATA")
+    section = licence_data.split("### 2.2 WMT24++", 1)[1].split("\n## 3.", 1)[0]
+    declarations = licence_data.split("\n## 3.", 1)[1].split("\n## 4.", 1)[0]
+
+    for needle in (
+        "google/wmt24pp",
+        "fd7405c06494bc66a57b25f55d217a72f96e60dc",  # pragma: allowlist secret
+        "Apache-2.0",
+        "https://www.apache.org/licenses/LICENSE-2.0",
+        "Rung: permissive",
+        APACHE_TEXT,
+        "prompt template",
+        "the reference is unchanged",
+        "translations from English",
+        "Copyright notice",
+    ):
+        assert needle in section, needle
+    assert "Three statements" in declarations
+    third = declarations.split("\n3. ", 1)[1]
+    for needle in ("WMT24", "research purposes", "Apache-2.0 label"):
+        assert needle in third, needle
+
+
+def test_every_notice_over_drawn_rows_names_each_drawn_source() -> None:
+    """The directories holding rows that carry drawn items name each drawn
+    source's terms, so no NOTICE claims those items under CC-BY 4.0."""
+    for directory in ("aidd_docs/results", "aidd_docs/results/machines"):
+        notice = _read(REPO / directory / NOTICE)
+        assert "drawn from a public" in notice, directory
+        assert "`LICENSE-DATA` section 2" in notice, directory
+    machines = _read(REPO / "aidd_docs/results/machines" / NOTICE)
+    for needle in ("PolyAI/minds14", "CC BY 4.0", "google/wmt24pp", APACHE_TEXT):
+        assert needle in machines, needle
+
+
+def test_section_two_states_what_each_rung_does_and_the_content_hash_recipe() -> None:
+    """The release archive repeats this section verbatim, so a reader of the
+    download finds the share-alike layout, the redacted row's shape and the
+    recipe that proves a fetched source row is the one scored."""
+    section = _read(REPO / "LICENSE-DATA").split("## 2. Drawn items", 1)[1]
+    rules = section.split("\n### 2.1", 1)[0]
+    for needle in (
+        "- Permissive:",
+        "- Share-alike:",
+        "`share-alike/<licence id>/LICENSE`",
+        "`item_licence_file`",
+        "- No redistribution:",
+        "`item_redaction` `no_redistribution`",
+        "`item_source_key`",
+        "cannot be recomputed from the published data alone",
+        "No script or other\n  code that downloads",
+        "SHA-256 hex digest",
+        "`content_fields` order",
+        "NFC-normalised",
+    ):
+        assert needle in rules, needle
+    for subsection in section.split("\n## 3.", 1)[0].split("\n### ")[1:]:
+        assert re.search(r"^- Source: `[^`]+`", subsection, re.MULTILINE), subsection
+        assert re.search(
+            r"^- Rung: (permissive|share-alike|no redistribution)\.",
+            subsection,
+            re.MULTILINE,
+        ), subsection

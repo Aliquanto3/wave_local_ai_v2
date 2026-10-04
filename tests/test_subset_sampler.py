@@ -132,7 +132,7 @@ _GOLDEN_FIRST_IDS = [
     "fixture-intents:en-account-01",
 ]
 _GOLDEN_IDS_SHA256 = "f1d753f08078c63f1eeccd9a25897a05f3a6e562770de54442cc27e47feced6b"  # pragma: allowlist secret
-_GOLDEN_DEFINITION_SHA256 = "d9d805409518d06d6c907bd42efe2cd2ee86d61ba2d69bfd49977cf2ab546d8d"  # pragma: allowlist secret
+_GOLDEN_DEFINITION_SHA256 = "5d36642f779cfd82a9f9a3771da2114fb41e76d108e151d1cd7e9b7b1e0322bb"  # pragma: allowlist secret
 
 
 def test_seed_7_draws_the_pinned_items_in_the_pinned_order() -> None:

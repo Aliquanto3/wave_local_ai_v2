@@ -1,0 +1,21 @@
+# preconditions 2026-10-04T04:50:25+02:00 HEAD 5fc6901d573ad10848e03309ad1d6c44e1179f4b
+?? aidd_docs/tasks/2026_10/2026_10_04_two-billion-class/evidence/fiches/
+?? aidd_docs/tasks/2026_10/2026_10_04_two-billion-class/evidence/quality.jsonl
+?? aidd_docs/tasks/2026_10/2026_10_04_two-billion-class/evidence/suite-granite-3.1-1b-a400m-instruct-q8-classification-support-routing.log
+?? aidd_docs/tasks/2026_10/2026_10_04_two-billion-class/evidence/suite-granite-3.1-1b-a400m-instruct-q8-translation-business-short-form.log
+?? aidd_docs/tasks/2026_10/2026_10_04_two-billion-class/evidence/suite-lfm2.5-1.2b-instruct-q8-classification-support-routing.log
+?? aidd_docs/tasks/2026_10/2026_10_04_two-billion-class/evidence/suite-lfm2.5-1.2b-instruct-q8-translation-business-short-form.log
+0 MiB
+Information : aucune tâche en service ne correspond aux critères spécifiés.
+listeners on 8080: 0
+4db0b4be4cb54e43a16e2ecffa927387
+pre-flight: vram_gb not checked under gpu: roster entry 'granite-3.1-1b-a400m-instruct-q8' declares no minimum yet (awaits a per-process VRAM peak, as for every roster entry)
+[codecarbon INFO @ 04:50:27] offline tracker init
+[codecarbon WARNING @ 04:50:27] Multiple instances of codecarbon are allowed to run at the same time.
+mistral skipped: not enabled in QUALITY_PROVIDERS
+google skipped: not enabled in QUALITY_PROVIDERS
+model=Granite-3.1-1B-A400M-Instruct provider=local suite_score=0.56
+exit 0
+# after
+0 MiB
+Information : aucune tâche en service ne correspond aux critères spécifiés.
