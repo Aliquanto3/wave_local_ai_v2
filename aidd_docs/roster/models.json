@@ -1,5 +1,5 @@
 {
-  "roster_version": 7,
+  "roster_version": 8,
   "size_classes": {
     "~0.5B": {
       "single_family_ladder": false,
@@ -9,8 +9,8 @@
     },
     "~2B": {
       "single_family_ladder": false,
-      "moe_sought": false,
-      "moe_entry": null,
+      "moe_sought": true,
+      "moe_entry": "granite-3.1-1b-a400m-instruct-q8",
       "moe_absent_reason": null
     },
     "~4B": {
@@ -408,6 +408,166 @@
         "expert_count": 0,
         "active_params_b": 0.34,
         "total_params": 340332224
+      },
+      "server_flags": {
+        "n_gpu_layers": 99,
+        "context_size": 32768,
+        "flash_attention": "on",
+        "jinja": true,
+        "parallel_slots": 1,
+        "load_mode": "auto",
+        "sampler": {
+          "temperature": 0.6,
+          "top_p": 0.95,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5
+        }
+      }
+    },
+    "lfm2.5-1.2b-instruct-q8": {
+      "repo": "LiquidAI/LFM2.5-1.2B-Instruct-GGUF",
+      "revision": "8ed288026e23958ad9dfa92d53ed773a8eee7125",
+      "file": "LFM2.5-1.2B-Instruct/LFM2.5-1.2B-Instruct-Q8_0.gguf",
+      "display_id": "LFM2.5-1.2B-Instruct",
+      "quant": "Q8_0",
+      "sha256": "f6b981dcb86917fa463f78a362320bd5e2dc45445df147287eedb85e5a30d26a",
+      "size_class": "~2B",
+      "bytes_on_disk": 1246253888,
+      "requirements": {
+        "gpu": {
+          "ram_gb": {
+            "value": 1.25,
+            "source": "declared",
+            "read_from": "lower bound: the weights' size, bytes_on_disk 1246253888 (no runtime peak of this model is published yet)"
+          },
+          "vram_gb": {
+            "value": null,
+            "source": "not_yet_declared",
+            "read_from": "awaits a per-process VRAM peak, as for every roster entry"
+          },
+          "disk_gb": {
+            "value": 1.25,
+            "source": "declared",
+            "read_from": "bytes_on_disk 1246253888 (the weights file), checked only when the weights are not yet on disk"
+          }
+        },
+        "cpu_only": {
+          "ram_gb": {
+            "value": 1.25,
+            "source": "declared",
+            "read_from": "lower bound: the weights' size, bytes_on_disk 1246253888 (no runtime peak of this model is published yet)"
+          },
+          "disk_gb": {
+            "value": 1.25,
+            "source": "declared",
+            "read_from": "bytes_on_disk 1246253888 (the weights file), checked only when the weights are not yet on disk"
+          }
+        }
+      },
+      "family": "liquid",
+      "thinking_control": "none",
+      "licence": {
+        "id": "lfm1.0",
+        "client_commercial_use": false,
+        "read_on": "2026-10-04",
+        "source_url": "https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF/blob/8ed288026e23958ad9dfa92d53ed773a8eee7125/LICENSE"
+      },
+      "language_claim": {
+        "languages": [
+          "en",
+          "fr",
+          "de"
+        ],
+        "source_url": "https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct/blob/0f604ada3f766f9f257460c4c9f0b5d6f69d431b/README.md",
+        "read_on": "2026-10-04",
+        "statement": "English, Arabic, Chinese, French, German, Japanese, Korean, Spanish"
+      },
+      "architecture": {
+        "kind": "dense",
+        "expert_count": 0,
+        "active_params_b": 1.17,
+        "total_params": 1170340608
+      },
+      "server_flags": {
+        "n_gpu_layers": 99,
+        "context_size": 32768,
+        "flash_attention": "on",
+        "jinja": true,
+        "parallel_slots": 1,
+        "load_mode": "auto",
+        "sampler": {
+          "temperature": 0.6,
+          "top_p": 0.95,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5
+        }
+      }
+    },
+    "granite-3.1-1b-a400m-instruct-q8": {
+      "repo": "bartowski/granite-3.1-1b-a400m-instruct-GGUF",
+      "revision": "940d2e1f9f65330615c7c8e980e6c5ac73d3360c",
+      "file": "granite-3.1-1b-a400m-instruct/granite-3.1-1b-a400m-instruct-Q8_0.gguf",
+      "display_id": "Granite-3.1-1B-A400M-Instruct",
+      "quant": "Q8_0",
+      "sha256": "724302357c718bbfb4574e4c99b27d8814c8338b0873b062bf410111d1417650",
+      "size_class": "~2B",
+      "bytes_on_disk": 1422239776,
+      "requirements": {
+        "gpu": {
+          "ram_gb": {
+            "value": 1.42,
+            "source": "declared",
+            "read_from": "lower bound: the weights' size, bytes_on_disk 1422239776 (no runtime peak of this model is published yet)"
+          },
+          "vram_gb": {
+            "value": null,
+            "source": "not_yet_declared",
+            "read_from": "awaits a per-process VRAM peak, as for every roster entry"
+          },
+          "disk_gb": {
+            "value": 1.42,
+            "source": "declared",
+            "read_from": "bytes_on_disk 1422239776 (the weights file), checked only when the weights are not yet on disk"
+          }
+        },
+        "cpu_only": {
+          "ram_gb": {
+            "value": 1.42,
+            "source": "declared",
+            "read_from": "lower bound: the weights' size, bytes_on_disk 1422239776 (no runtime peak of this model is published yet)"
+          },
+          "disk_gb": {
+            "value": 1.42,
+            "source": "declared",
+            "read_from": "bytes_on_disk 1422239776 (the weights file), checked only when the weights are not yet on disk"
+          }
+        }
+      },
+      "family": "ibm",
+      "thinking_control": "none",
+      "licence": {
+        "id": "apache-2.0",
+        "client_commercial_use": true,
+        "read_on": "2026-10-04",
+        "source_url": "https://huggingface.co/bartowski/granite-3.1-1b-a400m-instruct-GGUF/blob/940d2e1f9f65330615c7c8e980e6c5ac73d3360c/README.md"
+      },
+      "language_claim": {
+        "languages": [
+          "en",
+          "fr",
+          "de"
+        ],
+        "source_url": "https://huggingface.co/ibm-granite/granite-3.1-1b-a400m-instruct/blob/0da7a48b0276d500ce5922fd2b33944091fc6c09/README.md",
+        "read_on": "2026-10-04",
+        "statement": "English, German, Spanish, French, Japanese, Portuguese, Arabic, Czech, Italian, Korean, Dutch, and Chinese."
+      },
+      "architecture": {
+        "kind": "moe",
+        "expert_count": 32,
+        "active_params_b": 0.4,
+        "total_params": 1334628352
       },
       "server_flags": {
         "n_gpu_layers": 99,

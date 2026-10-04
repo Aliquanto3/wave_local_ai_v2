@@ -300,8 +300,9 @@ The command-line interface for running benchmarks.
   no reason, or an entry lacks a resolvable family, class, figures or licence,
   or its class disagrees with its total parameters; `2` when the roster does
   not load. Run before a roster table is published; not in the merge gate
-  while the shipped roster fails it (three unlabelled `qwen` classes; `~0.5B`
-  spans `ibm` and `qwen` and passes; quoted in `aidd_docs/results/README.md`).
+  while the shipped roster fails it (two unlabelled `qwen` classes; `~0.5B`
+  spans `ibm` and `qwen`, `~2B` spans `ibm`, `liquid` and `qwen` with a MoE,
+  and both pass; quoted in `aidd_docs/results/README.md`).
 - `wave-local-ai-v2-promote --run-id <id> [--run-id <id> ...] [--machine
   <machine_id>]` — copies the named runs' rows from the live stores
   (`RUNTIME_RESULTS_PATH`, `QUALITY_RESULTS_PATH`) line-for-line into the
@@ -500,8 +501,8 @@ stores are never merged (see `architecture.md`).
 
 Both commands resolve the model to launch through the tracked roster
 (`ROSTER_PATH`, default `aidd_docs/roster/models.json`) and select which
-entry to use via `ROSTER_ENTRY_ID`. The roster holds five entries at
-`roster_version` 7:
+entry to use via `ROSTER_ENTRY_ID`. The roster holds seven entries at
+`roster_version` 8:
 
 | Entry id | Model | Arch | Quant |
 | -------- | ----- | ---- | ----- |
@@ -510,11 +511,14 @@ entry to use via `ROSTER_ENTRY_ID`. The roster holds five entries at
 | `qwen3-1.7b-q8` | Qwen3-1.7B | dense | `Q8_0` |
 | `qwen3-4b-q4km` | Qwen3-4B | dense | `Q4_K_M` |
 | `granite-4.0-h-350m-q8` | Granite-4.0-H-350M (`ibm`) | dense (`granitehybrid`) | `Q8_0` |
+| `lfm2.5-1.2b-instruct-q8` | LFM2.5-1.2B-Instruct (`liquid`) | dense (`lfm2`) | `Q8_0` |
+| `granite-3.1-1b-a400m-instruct-q8` | Granite-3.1-1B-A400M-Instruct (`ibm`) | MoE (`granitemoe`, 32 experts) | `Q8_0` |
 
 Each entry declares its `thinking_control`: the request arguments that
 disable reasoning under its own chat template (the four Qwen entries:
 `{"chat_template_kwargs": {"enable_thinking": false}}`), or `"none"` for a
-model that does not reason (Granite 4.0 H 350M). A `thinking_policy: disabled` batch sends exactly
+model that does not reason (Granite 4.0 H 350M, LFM2.5-1.2B-Instruct, Granite 3.1
+1B-A400M). A `thinking_policy: disabled` batch sends exactly
 that, refuses an entry declaring neither before launch, and, for an object
 control, renders one fixed probe through `/apply-template` with and without it
 before the first item (`local_client.verify_thinking_control`): two

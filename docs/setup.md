@@ -85,6 +85,10 @@ the `cpu_only` profile that exists for the same machine and runs nothing.
 | `Qwen3-4B` `Q4_K_M` | `cpu_only` | 4.28 | n/a | 2.50 | RAM: lower bound, as for the flagship |
 | `Granite-4.0-H-350M` `Q8_0` | `gpu` | 0.37 | not yet declared | 0.37 | RAM: lower bound, the weights' size (no runtime peak published) |
 | `Granite-4.0-H-350M` `Q8_0` | `cpu_only` | 0.37 | n/a | 0.37 | RAM: lower bound, as for `gpu` |
+| `LFM2.5-1.2B-Instruct` `Q8_0` | `gpu` | 1.25 | not yet declared | 1.25 | RAM: lower bound, the weights' size (no runtime peak published) |
+| `LFM2.5-1.2B-Instruct` `Q8_0` | `cpu_only` | 1.25 | n/a | 1.25 | RAM: lower bound, as for `gpu` |
+| `Granite-3.1-1B-A400M-Instruct` `Q8_0` | `gpu` | 1.42 | not yet declared | 1.42 | RAM: lower bound, the weights' size (no runtime peak published) |
+| `Granite-3.1-1B-A400M-Instruct` `Q8_0` | `cpu_only` | 1.42 | n/a | 1.42 | RAM: lower bound, as for `gpu` |
 
 The `gpu` RAM peaks are the side-by-side runtime table of
 `aidd_docs/results/README.md`; each declaration's full source is its
@@ -446,6 +450,74 @@ sha256sum <SLM_MODELS_DIR>/granite-4.0-h-350m/granite-4.0-h-350m-Q8_0.gguf
 The model does not reason, so its entry declares `thinking_control: "none"`
 (the gate verified it with one generation that returned no reasoning): a
 `thinking_policy: disabled` batch sends no switch for it.
+
+### 3.4 The other families at ~2B: LFM2.5-1.2B-Instruct and Granite 3.1 1B-A400M
+
+The ~2B class holds two more families beside `Qwen3-1.7B`: Liquid's
+LFM2.5-1.2B-Instruct (`lfm2`, dense) and IBM's Granite 3.1 1B-A400M Instruct
+(`granitemoe`, a MoE of 32 experts, 8 active), each entered from its candidate
+gate pass record (`aidd_docs/roster/candidate-records.jsonl`). Both are taken at
+`Q8_0`, the quant of the class's Qwen entry, which both publishers ship, so the
+rows of this class compare families, not quants. IBM ships no GGUF of Granite
+3.1 1B-A400M, so the file is bartowski's quantization of IBM's weights. As
+above, the roster file is the source of truth and a mismatch with this section
+is a bug.
+
+| Entry id | Repo | Revision | File in the repo | Under `SLM_MODELS_DIR` | Quant | Size |
+| -------- | ---- | -------- | ---------------- | ---------------------- | ----- | ---- |
+| `lfm2.5-1.2b-instruct-q8` | `LiquidAI/LFM2.5-1.2B-Instruct-GGUF` | `8ed288026e23958ad9dfa92d53ed773a8eee7125` | `LFM2.5-1.2B-Instruct-Q8_0.gguf` | `LFM2.5-1.2B-Instruct/LFM2.5-1.2B-Instruct-Q8_0.gguf` | `Q8_0` | 1,246,253,888 B (1.16 GiB) |
+| `granite-3.1-1b-a400m-instruct-q8` | `bartowski/granite-3.1-1b-a400m-instruct-GGUF` | `940d2e1f9f65330615c7c8e980e6c5ac73d3360c` | `granite-3.1-1b-a400m-instruct-Q8_0.gguf` | `granite-3.1-1b-a400m-instruct/granite-3.1-1b-a400m-instruct-Q8_0.gguf` | `Q8_0` | 1,422,239,776 B (1.32 GiB) |
+
+sha256:
+
+```
+lfm2.5-1.2b-instruct-q8            f6b981dcb86917fa463f78a362320bd5e2dc45445df147287eedb85e5a30d26a
+granite-3.1-1b-a400m-instruct-q8   724302357c718bbfb4574e4c99b27d8814c8338b0873b062bf410111d1417650
+```
+
+Download them at their pinned revisions:
+
+```powershell
+# Windows
+hf download LiquidAI/LFM2.5-1.2B-Instruct-GGUF LFM2.5-1.2B-Instruct-Q8_0.gguf `
+  --revision 8ed288026e23958ad9dfa92d53ed773a8eee7125 `
+  --local-dir <SLM_MODELS_DIR>\LFM2.5-1.2B-Instruct
+hf download bartowski/granite-3.1-1b-a400m-instruct-GGUF granite-3.1-1b-a400m-instruct-Q8_0.gguf `
+  --revision 940d2e1f9f65330615c7c8e980e6c5ac73d3360c `
+  --local-dir <SLM_MODELS_DIR>\granite-3.1-1b-a400m-instruct
+```
+
+```sh
+# POSIX
+hf download LiquidAI/LFM2.5-1.2B-Instruct-GGUF LFM2.5-1.2B-Instruct-Q8_0.gguf \
+  --revision 8ed288026e23958ad9dfa92d53ed773a8eee7125 \
+  --local-dir <SLM_MODELS_DIR>/LFM2.5-1.2B-Instruct
+hf download bartowski/granite-3.1-1b-a400m-instruct-GGUF granite-3.1-1b-a400m-instruct-Q8_0.gguf \
+  --revision 940d2e1f9f65330615c7c8e980e6c5ac73d3360c \
+  --local-dir <SLM_MODELS_DIR>/granite-3.1-1b-a400m-instruct
+```
+
+Verify the checksums:
+
+```powershell
+# Windows -- .ToLower() matters: the roster stores lowercase hex.
+(Get-FileHash -Algorithm SHA256 "<SLM_MODELS_DIR>\LFM2.5-1.2B-Instruct\LFM2.5-1.2B-Instruct-Q8_0.gguf").Hash.ToLower()
+(Get-FileHash -Algorithm SHA256 "<SLM_MODELS_DIR>\granite-3.1-1b-a400m-instruct\granite-3.1-1b-a400m-instruct-Q8_0.gguf").Hash.ToLower()
+```
+
+```sh
+# POSIX
+sha256sum <SLM_MODELS_DIR>/LFM2.5-1.2B-Instruct/LFM2.5-1.2B-Instruct-Q8_0.gguf
+sha256sum <SLM_MODELS_DIR>/granite-3.1-1b-a400m-instruct/granite-3.1-1b-a400m-instruct-Q8_0.gguf
+```
+
+Neither model reasons, so each entry declares `thinking_control: "none"` (the
+gate verified it with one generation that returned no reasoning): a
+`thinking_policy: disabled` batch sends no switch for them. LFM2.5-1.2B-Instruct
+is under the LFM Open License v1.0 and its entry declares
+`client_commercial_use: false`: section 5 conditions commercial use on a legal
+entity below USD 10M annual revenue. Granite 3.1 1B-A400M fits a 6 GB GPU
+whole, so it launches with no `--n-cpu-moe`.
 
 ## 4. Configure `.env` and run
 
