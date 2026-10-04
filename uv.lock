@@ -2020,6 +2020,9 @@ dev = [
     { name = "types-pyyaml" },
     { name = "types-requests" },
 ]
+loaders = [
+    { name = "pyarrow" },
+]
 release = [
     { name = "pyarrow" },
 ]
@@ -2052,6 +2055,7 @@ dev = [
     { name = "types-pyyaml", specifier = ">=6.0.12.20260815" },
     { name = "types-requests", specifier = ">=2.33.0.20260712" },
 ]
+loaders = [{ name = "pyarrow", specifier = "==25.0.1" }]
 release = [{ name = "pyarrow", specifier = "==25.0.1" }]
 
 [[package]]

@@ -105,13 +105,33 @@ class SuiteDefinition:
     divergence_tolerance: DivergenceTolerance
     extra: Mapping[str, Any] = field(default_factory=lambda: MappingProxyType({}))
 
+    @property
+    def labels(self) -> frozenset[str]:
+        """The suite's label set: every `expected_label` its items carry.
+
+        Derived from all of the suite's items, never from the items one
+        call scores, so a resumed batch parses its missing items' completions
+        against the same closed set an uninterrupted batch does. Empty for a
+        suite whose items carry no label (a graded suite).
+        """
+        return frozenset(
+            str(item["expected_label"])
+            for item in self.items
+            if item.get("expected_label") is not None
+        )
+
     def score_batch(
         self, completions: Sequence[Mapping[str, Any]]
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """Score this suite's items against one batch's completions."""
         # The name was checked against the table when the definition loaded.
         rule = scoring_rules.SCORING_RULES[self.scoring_rule]
-        return rule(self.items, completions, max_output_tokens=self.max_output_tokens)
+        return rule(
+            self.items,
+            completions,
+            max_output_tokens=self.max_output_tokens,
+            labels=self.labels,
+        )
 
     def score_items(
         self,
@@ -125,7 +145,12 @@ class SuiteDefinition:
         over the whole suite.
         """
         rule = scoring_rules.SCORING_RULES[self.scoring_rule]
-        per_item, _ = rule(items, completions, max_output_tokens=self.max_output_tokens)
+        per_item, _ = rule(
+            items,
+            completions,
+            max_output_tokens=self.max_output_tokens,
+            labels=self.labels,
+        )
         return per_item
 
     def aggregate_batch(

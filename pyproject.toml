@@ -22,8 +22,9 @@ dependencies = [
 module = "pynvml"
 ignore_missing_imports = true
 
-# Installed only by the release-build job (the `release` group), so absent from
-# the default environment mypy runs in.
+# Installed only by the release-build job (the `release` group) and by the
+# benchmark loader (the `loaders` group), so absent from the default
+# environment mypy runs in.
 [[tool.mypy.overrides]]
 module = ["pyarrow", "pyarrow.*"]
 ignore_missing_imports = true
@@ -72,6 +73,12 @@ dev = [
     "types-psutil>=7.2.2.20260518",
     "types-pyyaml>=6.0.12.20260815",
     "types-requests>=2.33.0.20260712",
+]
+# Installed only to load a public benchmark into the JSONL source table a
+# publication suite is drawn from (`uv run --group loaders python
+# scripts/minds14_suite.py`): not a runtime dependency, not in the default sync.
+loaders = [
+    "pyarrow==25.0.1",
 ]
 # Installed by the release-build job alone (`uv sync --locked --group release`):
 # not a runtime dependency, not in the default `uv sync`, not in the image.

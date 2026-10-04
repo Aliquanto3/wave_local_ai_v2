@@ -2503,10 +2503,10 @@ _FIXTURE_DEFINITION = {
 def fixture_suite(tmp_path, monkeypatch):
     calls: list[int] = []
 
-    def fixture_rule(items, completions, *, max_output_tokens):
+    def fixture_rule(items, completions, *, max_output_tokens, labels):
         calls.append(max_output_tokens)
         return scoring_rules.exact_label_match(
-            items, completions, max_output_tokens=max_output_tokens
+            items, completions, max_output_tokens=max_output_tokens, labels=labels
         )
 
     monkeypatch.setitem(scoring_rules.SCORING_RULES, _FIXTURE_RULE, fixture_rule)

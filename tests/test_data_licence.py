@@ -303,3 +303,45 @@ def test_an_item_literal_module_without_its_header_or_scope_entry_fails(
         "src/wave_local_ai_v2/other.py: holds item literals but is not in the scope"
         in (problems)
     )
+
+
+def test_section_two_names_the_drawn_source_its_terms_and_its_attribution() -> None:
+    licence_data = _read(REPO / "LICENSE-DATA")
+    section = licence_data.split("## 2. Drawn items", 1)[1].split("\n## 3.", 1)[0]
+    covered = licence_data.split(COVERED_HEADING, 1)[1].split("\n### ", 1)[0]
+
+    for needle in (
+        "PolyAI/minds14",
+        "40ce77cb32a384e4d50a568e1ec39ac804019d33",  # pragma: allowlist secret
+        "CC BY 4.0",
+        "https://creativecommons.org/licenses/by/4.0/",
+        "Rung: permissive",
+        "dataset card at the",
+        "prompt template",
+        "Creator: PolyAI",
+        "Copyright notice",
+    ):
+        assert needle in section, needle
+    assert "holds no item drawn" not in licence_data
+    # The covered entries holding items cover the hand-written ones only.
+    for entry in (
+        "`aidd_docs/results/suite-definitions/`",
+        "`src/wave_local_ai_v2/suite_data/`",
+        "`aidd_docs/results/quality-reference.jsonl`",
+    ):
+        line = next(
+            line for line in covered.splitlines() if line.startswith(f"- {entry}")
+        )
+        assert "see 2" in line, entry
+
+
+def test_neither_suite_notice_claims_a_drawn_item_under_cc_by() -> None:
+    for notice in (
+        REPO / "src/wave_local_ai_v2/suite_data" / NOTICE,
+        REPO / "aidd_docs/results/suite-definitions" / NOTICE,
+    ):
+        text = _read(notice)
+        assert "No item here is drawn today" not in text
+        assert "carries its\nown source's licence, recorded on the item" in text
+        for needle in ("CC-BY 4.0", "LICENSE-DATA", "MIT"):
+            assert needle in text

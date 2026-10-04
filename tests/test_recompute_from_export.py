@@ -9,9 +9,13 @@ and catches one that was changed.
 from __future__ import annotations
 
 import ast
+import copy
 import csv
+import dataclasses
+import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -20,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import recompute_from_export as reader
 from published_bundle_fixtures import SCHEMA_7, build_bundle
 
-from wave_local_ai_v2 import bundle_export
+from wave_local_ai_v2 import bundle_export, suite_registry
 
 
 @pytest.fixture(scope="module")
@@ -181,4 +185,94 @@ def test_the_committed_bundle_recomputes_to_every_published_value(
     checks = reader.recompute(tmp_path)
 
     assert checks
+    assert [check for check in checks if not check.matches] == []
+
+
+def _publication_batch(template: dict[str, Any]) -> list[dict[str, Any]]:
+    """A batch over the publication suite, built on a committed row's shape
+    and scored by the suite's own rule, as the quality writer scores it."""
+    suite = suite_registry.resolve("classification-banking-intents-minds14")
+    completions = [
+        {
+            "content": item["expected_label"] if index % 3 else "balance",
+            "truncated": False,
+            "generated_tokens": 3,
+            "truncation_reason": None,
+        }
+        for index, item in enumerate(suite.items)
+    ]
+    per_item, batch_fields = suite.score_batch(completions)
+    rows = []
+    for index, (item, fields) in enumerate(zip(suite.items, per_item, strict=True)):
+        row = copy.deepcopy(template)
+        row.update(fields)
+        row.update(batch_fields)
+        row.update(
+            {
+                "run_id": "f" * 32,
+                "item_id": item["item_id"],
+                "prompt": item["prompt"],
+                "language": item["language"],
+                "provenance": item["provenance"],
+                "contamination_risk": item["contamination_risk"],
+                "item_licence": item["licence"],
+                "item_source": item["source"],
+                "item_source_revision": item["source_revision"],
+                "item_first_in_batch": index == 0,
+                "suite_id": suite.suite_id,
+                "suite_version": suite.suite_version,
+                "suite_level": suite.level,
+                "prompt_set_hash": suite.prompt_set_hash,
+            }
+        )
+        rows.append(row)
+    return rows
+
+
+def test_a_bundle_holding_a_publication_batch_exports_and_recomputes(
+    tmp_path: Path,
+) -> None:
+    committed = bundle_export.default_bundle_paths()
+    rows = [
+        json.loads(line)
+        for line in committed.quality_rows.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    development = [
+        row
+        for row in rows
+        if row["suite_id"] == "classification-support-routing"
+        and row["roster_entry_id"] == "granite-4.0-h-350m-q8"
+    ]
+    publication = _publication_batch(development[0])
+    quality_rows = tmp_path / "quality-reference.jsonl"
+    quality_rows.write_text(
+        "".join(json.dumps(row) + "\n" for row in [*development, *publication]),
+        encoding="utf-8",
+    )
+    paths = dataclasses.replace(
+        committed,
+        quality_rows=quality_rows,
+        comparisons_dir=tmp_path / "comparisons",
+        leader_sets_dir=tmp_path / "leader-sets",
+    )
+    output = tmp_path / "export"
+
+    bundle_export.export_bundle(paths, output)
+    checks = reader.recompute(output)
+
+    quality = _rows(output, reader.QUALITY_TABLE)
+    drawn = [row for row in quality if row["run_id"] == "f" * 32]
+    assert len(drawn) == 300
+    assert {row["suite_definition_level"] for row in drawn} == {"publication"}
+    assert {row["suite_definition_size_target"] for row in drawn} == {"300"}
+    assert {
+        row["suite_definition_selection_rule_stable_source_key"] for row in drawn
+    } == {"path"}
+    assert {row["suite_definition_level"] for row in quality if row not in drawn} == {
+        "development"
+    }
+    subjects = {check.subject for check in checks}
+    assert any("f" * 32 in subject for subject in subjects)
+    assert any(development[0]["run_id"] in subject for subject in subjects)
     assert [check for check in checks if not check.matches] == []

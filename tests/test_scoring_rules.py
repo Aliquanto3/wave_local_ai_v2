@@ -30,10 +30,10 @@ def test_exact_label_match_judges_truncation_against_the_cap_it_is_given() -> No
     completions = [_completion("billing", generated_tokens=5, truncated=True)]
 
     under_cap, _ = scoring_rules.exact_label_match(
-        items, completions, max_output_tokens=32
+        items, completions, max_output_tokens=32, labels=CLASSIFICATION.labels
     )
     at_cap, batch = scoring_rules.exact_label_match(
-        items, completions, max_output_tokens=5
+        items, completions, max_output_tokens=5, labels=CLASSIFICATION.labels
     )
 
     assert under_cap[0]["failure_reason"] == "truncated_context"
@@ -47,6 +47,7 @@ def test_exact_label_match_publishes_the_exact_match_shape_only() -> None:
         items,
         [_completion(item["expected_label"]) for item in items],
         max_output_tokens=CLASSIFICATION.max_output_tokens,
+        labels=CLASSIFICATION.labels,
     )
 
     assert all(row["correct"] is True for row in per_item)
@@ -87,7 +88,10 @@ def test_an_exact_match_batch_carries_its_interval_over_every_item() -> None:
         for index, item in enumerate(items)
     ]
     per_item, batch = scoring_rules.exact_label_match(
-        items, completions, max_output_tokens=CLASSIFICATION.max_output_tokens
+        items,
+        completions,
+        max_output_tokens=CLASSIFICATION.max_output_tokens,
+        labels=CLASSIFICATION.labels,
     )
 
     block = batch["score_interval"]
@@ -125,6 +129,7 @@ def test_an_all_correct_batch_names_its_zero_width_interval() -> None:
         items,
         [_completion(item["expected_label"]) for item in items],
         max_output_tokens=CLASSIFICATION.max_output_tokens,
+        labels=CLASSIFICATION.labels,
     )
 
     assert batch["suite_accuracy"] == 1.0

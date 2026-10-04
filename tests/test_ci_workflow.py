@@ -226,7 +226,7 @@ def test_pyarrow_is_installed_only_inside_the_release_build_job() -> None:
     assert "pyarrow" not in dockerfile
 
 
-def test_pyarrow_is_pinned_in_the_release_group_and_nowhere_else() -> None:
+def test_pyarrow_is_pinned_in_the_release_and_loaders_groups_and_nowhere_else() -> None:
     project = tomllib.loads(PYPROJECT_PATH.read_text(encoding="utf-8"))
 
     def names(requirements: list[str]) -> list[str]:
@@ -236,8 +236,14 @@ def test_pyarrow_is_pinned_in_the_release_group_and_nowhere_else() -> None:
 
     assert "pyarrow" not in names(project["project"]["dependencies"])
     groups = project["dependency-groups"]
-    assert [g for g in groups if "pyarrow" in names(groups[g])] == ["release"]
+    # The release build's Parquet writer, and the benchmark loader's parquet
+    # reader (`scripts/minds14_suite.py`): one pin, never a runtime dependency.
+    assert sorted(g for g in groups if "pyarrow" in names(groups[g])) == [
+        "loaders",
+        "release",
+    ]
     assert re.fullmatch(r"pyarrow==\d+\.\d+\.\d+", groups["release"][0])
+    assert groups["loaders"] == groups["release"]
     # Only the default `dev` group is synced by a plain `uv sync`.
     assert project.get("tool", {}).get("uv", {}).get("default-groups") is None
 

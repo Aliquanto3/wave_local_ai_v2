@@ -174,8 +174,17 @@ PATHS_NOT_SHIPPED: Mapping[str, NotShipped] = {
     ),
     "src/wave_local_ai_v2/suite_data/": NotShipped(
         _LICENCE,
-        "the hand-written suite items as stored in the source tree; their "
+        "the suite definitions as stored in the source tree; their "
         "published snapshots are aidd_docs/results/suite-definitions/",
+    ),
+    "scripts/minds14_suite.py": NotShipped(
+        (
+            "aidd_docs/results/suite-definitions/classification-banking-intents-minds14@1.json",
+            f"{bundle_export.QUALITY_TABLE}.csv",
+        ),
+        "the loader that fetches MInDS-14 at its pinned revision and writes "
+        "the source table the publication classification suite was drawn "
+        "from, named by that suite's source_table record",
     ),
     "src/wave_local_ai_v2/use_case_coverage.json": NotShipped(
         _LICENCE,

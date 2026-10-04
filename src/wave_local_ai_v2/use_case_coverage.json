@@ -3,7 +3,7 @@
     {
       "use_case": "classification",
       "state": "exercised",
-      "suite_ids": ["classification-support-routing"]
+      "suite_ids": ["classification-support-routing", "classification-banking-intents-minds14"]
     },
     {
       "use_case": "translation",

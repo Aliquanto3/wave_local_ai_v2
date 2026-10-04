@@ -39,6 +39,47 @@ per-machine output and stay untracked (`.gitignore`). Tracking them instead woul
 the working tree on every run and would ship rows that do not belong to any acceptance
 criterion.
 
+## Drawn items: MInDS-14 on the permissive rung (2026-10-04)
+
+The bundle is no longer hand-written items only. The publication-level classification
+suite `classification-banking-intents-minds14` (snapshot
+`suite-definitions/classification-banking-intents-minds14@1.json`) holds 300 items drawn
+from MInDS-14, `PolyAI/minds14` at revision `40ce77cb32a384e4d50a568e1ec39ac804019d33`
+(https://huggingface.co/datasets/PolyAI/minds14/tree/40ce77cb32a384e4d50a568e1ec39ac804019d33), configs `en-US`, `fr-FR` and
+`de-DE`: 100 per language, 7 or 8 per intent, each marked `provenance` `public` and
+contamination-risk (Methodology 5), each naming its licence, source, source revision and
+content hash, under the selection rule its definition records.
+
+- **Rung applied: permissive.** MInDS-14 is CC BY 4.0, so its items and the rows carrying
+  them ship unchanged in this bundle: no segregation, no redaction (the epic's three-rung
+  ladder, applied as written in advance).
+- **The licence rests on the card.** The Hugging Face dataset card at the pinned revision
+  is the licence of record (`license: cc-by-4.0`; "All datasets are licensed under the
+  Creative Commons license (CC-BY)"). The loader read the revision's file list: it ships
+  no licence file (`source_table.licence_file_at_revision` is `false`), and the original
+  `MInDS-14.zip` release was not fetched. A licence file at that revision naming anything
+  other than CC BY 4.0 would reopen the licence spike.
+- **Attribution, as CC BY 4.0 requires.** Creator: PolyAI (Gerz et al., "Multilingual and
+  Cross-Lingual Intent Detection from Spoken Data", 2021,
+  https://arxiv.org/abs/2104.08524). Copyright notice: the card states none; the work is
+  attributed to its creator. Licence: CC BY 4.0,
+  https://creativecommons.org/licenses/by/4.0/. Source: https://huggingface.co/datasets/PolyAI/minds14,
+  revision `40ce77cb32a384e4d50a568e1ec39ac804019d33`. Changes: each transcription was wrapped in a prompt template (an
+  instruction naming the fourteen intents) and each intent mapped from its class index to
+  its name. `LICENSE-DATA` section 2 states the same terms.
+- **How the items were picked** is the recorded rule, checked by replaying it. CI replays
+  the draw over a constructed table (`tests/test_minds14_suite.py`). The operator replay
+  re-fetches the source table from the pinned revision, checks its SHA-256 against the one
+  the definition records (`source_table.sha256`), then replays the rule over it:
+  `uv run --group loaders python scripts/minds14_suite.py verify` (exit 0 only when both
+  hold). The loader's parquet reader, pyarrow, sits in the locked `loaders` dependency
+  group, never in the runtime dependencies.
+- **Never averaged with the 20-item score.** The hand-written `classification-support-routing`
+  stays the development-level score and leads; the MInDS-14 score sits beside it as the
+  scale check, on its own suite id and level, and no table here averages the two
+  (Methodology 4). Their label sets differ (four routing queues against fourteen banking
+  intents), so the two accuracies are not on one scale either.
+
 ## The client-session record (`client-sessions.jsonl`)
 
 `client-sessions.jsonl` is not part of the bundle: it records how the results were

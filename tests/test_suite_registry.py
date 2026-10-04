@@ -5,7 +5,12 @@ from pathlib import Path
 import pytest
 from subset_fixtures import drawn_definition
 
-from wave_local_ai_v2 import scoring_rules, suite_registry, suite_snapshot
+from wave_local_ai_v2 import (
+    classification_suite,
+    scoring_rules,
+    suite_registry,
+    suite_snapshot,
+)
 from wave_local_ai_v2.suite_gate import SuiteGateError
 from wave_local_ai_v2.suite_registry import SuiteRegistryError
 
@@ -26,7 +31,14 @@ _SHIPPED = {
         "1",
         "ec4d5c46bb3179644533aa6c7331f43ba4999661f43dc46945b80bc3c8f9c3fc",  # pragma: allowlist secret
     ),
+    "classification-banking-intents-minds14": (
+        "1",
+        "b728719fc6db4f52e203980ae77745b36e0eaef3998ebe43417ba7b92ad934c1",  # pragma: allowlist secret
+    ),
 }
+_MINDS14_REVISION = (
+    "40ce77cb32a384e4d50a568e1ec39ac804019d33"  # pragma: allowlist secret
+)
 
 _VALID = {
     "suite_id": "fixture-suite",
@@ -99,6 +111,78 @@ def test_resolving_twice_returns_the_one_cached_definition() -> None:
     first = suite_registry.resolve("classification-support-routing")
 
     assert suite_registry.resolve("classification-support-routing") is first
+
+
+def test_the_minds14_suite_certifies_at_publication_with_its_recorded_draw() -> None:
+    definition = suite_registry.resolve("classification-banking-intents-minds14")
+    rule = definition.extra["selection_rule"]
+
+    assert definition.level == definition.gate["level"] == "publication"
+    assert definition.gate["indicative"] is False
+    assert len(definition.items) == definition.extra["size_target"] == 300
+    assert definition.extra["size_target_reason"]
+    assert definition.gate["language_counts"] == {"en": 100, "fr": 100, "de": 100}
+    assert min(definition.gate["language_shares"].values()) >= 0.25
+    assert rule["benchmarks"] == [
+        {
+            "source": "PolyAI/minds14",
+            "licence": "CC-BY-4.0",
+            "source_revision": _MINDS14_REVISION,
+        }
+    ]
+    assert (rule["stable_source_key"], rule["size"]) == ("path", 300)
+    assert rule["stratify_by"] == ["language", "intent_class"]
+    assert rule["content_fields"] == ["transcription", "intent_class"]
+    assert rule["seeds_tried"] == [rule["seed"]]
+    table = definition.extra["source_table"]
+    assert len(table["sha256"]) == 64
+    assert table["licence_file_at_revision"] is False
+    # Every drawn item: public, contamination-risk (Methodology 5), under its
+    # benchmark's licence and revision, with its content hash.
+    for item in definition.items:
+        assert item["item_id"].startswith("PolyAI/minds14:")
+        assert (item["provenance"], item["contamination_risk"]) == ("public", True)
+        assert (item["licence"], item["source"], item["source_revision"]) == (
+            "CC-BY-4.0",
+            "PolyAI/minds14",
+            _MINDS14_REVISION,
+        )
+        assert len(item["content_hash"]) == 64
+        assert "app_error, atm_limit" in item["prompt"]
+        assert "\n\nMessage: " in item["prompt"]
+    assert len(definition.labels) == 14
+    assert "app_error" in definition.labels
+
+
+def test_the_label_set_is_every_expected_label_the_suite_holds() -> None:
+    classification = suite_registry.resolve("classification-support-routing")
+
+    assert classification.labels == classification_suite.LABELS
+    assert suite_registry.resolve("translation-business-short-form").labels == (
+        frozenset()
+    )
+
+
+def test_a_resumed_subset_is_parsed_against_the_whole_suites_labels() -> None:
+    definition = suite_registry.resolve("classification-support-routing")
+    # A resumed batch whose missing items are all `billing`: a completion
+    # naming `technical` is a wrong label, not an unparseable one.
+    missing = [item for item in definition.items if item["expected_label"] == "billing"]
+    completions = [
+        {
+            "content": "technical",
+            "truncated": False,
+            "generated_tokens": 1,
+            "truncation_reason": None,
+        }
+        for _ in missing
+    ]
+
+    per_item = definition.score_items(missing, completions)
+
+    assert {fields["predicted_label"] for fields in per_item} == {"technical"}
+    assert {fields["failure_reason"] for fields in per_item} == {None}
+    assert {fields["correct"] for fields in per_item} == {False}
 
 
 def test_a_resolved_item_cannot_be_edited_in_place() -> None:

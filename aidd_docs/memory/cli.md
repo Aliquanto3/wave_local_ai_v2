@@ -174,6 +174,18 @@ The command-line interface for running benchmarks.
   printed, not enforced: rows are put in canonical order
   (source, then stable key) before sampling, so their arrival order is
   irrelevant. Module invocation, like `suite_snapshot`.
+- `uv run --group loaders python scripts/minds14_suite.py (fetch --out
+  <table.jsonl> --record <record.json> | draw --table <table.jsonl> --record
+  <record.json> --out <definition.json> | verify) [--cache <dir>]` — the
+  MInDS-14 loader (`PolyAI/minds14` at its pinned revision, configs
+  `en-US`/`fr-FR`/`de-DE`): `fetch` downloads the three parquet files,
+  checks each against the Hub's LFS SHA-256, and writes the JSONL source
+  table (sorted by `path`, so its SHA-256 is machine-independent) and a
+  record (table hash, row count, licence files at the revision); `draw`
+  draws the 300-item publication suite through `subset_sampler` and writes
+  its definition with `source_table.sha256`; `verify` is the operator
+  replay (re-fetch, hash check, `subset_replay`). pyarrow is in the locked
+  `loaders` group only; the network is touched by `fetch` and `verify`.
 - `wave-local-ai-v2-validate` — invalidation validator: checks every row of
   one or more results files (default: the two live stores,
   `RUNTIME_RESULTS_PATH`/`QUALITY_RESULTS_PATH`) against the stored fiche

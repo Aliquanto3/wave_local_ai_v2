@@ -27,25 +27,25 @@ this file does not license them. A path ending in ".py" is a code module:
 only the hand-written item literals it names are covered, the code around
 them is MIT, and the module's header says so.
 
-- `aidd_docs/results/`: the published results directory. Covers the reference bundle's row files listed below and any record a project command publishes into it, such as the use-case coverage record (`use-case-coverage.json`), in every case except the model-generated content they hold, which 1.3 governs.
+- `aidd_docs/results/`: the published results directory. Covers the reference bundle's row files listed below and any record a project command publishes into it, such as the use-case coverage record (`use-case-coverage.json`), in every case except the model-generated content they hold, which 1.3 governs, and the drawn items they hold, which section 2 governs.
 - `aidd_docs/results/runtime-reference.jsonl`: the reference bundle's current runtime rows.
-- `aidd_docs/results/quality-reference.jsonl`: the reference bundle's current quality rows, including the hand-written suite items they carry in their item fields (`item_id`, `prompt`, `expected_label`, and `reference_output` on graded rows); the model-output fields excepted, see 1.3.
+- `aidd_docs/results/quality-reference.jsonl`: the reference bundle's current quality rows, including the hand-written suite items they carry in their item fields (`item_id`, `prompt`, `expected_label`, and `reference_output` on graded rows); the model-output fields excepted, see 1.3, and the item fields of a row whose item is drawn, see 2.
 - `aidd_docs/results/runtime-reference.schema-1.jsonl`: superseded runtime rows, retained beside the current ones.
 - `aidd_docs/results/quality-reference.schema-1.jsonl`: superseded quality rows, retained beside the current ones, item fields included; the model-output fields excepted, see 1.3.
 - `aidd_docs/results/runtime-reference.schema-7.jsonl`: superseded runtime rows (schema "7"), retained beside the current ones.
 - `aidd_docs/results/quality-reference.schema-7.jsonl`: superseded quality rows (schema "7"), retained beside the current ones, item fields included; the model-output fields excepted, see 1.3.
 - `aidd_docs/results/refusals-reference.jsonl`: the reference bundle's current refusal records, one per run a machine refused below a model's declared minimum.
-- `aidd_docs/results/machines/`: each declared machine's tracked results, the rows and refusal records the reference bundle is derived from; the model-output fields excepted, see 1.3.
+- `aidd_docs/results/machines/`: each declared machine's tracked results, the rows and refusal records the reference bundle is derived from; the model-output fields excepted, see 1.3, and the item fields of a row whose item is drawn, see 2.
 - `aidd_docs/results/client-sessions.jsonl`: the client-session reception record, one hand-written record per session in which a benchmark result was shown to a client or their engineer, carrying pseudonymous ids only.
 - `aidd_docs/results/fiches/`: the hardware fiches the rows cite by `fiche_hash`.
-- `aidd_docs/results/suite-definitions/`: the published suite-definition snapshots the rows cite by `suite_id` and `suite_version`, including the hand-written suite items as published.
+- `aidd_docs/results/suite-definitions/`: the published suite-definition snapshots the rows cite by `suite_id` and `suite_version`, including the hand-written suite items as published; the drawn items they publish excepted, see 2.
 - `aidd_docs/results/comparisons/`: the paired-comparison family records computed over the published rows.
 - `aidd_docs/results/leader-sets/`: the leader-set records derived from the published rows and the comparison family records.
 - `aidd_docs/results/comparisons.schema-7/`: superseded comparison family records, computed over the schema "7" rows, retained unedited.
 - `aidd_docs/results/leader-sets.schema-7/`: superseded leader-set records, derived from the schema "7" rows, retained unedited.
 - `aidd_docs/roster/`: the model roster's directory.
 - `aidd_docs/roster/models.json`: the model roster the rows cite by `roster_entry_id`, including each entry's licence block and language claim as records. The licences those blocks record are not granted here; see 1.2.
-- `src/wave_local_ai_v2/suite_data/`: the hand-written suite items as stored in the source tree, one suite definition per file.
+- `src/wave_local_ai_v2/suite_data/`: the hand-written suite items as stored in the source tree, one suite definition per file; the drawn items it stores excepted, see 2.
 - `src/wave_local_ai_v2/use_case_coverage.json`: the declared use-case coverage record, the source of the copy published into `aidd_docs/results/`.
 - `src/wave_local_ai_v2/judge_probe.py`: its hand-written item literals only (`JUDGE_PROBE_ITEMS`).
 
@@ -87,18 +87,49 @@ those terms.
 
 ## 2. Drawn items
 
-The bundle holds no item drawn from a public benchmark today. Every item
-in the suite-definition snapshots and in `src/wave_local_ai_v2/suite_data/`
-declares `provenance` `hand_written` and carries no `source`, and so does
-every row of `quality-reference.jsonl`. The superseded
-`quality-reference.schema-1.jsonl` rows predate the provenance fields and
-declare none; their items are the same hand-written items.
-
 An item drawn from a public benchmark is not covered by CC-BY 4.0 through
 this file. It carries its source's licence, recorded per item in its
-`licence`, `source` and `source_revision` fields, and this section names
-each drawn source and its terms once the first drawn item is published.
-None is listed today.
+`licence`, `source` and `source_revision` fields, and on every row that
+publishes it in `item_licence`, `item_source` and `item_source_revision`.
+Each drawn source is named below with its terms, the rung its licence puts
+it on (permissive, share-alike or no-redistribution), what that rung does to
+its items and rows, and the attribution it requires.
+
+### 2.1 MInDS-14
+
+- Source: `PolyAI/minds14` on the Hugging Face Hub, at revision
+  `40ce77cb32a384e4d50a568e1ec39ac804019d33`
+  (https://huggingface.co/datasets/PolyAI/minds14/tree/40ce77cb32a384e4d50a568e1ec39ac804019d33),
+  configs `en-US`, `fr-FR` and `de-DE`.
+- Creator: PolyAI (Gerz, Su, Kusztos, Mondal, Lis, Singhal, Mrksic, Wen and
+  Vulic, "Multilingual and Cross-Lingual Intent Detection from Spoken Data",
+  2021, https://arxiv.org/abs/2104.08524).
+- Copyright notice: the dataset card states none; the work is attributed to
+  its creator.
+- Licence: Creative Commons Attribution 4.0 International (CC BY 4.0),
+  https://creativecommons.org/licenses/by/4.0/. The dataset card at the
+  pinned revision is the licence of record (`license: cc-by-4.0`, and
+  "All datasets are licensed under the Creative Commons license (CC-BY)"):
+  the revision ships no licence file, and the original `MInDS-14.zip`
+  release was not fetched. A licence file at that revision naming anything
+  other than CC BY 4.0 would reopen the licence decision.
+- Rung: permissive. The drawn items and the rows carrying them ship
+  unchanged inside this repository and its bundle, with no segregation and
+  no redaction.
+- What is drawn: 300 utterance transcriptions and their intent labels, 100
+  per language, published as the suite
+  `classification-banking-intents-minds14` in
+  `src/wave_local_ai_v2/suite_data/` and
+  `aidd_docs/results/suite-definitions/`, and in the item fields (`item_id`,
+  `prompt`, `expected_label`) of the rows citing that suite.
+- Changes made: each transcription is wrapped in a prompt template, an
+  instruction naming the fourteen intents; each intent is mapped from its
+  class index to its name. The transcriptions are otherwise verbatim.
+- Attribution, as CC BY 4.0 Section 3(a) requires: "MInDS-14 by PolyAI
+  (https://huggingface.co/datasets/PolyAI/minds14, revision
+  40ce77cb32a384e4d50a568e1ec39ac804019d33), licensed under CC BY 4.0
+  (https://creativecommons.org/licenses/by/4.0/); each item wrapped in a
+  prompt template."
 
 
 ## 3. Assumptions this licence rests on

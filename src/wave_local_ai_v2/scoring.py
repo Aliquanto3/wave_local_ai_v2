@@ -28,7 +28,7 @@ from collections.abc import Sequence
 from typing import TypedDict
 
 from wave_local_ai_v2.chrf import chrf
-from wave_local_ai_v2.classification_suite import LABELS, ClassificationItem
+from wave_local_ai_v2.classification_suite import ClassificationItem
 from wave_local_ai_v2.suite_gate import LANGUAGES, MIN_PER_LANGUAGE_CELL_ITEMS
 from wave_local_ai_v2.translation_suite import TranslationItem
 
@@ -50,13 +50,25 @@ _FAILURE_REASONS = (
 def normalize_label(raw_completion: str, labels: frozenset[str]) -> str | None:
     """Extract a member of `labels` from free-text model output, or None.
 
-    Lowercases, strips punctuation/whitespace, and returns the first
-    whitespace/punctuation-delimited token that exactly matches a member of
-    `labels`. Never raises on malformed input.
+    Lowercases, splits the output into its letter runs (punctuation,
+    whitespace and underscores all separate them), and returns the label
+    named at the first run that starts one. A label is matched as its own
+    `_`-separated words in sequence, so `app_error`, `app error` and
+    `App-Error` all name `app_error`; where two labels start at the same
+    run, the one with more words wins. A one-word label set therefore parses
+    exactly as the first run that is a member of it, which is the rule every
+    one-word suite and judge rubric has always been scored under. Never
+    raises on malformed input.
     """
-    for token in _TOKEN_RE.findall(raw_completion.lower()):
-        if token in labels:
-            return token
+    tokens = _TOKEN_RE.findall(raw_completion.lower())
+    candidates = sorted(
+        ((tuple(label.split("_")), label) for label in labels),
+        key=lambda candidate: (-len(candidate[0]), candidate[1]),
+    )
+    for start in range(len(tokens)):
+        for words, label in candidates:
+            if tuple(tokens[start : start + len(words)]) == words:
+                return label
     return None
 
 
@@ -123,9 +135,15 @@ def score_item(
     truncated: bool,
     generated_tokens: int,
     max_output_tokens: int,
+    labels: frozenset[str],
     truncation_reason: str | None = None,
 ) -> ScoredItem:
     """Score one completion, naming why it failed when it did.
+
+    `labels` is the suite's whole label set (`SuiteDefinition.labels`), the
+    closed set a completion is parsed against, never only the labels of the
+    items being scored: a resumed batch scores its missing items against the
+    same set an uninterrupted one does.
 
     A generation fails one of four ways, checked in order: empty output,
     truncation (at the suite's own cap when `generated_tokens` reached
@@ -168,7 +186,7 @@ def score_item(
             failure_reason=reason,
         )
 
-    predicted_label = normalize_label(raw_completion, LABELS)
+    predicted_label = normalize_label(raw_completion, labels)
     if predicted_label is None:
         return ScoredItem(
             item_id=item["item_id"],

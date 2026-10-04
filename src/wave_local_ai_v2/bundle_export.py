@@ -1288,6 +1288,20 @@ _NO_TOLERANCE = (
     "This suite version declares no divergence tolerance (the column name is "
     "then listed in fields_not_carried)."
 )
+_NO_SIZE_TARGET = (
+    "This suite version declares no size target: a development suite (the "
+    "column name is then listed in fields_not_carried)."
+)
+_NO_SELECTION_RULE = (
+    "This suite version records no selection rule: its items were not drawn "
+    "from a public benchmark (the column name is then listed in "
+    "fields_not_carried)."
+)
+_NO_SOURCE_TABLE = (
+    "This suite version records no source table: its items were not drawn "
+    "from a public benchmark (the column name is then listed in "
+    "fields_not_carried)."
+)
 SUITE_DEFINITION_FIELDS: dict[tuple[str, ...], FieldDoc] = {
     ("context_length",): FieldDoc("Context window the suite declares.", "tokens"),
     ("max_output_tokens",): FieldDoc("Output token cap the suite declares.", "tokens"),
@@ -1320,6 +1334,95 @@ SUITE_DEFINITION_FIELDS: dict[tuple[str, ...], FieldDoc] = {
         "Why the suite declares that tolerance, as its definition states it.",
         _TEXT,
         _NO_TOLERANCE,
+    ),
+    ("size_target",): FieldDoc(
+        "Item count a publication suite was built to (100 or 300).",
+        _COUNT,
+        _NO_SIZE_TARGET,
+    ),
+    ("size_target_reason",): FieldDoc(
+        "Why the suite was built to that target, as its definition states it.",
+        _TEXT,
+        _NO_SIZE_TARGET,
+    ),
+    **{
+        ("selection_rule", *path): FieldDoc(meaning, unit, _NO_SELECTION_RULE)
+        for path, meaning, unit in (
+            (
+                ("sampler_version",),
+                "Version of the subset sampler that drew the items.",
+                _ID,
+            ),
+            (("seed",), "Seed of the accepted draw.", "integer"),
+            (("attempts",), "Number of seeds tried before one was accepted.", _COUNT),
+            (
+                ("seeds_tried",),
+                "Every seed tried, in order, the accepted one last.",
+                _JSON_ARRAY,
+            ),
+            (
+                ("loader", "library"),
+                "Library that read the public benchmark into the source table.",
+                _ID,
+            ),
+            (("loader", "version"), "Version of that library.", _ID),
+            (("generator", "library"), "Random generator that drew the subset.", _ID),
+            (
+                ("generator", "version"),
+                "Interpreter major.minor version of that generator.",
+                _ID,
+            ),
+            (
+                ("stable_source_key",),
+                "Source column whose value names an item (its id is <source>:<key>).",
+                _ID,
+            ),
+            (
+                ("canonical_ordering",),
+                "Order the source rows were sorted into before the draw.",
+                _ID,
+            ),
+            (
+                ("stratify_by",),
+                "Fields the draw was stratified by, language first.",
+                _JSON_ARRAY,
+            ),
+            (
+                ("content_fields",),
+                "Source fields each item's content hash is computed over.",
+                _JSON_ARRAY,
+            ),
+            (("size",), "Number of items the rule draws.", _COUNT),
+            (
+                ("benchmarks",),
+                "Each public benchmark drawn from, with its licence and source revision.",
+                _JSON_ARRAY,
+            ),
+        )
+    },
+    ("source_table", "sha256"): FieldDoc(
+        "SHA-256 of the source table the loader wrote, which the selection rule "
+        "replays over.",
+        _SHA,
+        _NO_SOURCE_TABLE,
+    ),
+    ("source_table", "row_count"): FieldDoc(
+        "Rows in that source table.", _COUNT, _NO_SOURCE_TABLE
+    ),
+    ("source_table", "loader_script"): FieldDoc(
+        "Repository script that fetches the benchmark and writes the table.",
+        "path",
+        _NO_SOURCE_TABLE,
+    ),
+    ("source_table", "licence_file_at_revision"): FieldDoc(
+        "Whether the benchmark's pinned revision ships a licence file.",
+        _BOOL,
+        _NO_SOURCE_TABLE,
+    ),
+    ("source_table", "licence_of_record"): FieldDoc(
+        "Where the benchmark's licence is stated, as the definition records it.",
+        _TEXT,
+        _NO_SOURCE_TABLE,
     ),
 }
 

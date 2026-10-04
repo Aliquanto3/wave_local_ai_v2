@@ -10,7 +10,12 @@ Every rule has one signature: the suite's items and the batch's completions
 in, one dict of row fields per item plus one dict shared by the whole batch
 out. The suite's declared `max_output_tokens` is passed in rather than read
 from a module constant, so truncation is judged against the cap the
-definition itself declares. A completion is any mapping exposing `content`,
+definition itself declares, and so is the suite's whole label set
+(`labels`, `SuiteDefinition.labels`): an exact-label rule parses every
+completion against the suite's labels, never against only the labels of the
+items in hand, which on a resumed batch are a subset. A rule that parses no
+label (a graded one) takes `labels` and ignores it, so one call shape serves
+every rule. A completion is any mapping exposing `content`,
 `truncated`, `generated_tokens` and `truncation_reason` -- the CLI's
 `_Completion` shape, duck-typed so this module never imports the CLI.
 
@@ -38,7 +43,7 @@ from wave_local_ai_v2.scoring import (
 )
 
 ScoringRule = Callable[..., tuple[list[dict[str, Any]], dict[str, Any]]]
-"""`(items, completions, *, max_output_tokens) -> (per_item_fields, batch_fields)`."""
+"""`(items, completions, *, max_output_tokens, labels) -> (per_item_fields, batch_fields)`."""
 
 BatchAggregate = Callable[[Sequence[Any], Sequence[Mapping[str, Any]]], dict[str, Any]]
 """`(items, per_item_fields) -> batch_fields`: a rule's suite-level fields,
@@ -110,8 +115,12 @@ def exact_label_match(
     completions: Sequence[Mapping[str, Any]],
     *,
     max_output_tokens: int,
+    labels: frozenset[str],
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Exact-label-match scoring: the exact-match fields, and no graded block."""
+    """Exact-label-match scoring: the exact-match fields, and no graded block.
+
+    Every completion is parsed against `labels`, the suite's whole label set.
+    """
     scored_items = [
         score_item(
             item,
@@ -119,6 +128,7 @@ def exact_label_match(
             truncated=completion["truncated"],
             generated_tokens=completion["generated_tokens"],
             max_output_tokens=max_output_tokens,
+            labels=labels,
             truncation_reason=completion["truncation_reason"],
         )
         for item, completion in zip(items, completions, strict=True)
@@ -140,6 +150,7 @@ def chrf_against_reference(
     completions: Sequence[Mapping[str, Any]],
     *,
     max_output_tokens: int,
+    labels: frozenset[str] = frozenset(),
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """chrF scoring against each item's written reference.
 
@@ -188,6 +199,7 @@ def unit_tests_pass(
     completions: Sequence[Mapping[str, Any]],
     *,
     max_output_tokens: int,
+    labels: frozenset[str] = frozenset(),
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Run each item's tests against its generated code inside the sandbox.
 

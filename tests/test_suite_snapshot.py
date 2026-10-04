@@ -38,20 +38,27 @@ def test_snapshot_publishes_exactly_the_keys_it_always_published() -> None:
     # The scoring-rule name and task_suite are definition fields, never
     # snapshot fields: exporting them would rewrite every committed file.
     # `level` joined with the version bump that declared it, and
-    # `divergence_tolerance` with the next one.
+    # `divergence_tolerance` with the next one. A suite drawn from a public
+    # benchmark also publishes its size target, its selection rule and its
+    # source table; no development suite carries them.
+    published = {
+        "suite_id",
+        "suite_version",
+        "level",
+        "divergence_tolerance",
+        "prompt_set_hash",
+        "max_output_tokens",
+        "stop_sequences",
+        "thinking_policy",
+        "context_length",
+        "items",
+    }
+    drawn = {"size_target", "size_target_reason", "selection_rule", "source_table"}
     for snapshot in all_snapshots():
-        assert set(snapshot) == {
-            "suite_id",
-            "suite_version",
-            "level",
-            "divergence_tolerance",
-            "prompt_set_hash",
-            "max_output_tokens",
-            "stop_sequences",
-            "thinking_policy",
-            "context_length",
-            "items",
-        }
+        if snapshot["level"] == "publication":
+            assert set(snapshot) == published | drawn
+        else:
+            assert set(snapshot) == published
 
 
 def test_classification_snapshot_items_carry_exactly_the_published_fields() -> None:
@@ -70,6 +77,26 @@ def test_classification_snapshot_items_carry_exactly_the_published_fields() -> N
             "provenance",
             "contamination_risk",
             "licence",
+        }
+
+
+def test_a_drawn_snapshots_items_carry_their_source_and_content_hash() -> None:
+    snapshot = build_snapshot(
+        suite_registry.resolve("classification-banking-intents-minds14")
+    )
+
+    for item in snapshot["items"]:
+        assert set(item) == {
+            "item_id",
+            "prompt",
+            "expected_label",
+            "language",
+            "provenance",
+            "contamination_risk",
+            "licence",
+            "source",
+            "source_revision",
+            "content_hash",
         }
 
 
@@ -113,6 +140,7 @@ def test_every_registered_suite_is_exported() -> None:
 
     assert ids == {
         "classification-support-routing",
+        "classification-banking-intents-minds14",
         "translation-business-short-form",
         "code-generation-python-javascript",
     }
